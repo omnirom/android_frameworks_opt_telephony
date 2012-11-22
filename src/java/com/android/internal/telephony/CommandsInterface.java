@@ -1759,6 +1759,11 @@ public interface CommandsInterface {
     public void testingEmergencyCall();
 
     /**
+     * Ask the RIL about the presence of back-compat flags
+     */
+     public boolean needsOldRilFeature(String feature);
+
+    /**
      * Open a logical channel to the SIM.
      *
      * Input parameters equivalent to TS 27.007 AT+CCHO command.

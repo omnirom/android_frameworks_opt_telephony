@@ -29,6 +29,7 @@ import android.provider.Settings.SettingNotFoundException;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.os.SystemProperties;
 
 import com.android.internal.telephony.cdma.CDMALTEPhone;
 import com.android.internal.telephony.cdma.CDMAPhone;
@@ -39,6 +40,8 @@ import com.android.internal.telephony.imsphone.ImsPhoneFactory;
 import com.android.internal.telephony.sip.SipPhone;
 import com.android.internal.telephony.sip.SipPhoneFactory;
 import com.android.internal.telephony.uicc.UiccController;
+
+import java.lang.reflect.Constructor;
 
 /**
  * {@hide}
@@ -128,6 +131,7 @@ public class PhoneFactory {
                 int[] networkModes = new int[numPhones];
                 sProxyPhones = new PhoneProxy[numPhones];
                 sCommandsInterfaces = new RIL[numPhones];
+                String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL").trim();
 
                 for (int i = 0; i < numPhones; i++) {
                     //reads the system properties and makes commandsinterface
@@ -136,7 +140,6 @@ public class PhoneFactory {
 //                        TODO: Sishir added this code to but we need a new technique for MSim
 //                        int networkType = calculatePreferredNetworkType(context);
 //                        Rlog.i(LOG_TAG, "Network Type set to " + Integer.toString(networkType));
-
                         networkModes[i]  = TelephonyManager.getIntAtIndex(
                                 context.getContentResolver(),
                                 Settings.Global.PREFERRED_NETWORK_MODE, i);
@@ -147,8 +150,15 @@ public class PhoneFactory {
                     }
 
                     Rlog.i(LOG_TAG, "Network Mode set to " + Integer.toString(networkModes[i]));
-                    sCommandsInterfaces[i] = new RIL(context, networkModes[i],
-                            cdmaSubscription, i);
+                    try {
+                    sCommandsInterfaces[i] = instantiateCustomRIL(
+                                             sRILClassname, context, networkModes[i], cdmaSubscription);
+		    } catch (Exception e) {
+                    // 6 different types of exceptions are thrown here that it's
+                    // easier to just catch Exception as our "error handling" is the same.
+                    Rlog.e(LOG_TAG, "Unable to construct custom RIL class", e);
+                    sCommandsInterfaces[i] = new RIL(context, networkModes[i], cdmaSubscription);
+		    }
                 }
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 SubscriptionController.init(context, sCommandsInterfaces);
@@ -201,6 +211,14 @@ public class PhoneFactory {
                 SubscriptionController.getInstance().updatePhonesAvailability(sProxyPhones);
             }
         }
+    }
+
+    private static <T> T instantiateCustomRIL(
+                      String sRILClassname, Context context, int networkMode, int cdmaSubscription)
+                      throws Exception {
+        Class<?> clazz = Class.forName("com.android.internal.telephony." + sRILClassname);
+        Constructor<?> constructor = clazz.getConstructor(Context.class, int.class, int.class);
+        return (T) clazz.cast(constructor.newInstance(context, networkMode, cdmaSubscription));
     }
 
     public static Phone getCdmaPhone(int phoneId) {
