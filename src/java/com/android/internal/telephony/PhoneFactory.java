@@ -29,6 +29,7 @@ import android.provider.Settings.SettingNotFoundException;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.os.SystemProperties;
 
 import com.android.internal.telephony.cdma.CDMALTEPhone;
 import com.android.internal.telephony.cdma.CDMAPhone;
@@ -39,6 +40,8 @@ import com.android.internal.telephony.imsphone.ImsPhoneFactory;
 import com.android.internal.telephony.sip.SipPhone;
 import com.android.internal.telephony.sip.SipPhoneFactory;
 import com.android.internal.telephony.uicc.UiccController;
+
+import java.lang.reflect.Constructor;
 
 /**
  * {@hide}
@@ -127,7 +130,7 @@ public class PhoneFactory {
                 int numPhones = TelephonyManager.getDefault().getPhoneCount();
                 int[] networkModes = new int[numPhones];
                 sProxyPhones = new PhoneProxy[numPhones];
-                sCommandsInterfaces = new RIL[numPhones];
+                String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL");
 
                 for (int i = 0; i < numPhones; i++) {
                     //reads the system properties and makes commandsinterface
@@ -147,8 +150,16 @@ public class PhoneFactory {
                     }
 
                     Rlog.i(LOG_TAG, "Network Mode set to " + Integer.toString(networkModes[i]));
-                    sCommandsInterfaces[i] = new RIL(context, networkModes[i],
-                            cdmaSubscription, i);
+                    try {
+                    Class<?> classDefinition = Class.forName("com.android.internal.telephony." + sRILClassname);
+                    Constructor<?> constructor = classDefinition.getConstructor(new Class[] {Context.class, int.class, int.class});
+                    sCommandsInterfaces[i] = (RIL) constructor.newInstance(new Object[] {context, networkModes[i], cdmaSubscription});
+		    } catch (Exception e) {
+                    // 6 different types of exceptions are thrown here that it's
+                    // easier to just catch Exception as our "error handling" is the same.
+                    Rlog.e(LOG_TAG, "Unable to construct command interface", e);
+                    throw new RuntimeException(e);
+		    }
                 }
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 SubscriptionController.init(context, sCommandsInterfaces);
