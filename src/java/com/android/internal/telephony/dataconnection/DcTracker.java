@@ -709,6 +709,69 @@ public final class DcTracker extends DcTrackerBase {
         }
     }
 
+    /**
+     * Ensure that we are connected to an APN of the specified type.
+     *
+     * @param apnType the APN type
+     * @return Success is indicated by {@code PhoneConstants.APN_ALREADY_ACTIVE} or
+     *         {@code PhoneConstants.APN_REQUEST_STARTED}. In the latter case, a
+     *         broadcast will be sent by the ConnectivityManager when a
+     *         connection to the APN has been established.
+     */
+    public synchronized int enableApnType(String apnType) {
+        ApnContext apnContext = mApnContexts.get(apnType);
+        if (apnContext == null || !isApnTypeAvailable(apnType)) {
+            if (DBG) log("enableApnType: " + apnType + " is type not available");
+            return PhoneConstants.APN_TYPE_NOT_AVAILABLE;
+        }
+
+        // If already active, return
+        if (DBG) log("enableApnType: " + apnType + " mState(" + apnContext.getState() + ")");
+
+        if (apnContext.getState() == DctConstants.State.CONNECTED) {
+            if (DBG) log("enableApnType: return APN_ALREADY_ACTIVE");
+            return PhoneConstants.APN_ALREADY_ACTIVE;
+        }
+        if (mPhone.mCi.needsOldRilFeature("singlepdp") && !PhoneConstants.APN_TYPE_DEFAULT.equals(apnType)) {
+            ApnContext defContext = mApnContexts.get(PhoneConstants.APN_TYPE_DEFAULT);
+            if (defContext.isEnabled()) {
+                setEnabled(apnTypeToId(PhoneConstants.APN_TYPE_DEFAULT), false);
+            }
+        }
+        setEnabled(apnTypeToId(apnType), true);
+        if (DBG) {
+            log("enableApnType: new apn request for type " + apnType +
+                    " return APN_REQUEST_STARTED");
+        }
+        return PhoneConstants.APN_REQUEST_STARTED;
+    }
+
+    public synchronized int disableApnType(String type) {
+        if (DBG) log("disableApnType:" + type);
+        ApnContext apnContext = mApnContexts.get(type);
+
+        if (apnContext != null) {
+            setEnabled(apnTypeToId(type), false);
+            if (mPhone.mCi.needsOldRilFeature("singlepdp") && !PhoneConstants.APN_TYPE_DEFAULT.equals(type)) {
+                setEnabled(apnTypeToId(PhoneConstants.APN_TYPE_DEFAULT), true);
+            }
+            if (apnContext.getState() != DctConstants.State.IDLE && apnContext.getState()
+                    != DctConstants.State.FAILED) {
+                if (DBG) log("diableApnType: return APN_REQUEST_STARTED");
+                return PhoneConstants.APN_REQUEST_STARTED;
+            } else {
+                if (DBG) log("disableApnType: return APN_ALREADY_INACTIVE");
+                return PhoneConstants.APN_ALREADY_INACTIVE;
+            }
+
+        } else {
+            if (DBG) {
+                log("disableApnType: no apn context was found, return APN_REQUEST_FAILED");
+            }
+            return PhoneConstants.APN_REQUEST_FAILED;
+        }
+    }
+
     @Override
     protected boolean isApnTypeAvailable(String type) {
         if (type.equals(PhoneConstants.APN_TYPE_DUN) && fetchDunApn() != null) {
