@@ -147,8 +147,7 @@ public final class DcTracker extends DcTrackerBase {
         p.mCi.registerForAvailable (this, DctConstants.EVENT_RADIO_AVAILABLE, null);
         p.mCi.registerForOffOrNotAvailable(this, DctConstants.EVENT_RADIO_OFF_OR_NOT_AVAILABLE,
                 null);
-        p.mCi.registerForDataNetworkStateChanged (this, DctConstants.EVENT_DATA_STATE_CHANGED,
-                null);
+
         p.getCallTracker().registerForVoiceCallEnded (this, DctConstants.EVENT_VOICE_CALL_ENDED,
                 null);
         p.getCallTracker().registerForVoiceCallStarted (this, DctConstants.EVENT_VOICE_CALL_STARTED,
@@ -1227,6 +1226,18 @@ public final class DcTracker extends DcTrackerBase {
         if (DBG) log("onDataStateChanged(ar): X");
     }
 
+    private void notifyDefaultData(ApnContext apnContext) {
+        if (DBG) {
+            log("notifyDefaultData: type=" + apnContext.getApnType()
+                + ", reason:" + apnContext.getReason());
+        }
+        apnContext.setState(DctConstants.State.CONNECTED);
+        // setState(DctConstants.State.CONNECTED);
+        mPhone.notifyDataConnection(apnContext.getReason(), apnContext.getApnType());
+        startNetStatPoll();
+        startDataStallAlarm(DATA_STALL_NOT_SUSPECTED);
+    }
+
     // TODO: For multiple Active APNs not exactly sure how to do this.
     @Override
     protected void gotoIdleAndNotifyDataConnection(String reason) {
@@ -1934,13 +1945,6 @@ public final class DcTracker extends DcTrackerBase {
         mPhone.notifyDataConnection(apnContext.getReason(), apnContext.getApnType());
     }
 
-    protected void onPollPdp() {
-        if (getOverallState() == DctConstants.State.CONNECTED) {
-            // only poll when connected
-            mPhone.mCi.getDataCallList(obtainMessage(DctConstants.EVENT_DATA_STATE_CHANGED));
-            sendMessageDelayed(obtainMessage(DctConstants.EVENT_POLL_PDP), POLL_PDP_MILLIS);
-        }
-    }
 
     @Override
     protected void onVoiceCallStarted() {
@@ -2348,14 +2352,6 @@ public final class DcTracker extends DcTrackerBase {
 
             case DctConstants.EVENT_DATA_CONNECTION_ATTACHED:
                 onDataConnectionAttached();
-                break;
-
-            case DctConstants.EVENT_DATA_STATE_CHANGED:
-                onDataStateChanged((AsyncResult) msg.obj);
-                break;
-
-            case DctConstants.EVENT_POLL_PDP:
-                onPollPdp();
                 break;
 
             case DctConstants.EVENT_DO_RECOVERY:
