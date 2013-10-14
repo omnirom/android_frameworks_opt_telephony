@@ -90,6 +90,7 @@ class RILRequest {
     //***** Instance Variables
     int mSerial;
     int mRequest;
+    long creationTime;
     Message mResult;
     Parcel mParcel;
     RILRequest mNext;
@@ -122,6 +123,7 @@ class RILRequest {
         }
         rr.mRequest = request;
         rr.mResult = result;
+        rr.creationTime = System.currentTimeMillis();
         rr.mParcel = Parcel.obtain();
 
         if (result != null && result.getTarget() == null) {
@@ -2258,6 +2260,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
     }
 
     private RILRequest findAndRemoveRequestFromList(int serial) {
+        long removalTime = System.currentTimeMillis();
+        long timeDiff = 0;
         synchronized (mRequestList) {
             for (int i = 0, s = mRequestList.size() ; i < s ; i++) {
                 RILRequest rr = mRequestList.get(i);
@@ -2268,6 +2272,14 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                         mRequestMessagesWaiting--;
                     return rr;
                 }
+                else {
+                    timeDiff = removalTime - rr.creationTime;
+                    if ( timeDiff > mWakeLockTimeout )
+                        {
+                            Rlog.d(RILJ_LOG_TAG,  "No response for [" + rr.mSerial + "] " +
+                                  requestToString(rr.mRequest) + " after " + timeDiff + " milliseconds.");
+                        }
+		}
             }
         }
 
