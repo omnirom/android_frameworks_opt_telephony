@@ -16,6 +16,24 @@
       "revId": "3a14f2cb6765bbd120b3fe065c062cdc7ce48c1e",
       "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ba092121_d8644de7",
+        "filename": "src/java/com/android/internal/telephony/RIL.java",
+        "patchSetId": 4
+      },
+      "lineNbr": 2280,
+      "author": {
+        "id": 1000008
+      },
+      "writtenOn": "2013-10-15T21:58:41Z",
+      "side": 1,
+      "message": "I think that\u0027s just Gerrit linewrapping something, but I\u0027m not sure, lemme check.",
+      "parentUuid": "ba092121_58795d92",
+      "revId": "3a14f2cb6765bbd120b3fe065c062cdc7ce48c1e",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
     }
   ]
 }
