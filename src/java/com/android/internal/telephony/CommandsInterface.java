@@ -1709,4 +1709,12 @@ public interface CommandsInterface {
      * @return version of the ril.
      */
     int getRilVersion();
+
+    /**
+     * @hide
+     * Samsung STK service implementation - set up registrant for sending
+     * SMS send result from modem (RIL) to catService
+     */
+    void setOnCatSendSmsResult(Handler h, int what, Object obj);
+    void unSetOnCatSendSmsResult(Handler h);
 }
