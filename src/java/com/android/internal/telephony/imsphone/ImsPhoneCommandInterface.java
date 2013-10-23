@@ -599,4 +599,9 @@ class ImsPhoneCommandInterface extends BaseCommands implements CommandsInterface
     @Override
     public void requestShutdown(Message result) {
     }
+
+    @Override
+    public boolean needsOldRilFeature(String feature) {
+      return false;
+    }
 }

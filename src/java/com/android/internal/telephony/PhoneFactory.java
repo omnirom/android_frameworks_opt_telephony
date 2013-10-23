@@ -130,6 +130,7 @@ public class PhoneFactory {
                 int numPhones = TelephonyManager.getDefault().getPhoneCount();
                 int[] networkModes = new int[numPhones];
                 sProxyPhones = new PhoneProxy[numPhones];
+                sCommandsInterfaces = new RIL[numPhones];
                 String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL");
 
                 for (int i = 0; i < numPhones; i++) {
@@ -153,7 +154,7 @@ public class PhoneFactory {
                     try {
                     Class<?> classDefinition = Class.forName("com.android.internal.telephony." + sRILClassname);
                     Constructor<?> constructor = classDefinition.getConstructor(new Class[] {Context.class, int.class, int.class});
-                    sCommandsInterfaces[i] = (RIL) constructor.newInstance(new Object[] {context, networkModes[i], cdmaSubscription});
+                    sCommandsInterfaces[i] = (CommandsInterface) constructor.newInstance(context, networkModes[i], cdmaSubscription);
 		    } catch (Exception e) {
                     // 6 different types of exceptions are thrown here that it's
                     // easier to just catch Exception as our "error handling" is the same.
