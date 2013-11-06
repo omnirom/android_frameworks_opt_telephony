@@ -215,8 +215,10 @@ class RILRequest {
  */
 public final class RIL extends BaseCommands implements CommandsInterface {
     static final String RILJ_LOG_TAG = "RILJ";
+    static final String LOG_TAG = RILJ_LOG_TAG;
     static final boolean RILJ_LOGD = true;
     static final boolean RILJ_LOGV = false; // STOPSHIP if true
+    protected boolean samsungDriverCall = false;
 
     /**
      * Wake lock timeout should be longer than the longest timeout in
@@ -243,6 +245,11 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
     // When we are testing emergency calls
     AtomicBoolean mTestingEmergencyCall = new AtomicBoolean(false);
+
+    // Number of per-network elements expected in QUERY_AVAILABLE_NETWORKS's response.
+    // 4 elements is default, but many RILs actually return 5, making it impossible to
+    // divide the response array without prior knowledge of the number of elements.
+    protected int mQANElements = 4;
 
     //***** Events
 
@@ -511,6 +518,20 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
                 mSocket = s;
                 Rlog.i(RILJ_LOG_TAG, "Connected to '" + SOCKET_NAME_RIL + "' socket");
+
+                /* Compatibility with qcom's DSDS (Dual SIM) stack */
+                if (needsOldRilFeature("qcomdsds")) {
+                    String str = "SUB1";
+                    byte[] data = str.getBytes();
+                    try {
+                        mSocket.getOutputStream().write(data);
+                        Rlog.i(RILJ_LOG_TAG, "Data sent!!");
+                    } catch (IOException ex) {
+                            Rlog.e(RILJ_LOG_TAG, "IOException", ex);
+                    } catch (RuntimeException exc) {
+                        Rlog.e(RILJ_LOG_TAG, "Uncaught exception ", exc);
+                    }
+                }
 
                 int length = 0;
                 try {
@@ -2151,7 +2172,16 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         switch(stateInt) {
             case 0: state = RadioState.RADIO_OFF; break;
             case 1: state = RadioState.RADIO_UNAVAILABLE; break;
-            case 10: state = RadioState.RADIO_ON; break;
+            case 2:
+            case 3:
+            case 4:
+            case 5:
+            case 6:
+            case 7:
+            case 8:
+            case 9:
+            case 10:
+            case 13: state = RadioState.RADIO_ON; break;
 
             default:
                 throw new RuntimeException(
@@ -3133,6 +3163,17 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         return new IccIoResult(sw1, sw2, s);
     }
 
+    /* use the cm implementation for getting ril features */
+    @Override
+    public boolean needsOldRilFeature(String feature) {
+        String[] features = SystemProperties.get("ro.telephony.ril.v3", "").split(",");
+        for (String found: features) {
+            if (found.equals(feature))
+                return true;
+        }
+        return false;
+    }
+
     private Object
     responseIccCardStatus(Parcel p) {
         IccCardApplicationStatus appStatus;
@@ -3201,6 +3242,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             dc.als = p.readInt();
             voiceSettings = p.readInt();
             dc.isVoice = (0 == voiceSettings) ? false : true;
+            if(samsungDriverCall)
+                 p.readInt();
             dc.isVoicePrivacy = (0 != p.readInt());
             dc.number = p.readString();
             int np = p.readInt();
@@ -3359,15 +3402,15 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         String strings[] = (String [])responseStrings(p);
         ArrayList<OperatorInfo> ret;
 
-        if (strings.length % 4 != 0) {
+        if (strings.length % mQANElements != 0) {
             throw new RuntimeException(
                 "RIL_REQUEST_QUERY_AVAILABLE_NETWORKS: invalid response. Got "
-                + strings.length + " strings, expected multible of 4");
+                + strings.length + " strings, expected multible of " + mQANElements);
         }
 
-        ret = new ArrayList<OperatorInfo>(strings.length / 4);
+        ret = new ArrayList<OperatorInfo>(strings.length / mQANElements);
 
-        for (int i = 0 ; i < strings.length ; i += 4) {
+        for (int i = 0 ; i < strings.length ; i += mQANElements) {
             ret.add (
                 new OperatorInfo(
                     strings[i+0],
@@ -4112,3 +4155,4 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         pw.println(" mTestingEmergencyCall=" + mTestingEmergencyCall.get());
     }
 }
+
