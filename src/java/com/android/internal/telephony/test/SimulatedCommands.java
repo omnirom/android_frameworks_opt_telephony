@@ -1647,8 +1647,6 @@ public final class SimulatedCommands extends BaseCommands
         unimplemented(response);
     }
 
-    public boolean needsOldRilFeature(String feature) { return false; }
-
     @Override
     public void getCellInfoList(Message response) {
         unimplemented(response);
