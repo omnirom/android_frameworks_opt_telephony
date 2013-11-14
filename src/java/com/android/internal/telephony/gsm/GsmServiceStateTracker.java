@@ -1343,7 +1343,11 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                     equals(operatorNumeric.substring(0, 3));
         } catch (Exception e){
         }
-        return equalsMcc;
+        
+        // Add national roaming and make it optional 
+        boolean mvnoRoaming = Settings.System.getInt(mPhone.getContext().getContentResolver(),
+            Settings.System.MVNO_ROAMING, 0) == 1;
+        return gsmRoaming && !(equalsMcc && (equalsOnsl || equalsOnss || mvnoRoaming));
     }
 
     /**
