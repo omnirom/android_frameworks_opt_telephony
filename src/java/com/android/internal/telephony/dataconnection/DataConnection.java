@@ -451,7 +451,7 @@ public final class DataConnection extends StateMachine {
         }
 
         mPhone.mCi.setupDataCall(
-                Integer.toString(getSetupRilRadioTechnology()),
+                Integer.toString(getRilRadioTechnology(cp.mRilRat)),
                 Integer.toString(cp.mProfileId),
                 mApnSetting.apn, mApnSetting.user, mApnSetting.password,
                 Integer.toString(authType),
@@ -590,7 +590,7 @@ public final class DataConnection extends StateMachine {
         if (DBG) log("NotifyDisconnectCompleted DisconnectParams=" + dp);
     }
 
-    private int getSetupRilRadioTechnology() {
+    private int getRilRadioTechnology(int rilRadioTechnology) {
         if (mPhone.mCi.getRilVersion() < 6) {
             int phoneType = mPhone.getPhoneType();
             if (phoneType == PhoneConstants.PHONE_TYPE_GSM) {
@@ -601,7 +601,7 @@ public final class DataConnection extends StateMachine {
                 throw new RuntimeException("Unknown phoneType " + phoneType + ", should not happen");
             }
         } else {
-            return mRilRat + 2;
+            return rilRadioTechnology + 2;
         }
     }
 
