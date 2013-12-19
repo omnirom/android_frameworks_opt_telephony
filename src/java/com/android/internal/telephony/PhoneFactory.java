@@ -114,12 +114,23 @@ public class PhoneFactory {
                 Rlog.i(LOG_TAG, "Cdma Subscription set to " + cdmaSubscription);
 
                 //reads the system properties and makes commandsinterface
-                String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL");
+                String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL").trim();
                 Rlog.i(LOG_TAG, "RILClassname is " + sRILClassname);
 
                 // Use reflection to construct the RIL class (defaults to RIL)
+                Class<?> classDefinition = null;
                 try {
-                    Class<?> classDefinition = Class.forName("com.android.internal.telephony." + sRILClassname);
+                    classDefinition = Class.forName("com.android.internal.telephony." + sRILClassname);
+                } catch (Exception e) {
+                    // Try using the default RIL
+                    Rlog.e(LOG_TAG, "Invalid RIL Class " + sRILClassname, e);
+                    Log.e(LOG_TAG, "Invalid RIL Class " + sRILClassname + "! Using default RIL");
+                    sRILClassname = "RIL";
+                }
+                try {
+                    if (classDefinition == null) {
+                        classDefinition = Class.forName("com.android.internal.telephony." + sRILClassname);
+                    }
                     Constructor<?> constructor = classDefinition.getConstructor(new Class[] {Context.class, int.class, int.class});
                     sCommandsInterface = (RIL) constructor.newInstance(new Object[] {context, networkMode, cdmaSubscription});
                 } catch (Exception e) {
