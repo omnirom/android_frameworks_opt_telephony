@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6b8b61a3_3a289f2e",
+        "filename": "src/java/com/android/internal/telephony/PhoneFactory.java",
+        "patchSetId": 2
+      },
+      "lineNbr": 127,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2013-12-20T21:47:01Z",
+      "side": 1,
+      "message": "to be abolutely sure I would add\nclassDefinition \u003d null here",
+      "revId": "d0b21011e0d3879b37b3508e8bcd6d0f6e49e3eb",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
