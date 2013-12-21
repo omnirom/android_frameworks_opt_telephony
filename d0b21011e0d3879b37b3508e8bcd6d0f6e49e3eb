@@ -16,6 +16,24 @@
       "revId": "d0b21011e0d3879b37b3508e8bcd6d0f6e49e3eb",
       "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "6b8b61a3_ba774ffd",
+        "filename": "src/java/com/android/internal/telephony/PhoneFactory.java",
+        "patchSetId": 2
+      },
+      "lineNbr": 127,
+      "author": {
+        "id": 1000170
+      },
+      "writtenOn": "2013-12-21T17:11:48Z",
+      "side": 1,
+      "message": "I ended up moving everything around so hopefully no null checks will be needed anymore. If anything along the way throws it\u0027ll create the RIL normally",
+      "parentUuid": "6b8b61a3_3a289f2e",
+      "revId": "d0b21011e0d3879b37b3508e8bcd6d0f6e49e3eb",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
     }
   ]
 }
