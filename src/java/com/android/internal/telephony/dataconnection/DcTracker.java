@@ -2298,7 +2298,7 @@ public final class DcTracker extends DcTrackerBase {
                 PREFERAPN_NO_UPDATE_URI, new String[] { "_id", "name", "apn" },
                 null, null, Telephony.Carriers.DEFAULT_SORT_ORDER);
 
-        if (cursor != null) {
+        if (cursor != null && cursor.getCount() > 0) {
             mCanSetPreferApn = true;
         } else {
             mCanSetPreferApn = false;
@@ -2306,7 +2306,7 @@ public final class DcTracker extends DcTrackerBase {
         log("getPreferredApn: mRequestedApnType=" + mRequestedApnType + " cursor=" + cursor
                 + " cursor.count=" + ((cursor != null) ? cursor.getCount() : 0));
 
-        if (mCanSetPreferApn && cursor.getCount() > 0) {
+        if (mCanSetPreferApn) {
             int pos;
             cursor.moveToFirst();
             pos = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Carriers._ID));
