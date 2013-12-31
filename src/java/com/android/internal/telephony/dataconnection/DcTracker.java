@@ -138,6 +138,16 @@ public final class DcTracker extends DcTrackerBase {
                         Uri.parse("content://telephony/carriers/preferapn_no_update");
     static final String APN_ID = "apn_id";
 
+    /*
+     * If this property is set to true then android assumes that multiple PDN is
+     * going to be supported in modem/nw.
+     * If MPDN is set to false, then android will ensure that the higher priority
+     * service is active. Low priority data calls may be pro-actively torn down to
+     * ensure this.
+     */
+    private static final boolean SUPPORT_MPDN = SystemProperties.getBoolean(
+            "persist.telephony.mpdn", true);
+
     private boolean mCanSetPreferApn = false;
 
     private AtomicBoolean mAttached = new AtomicBoolean(false);
@@ -1449,6 +1459,7 @@ public final class DcTracker extends DcTrackerBase {
      * @return true if only single DataConnection is allowed
      */
     private boolean isOnlySingleDcAllowed(int rilRadioTech) {
+        if (!SUPPORT_MPDN) { return true; }
         int[] singleDcRats = mPhone.getContext().getResources().getIntArray(
                 com.android.internal.R.array.config_onlySingleDcAllowed);
         boolean onlySingleDcAllowed = false;
