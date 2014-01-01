@@ -745,6 +745,11 @@ public final class DataConnection extends StateMachine {
             // Only change apn setting if it isn't set, it will
             // only NOT be set only if we're in DcInactiveState.
             mApnSetting = apnContext.getApnSetting();
+            if (mApnSetting == null) {
+                log("initConnection: apnContext.apnSetting returned NULL! ConnectionParams cp=" + cp
+                        + " dc=" + DataConnection.this);
+                return false;
+            }
         } else if (mApnSetting.canHandleType(apnContext.getApnType())) {
             // All is good.
         } else {
