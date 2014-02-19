@@ -3279,10 +3279,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
             numApplications = IccCardStatus.CARD_MAX_APPS;
         }
         cardStatus.mApplications = new IccCardApplicationStatus[numApplications];
+        oldRil = needsOldRilFeature("apptypesim");
 
         for (int i = 0 ; i < numApplications ; i++) {
             appStatus = new IccCardApplicationStatus();
             appStatus.app_type       = appStatus.AppTypeFromRILInt(p.readInt());
+            // Seems the simplest way so we dont mess up the parcel
+            if (oldRil) appStatus.app_type = appStatus.AppTypeFromRILInt(1);
             appStatus.app_state      = appStatus.AppStateFromRILInt(p.readInt());
             appStatus.perso_substate = appStatus.PersoSubstateFromRILInt(p.readInt());
             appStatus.aid            = p.readString();
