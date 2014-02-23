@@ -97,6 +97,7 @@ class RILRequest {
     Message mResult;
     Parcel mParcel;
     RILRequest mNext;
+    long creationTime;
 
     /**
      * Retrieves a new RILRequest instance from the pool.
@@ -126,6 +127,7 @@ class RILRequest {
         rr.mRequest = request;
         rr.mResult = result;
         rr.mParcel = Parcel.obtain();
+	creationTime = System.currentTimeMillis();
 
         if (result != null && result.getTarget() == null) {
             throw new NullPointerException("Message target must not be null");
