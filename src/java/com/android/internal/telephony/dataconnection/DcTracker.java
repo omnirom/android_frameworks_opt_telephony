@@ -1444,6 +1444,10 @@ public final class DcTracker extends DcTrackerBase {
                     apnContext.setReason(Phone.REASON_DATA_DEPENDENCY_MET);
                 } else {
                     apnContext.setReason(Phone.REASON_DATA_ENABLED);
+                    if (apnContext.getState() == DctConstants.State.DISCONNECTING) {
+                        apnContext.setState(DctConstants.State.IDLE);
+                        cleanup = true;
+                    }
                 }
                 if (apnContext.getState() == DctConstants.State.FAILED) {
                     apnContext.setState(DctConstants.State.IDLE);
