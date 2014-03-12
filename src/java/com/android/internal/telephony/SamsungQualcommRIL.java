@@ -78,6 +78,7 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
             int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
         mAudioManager = (AudioManager)mContext.getSystemService(Context.AUDIO_SERVICE);
+        mQANElements = SystemProperties.getInt("ro.ril.telephony.mqanelements", 4);
     }
 
     @Override
