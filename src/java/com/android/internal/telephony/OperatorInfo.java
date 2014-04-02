@@ -151,4 +151,23 @@ public class OperatorInfo implements Parcelable {
                 return new OperatorInfo[size];
             }
         };
+
+    @Override
+    public boolean equals (Object o) {
+        OperatorInfo s;
+
+        try {
+            s = (OperatorInfo) o;
+        } catch (ClassCastException ex) {
+            return false;
+        }
+
+        if (o == null) {
+            return false;
+        }
+
+        return mOperatorAlphaLong.equals(s.getOperatorAlphaLong()) &&
+                mOperatorAlphaShort.equals(s.getOperatorAlphaShort()) &&
+                mOperatorNumeric.equals(s.getOperatorNumeric());
+    }
 }

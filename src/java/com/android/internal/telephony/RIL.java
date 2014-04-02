@@ -3509,12 +3509,14 @@ public class RIL extends BaseCommands implements CommandsInterface {
         ret = new ArrayList<OperatorInfo>(strings.length / mQANElements);
 
         for (int i = 0 ; i < strings.length ; i += mQANElements) {
-            ret.add (
-                new OperatorInfo(
+            OperatorInfo o = new OperatorInfo(
                     strings[i+0],
                     strings[i+1],
                     strings[i+2],
-                    strings[i+3]));
+                    strings[i+3]);
+            if (!ret.contains(o)){
+                ret.add (o);
+            }
         }
 
         return ret;
