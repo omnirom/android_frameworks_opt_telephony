@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "8b77b57d_15f01563",
+        "filename": "src/java/com/android/internal/telephony/OperatorInfo.java",
+        "patchSetId": 2
+      },
+      "lineNbr": 171,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2014-04-02T22:34:12Z",
+      "side": 1,
+      "message": "actually it might be enough to use mOperatorNumeric to get unique entries",
+      "revId": "1eb1f5f17d5584acdde2c8242f9e0c53d47ce5a4",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
