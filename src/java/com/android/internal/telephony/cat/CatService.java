@@ -679,47 +679,50 @@ public class CatService extends Handler implements AppInterface {
                 if (ar == null || ar.result == null || mCurrntCmd == null || mCurrntCmd.mCmdDet == null)
                     break;
                 sendResult = (int[]) ar.result;
-                switch (sendResult[0]) {
-                    default:
-                        CatLog.d(this, "SMS SEND GENERIC FAIL");
-                        if (CallControlResult.fromInt(mCallControlResultCode) ==
-                                CallControlResult.CALL_CONTROL_NOT_ALLOWED)
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
-                        else
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
-                        break;
-                    case SMS_SEND_OK: // '\0'
-                        CatLog.d(this, "SMS SEND OK");
-                        if (CallControlResult.fromInt(mCallControlResultCode) ==
-                                CallControlResult.CALL_CONTROL_NOT_ALLOWED)
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
-                        else
-                            sendTerminalResponse(mCurrntCmd.mCmdDet, ResultCode.OK, false, 0, null);
-                        break;
-                    case SMS_SEND_FAIL:
-                        CatLog.d(this, "SMS SEND FAIL - MEMORY NOT AVAILABLE");
-                        if (CallControlResult.fromInt(mCallControlResultCode) ==
-                                CallControlResult.CALL_CONTROL_NOT_ALLOWED)
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
-                        else
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
-                        break;
-                    case SMS_SEND_RETRY:
-                        CatLog.d(this, "SMS SEND FAIL RETRY");
-                        if (CallControlResult.fromInt(mCallControlResultCode) ==
-                                CallControlResult.CALL_CONTROL_NOT_ALLOWED)
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
-                        else
-                            sendTerminalResponse(mCurrntCmd.mCmdDet,
-                                    ResultCode.NETWORK_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
-                        break;
-                    }
+                try {
+                    switch (sendResult[0]) {
+                        default:
+                            CatLog.d(this, "SMS SEND GENERIC FAIL");
+                            if (CallControlResult.fromInt(mCallControlResultCode) ==
+                                    CallControlResult.CALL_CONTROL_NOT_ALLOWED)
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
+                            else
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
+                            break;
+                        case SMS_SEND_OK: // '\0'
+                            CatLog.d(this, "SMS SEND OK");
+                            if (CallControlResult.fromInt(mCallControlResultCode) ==
+                                    CallControlResult.CALL_CONTROL_NOT_ALLOWED)
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
+                            else
+                                sendTerminalResponse(mCurrntCmd.mCmdDet, ResultCode.OK, false, 0, null);
+                            break;
+                        case SMS_SEND_FAIL:
+                            CatLog.d(this, "SMS SEND FAIL - MEMORY NOT AVAILABLE");
+                            if (CallControlResult.fromInt(mCallControlResultCode) ==
+                                    CallControlResult.CALL_CONTROL_NOT_ALLOWED)
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
+                            else
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
+                            break;
+                        case SMS_SEND_RETRY:
+                            CatLog.d(this, "SMS SEND FAIL RETRY");
+                            if (CallControlResult.fromInt(mCallControlResultCode) ==
+                                    CallControlResult.CALL_CONTROL_NOT_ALLOWED)
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.USIM_CALL_CONTROL_PERMANENT, true, 1, null);
+                            else
+                                sendTerminalResponse(mCurrntCmd.mCmdDet,
+                                        ResultCode.NETWORK_CRNTLY_UNABLE_TO_PROCESS, false, 0, null);
+                            break;
+                        }
+                } catch (java.lang.ArrayIndexOutOfBoundsException e) {
+                }
             }
             break;
         default:
