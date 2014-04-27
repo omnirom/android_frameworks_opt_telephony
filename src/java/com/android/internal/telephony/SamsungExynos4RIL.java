@@ -133,7 +133,8 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
     protected Object getOverridenRequestResponse(int mRequest, Parcel p) {
         switch(mRequest) {
             case RIL_REQUEST_DIAL_EMERGENCY: return responseVoid(p);
-            default: return null;
+            default:
+		throw new RuntimeException("Unrecognized solicited response: " + mRequest);
         }
     }
 

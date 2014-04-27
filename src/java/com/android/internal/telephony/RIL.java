@@ -2356,7 +2356,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     /* This function should be overriden by subclasses to avoid copying whole switch-case statement */
     protected Object getOverridenRequestResponse(int mRequest, Parcel p) {
-        return null;
+	throw new RuntimeException("Unrecognized solicited response: " + mRequest);
     }
 
     /* Should be called after trying overriden types, as it throws exception */
@@ -2516,21 +2516,22 @@ public class RIL extends BaseCommands implements CommandsInterface {
             // either command succeeds or command fails but with data payload
             try {
                 ret = getOverridenRequestResponse(rr.mRequest, p);
-                if(ret == null) {
-                    ret = getDefaultRequestResponse(rr.mRequest, p);
-                }
-            } catch (Throwable tr) {
-                // Exceptions here usually mean invalid RIL responses
+            } catch (Throwable tr2) {
+		try {
+		    ret = getDefaultRequestResponse(rr.mRequest, p);
+		} catch (Throwable tr) {
+		    // Exceptions here usually mean invalid RIL responses
 
-                Rlog.w(RILJ_LOG_TAG, rr.serialString() + "< "
-                        + requestToString(rr.mRequest)
-                        + " exception, possible invalid RIL response", tr);
+		    Rlog.w(RILJ_LOG_TAG, rr.serialString() + "< "
+			   + requestToString(rr.mRequest)
+			   + " exception, possible invalid RIL response", tr);
 
-                if (rr.mResult != null) {
-                    AsyncResult.forMessage(rr.mResult, null, tr);
-                    rr.mResult.sendToTarget();
-                }
+		    if (rr.mResult != null) {
+			AsyncResult.forMessage(rr.mResult, null, tr);
+			rr.mResult.sendToTarget();
+		    }
                 return rr;
+		}
             }
         }
 

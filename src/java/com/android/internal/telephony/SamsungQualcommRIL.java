@@ -347,7 +347,8 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
             // this problemaic on sprint, lte won't start, response is slow
             //speeds up response time on eherpderpd/lte networks
             case RIL_REQUEST_OPERATOR: return operatorCheck(p);
-            default: return null;
+            default:
+		throw new RuntimeException("Unrecognized solicited response: " + mRequest);
         }
     }
 

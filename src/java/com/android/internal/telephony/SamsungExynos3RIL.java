@@ -116,7 +116,8 @@ public class SamsungExynos3RIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_LAST_CALL_FAIL_CAUSE: return responseLastCallFailCause(p);
             case RIL_REQUEST_VOICE_REGISTRATION_STATE: return responseVoiceRegistrationState(p);
             case RIL_REQUEST_CDMA_SUBSCRIPTION: return responseCdmaSubscription(p);
-            default: return null;
+            default:
+		throw new RuntimeException("Unrecognized solicited response: " + mRequest);
         }
     }
 

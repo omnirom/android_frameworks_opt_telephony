@@ -386,7 +386,8 @@ public class QualcommSharedRIL extends RIL implements CommandsInterface {
             case 106: return responseStrings(p); // RIL_REQUEST_CDMA_PRL_VERSION
             case 107: return responseInts(p); // RIL_REQUEST_IMS_REGISTRATION_STATE
             case 220: return responseStrings(p); //RIL_REQUEST_BASEBAND_VERSION
-            default: return null;
+            default:
+		throw new RuntimeException("Unrecognized solicited response: " + mRequest);
         }
     }
 
