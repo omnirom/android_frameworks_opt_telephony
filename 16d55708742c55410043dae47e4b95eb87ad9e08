@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "8b77b57d_0951d9de",
+        "filename": "src/java/com/android/internal/telephony/RIL.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 2520,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2014-04-27T17:48:53Z",
+      "side": 1,
+      "message": "ahem - tabs? :)",
+      "revId": "16d55708742c55410043dae47e4b95eb87ad9e08",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
