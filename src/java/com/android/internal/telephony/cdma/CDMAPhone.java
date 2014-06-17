@@ -1581,7 +1581,7 @@ public class CDMAPhone extends PhoneBase {
                 getContext().getContentResolver().insert(uri, map);
 
                 // Updates MCC MNC device configuration information
-                MccTable.updateMccMncConfiguration(mContext, operatorNumeric);
+                MccTable.updateMccMncConfiguration(mContext, operatorNumeric, false);
 
                 return true;
             } catch (SQLException e) {
