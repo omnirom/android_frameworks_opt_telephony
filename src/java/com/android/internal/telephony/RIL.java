@@ -2487,6 +2487,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
         case RIL_REQUEST_VOICE_RADIO_TECH: return responseInts(p);
         case RIL_REQUEST_GET_CELL_INFO_LIST: return responseCellInfoList(p);
         case RIL_REQUEST_SET_UNSOL_CELL_INFO_LIST_RATE: return responseVoid(p);
+        case RIL_REQUEST_SET_INITIAL_ATTACH_APN: return responseVoid(p);
+        case RIL_REQUEST_IMS_REGISTRATION_STATE: return responseInts(p);
+        case RIL_REQUEST_IMS_SEND_SMS: return responseSMS(p);
         default:
             throw new RuntimeException("Unrecognized solicited response: " + mRequest);
         }
