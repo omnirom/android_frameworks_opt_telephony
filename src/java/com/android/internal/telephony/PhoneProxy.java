@@ -1684,4 +1684,9 @@ public class PhoneProxy extends Handler implements Phone {
         pw.flush();
         pw.println("++++++++++++++++++++++++++++++++");
     }
+
+    @Override
+    public void setLocalCallHold(boolean lchStatus) {
+        mActivePhone.setLocalCallHold(lchStatus);
+    }
 }

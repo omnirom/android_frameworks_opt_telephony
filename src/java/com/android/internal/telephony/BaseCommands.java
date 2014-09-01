@@ -910,4 +910,8 @@ public abstract class BaseCommands implements CommandsInterface {
           mLceInfoRegistrant = null;
       }
     }
+
+    @Override
+    public void setLocalCallHold(boolean lchStatus) {
+    }
 }
