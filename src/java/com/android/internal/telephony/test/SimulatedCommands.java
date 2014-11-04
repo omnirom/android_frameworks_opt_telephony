@@ -27,6 +27,7 @@ import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
 import com.android.internal.telephony.dataconnection.DataCallResponse;
+import com.android.internal.telephony.dataconnection.DataProfile;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.gsm.CallFailCause;
@@ -820,8 +821,9 @@ public final class SimulatedCommands extends BaseCommands
      * Query the list of band mode supported by RF.
      *
      * @param result is callback message
-     *        ((AsyncResult)response.obj).result  is an int[] with every
-     *        element representing one available BM_*_BAND
+     *        ((AsyncResult)response.obj).result  is an int[] where int[0] is
+     *        the size of the array and the rest of each element representing
+     *        one available BM_*_BAND
      */
     @Override
     public void queryAvailableBandMode (Message result) {
@@ -991,6 +993,19 @@ public final class SimulatedCommands extends BaseCommands
      */
     @Override
     public void sendSMS (String smscPDU, String pdu, Message result) {unimplemented(result);}
+
+    /**
+     * Send an SMS message, Identical to sendSMS,
+     * except that more messages are expected to be sent soon
+     * smscPDU is smsc address in PDU form GSM BCD format prefixed
+     *      by a length byte (as expected by TS 27.005) or NULL for default SMSC
+     * pdu is SMS in PDU format as an ASCII hex string
+     *      less the SMSC address
+     */
+    @Override
+    public void sendSMSExpectMore (String smscPDU, String pdu, Message result) {
+        unimplemented(result);
+    }
 
     @Override
     public void deleteSmsOnSim(int index, Message response) {
@@ -1642,6 +1657,11 @@ public final class SimulatedCommands extends BaseCommands
     }
 
     @Override
+    public void requestIccSimAuthentication(int authContext, String data, String aid, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
     public void getVoiceRadioTechnology(Message response) {
         unimplemented(response);
     }
@@ -1664,6 +1684,10 @@ public final class SimulatedCommands extends BaseCommands
     }
 
     @Override
+    public void setDataProfile(DataProfile[] dps, Message result) {
+    }
+
+    @Override
     public void getImsRegistrationState(Message response) {
         unimplemented(response);
     }
@@ -1678,5 +1702,57 @@ public final class SimulatedCommands extends BaseCommands
     public void sendImsGsmSms(String smscPDU, String pdu,
             int retry, int messageRef, Message response){
         unimplemented(response);
+    }
+
+    @Override
+    public void iccOpenLogicalChannel(String AID, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void iccCloseLogicalChannel(int channel, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void iccTransmitApduLogicalChannel(int channel, int cla, int instruction,
+            int p1, int p2, int p3, String data, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void iccTransmitApduBasicChannel(int cla, int instruction, int p1, int p2,
+            int p3, String data, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void nvReadItem(int itemID, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void nvWriteItem(int itemID, String itemValue, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void nvWriteCdmaPrl(byte[] preferredRoamingList, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void nvResetConfig(int resetType, Message response) {
+        unimplemented(response);
+    }
+
+    @Override
+    public void getHardwareConfig(Message result) {
+        unimplemented(result);
+    }
+
+    @Override
+    public void requestShutdown(Message result) {
+        setRadioState(RadioState.RADIO_UNAVAILABLE);
     }
 }

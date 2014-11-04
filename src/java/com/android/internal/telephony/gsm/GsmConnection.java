@@ -23,6 +23,7 @@ import android.os.Message;
 import android.os.PowerManager;
 import android.os.Registrant;
 import android.os.SystemClock;
+import android.telephony.DisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.ServiceState;
@@ -45,10 +46,7 @@ public class GsmConnection extends Connection {
     GsmCallTracker mOwner;
     GsmCall mParent;
 
-    String mAddress;     // MAY BE NULL!!!
-    String mDialString;          // outgoing calls only
     String mPostDialString;      // outgoing calls only
-    boolean mIsIncoming;
     boolean mDisconnected;
 
     int mIndex;          // index in GsmCallTracker.connections[], -1 if unassigned
@@ -58,26 +56,16 @@ public class GsmConnection extends Connection {
      * These time/timespan values are based on System.currentTimeMillis(),
      * i.e., "wall clock" time.
      */
-    long mCreateTime;
-    long mConnectTime;
     long mDisconnectTime;
-
-    /*
-     * These time/timespan values are based on SystemClock.elapsedRealTime(),
-     * i.e., time since boot.  They are appropriate for comparison and
-     * calculating deltas.
-     */
-    long mConnectTimeReal;
-    long mDuration;
-    long mHoldingStartTime;  // The time when the Connection last transitioned
-                            // into HOLDING
 
     int mNextPostDialChar;       // index into postDialString
 
-    DisconnectCause mCause = DisconnectCause.NOT_DISCONNECTED;
+    int mCause = DisconnectCause.NOT_DISCONNECTED;
     PostDialState mPostDialState = PostDialState.NOT_STARTED;
-    int mNumberPresentation = PhoneConstants.PRESENTATION_ALLOWED;
     UUSInfo mUusInfo;
+    int mPreciseCause = 0;
+
+    Connection mOrigConnection;
 
     Handler mHandler;
 
@@ -184,6 +172,11 @@ public class GsmConnection extends Connection {
         // and therefore don't need to compare the phone number anyway.
         if (! (mIsIncoming || c.isMT)) return true;
 
+        // A new call appearing by SRVCC may have invalid number
+        //  if IMS service is not tightly coupled with cellular modem stack.
+        // Thus we prefer the preexisting handover connection instance.
+        if (mOrigConnection != null) return true;
+
         // ... but we can compare phone numbers on MT calls, and we have
         // no control over when they begin, so we might as well
 
@@ -192,39 +185,13 @@ public class GsmConnection extends Connection {
     }
 
     @Override
-    public String getAddress() {
-        return mAddress;
-    }
-
-    @Override
     public GsmCall getCall() {
         return mParent;
     }
 
     @Override
-    public long getCreateTime() {
-        return mCreateTime;
-    }
-
-    @Override
-    public long getConnectTime() {
-        return mConnectTime;
-    }
-
-    @Override
     public long getDisconnectTime() {
         return mDisconnectTime;
-    }
-
-    @Override
-    public long getDurationMillis() {
-        if (mConnectTimeReal == 0) {
-            return 0;
-        } else if (mDuration == 0) {
-            return SystemClock.elapsedRealtime() - mConnectTimeReal;
-        } else {
-            return mDuration;
-        }
     }
 
     @Override
@@ -238,13 +205,8 @@ public class GsmConnection extends Connection {
     }
 
     @Override
-    public DisconnectCause getDisconnectCause() {
+    public int getDisconnectCause() {
         return mCause;
-    }
-
-    @Override
-    public boolean isIncoming() {
-        return mIsIncoming;
     }
 
     @Override
@@ -330,10 +292,15 @@ public class GsmConnection extends Connection {
     void
     onHangupLocal() {
         mCause = DisconnectCause.LOCAL;
+        mPreciseCause = 0;
     }
 
-    DisconnectCause
-    disconnectCauseFromCode(int causeCode) {
+    /**
+     * Maps RIL call disconnect code to {@link DisconnectCause}.
+     * @param causeCode RIL disconnect code
+     * @return the corresponding value from {@link DisconnectCause}
+     */
+    int disconnectCauseFromCode(int causeCode) {
         /**
          * See 22.001 Annex F.4 for mapping of cause codes
          * to local tones
@@ -368,9 +335,7 @@ public class GsmConnection extends Connection {
             default:
                 GSMPhone phone = mOwner.mPhone;
                 int serviceState = phone.getServiceState().getState();
-                UiccCardApplication cardApp = UiccController
-                        .getInstance()
-                        .getUiccCardApplication(UiccController.APP_FAM_3GPP);
+                UiccCardApplication cardApp = phone.getUiccCardApplication();
                 AppState uiccAppState = (cardApp != null) ? cardApp.getState() :
                                                             AppState.APPSTATE_UNKNOWN;
                 if (serviceState == ServiceState.STATE_POWER_OFF) {
@@ -402,12 +367,15 @@ public class GsmConnection extends Connection {
 
     /*package*/ void
     onRemoteDisconnect(int causeCode) {
+        this.mPreciseCause = causeCode;
         onDisconnect(disconnectCauseFromCode(causeCode));
     }
 
-    /** Called when the radio indicates the connection has been disconnected */
-    /*package*/ boolean
-    onDisconnect(DisconnectCause cause) {
+    /**
+     * Called when the radio indicates the connection has been disconnected.
+     * @param cause call disconnect cause; values are defined in {@link DisconnectCause}
+     */
+    /*package*/ boolean onDisconnect(int cause) {
         boolean changed = false;
 
         mCause = cause;
@@ -426,7 +394,10 @@ public class GsmConnection extends Connection {
             if (mParent != null) {
                 changed = mParent.connectionDisconnected(this);
             }
+
+            mOrigConnection = null;
         }
+        clearPostDialListeners();
         releaseWakeLock();
         return changed;
     }
@@ -441,10 +412,17 @@ public class GsmConnection extends Connection {
 
         newParent = parentFromDCState(dc.state);
 
-        if (!equalsHandlesNulls(mAddress, dc.number)) {
-            if (Phone.DEBUG_PHONE) log("update: phone # changed!");
-            mAddress = dc.number;
-            changed = true;
+        //Ignore dc.number and dc.name in case of a handover connection
+        if (mOrigConnection != null) {
+            if (Phone.DEBUG_PHONE) log("update: mOrigConnection is not null");
+        } else {
+            log(" mNumberConverted " + mNumberConverted);
+            if (!equalsHandlesNulls(mAddress, dc.number) && (!mNumberConverted
+                    || !equalsHandlesNulls(mConvertedNumber, dc.number))) {
+                if (Phone.DEBUG_PHONE) log("update: phone # changed!");
+                mAddress = dc.number;
+                changed = true;
+            }
         }
 
         // A null cnapName should be the same as ""
@@ -612,6 +590,7 @@ public class GsmConnection extends Connection {
         if (mPartialWakeLock.isHeld()) {
             Rlog.e(LOG_TAG, "[GSMConn] UNEXPECTED; mPartialWakeLock is held when finalizing.");
         }
+        clearPostDialListeners();
         releaseWakeLock();
     }
 
@@ -721,6 +700,7 @@ public class GsmConnection extends Connection {
             releaseWakeLock();
         }
         mPostDialState = s;
+        notifyPostDialListeners();
     }
 
     private void
@@ -757,5 +737,34 @@ public class GsmConnection extends Connection {
     @Override
     public UUSInfo getUUSInfo() {
         return mUusInfo;
+    }
+
+    public int getPreciseDisconnectCause() {
+        return mPreciseCause;
+    }
+
+    @Override
+    public void migrateFrom(Connection c) {
+        if (c == null) return;
+
+        super.migrateFrom(c);
+
+        this.mUusInfo = c.getUUSInfo();
+
+        this.setUserData(c.getUserData());
+    }
+
+    @Override
+    public Connection getOrigConnection() {
+        return mOrigConnection;
+    }
+
+    @Override
+    public boolean isMultiparty() {
+        if (mOrigConnection != null) {
+            return mOrigConnection.isMultiparty();
+        }
+
+        return false;
     }
 }

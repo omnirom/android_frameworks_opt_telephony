@@ -23,6 +23,7 @@ import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.UUSInfo;
 
 import android.os.SystemClock;
+import android.telephony.DisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.PhoneNumberUtils;
 
@@ -51,7 +52,7 @@ abstract class SipConnectionBase extends Connection {
     private long mHoldingStartTime;  // The time when the Connection last transitioned
                             // into HOLDING
 
-    private DisconnectCause mCause = DisconnectCause.NOT_DISCONNECTED;
+    private int mCause = DisconnectCause.NOT_DISCONNECTED;
     private PostDialState mPostDialState = PostDialState.NOT_STARTED;
 
     SipConnectionBase(String dialString) {
@@ -129,12 +130,12 @@ abstract class SipConnectionBase extends Connection {
     }
 
     @Override
-    public DisconnectCause getDisconnectCause() {
+    public int getDisconnectCause() {
         if (VDBG) log("getDisconnectCause: ret=" + mCause);
         return mCause;
     }
 
-    void setDisconnectCause(DisconnectCause cause) {
+    void setDisconnectCause(int cause) {
         if (DBG) log("setDisconnectCause: prev=" + mCause + " new=" + cause);
         mCause = cause;
     }
@@ -191,5 +192,30 @@ abstract class SipConnectionBase extends Connection {
         // FIXME: what's this for SIP?
         if (VDBG) log("getUUSInfo: ? ret=null");
         return null;
+    }
+
+    @Override
+    public int getPreciseDisconnectCause() {
+        return 0;
+    }
+
+    @Override
+    public long getHoldingStartTime() {
+        return mHoldingStartTime;
+    }
+
+    @Override
+    public long getConnectTimeReal() {
+        return mConnectTimeReal;
+    }
+
+    @Override
+    public Connection getOrigConnection() {
+        return null;
+    }
+
+    @Override
+    public boolean isMultiparty() {
+        return false;
     }
 }

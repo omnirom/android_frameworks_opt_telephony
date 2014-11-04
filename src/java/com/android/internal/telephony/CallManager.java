@@ -16,21 +16,25 @@
 
 package com.android.internal.telephony;
 
+import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.sip.SipPhone;
 
 import android.content.Context;
-import android.media.AudioManager;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
 import android.os.RegistrantList;
 import android.os.Registrant;
+import android.telecom.VideoProfile;
+import android.telephony.PhoneNumberUtils;
+import android.telephony.TelephonyManager;
 import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.telephony.Rlog;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 
@@ -78,6 +82,7 @@ public final class CallManager {
     private static final int EVENT_SUPP_SERVICE_FAILED = 117;
     private static final int EVENT_SERVICE_STATE_CHANGED = 118;
     private static final int EVENT_POST_DIAL_CHARACTER = 119;
+    private static final int EVENT_ONHOLD_TONE = 120;
 
     // Singleton instance
     private static final CallManager INSTANCE = new CallManager();
@@ -96,6 +101,9 @@ public final class CallManager {
 
     // empty connection list
     private final ArrayList<Connection> mEmptyConnections = new ArrayList<Connection>();
+
+    // mapping of phones to registered handler instances used for callbacks from RIL
+    private final HashMap<Phone, CallManagerHandler> mHandlerMap = new HashMap<>();
 
     // default phone as the first phone registered, which is PhoneBase obj
     private Phone mDefaultPhone;
@@ -122,6 +130,9 @@ public final class CallManager {
     = new RegistrantList();
 
     protected final RegistrantList mRingbackToneRegistrants
+    = new RegistrantList();
+
+    protected final RegistrantList mOnHoldToneRegistrants
     = new RegistrantList();
 
     protected final RegistrantList mInCallVoicePrivacyOnRegistrants
@@ -231,6 +242,21 @@ public final class CallManager {
     }
 
     /**
+     * get Phone object corresponds to subId
+     * @return Phone
+     */
+    private Phone getPhone(long subId) {
+        Phone p = null;
+        for (Phone phone : mPhones) {
+            if (phone.getSubId() == subId && !(phone instanceof ImsPhone)) {
+                p = phone;
+                break;
+            }
+        }
+        return p;
+    }
+
+    /**
      * Get current coarse-grained voice call state.
      * If the Call Manager has an active call and call waiting occurs,
      * then the phone state is RINGING not OFFHOOK
@@ -244,6 +270,27 @@ public final class CallManager {
                 s = PhoneConstants.State.RINGING;
             } else if (phone.getState() == PhoneConstants.State.OFFHOOK) {
                 if (s == PhoneConstants.State.IDLE) s = PhoneConstants.State.OFFHOOK;
+            }
+        }
+        return s;
+    }
+
+    /**
+     * Get current coarse-grained voice call state on a subId.
+     * If the Call Manager has an active call and call waiting occurs,
+     * then the phone state is RINGING not OFFHOOK
+     *
+     */
+    public PhoneConstants.State getState(long subId) {
+        PhoneConstants.State s = PhoneConstants.State.IDLE;
+
+        for (Phone phone : mPhones) {
+            if (phone.getSubId() == subId) {
+                if (phone.getState() == PhoneConstants.State.RINGING) {
+                    s = PhoneConstants.State.RINGING;
+                } else if (phone.getState() == PhoneConstants.State.OFFHOOK) {
+                    if (s == PhoneConstants.State.IDLE) s = PhoneConstants.State.OFFHOOK;
+                }
             }
         }
         return s;
@@ -282,6 +329,65 @@ public final class CallManager {
             }
         }
         return resultState;
+    }
+
+    /**
+     * @return the Phone service state corresponds to subId
+     */
+    public int getServiceState(long subId) {
+        int resultState = ServiceState.STATE_OUT_OF_SERVICE;
+
+        for (Phone phone : mPhones) {
+            if (phone.getSubId() == subId) {
+                int serviceState = phone.getServiceState().getState();
+                if (serviceState == ServiceState.STATE_IN_SERVICE) {
+                    // IN_SERVICE has the highest priority
+                    resultState = serviceState;
+                    break;
+                } else if (serviceState == ServiceState.STATE_OUT_OF_SERVICE) {
+                    // OUT_OF_SERVICE replaces EMERGENCY_ONLY and POWER_OFF
+                    // Note: EMERGENCY_ONLY is not in use at this moment
+                    if ( resultState == ServiceState.STATE_EMERGENCY_ONLY ||
+                            resultState == ServiceState.STATE_POWER_OFF) {
+                        resultState = serviceState;
+                    }
+                } else if (serviceState == ServiceState.STATE_EMERGENCY_ONLY) {
+                    if (resultState == ServiceState.STATE_POWER_OFF) {
+                        resultState = serviceState;
+                    }
+                }
+            }
+        }
+        return resultState;
+    }
+
+    /**
+     * @return the phone associated with any call
+     */
+    public Phone getPhoneInCall() {
+        Phone phone = null;
+        if (!getFirstActiveRingingCall().isIdle()) {
+            phone = getFirstActiveRingingCall().getPhone();
+        } else if (!getActiveFgCall().isIdle()) {
+            phone = getActiveFgCall().getPhone();
+        } else {
+            // If BG call is idle, we return default phone
+            phone = getFirstActiveBgCall().getPhone();
+        }
+        return phone;
+    }
+
+    public Phone getPhoneInCall(long subId) {
+        Phone phone = null;
+        if (!getFirstActiveRingingCall(subId).isIdle()) {
+            phone = getFirstActiveRingingCall(subId).getPhone();
+        } else if (!getActiveFgCall(subId).isIdle()) {
+            phone = getActiveFgCall(subId).getPhone();
+        } else {
+            // If BG call is idle, we return default phone
+            phone = getFirstActiveBgCall(subId).getPhone();
+        }
+        return phone;
     }
 
     /**
@@ -326,6 +432,11 @@ public final class CallManager {
                         phone.getPhoneName() + " " + phone + ")");
             }
 
+            Phone vPhone = basePhone.getImsPhone();
+            if (vPhone != null) {
+               unregisterPhone(vPhone);
+            }
+
             mPhones.remove(basePhone);
             mRingingCalls.remove(basePhone.getRingingCall());
             mBackgroundCalls.remove(basePhone.getBackgroundCall());
@@ -356,10 +467,26 @@ public final class CallManager {
     }
 
     /**
+     * @return the phone associated with the foreground call
+     * of a particular subId
+     */
+    public Phone getFgPhone(long subId) {
+        return getActiveFgCall(subId).getPhone();
+    }
+
+    /**
      * @return the phone associated with the background call
      */
     public Phone getBgPhone() {
         return getFirstActiveBgCall().getPhone();
+    }
+
+    /**
+     * @return the phone associated with the background call
+     * of a particular subId
+     */
+    public Phone getBgPhone(long subId) {
+        return getFirstActiveBgCall(subId).getPhone();
     }
 
     /**
@@ -369,65 +496,12 @@ public final class CallManager {
         return getFirstActiveRingingCall().getPhone();
     }
 
-    public void setAudioMode() {
-        Context context = getContext();
-        if (context == null) return;
-        AudioManager audioManager = (AudioManager)
-                context.getSystemService(Context.AUDIO_SERVICE);
-
-        // change the audio mode and request/abandon audio focus according to phone state,
-        // but only on audio mode transitions
-        switch (getState()) {
-            case RINGING:
-                int curAudioMode = audioManager.getMode();
-                if (curAudioMode != AudioManager.MODE_RINGTONE) {
-                    // only request audio focus if the ringtone is going to be heard
-                    if (audioManager.getStreamVolume(AudioManager.STREAM_RING) > 0) {
-                        if (VDBG) Rlog.d(LOG_TAG, "requestAudioFocus on STREAM_RING");
-                        audioManager.requestAudioFocusForCall(AudioManager.STREAM_RING,
-                                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-                    }
-                    if(!mSpeedUpAudioForMtCall) {
-                        audioManager.setMode(AudioManager.MODE_RINGTONE);
-                    }
-                }
-
-                if (mSpeedUpAudioForMtCall && (curAudioMode != AudioManager.MODE_IN_CALL)) {
-                    audioManager.setMode(AudioManager.MODE_IN_CALL);
-                }
-                break;
-            case OFFHOOK:
-                Phone offhookPhone = getFgPhone();
-                if (getActiveFgCallState() == Call.State.IDLE) {
-                    // There is no active Fg calls, the OFFHOOK state
-                    // is set by the Bg call. So set the phone to bgPhone.
-                    offhookPhone = getBgPhone();
-                }
-
-                int newAudioMode = AudioManager.MODE_IN_CALL;
-                if (offhookPhone instanceof SipPhone) {
-                    // enable IN_COMMUNICATION audio mode instead for sipPhone
-                    newAudioMode = AudioManager.MODE_IN_COMMUNICATION;
-                }
-                if (audioManager.getMode() != newAudioMode || mSpeedUpAudioForMtCall) {
-                    // request audio focus before setting the new mode
-                    if (VDBG) Rlog.d(LOG_TAG, "requestAudioFocus on STREAM_VOICE_CALL");
-                    audioManager.requestAudioFocusForCall(AudioManager.STREAM_VOICE_CALL,
-                            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-                    audioManager.setMode(newAudioMode);
-                }
-                mSpeedUpAudioForMtCall = false;
-                break;
-            case IDLE:
-                if (audioManager.getMode() != AudioManager.MODE_NORMAL) {
-                    audioManager.setMode(AudioManager.MODE_NORMAL);
-                    if (VDBG) Rlog.d(LOG_TAG, "abandonAudioFocus");
-                    // abandon audio focus after the mode has been set back to normal
-                    audioManager.abandonAudioFocusForCall();
-                }
-                mSpeedUpAudioForMtCall = false;
-                break;
-        }
+    /**
+     * @return the phone associated with the ringing call
+     * of a particular subId
+     */
+    public Phone getRingingPhone(long subId) {
+        return getFirstActiveRingingCall(subId).getPhone();
     }
 
     private Context getContext() {
@@ -436,68 +510,103 @@ public final class CallManager {
     }
 
     private void registerForPhoneStates(Phone phone) {
-        // for common events supported by all phones
-        phone.registerForPreciseCallStateChanged(mHandler, EVENT_PRECISE_CALL_STATE_CHANGED, null);
-        phone.registerForDisconnect(mHandler, EVENT_DISCONNECT, null);
-        phone.registerForNewRingingConnection(mHandler, EVENT_NEW_RINGING_CONNECTION, null);
-        phone.registerForUnknownConnection(mHandler, EVENT_UNKNOWN_CONNECTION, null);
-        phone.registerForIncomingRing(mHandler, EVENT_INCOMING_RING, null);
-        phone.registerForRingbackTone(mHandler, EVENT_RINGBACK_TONE, null);
-        phone.registerForInCallVoicePrivacyOn(mHandler, EVENT_IN_CALL_VOICE_PRIVACY_ON, null);
-        phone.registerForInCallVoicePrivacyOff(mHandler, EVENT_IN_CALL_VOICE_PRIVACY_OFF, null);
-        phone.registerForDisplayInfo(mHandler, EVENT_DISPLAY_INFO, null);
-        phone.registerForSignalInfo(mHandler, EVENT_SIGNAL_INFO, null);
-        phone.registerForResendIncallMute(mHandler, EVENT_RESEND_INCALL_MUTE, null);
-        phone.registerForMmiInitiate(mHandler, EVENT_MMI_INITIATE, null);
-        phone.registerForMmiComplete(mHandler, EVENT_MMI_COMPLETE, null);
-        phone.registerForSuppServiceFailed(mHandler, EVENT_SUPP_SERVICE_FAILED, null);
-        phone.registerForServiceStateChanged(mHandler, EVENT_SERVICE_STATE_CHANGED, null);
+        // We need to keep a mapping of handler to Phone for proper unregistration.
+        // TODO: Clean up this solution as it is just a work around for each Phone instance
+        // using the same Handler to register with the RIL. When time permits, we should consider
+        // moving the handler (or the reference ot the handler) into the Phone object.
+        // See b/17414427.
+        CallManagerHandler handler = mHandlerMap.get(phone);
+        if (handler != null) {
+            Rlog.d(LOG_TAG, "This phone has already been registered.");
+            return;
+        }
 
-        // for events supported only by GSM and CDMA phone
+        // New registration, create a new handler instance and register the phone.
+        handler = new CallManagerHandler();
+        mHandlerMap.put(phone, handler);
+
+        // for common events supported by all phones
+        phone.registerForPreciseCallStateChanged(handler, EVENT_PRECISE_CALL_STATE_CHANGED, null);
+        phone.registerForDisconnect(handler, EVENT_DISCONNECT, null);
+        phone.registerForNewRingingConnection(handler, EVENT_NEW_RINGING_CONNECTION, null);
+        phone.registerForUnknownConnection(handler, EVENT_UNKNOWN_CONNECTION, null);
+        phone.registerForIncomingRing(handler, EVENT_INCOMING_RING, null);
+        phone.registerForRingbackTone(handler, EVENT_RINGBACK_TONE, null);
+        phone.registerForInCallVoicePrivacyOn(handler, EVENT_IN_CALL_VOICE_PRIVACY_ON, null);
+        phone.registerForInCallVoicePrivacyOff(handler, EVENT_IN_CALL_VOICE_PRIVACY_OFF, null);
+        phone.registerForDisplayInfo(handler, EVENT_DISPLAY_INFO, null);
+        phone.registerForSignalInfo(handler, EVENT_SIGNAL_INFO, null);
+        phone.registerForResendIncallMute(handler, EVENT_RESEND_INCALL_MUTE, null);
+        phone.registerForMmiInitiate(handler, EVENT_MMI_INITIATE, null);
+        phone.registerForMmiComplete(handler, EVENT_MMI_COMPLETE, null);
+        phone.registerForSuppServiceFailed(handler, EVENT_SUPP_SERVICE_FAILED, null);
+        phone.registerForServiceStateChanged(handler, EVENT_SERVICE_STATE_CHANGED, null);
+
+        // for events supported only by GSM, CDMA and IMS phone
         if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_GSM ||
-                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
-            phone.setOnPostDialCharacter(mHandler, EVENT_POST_DIAL_CHARACTER, null);
+                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA ||
+                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_IMS) {
+            phone.setOnPostDialCharacter(handler, EVENT_POST_DIAL_CHARACTER, null);
         }
 
         // for events supported only by CDMA phone
         if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA ){
-            phone.registerForCdmaOtaStatusChange(mHandler, EVENT_CDMA_OTA_STATUS_CHANGE, null);
-            phone.registerForSubscriptionInfoReady(mHandler, EVENT_SUBSCRIPTION_INFO_READY, null);
-            phone.registerForCallWaiting(mHandler, EVENT_CALL_WAITING, null);
-            phone.registerForEcmTimerReset(mHandler, EVENT_ECM_TIMER_RESET, null);
+            phone.registerForCdmaOtaStatusChange(handler, EVENT_CDMA_OTA_STATUS_CHANGE, null);
+            phone.registerForSubscriptionInfoReady(handler, EVENT_SUBSCRIPTION_INFO_READY, null);
+            phone.registerForCallWaiting(handler, EVENT_CALL_WAITING, null);
+            phone.registerForEcmTimerReset(handler, EVENT_ECM_TIMER_RESET, null);
+        }
+
+        // for events supported only by IMS phone
+        if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_IMS) {
+            phone.registerForOnHoldTone(handler, EVENT_ONHOLD_TONE, null);
         }
     }
 
     private void unregisterForPhoneStates(Phone phone) {
-        //  for common events supported by all phones
-        phone.unregisterForPreciseCallStateChanged(mHandler);
-        phone.unregisterForDisconnect(mHandler);
-        phone.unregisterForNewRingingConnection(mHandler);
-        phone.unregisterForUnknownConnection(mHandler);
-        phone.unregisterForIncomingRing(mHandler);
-        phone.unregisterForRingbackTone(mHandler);
-        phone.unregisterForInCallVoicePrivacyOn(mHandler);
-        phone.unregisterForInCallVoicePrivacyOff(mHandler);
-        phone.unregisterForDisplayInfo(mHandler);
-        phone.unregisterForSignalInfo(mHandler);
-        phone.unregisterForResendIncallMute(mHandler);
-        phone.unregisterForMmiInitiate(mHandler);
-        phone.unregisterForMmiComplete(mHandler);
-        phone.unregisterForSuppServiceFailed(mHandler);
-        phone.unregisterForServiceStateChanged(mHandler);
+        // Make sure that we clean up our map of handlers to Phones.
+        CallManagerHandler handler = mHandlerMap.get(phone);
+        if (handler != null) {
+            Rlog.e(LOG_TAG, "Could not find Phone handler for unregistration");
+            return;
+        }
+        mHandlerMap.remove(phone);
 
-        // for events supported only by GSM and CDMA phone
+        //  for common events supported by all phones
+        phone.unregisterForPreciseCallStateChanged(handler);
+        phone.unregisterForDisconnect(handler);
+        phone.unregisterForNewRingingConnection(handler);
+        phone.unregisterForUnknownConnection(handler);
+        phone.unregisterForIncomingRing(handler);
+        phone.unregisterForRingbackTone(handler);
+        phone.unregisterForInCallVoicePrivacyOn(handler);
+        phone.unregisterForInCallVoicePrivacyOff(handler);
+        phone.unregisterForDisplayInfo(handler);
+        phone.unregisterForSignalInfo(handler);
+        phone.unregisterForResendIncallMute(handler);
+        phone.unregisterForMmiInitiate(handler);
+        phone.unregisterForMmiComplete(handler);
+        phone.unregisterForSuppServiceFailed(handler);
+        phone.unregisterForServiceStateChanged(handler);
+
+        // for events supported only by GSM, CDMA and IMS phone
         if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_GSM ||
-                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
+                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA ||
+                phone.getPhoneType() == PhoneConstants.PHONE_TYPE_IMS) {
             phone.setOnPostDialCharacter(null, EVENT_POST_DIAL_CHARACTER, null);
         }
 
         // for events supported only by CDMA phone
         if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA ){
-            phone.unregisterForCdmaOtaStatusChange(mHandler);
-            phone.unregisterForSubscriptionInfoReady(mHandler);
-            phone.unregisterForCallWaiting(mHandler);
-            phone.unregisterForEcmTimerReset(mHandler);
+            phone.unregisterForCdmaOtaStatusChange(handler);
+            phone.unregisterForSubscriptionInfoReady(handler);
+            phone.unregisterForCallWaiting(handler);
+            phone.unregisterForEcmTimerReset(handler);
+        }
+
+        // for events supported only by IMS phone
+        if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_IMS) {
+            phone.unregisterForOnHoldTone(handler);
         }
     }
 
@@ -540,24 +649,8 @@ public final class CallManager {
             }
         }
 
-        Context context = getContext();
-        if (context == null) {
-            Rlog.d(LOG_TAG, "Speedup Audio Path enhancement: Context is null");
-        } else if (context.getResources().getBoolean(
-                com.android.internal.R.bool.config_speed_up_audio_on_mt_calls)) {
-            Rlog.d(LOG_TAG, "Speedup Audio Path enhancement");
-            AudioManager audioManager = (AudioManager)
-                    context.getSystemService(Context.AUDIO_SERVICE);
-            int currMode = audioManager.getMode();
-            if ((currMode != AudioManager.MODE_IN_CALL) && !(ringingPhone instanceof SipPhone)) {
-                Rlog.d(LOG_TAG, "setAudioMode Setting audio mode from " +
-                                currMode + " to " + AudioManager.MODE_IN_CALL);
-                audioManager.setMode(AudioManager.MODE_IN_CALL);
-                mSpeedUpAudioForMtCall = true;
-            }
-        }
-
-        ringingPhone.acceptCall();
+        // We only support the AUDIO_ONLY video state in this scenario.
+        ringingPhone.acceptCall(VideoProfile.VideoState.AUDIO_ONLY);
 
         if (VDBG) {
             Rlog.d(LOG_TAG, "End acceptCall(" +ringingCall + ")");
@@ -697,6 +790,28 @@ public final class CallManager {
     }
 
     /**
+     * Whether or not the phone can conference in the current phone
+     * state--that is, one call holding and one call active.
+     * This method consider the phone object which is specific
+     * to the provided subId.
+     * @return true if the phone can conference; false otherwise.
+     */
+    public boolean canConference(Call heldCall, long subId) {
+        Phone activePhone = null;
+        Phone heldPhone = null;
+
+        if (hasActiveFgCall(subId)) {
+            activePhone = getActiveFgCall(subId).getPhone();
+        }
+
+        if (heldCall != null) {
+            heldPhone = heldCall.getPhone();
+        }
+
+        return heldPhone.getClass().equals(activePhone.getClass());
+    }
+
+    /**
      * Conferences holding and active. Conference occurs asynchronously
      * and may fail. Final notification occurs via
      * {@link #registerForPreciseCallStateChanged(android.os.Handler, int,
@@ -706,20 +821,24 @@ public final class CallManager {
      * In these cases, this operation may not be performed.
      */
     public void conference(Call heldCall) throws CallStateException {
+        long subId  = heldCall.getPhone().getSubId();
 
         if (VDBG) {
             Rlog.d(LOG_TAG, "conference(" +heldCall + ")");
             Rlog.d(LOG_TAG, toString());
         }
 
-
-        Phone fgPhone = getFgPhone();
-        if (fgPhone instanceof SipPhone) {
-            ((SipPhone) fgPhone).conference(heldCall);
-        } else if (canConference(heldCall)) {
-            fgPhone.conference();
+        Phone fgPhone = getFgPhone(subId);
+        if (fgPhone != null) {
+            if (fgPhone instanceof SipPhone) {
+                ((SipPhone) fgPhone).conference(heldCall);
+            } else if (canConference(heldCall)) {
+                fgPhone.conference();
+            } else {
+                throw(new CallStateException("Can't conference foreground and selected background call"));
+            }
         } else {
-            throw(new CallStateException("Can't conference foreground and selected background call"));
+            Rlog.d(LOG_TAG, "conference: fgPhone=null");
         }
 
         if (VDBG) {
@@ -739,31 +858,48 @@ public final class CallManager {
      * dialing, alerting, ringing, or waiting.  Other errors are
      * handled asynchronously.
      */
-    public Connection dial(Phone phone, String dialString) throws CallStateException {
+    public Connection dial(Phone phone, String dialString, int videoState)
+            throws CallStateException {
         Phone basePhone = getPhoneBase(phone);
+        long subId = phone.getSubId();
         Connection result;
 
         if (VDBG) {
-            Rlog.d(LOG_TAG, " dial(" + basePhone + ", "+ dialString + ")");
+            Rlog.d(LOG_TAG, " dial(" + basePhone + ", "+ dialString + ")" +
+                    " subId = " + subId);
             Rlog.d(LOG_TAG, toString());
         }
 
         if (!canDial(phone)) {
-            throw new CallStateException("cannot dial in current state");
+            /*
+             * canDial function only checks whether the phone can make a new call.
+             * InCall MMI commmands are basically supplementary services
+             * within a call eg: call hold, call deflection, explicit call transfer etc.
+             */
+            String newDialString = PhoneNumberUtils.stripSeparators(dialString);
+            if (basePhone.handleInCallMmiCommands(newDialString)) {
+                return null;
+            } else {
+                throw new CallStateException("cannot dial in current state");
+            }
         }
 
-        if ( hasActiveFgCall() ) {
-            Phone activePhone = getActiveFgCall().getPhone();
+        if ( hasActiveFgCall(subId) ) {
+            Phone activePhone = getActiveFgCall(subId).getPhone();
             boolean hasBgCall = !(activePhone.getBackgroundCall().isIdle());
 
             if (DBG) {
                 Rlog.d(LOG_TAG, "hasBgCall: "+ hasBgCall + " sameChannel:" + (activePhone == basePhone));
             }
 
-            if (activePhone != basePhone) {
+            // Manipulation between IMS phone and its owner
+            // will be treated in GSM/CDMA phone.
+            Phone vPhone = basePhone.getImsPhone();
+            if (activePhone != basePhone
+                    && (vPhone == null || vPhone != activePhone)) {
                 if (hasBgCall) {
                     Rlog.d(LOG_TAG, "Hangup");
-                    getActiveFgCall().hangup();
+                    getActiveFgCall(subId).hangup();
                 } else {
                     Rlog.d(LOG_TAG, "Switch");
                     activePhone.switchHoldingAndActive();
@@ -771,7 +907,7 @@ public final class CallManager {
             }
         }
 
-        result = basePhone.dial(dialString);
+        result = basePhone.dial(dialString, videoState);
 
         if (VDBG) {
             Rlog.d(LOG_TAG, "End dial(" + basePhone + ", "+ dialString + ")");
@@ -791,8 +927,9 @@ public final class CallManager {
      * dialing, alerting, ringing, or waiting.  Other errors are
      * handled asynchronously.
      */
-    public Connection dial(Phone phone, String dialString, UUSInfo uusInfo) throws CallStateException {
-        return phone.dial(dialString, uusInfo);
+    public Connection dial(Phone phone, String dialString, UUSInfo uusInfo, int videoState)
+            throws CallStateException {
+        return phone.dial(dialString, uusInfo, videoState);
     }
 
     /**
@@ -801,6 +938,18 @@ public final class CallManager {
     public void clearDisconnected() {
         for(Phone phone : mPhones) {
             phone.clearDisconnected();
+        }
+    }
+
+    /**
+     * clear disconnect connection for a phone specific
+     * to the provided subId
+     */
+    public void clearDisconnected(long subId) {
+        for(Phone phone : mPhones) {
+            if (phone.getSubId() == subId) {
+                phone.clearDisconnected();
+            }
         }
     }
 
@@ -815,14 +964,19 @@ public final class CallManager {
      */
     private boolean canDial(Phone phone) {
         int serviceState = phone.getServiceState().getState();
+        long subId = phone.getSubId();
         boolean hasRingingCall = hasActiveRingingCall();
-        Call.State fgCallState = getActiveFgCallState();
+        Call.State fgCallState = getActiveFgCallState(subId);
 
         boolean result = (serviceState != ServiceState.STATE_POWER_OFF
                 && !hasRingingCall
                 && ((fgCallState == Call.State.ACTIVE)
                     || (fgCallState == Call.State.IDLE)
-                    || (fgCallState == Call.State.DISCONNECTED)));
+                    || (fgCallState == Call.State.DISCONNECTED)
+                    /*As per 3GPP TS 51.010-1 section 31.13.1.4
+                    call should be alowed when the foreground
+                    call is in ALERTING state*/
+                    || (fgCallState == Call.State.ALERTING)));
 
         if (result == false) {
             Rlog.d(LOG_TAG, "canDial serviceState=" + serviceState
@@ -843,6 +997,26 @@ public final class CallManager {
 
         if (hasActiveFgCall()) {
             activePhone = getActiveFgCall().getPhone();
+        }
+
+        if (heldCall != null) {
+            heldPhone = heldCall.getPhone();
+        }
+
+        return (heldPhone == activePhone && activePhone.canTransfer());
+    }
+
+    /**
+     * Whether or not the phone specific to subId can do explicit call transfer
+     * in the current phone state--that is, one call holding and one call active.
+     * @return true if the phone can do explicit call transfer; false otherwise.
+     */
+    public boolean canTransfer(Call heldCall, long subId) {
+        Phone activePhone = null;
+        Phone heldPhone = null;
+
+        if (hasActiveFgCall(subId)) {
+            activePhone = getActiveFgCall(subId).getPhone();
         }
 
         if (heldCall != null) {
@@ -954,18 +1128,18 @@ public final class CallManager {
     /**
      * Enables or disables echo suppression.
      */
-    public void setEchoSuppressionEnabled(boolean enabled) {
+    public void setEchoSuppressionEnabled() {
         if (VDBG) {
-            Rlog.d(LOG_TAG, " setEchoSuppression(" + enabled + ")");
+            Rlog.d(LOG_TAG, " setEchoSuppression()");
             Rlog.d(LOG_TAG, toString());
         }
 
         if (hasActiveFgCall()) {
-            getActiveFgCall().getPhone().setEchoSuppressionEnabled(enabled);
+            getActiveFgCall().getPhone().setEchoSuppressionEnabled();
         }
 
         if (VDBG) {
-            Rlog.d(LOG_TAG, "End setEchoSuppression(" + enabled + ")");
+            Rlog.d(LOG_TAG, "End setEchoSuppression()");
             Rlog.d(LOG_TAG, toString());
         }
     }
@@ -1192,6 +1366,27 @@ public final class CallManager {
 
     public void unregisterForRingbackTone(Handler h){
         mRingbackToneRegistrants.remove(h);
+    }
+
+    /**
+     * Notifies when out-band on-hold tone is needed.<p>
+     *
+     *  Messages received from this:
+     *  Message.obj will be an AsyncResult
+     *  AsyncResult.userObj = obj
+     *  AsyncResult.result = boolean, true to start play on-hold tone
+     *                       and false to stop. <p>
+     */
+    public void registerForOnHoldTone(Handler h, int what, Object obj){
+        mOnHoldToneRegistrants.addUnique(h, what, obj);
+    }
+
+    /**
+     * Unregisters for on-hold tone notification.
+     */
+
+    public void unregisterForOnHoldTone(Handler h){
+        mOnHoldToneRegistrants.remove(h);
     }
 
     /**
@@ -1436,7 +1631,7 @@ public final class CallManager {
     }
 
     /**
-     * Registration point for subscription info ready
+     * Registration point for subcription info ready
      * @param h handler to notify
      * @param what what code of message when delivered
      * @param obj placed in Message.obj
@@ -1531,6 +1726,14 @@ public final class CallManager {
     }
 
     /**
+     * Return true if there is at least one active foreground call
+     * on a particular subId or an active sip call
+     */
+    public boolean hasActiveFgCall(long subId) {
+        return (getFirstActiveCall(mForegroundCalls, subId) != null);
+    }
+
+    /**
      * Return true if there is at least one active background call
      */
     public boolean hasActiveBgCall() {
@@ -1540,11 +1743,28 @@ public final class CallManager {
     }
 
     /**
+     * Return true if there is at least one active background call
+     * on a particular subId or an active sip call
+     */
+    public boolean hasActiveBgCall(long subId) {
+        // TODO since hasActiveBgCall may get called often
+        // better to cache it to improve performance
+        return (getFirstActiveCall(mBackgroundCalls, subId) != null);
+    }
+
+    /**
      * Return true if there is at least one active ringing call
      *
      */
     public boolean hasActiveRingingCall() {
         return (getFirstActiveCall(mRingingCalls) != null);
+    }
+
+    /**
+     * Return true if there is at least one active ringing call
+     */
+    public boolean hasActiveRingingCall(long subId) {
+        return (getFirstActiveCall(mRingingCalls, subId) != null);
     }
 
     /**
@@ -1568,6 +1788,17 @@ public final class CallManager {
         return call;
     }
 
+    public Call getActiveFgCall(long subId) {
+        Call call = getFirstNonIdleCall(mForegroundCalls, subId);
+        if (call == null) {
+            Phone phone = getPhone(subId);
+            call = (phone == null)
+                    ? null
+                    : phone.getForegroundCall();
+        }
+        return call;
+    }
+
     // Returns the first call that is not in IDLE state. If both active calls
     // and disconnecting/disconnected calls exist, return the first active call.
     private Call getFirstNonIdleCall(List<Call> calls) {
@@ -1577,6 +1808,23 @@ public final class CallManager {
                 return call;
             } else if (call.getState() != Call.State.IDLE) {
                 if (result == null) result = call;
+            }
+        }
+        return result;
+    }
+
+    // Returns the first call that is not in IDLE state. If both active calls
+    // and disconnecting/disconnected calls exist, return the first active call.
+    private Call getFirstNonIdleCall(List<Call> calls, long subId) {
+        Call result = null;
+        for (Call call : calls) {
+            if ((call.getPhone().getSubId() == subId) ||
+                    (call.getPhone() instanceof SipPhone)) {
+                if (!call.isIdle()) {
+                    return call;
+                } else if (call.getState() != Call.State.IDLE) {
+                    if (result == null) result = call;
+                }
             }
         }
         return result;
@@ -1606,6 +1854,35 @@ public final class CallManager {
     }
 
     /**
+     * return one active background call from background calls of the
+     * requested subId.
+     *
+     * Active call means the call is NOT idle defined by Call.isIdle()
+     *
+     * 1. If there is only one active background call on given sub or
+     *    on SIP Phone, return it
+     * 2. If there is more than one active background call, return the background call
+     *    associated with the active sub.
+     * 3. If there is no background call at all, return null.
+     *
+     * Complete background calls list can be get by getBackgroundCalls()
+     */
+    public Call getFirstActiveBgCall(long subId) {
+        Phone phone = getPhone(subId);
+        if (hasMoreThanOneHoldingCall(subId)) {
+            return phone.getBackgroundCall();
+        } else {
+            Call call = getFirstNonIdleCall(mBackgroundCalls, subId);
+            if (call == null) {
+                call = (phone == null)
+                        ? null
+                        : phone.getBackgroundCall();
+            }
+            return call;
+        }
+    }
+
+    /**
      * return one active ringing call from ringing calls
      *
      * Active call means the call is NOT idle defined by Call.isIdle()
@@ -1628,12 +1905,33 @@ public final class CallManager {
         return call;
     }
 
+    public Call getFirstActiveRingingCall(long subId) {
+        Phone phone = getPhone(subId);
+        Call call = getFirstNonIdleCall(mRingingCalls, subId);
+        if (call == null) {
+            call = (phone == null)
+                    ? null
+                    : phone.getRingingCall();
+        }
+        return call;
+    }
+
     /**
      * @return the state of active foreground call
      * return IDLE if there is no active foreground call
      */
     public Call.State getActiveFgCallState() {
         Call fgCall = getActiveFgCall();
+
+        if (fgCall != null) {
+            return fgCall.getState();
+        }
+
+        return Call.State.IDLE;
+    }
+
+    public Call.State getActiveFgCallState(long subId) {
+        Call fgCall = getActiveFgCall(subId);
 
         if (fgCall != null) {
             return fgCall.getState();
@@ -1655,11 +1953,35 @@ public final class CallManager {
     }
 
     /**
+     * @return the connections of active foreground call
+     * return empty list if there is no active foreground call
+     */
+    public List<Connection> getFgCallConnections(long subId) {
+        Call fgCall = getActiveFgCall(subId);
+        if ( fgCall != null) {
+            return fgCall.getConnections();
+        }
+        return mEmptyConnections;
+    }
+
+    /**
      * @return the connections of active background call
      * return empty list if there is no active background call
      */
     public List<Connection> getBgCallConnections() {
         Call bgCall = getFirstActiveBgCall();
+        if ( bgCall != null) {
+            return bgCall.getConnections();
+        }
+        return mEmptyConnections;
+    }
+
+    /**
+     * @return the connections of active background call
+     * return empty list if there is no active background call
+     */
+    public List<Connection> getBgCallConnections(long subId) {
+        Call bgCall = getFirstActiveBgCall(subId);
         if ( bgCall != null) {
             return bgCall.getConnections();
         }
@@ -1679,10 +2001,30 @@ public final class CallManager {
     }
 
     /**
+     * @return the latest connection of active foreground call
+     * return null if there is no active foreground call
+     */
+    public Connection getFgCallLatestConnection(long subId) {
+        Call fgCall = getActiveFgCall(subId);
+        if ( fgCall != null) {
+            return fgCall.getLatestConnection();
+        }
+        return null;
+    }
+
+    /**
      * @return true if there is at least one Foreground call in disconnected state
      */
     public boolean hasDisconnectedFgCall() {
         return (getFirstCallOfState(mForegroundCalls, Call.State.DISCONNECTED) != null);
+    }
+
+    /**
+     * @return true if there is at least one Foreground call in disconnected state
+     */
+    public boolean hasDisconnectedFgCall(long subId) {
+        return (getFirstCallOfState(mForegroundCalls, Call.State.DISCONNECTED,
+                subId) != null);
     }
 
     /**
@@ -1693,11 +2035,33 @@ public final class CallManager {
     }
 
     /**
+     * @return true if there is at least one background call in disconnected state
+     */
+    public boolean hasDisconnectedBgCall(long subId) {
+        return (getFirstCallOfState(mBackgroundCalls, Call.State.DISCONNECTED,
+                subId) != null);
+    }
+
+
+    /**
      * @return the first active call from a call list
      */
     private  Call getFirstActiveCall(ArrayList<Call> calls) {
         for (Call call : calls) {
             if (!call.isIdle()) {
+                return call;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return the first active call from a call list
+     */
+    private  Call getFirstActiveCall(ArrayList<Call> calls, long subId) {
+        for (Call call : calls) {
+            if ((!call.isIdle()) && ((call.getPhone().getSubId() == subId) ||
+                    (call.getPhone() instanceof SipPhone))) {
                 return call;
             }
         }
@@ -1716,6 +2080,20 @@ public final class CallManager {
         return null;
     }
 
+    /**
+     * @return the first call in a the Call.state from a call list
+     */
+    private Call getFirstCallOfState(ArrayList<Call> calls, Call.State state,
+            long subId) {
+        for (Call call : calls) {
+            if ((call.getState() == state) ||
+                ((call.getPhone().getSubId() == subId) ||
+                (call.getPhone() instanceof SipPhone))) {
+                return call;
+            }
+        }
+        return null;
+    }
 
     private boolean hasMoreThanOneRingingCall() {
         int count = 0;
@@ -1727,8 +2105,45 @@ public final class CallManager {
         return false;
     }
 
-    private Handler mHandler = new Handler() {
+    /**
+     * @return true if more than one active ringing call exists on
+     * the active subId.
+     * This checks for the active calls on provided
+     * subId and also active calls on SIP Phone.
+     *
+     */
+    private boolean hasMoreThanOneRingingCall(long subId) {
+        int count = 0;
+        for (Call call : mRingingCalls) {
+            if ((call.getState().isRinging()) &&
+                ((call.getPhone().getSubId() == subId) ||
+                (call.getPhone() instanceof SipPhone))) {
+                if (++count > 1) return true;
+            }
+        }
+        return false;
+    }
 
+    /**
+     * @return true if more than one active background call exists on
+     * the provided subId.
+     * This checks for the background calls on provided
+     * subId and also background calls on SIP Phone.
+     *
+     */
+    private boolean hasMoreThanOneHoldingCall(long subId) {
+        int count = 0;
+        for (Call call : mBackgroundCalls) {
+            if ((call.getState() == Call.State.HOLDING) &&
+                ((call.getPhone().getSubId() == subId) ||
+                (call.getPhone() instanceof SipPhone))) {
+                if (++count > 1) return true;
+            }
+        }
+        return false;
+    }
+
+    private class CallManagerHandler extends Handler {
         @Override
         public void handleMessage(Message msg) {
 
@@ -1743,8 +2158,9 @@ public final class CallManager {
                     break;
                 case EVENT_NEW_RINGING_CONNECTION:
                     if (VDBG) Rlog.d(LOG_TAG, " handleMessage (EVENT_NEW_RINGING_CONNECTION)");
-                    if (getActiveFgCallState().isDialing() || hasMoreThanOneRingingCall()) {
-                        Connection c = (Connection) ((AsyncResult) msg.obj).result;
+                    Connection c = (Connection) ((AsyncResult) msg.obj).result;
+                    long subId = c.getCall().getPhone().getSubId();
+                    if (getActiveFgCallState(subId).isDialing() || hasMoreThanOneRingingCall()) {
                         try {
                             Rlog.d(LOG_TAG, "silently drop incoming call: " + c.getCall());
                             c.getCall().hangup();
@@ -1834,6 +2250,10 @@ public final class CallManager {
                         notifyMsg.sendToTarget();
                     }
                     break;
+                case EVENT_ONHOLD_TONE:
+                    if (VDBG) Rlog.d(LOG_TAG, " handleMessage (EVENT_ONHOLD_TONE)");
+                    mOnHoldToneRegistrants.notifyRegistrants((AsyncResult) msg.obj);
+                    break;
             }
         }
     };
@@ -1842,20 +2262,21 @@ public final class CallManager {
     public String toString() {
         Call call;
         StringBuilder b = new StringBuilder();
-
-        b.append("CallManager {");
-        b.append("\nstate = " + getState());
-        call = getActiveFgCall();
-        b.append("\n- Foreground: " + getActiveFgCallState());
-        b.append(" from " + call.getPhone());
-        b.append("\n  Conn: ").append(getFgCallConnections());
-        call = getFirstActiveBgCall();
-        b.append("\n- Background: " + call.getState());
-        b.append(" from " + call.getPhone());
-        b.append("\n  Conn: ").append(getBgCallConnections());
-        call = getFirstActiveRingingCall();
-        b.append("\n- Ringing: " +call.getState());
-        b.append(" from " + call.getPhone());
+        for (int i = 0; i < TelephonyManager.getDefault().getPhoneCount(); i++) {
+            b.append("CallManager {");
+            b.append("\nstate = " + getState(i));
+            call = getActiveFgCall(i);
+            b.append("\n- Foreground: " + getActiveFgCallState(i));
+            b.append(" from " + call.getPhone());
+            b.append("\n  Conn: ").append(getFgCallConnections(i));
+            call = getFirstActiveBgCall(i);
+            b.append("\n- Background: " + call.getState());
+            b.append(" from " + call.getPhone());
+            b.append("\n  Conn: ").append(getBgCallConnections(i));
+            call = getFirstActiveRingingCall(i);
+            b.append("\n- Ringing: " +call.getState());
+            b.append(" from " + call.getPhone());
+        }
 
         for (Phone phone : getAllPhones()) {
             if (phone != null) {

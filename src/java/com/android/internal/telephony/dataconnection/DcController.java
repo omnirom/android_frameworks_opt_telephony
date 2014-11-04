@@ -23,7 +23,10 @@ import android.os.AsyncResult;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemClock;
+import android.telephony.DataConnectionRealTimeInfo;
 import android.telephony.Rlog;
+
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.PhoneConstants;
@@ -63,6 +66,10 @@ class DcController extends StateMachine {
     static final int DATA_CONNECTION_ACTIVE_PH_LINK_INACTIVE = 0;
     static final int DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT = 1;
     static final int DATA_CONNECTION_ACTIVE_PH_LINK_UP = 2;
+    static final int DATA_CONNECTION_ACTIVE_UNKNOWN = Integer.MAX_VALUE;
+
+    // One of the DATA_CONNECTION_ACTIVE_XXX values
+    int mOverallDataConnectionActiveState = DATA_CONNECTION_ACTIVE_UNKNOWN;
 
     private DccDefaultState mDccDefaultState = new DccDefaultState();
 
@@ -235,17 +242,22 @@ class DcController extends StateMachine {
                     if (DBG) log("onDataStateChanged: Found ConnId=" + newState.cid
                             + " newState=" + newState.toString());
                     if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_INACTIVE) {
-                        DcFailCause failCause = DcFailCause.fromInt(newState.status);
-                        if (DBG) log("onDataStateChanged: inactive failCause=" + failCause);
-                        if (failCause.isRestartRadioFail()) {
-                            if (DBG) log("onDataStateChanged: X restart radio");
-                            mDct.sendRestartRadio();
-                        } else if (failCause.isPermanentFail()) {
-                            if (DBG) log("onDataStateChanged: inactive, add to cleanup list");
+                        if (mDct.mIsCleanupRequired) {
                             apnsToCleanup.addAll(dc.mApnContexts);
+                            mDct.mIsCleanupRequired = false;
                         } else {
-                            if (DBG) log("onDataStateChanged: inactive, add to retry list");
-                            dcsToRetry.add(dc);
+                            DcFailCause failCause = DcFailCause.fromInt(newState.status);
+                            if (DBG) log("onDataStateChanged: inactive failCause=" + failCause);
+                            if (failCause.isRestartRadioFail()) {
+                                if (DBG) log("onDataStateChanged: X restart radio");
+                                mDct.sendRestartRadio();
+                            } else if (mDct.isPermanentFail(failCause)) {
+                                if (DBG) log("onDataStateChanged: inactive, add to cleanup list");
+                                apnsToCleanup.addAll(dc.mApnContexts);
+                            } else {
+                                if (DBG) log("onDataStateChanged: inactive, add to retry list");
+                                dcsToRetry.add(dc);
+                            }
                         }
                     } else {
                         // Its active so update the DataConnections link properties
@@ -287,6 +299,7 @@ class DcController extends StateMachine {
                                         apnsToCleanup.addAll(dc.mApnContexts);
                                     } else {
                                         if (DBG) log("onDataStateChanged: simple change");
+
                                         for (ApnContext apnContext : dc.mApnContexts) {
                                              mPhone.notifyDataConnection(
                                                  PhoneConstants.REASON_LINK_PROPERTIES_CHANGED,
@@ -308,6 +321,63 @@ class DcController extends StateMachine {
                         }
                     }
                 }
+
+                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_UP) {
+                    isAnyDataCallActive = true;
+                }
+                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT) {
+                    isAnyDataCallDormant = true;
+                }
+            }
+
+            int newOverallDataConnectionActiveState = mOverallDataConnectionActiveState;
+
+            if (isAnyDataCallDormant && !isAnyDataCallActive) {
+                // There is no way to indicate link activity per APN right now. So
+                // Link Activity will be considered dormant only when all data calls
+                // are dormant.
+                // If a single data call is in dormant state and none of the data
+                // calls are active broadcast overall link state as dormant.
+                if (DBG) {
+                    log("onDataStateChanged: Data Activity updated to DORMANT. stopNetStatePoll");
+                }
+                mDct.sendStopNetStatPoll(DctConstants.Activity.DORMANT);
+                newOverallDataConnectionActiveState = DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT;
+            } else {
+                if (DBG) {
+                    log("onDataStateChanged: Data Activity updated to NONE. " +
+                            "isAnyDataCallActive = " + isAnyDataCallActive +
+                            " isAnyDataCallDormant = " + isAnyDataCallDormant);
+                }
+                if (isAnyDataCallActive) {
+                    newOverallDataConnectionActiveState = DATA_CONNECTION_ACTIVE_PH_LINK_UP;
+                    mDct.sendStartNetStatPoll(DctConstants.Activity.NONE);
+                } else {
+                    newOverallDataConnectionActiveState = DATA_CONNECTION_ACTIVE_PH_LINK_INACTIVE;
+                }
+            }
+
+            // Temporary notification until RIL implementation is complete.
+            if (mOverallDataConnectionActiveState != newOverallDataConnectionActiveState) {
+                mOverallDataConnectionActiveState = newOverallDataConnectionActiveState;
+                long time = SystemClock.elapsedRealtimeNanos();
+                int dcPowerState;
+                switch (mOverallDataConnectionActiveState) {
+                    case DATA_CONNECTION_ACTIVE_PH_LINK_INACTIVE:
+                    case DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT:
+                        dcPowerState = DataConnectionRealTimeInfo.DC_POWER_STATE_LOW;
+                        break;
+                    case DATA_CONNECTION_ACTIVE_PH_LINK_UP:
+                        dcPowerState = DataConnectionRealTimeInfo.DC_POWER_STATE_HIGH;
+                        break;
+                    default:
+                        dcPowerState = DataConnectionRealTimeInfo.DC_POWER_STATE_UNKNOWN;
+                        break;
+                }
+                DataConnectionRealTimeInfo dcRtInfo =
+                        new DataConnectionRealTimeInfo(time , dcPowerState);
+                log("onDataStateChanged: notify DcRtInfo changed dcRtInfo=" + dcRtInfo);
+                mPhone.notifyDataConnectionRealTimeInfo(dcRtInfo);
             }
 
             if (isAnyDataCallDormant && !isAnyDataCallActive) {

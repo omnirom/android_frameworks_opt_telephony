@@ -41,9 +41,12 @@ public abstract class CallTracker extends Handler {
     protected int mPendingOperations;
     protected boolean mNeedsPoll;
     protected Message mLastRelevantPoll;
+    protected Connection mHandoverConnection;
 
     public CommandsInterface mCi;
 
+    protected boolean mNumberConverted = false;
+    private final int VALID_COMPARE_LENGTH   = 3;
 
     //***** Events
 
@@ -62,6 +65,7 @@ public abstract class CallTracker extends Handler {
     protected static final int EVENT_EXIT_ECM_RESPONSE_CDMA        = 14;
     protected static final int EVENT_CALL_WAITING_INFO_CDMA        = 15;
     protected static final int EVENT_THREE_WAY_DIAL_L2_RESULT_CDMA = 16;
+    protected static final int EVENT_THREE_WAY_DIAL_BLANK_FLASH    = 20;
 
     protected void pollCallsWhenSafe() {
         mNeedsPoll = true;
@@ -88,6 +92,14 @@ public abstract class CallTracker extends Handler {
     }
 
     protected abstract void handlePollCalls(AsyncResult ar);
+
+    protected void notifySrvccState(Call.SrvccState state, Connection c) {
+        if (state == Call.SrvccState.STARTED) {
+            mHandoverConnection = c;
+        } else if (state != Call.SrvccState.COMPLETED) {
+            mHandoverConnection = null;
+        }
+    }
 
     protected void handleRadioAvailable() {
         pollCallsWhenSafe();
@@ -160,6 +172,76 @@ public abstract class CallTracker extends Handler {
             }
         }
         return dialString;
+    }
+
+    protected String convertNumberIfNecessary(PhoneBase phoneBase, String dialNumber) {
+        if (dialNumber == null) {
+            return dialNumber;
+        }
+        String[] convertMaps = phoneBase.getContext().getResources().getStringArray(
+                com.android.internal.R.array.dial_string_replace);
+        log("convertNumberIfNecessary Roaming"
+            + " convertMaps.length " + convertMaps.length
+            + " dialNumber.length() " + dialNumber.length());
+
+        if (convertMaps.length < 1 || dialNumber.length() < VALID_COMPARE_LENGTH) {
+            return dialNumber;
+        }
+
+        String[] entry;
+        String[] tmpArray;
+        String outNumber = "";
+        for(String convertMap : convertMaps) {
+            log("convertNumberIfNecessary: " + convertMap);
+            entry = convertMap.split(":");
+            if (entry.length > 1) {
+                tmpArray = entry[1].split(",");
+                if (!TextUtils.isEmpty(entry[0]) && dialNumber.equals(entry[0])) {
+                    if (tmpArray.length >= 2 && !TextUtils.isEmpty(tmpArray[1])) {
+                        if (compareGid1(phoneBase, tmpArray[1])) {
+                            mNumberConverted = true;
+                        }
+                    } else if (outNumber.isEmpty()) {
+                        mNumberConverted = true;
+                    }
+                    if (mNumberConverted) {
+                        if(!TextUtils.isEmpty(tmpArray[0]) && tmpArray[0].endsWith("MDN")) {
+                            String prefix = tmpArray[0].substring(0, tmpArray[0].length() -3);
+                            outNumber = prefix + phoneBase.getLine1Number();
+                        } else {
+                            outNumber = tmpArray[0];
+                        }
+                    }
+                }
+            }
+        }
+
+        if (mNumberConverted) {
+            log("convertNumberIfNecessary: convert service number");
+            return outNumber;
+        }
+
+        return dialNumber;
+
+    }
+
+    private boolean compareGid1(PhoneBase phoneBase, String serviceGid1) {
+        String gid1 = phoneBase.getGroupIdLevel1();
+        int gid_length = serviceGid1.length();
+        boolean ret = true;
+
+        if (serviceGid1 == null || serviceGid1.equals("")) {
+            log("compareGid1 serviceGid is empty, return " + ret);
+            return ret;
+        }
+        // Check if gid1 match service GID1
+        if (!((gid1 != null) && (gid1.length() >= gid_length) &&
+                gid1.substring(0, gid_length).equalsIgnoreCase(serviceGid1))) {
+            log(" gid1 " + gid1 + " serviceGid1 " + serviceGid1);
+            ret = false;
+        }
+        log("compareGid1 is " + (ret?"Same":"Different"));
+        return ret;
     }
 
     //***** Overridden from Handler

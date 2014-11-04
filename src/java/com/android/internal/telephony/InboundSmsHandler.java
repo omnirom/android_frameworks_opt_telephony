@@ -17,7 +17,10 @@
 package com.android.internal.telephony;
 
 import android.app.Activity;
+import android.app.ActivityManagerNative;
 import android.app.AppOpsManager;
+import android.app.PendingIntent;
+import android.app.PendingIntent.CanceledException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -25,27 +28,40 @@ import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.UserInfo;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.net.Uri;
 import android.os.AsyncResult;
+import android.os.Binder;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Message;
 import android.os.PowerManager;
+import android.os.RemoteException;
 import android.os.SystemProperties;
+import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Telephony;
 import android.provider.Telephony.Sms.Intents;
 import android.telephony.Rlog;
+import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.text.TextUtils;
+import android.util.Log;
 
 import com.android.internal.telephony.util.BlacklistUtils;
+import com.android.internal.telephony.uicc.UiccCard;
+import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.util.HexDump;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
+import java.util.List;
 
 import static android.telephony.TelephonyManager.PHONE_TYPE_CDMA;
 
@@ -118,6 +134,9 @@ public abstract class InboundSmsHandler extends StateMachine {
     /** Update phone object */
     static final int EVENT_UPDATE_PHONE_OBJECT = 7;
 
+    /** New SMS received as an AsyncResult. */
+    public static final int EVENT_INJECT_SMS = 8;
+
     /** Wakelock release delay when returning to idle state. */
     private static final int WAKELOCK_TIMEOUT = 3000;
 
@@ -157,6 +176,7 @@ public abstract class InboundSmsHandler extends StateMachine {
 
     protected CellBroadcastHandler mCellBroadcastHandler;
 
+    private UserManager mUserManager;
 
     /**
      * Create a new SMS broadcast helper.
@@ -183,6 +203,7 @@ public abstract class InboundSmsHandler extends StateMachine {
         PowerManager pm = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, name);
         mWakeLock.acquire();    // wake lock released after we enter idle state
+        mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
 
         addState(mDefaultState);
         addState(mStartupState, mDefaultState);
@@ -220,6 +241,11 @@ public abstract class InboundSmsHandler extends StateMachine {
         }
     }
 
+    // CAF_MSIM Is this used anywhere ? if not remove it
+    public PhoneBase getPhone() {
+        return mPhone;
+    }
+
     /**
      * This parent state throws an exception (for debug builds) or prints an error for unhandled
      * message types.
@@ -233,8 +259,16 @@ public abstract class InboundSmsHandler extends StateMachine {
                     break;
                 }
                 default: {
-                    String errorText = "processMessage: unhandled message type " + msg.what;
+                    String errorText = "processMessage: unhandled message type " + msg.what +
+                        " currState=" + getCurrentState().getName();
                     if (Build.IS_DEBUGGABLE) {
+                        loge("---- Dumping InboundSmsHandler ----");
+                        loge("Total records=" + getLogRecCount());
+                        for (int i = Math.max(getLogRecSize() - 20, 0); i < getLogRecSize(); i++) {
+                            loge("Rec[%d]: %s\n" + i + getLogRec(i).toString());
+                        }
+                        loge("---- Dumped InboundSmsHandler ----");
+
                         throw new RuntimeException(errorText);
                     } else {
                         loge(errorText);
@@ -253,8 +287,10 @@ public abstract class InboundSmsHandler extends StateMachine {
     class StartupState extends State {
         @Override
         public boolean processMessage(Message msg) {
+            log("StartupState.processMessage:" + msg.what);
             switch (msg.what) {
                 case EVENT_NEW_SMS:
+                case EVENT_INJECT_SMS:
                 case EVENT_BROADCAST_SMS:
                     deferMessage(msg);
                     return HANDLED;
@@ -292,9 +328,11 @@ public abstract class InboundSmsHandler extends StateMachine {
 
         @Override
         public boolean processMessage(Message msg) {
+            log("IdleState.processMessage:" + msg.what);
             if (DBG) log("Idle state processing message type " + msg.what);
             switch (msg.what) {
                 case EVENT_NEW_SMS:
+                case EVENT_INJECT_SMS:
                 case EVENT_BROADCAST_SMS:
                     deferMessage(msg);
                     transitionTo(mDeliveringState);
@@ -344,10 +382,17 @@ public abstract class InboundSmsHandler extends StateMachine {
 
         @Override
         public boolean processMessage(Message msg) {
+            log("DeliveringState.processMessage:" + msg.what);
             switch (msg.what) {
                 case EVENT_NEW_SMS:
                     // handle new SMS from RIL
                     handleNewSms((AsyncResult) msg.obj);
+                    sendMessage(EVENT_RETURN_TO_IDLE);
+                    return HANDLED;
+
+                case EVENT_INJECT_SMS:
+                    // handle new injected SMS
+                    handleInjectSms((AsyncResult) msg.obj);
                     sendMessage(EVENT_RETURN_TO_IDLE);
                     return HANDLED;
 
@@ -391,6 +436,7 @@ public abstract class InboundSmsHandler extends StateMachine {
     class WaitingState extends State {
         @Override
         public boolean processMessage(Message msg) {
+            log("WaitingState.processMessage:" + msg.what);
             switch (msg.what) {
                 case EVENT_BROADCAST_SMS:
                     // defer until the current broadcast completes
@@ -454,6 +500,33 @@ public abstract class InboundSmsHandler extends StateMachine {
         if (result != Activity.RESULT_OK) {
             boolean handled = (result == Intents.RESULT_SMS_HANDLED);
             notifyAndAcknowledgeLastIncomingSms(handled, result, blacklistMatchType, sms, null);
+        }
+    }
+
+    /**
+     * This method is called when a new SMS PDU is injected into application framework.
+     * @param ar is the AsyncResult that has the SMS PDU to be injected.
+     */
+    void handleInjectSms(AsyncResult ar) {
+        int result;
+        PendingIntent receivedIntent = null;
+        try {
+            receivedIntent = (PendingIntent) ar.userObj;
+            SmsMessage sms = (SmsMessage) ar.result;
+            if (sms == null) {
+              result = Intents.RESULT_SMS_GENERIC_ERROR;
+            } else {
+              result = dispatchMessage(sms.mWrappedSmsMessage);
+            }
+        } catch (RuntimeException ex) {
+            loge("Exception dispatching message", ex);
+            result = Intents.RESULT_SMS_GENERIC_ERROR;
+        }
+
+        if (receivedIntent != null) {
+            try {
+                receivedIntent.send(result);
+            } catch (CanceledException e) { }
         }
     }
 
@@ -720,28 +793,24 @@ public abstract class InboundSmsHandler extends StateMachine {
             return (result == Activity.RESULT_OK);
         }
 
-        Intent intent;
-        if (destPort == -1) {
-            intent = new Intent(Intents.SMS_DELIVER_ACTION);
-
-            // Direct the intent to only the default SMS app. If we can't find a default SMS app
-            // then sent it to all broadcast receivers.
-            ComponentName componentName = SmsApplication.getDefaultSmsApplication(mContext, true);
-            if (componentName != null) {
-                // Deliver SMS message only to this receiver
-                intent.setComponent(componentName);
-                log("Delivering SMS to: " + componentName.getPackageName() +
-                        " " + componentName.getClassName());
-            }
+        Intent intent = new Intent(Intents.SMS_FILTER_ACTION);
+        List<String> carrierPackages = null;
+        UiccCard card = UiccController.getInstance().getUiccCard();
+        if (card != null) {
+            carrierPackages = card.getCarrierPackageNamesForIntent(
+                    mContext.getPackageManager(), intent);
+        }
+        if (carrierPackages != null && carrierPackages.size() == 1) {
+            intent.setPackage(carrierPackages.get(0));
+            intent.putExtra("destport", destPort);
         } else {
-            Uri uri = Uri.parse("sms://localhost:" + destPort);
-            intent = new Intent(Intents.DATA_SMS_RECEIVED_ACTION, uri);
+            setAndDirectIntent(intent, destPort);
         }
 
         intent.putExtra("pdus", pdus);
         intent.putExtra("format", tracker.getFormat());
         dispatchIntent(intent, android.Manifest.permission.RECEIVE_SMS,
-                AppOpsManager.OP_RECEIVE_SMS, resultReceiver);
+                AppOpsManager.OP_RECEIVE_SMS, resultReceiver, UserHandle.OWNER);
         return true;
     }
 
@@ -752,12 +821,47 @@ public abstract class InboundSmsHandler extends StateMachine {
      * @param intent the intent to broadcast
      * @param permission receivers are required to have this permission
      * @param appOp app op that is being performed when dispatching to a receiver
+     * @param user user to deliver the intent to
      */
-    void dispatchIntent(Intent intent, String permission, int appOp,
-            BroadcastReceiver resultReceiver) {
+    protected void dispatchIntent(Intent intent, String permission, int appOp,
+            BroadcastReceiver resultReceiver, UserHandle user) {
         intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
-        mContext.sendOrderedBroadcast(intent, permission, appOp, resultReceiver,
-                getHandler(), Activity.RESULT_OK, null, null);
+        SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
+        if (user.equals(UserHandle.ALL)) {
+            // Get a list of currently started users.
+            int[] users = null;
+            try {
+                users = ActivityManagerNative.getDefault().getRunningUserIds();
+            } catch (RemoteException re) {
+            }
+            if (users == null) {
+                users = new int[] {user.getIdentifier()};
+            }
+            // Deliver the broadcast only to those running users that are permitted
+            // by user policy.
+            for (int i = users.length - 1; i >= 0; i--) {
+                UserHandle targetUser = new UserHandle(users[i]);
+                if (users[i] != UserHandle.USER_OWNER) {
+                    // Is the user not allowed to use SMS?
+                    if (mUserManager.hasUserRestriction(UserManager.DISALLOW_SMS, targetUser)) {
+                        continue;
+                    }
+                    // Skip unknown users and managed profiles as well
+                    UserInfo info = mUserManager.getUserInfo(users[i]);
+                    if (info == null || info.isManagedProfile()) {
+                        continue;
+                    }
+                }
+                // Only pass in the resultReceiver when the USER_OWNER is processed.
+                mContext.sendOrderedBroadcastAsUser(intent, targetUser, permission, appOp,
+                        users[i] == UserHandle.USER_OWNER ? resultReceiver : null,
+                        getHandler(), Activity.RESULT_OK, null, null);
+            }
+        } else {
+            mContext.sendOrderedBroadcastAsUser(intent, user, permission, appOp,
+                    resultReceiver,
+                    getHandler(), Activity.RESULT_OK, null, null);
+        }
     }
 
     /**
@@ -769,6 +873,37 @@ public abstract class InboundSmsHandler extends StateMachine {
             loge("No rows were deleted from raw table!");
         } else if (DBG) {
             log("Deleted " + rows + " rows from raw table.");
+        }
+    }
+
+    /**
+     * Set the appropriate intent action and direct the intent to the default SMS app or the
+     * appropriate port.
+     *
+     * @param intent the intent to set and direct
+     * @param destPort the destination port
+     */
+    void setAndDirectIntent(Intent intent, int destPort) {
+        if (destPort == -1) {
+            intent.setAction(Intents.SMS_DELIVER_ACTION);
+
+            // Direct the intent to only the default SMS app. If we can't find a default SMS app
+            // then sent it to all broadcast receivers.
+            // We are deliberately delivering to the primary user's default SMS App.
+            ComponentName componentName = SmsApplication.getDefaultSmsApplication(mContext, true);
+            if (componentName != null) {
+                // Deliver SMS message only to this receiver.
+                intent.setComponent(componentName);
+                log("Delivering SMS to: " + componentName.getPackageName() +
+                    " " + componentName.getClassName());
+            } else {
+                intent.setComponent(null);
+            }
+        } else {
+            intent.setAction(Intents.DATA_SMS_RECEIVED_ACTION);
+            Uri uri = Uri.parse("sms://localhost:" + destPort);
+            intent.setData(uri);
+            intent.setComponent(null);
         }
     }
 
@@ -876,21 +1011,55 @@ public abstract class InboundSmsHandler extends StateMachine {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if (action.equals(Intents.SMS_DELIVER_ACTION)) {
+            if (action.equals(Intents.SMS_FILTER_ACTION)) {
+                int rc = getResultCode();
+                if (rc == Activity.RESULT_OK) {
+                  // Overwrite pdus data if the SMS filter has set it.
+                  Bundle resultExtras = getResultExtras(false);
+                  if (resultExtras != null && resultExtras.containsKey("pdus")) {
+                      intent.putExtra("pdus", (byte[][]) resultExtras.get("pdus"));
+                  }
+                  if (intent.hasExtra("destport")) {
+                      int destPort = intent.getIntExtra("destport", -1);
+                      intent.removeExtra("destport");
+                      setAndDirectIntent(intent, destPort);
+                      if (SmsManager.getDefault().getAutoPersisting()) {
+                          final Uri uri = writeInboxMessage(intent);
+                          if (uri != null) {
+                              // Pass this to SMS apps so that they know where it is stored
+                              intent.putExtra("uri", uri.toString());
+                          }
+                      }
+                      dispatchIntent(intent, android.Manifest.permission.RECEIVE_SMS,
+                                     AppOpsManager.OP_RECEIVE_SMS, this, UserHandle.OWNER);
+                  } else {
+                      loge("destport doesn't exist in the extras for SMS filter action.");
+                  }
+                } else {
+                  // Drop this SMS.
+                  log("SMS filtered by result code " + rc);
+                  deleteFromRawTable(mDeleteWhere, mDeleteWhereArgs);
+                  sendMessage(EVENT_BROADCAST_COMPLETE);
+                }
+            } else if (action.equals(Intents.SMS_DELIVER_ACTION)) {
                 // Now dispatch the notification only intent
                 intent.setAction(Intents.SMS_RECEIVED_ACTION);
                 intent.setComponent(null);
+                // All running users will be notified of the received sms.
                 dispatchIntent(intent, android.Manifest.permission.RECEIVE_SMS,
-                        AppOpsManager.OP_RECEIVE_SMS, this);
+                        AppOpsManager.OP_RECEIVE_SMS, this, UserHandle.ALL);
             } else if (action.equals(Intents.WAP_PUSH_DELIVER_ACTION)) {
                 // Now dispatch the notification only intent
                 intent.setAction(Intents.WAP_PUSH_RECEIVED_ACTION);
                 intent.setComponent(null);
+                // Only the primary user will receive notification of incoming mms.
+                // That app will do the actual downloading of the mms.
                 dispatchIntent(intent, android.Manifest.permission.RECEIVE_SMS,
-                        AppOpsManager.OP_RECEIVE_SMS, this);
+                        AppOpsManager.OP_RECEIVE_SMS, this, UserHandle.OWNER);
             } else {
                 // Now that the intents have been deleted we can clean up the PDU data.
                 if (!Intents.DATA_SMS_RECEIVED_ACTION.equals(action)
+                        && !Intents.SMS_RECEIVED_ACTION.equals(action)
                         && !Intents.DATA_SMS_RECEIVED_ACTION.equals(action)
                         && !Intents.WAP_PUSH_RECEIVED_ACTION.equals(action)) {
                     loge("unexpected BroadcastReceiver action: " + action);
@@ -943,5 +1112,91 @@ public abstract class InboundSmsHandler extends StateMachine {
     @Override
     protected void loge(String s, Throwable e) {
         Rlog.e(getName(), s, e);
+    }
+
+    /**
+     * Store a received SMS into Telephony provider
+     *
+     * @param intent The intent containing the received SMS
+     * @return The URI of written message
+     */
+    private Uri writeInboxMessage(Intent intent) {
+        final SmsMessage[] messages = Telephony.Sms.Intents.getMessagesFromIntent(intent);
+        if (messages == null || messages.length < 1) {
+            loge("Failed to parse SMS pdu");
+            return null;
+        }
+        // Sometimes, SmsMessage.mWrappedSmsMessage is null causing NPE when we access
+        // the methods on it although the SmsMessage itself is not null. So do this check
+        // before we do anything on the parsed SmsMessages.
+        for (final SmsMessage sms : messages) {
+            try {
+                sms.getDisplayMessageBody();
+            } catch (NullPointerException e) {
+                loge("NPE inside SmsMessage");
+                return null;
+            }
+        }
+        final ContentValues values = parseSmsMessage(messages);
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            return mContext.getContentResolver().insert(Telephony.Sms.Inbox.CONTENT_URI, values);
+        } catch (Exception e) {
+            loge("Failed to persist inbox message", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+        return null;
+    }
+
+    /**
+     * Convert SmsMessage[] into SMS database schema columns
+     *
+     * @param msgs The SmsMessage array of the received SMS
+     * @return ContentValues representing the columns of parsed SMS
+     */
+    private static ContentValues parseSmsMessage(SmsMessage[] msgs) {
+        final SmsMessage sms = msgs[0];
+        final ContentValues values = new ContentValues();
+        values.put(Telephony.Sms.Inbox.ADDRESS, sms.getDisplayOriginatingAddress());
+        values.put(Telephony.Sms.Inbox.BODY, buildMessageBodyFromPdus(msgs));
+        values.put(Telephony.Sms.Inbox.DATE_SENT, sms.getTimestampMillis());
+        values.put(Telephony.Sms.Inbox.DATE, System.currentTimeMillis());
+        values.put(Telephony.Sms.Inbox.PROTOCOL, sms.getProtocolIdentifier());
+        values.put(Telephony.Sms.Inbox.SEEN, 0);
+        values.put(Telephony.Sms.Inbox.READ, 0);
+        final String subject = sms.getPseudoSubject();
+        if (!TextUtils.isEmpty(subject)) {
+            values.put(Telephony.Sms.Inbox.SUBJECT, subject);
+        }
+        values.put(Telephony.Sms.Inbox.REPLY_PATH_PRESENT, sms.isReplyPathPresent() ? 1 : 0);
+        values.put(Telephony.Sms.Inbox.SERVICE_CENTER, sms.getServiceCenterAddress());
+        return values;
+    }
+
+    /**
+     * Build up the SMS message body from the SmsMessage array of received SMS
+     *
+     * @param msgs The SmsMessage array of the received SMS
+     * @return The text message body
+     */
+    private static String buildMessageBodyFromPdus(SmsMessage[] msgs) {
+        if (msgs.length == 1) {
+            // There is only one part, so grab the body directly.
+            return replaceFormFeeds(msgs[0].getDisplayMessageBody());
+        } else {
+            // Build up the body from the parts.
+            StringBuilder body = new StringBuilder();
+            for (SmsMessage msg: msgs) {
+                // getDisplayMessageBody() can NPE if mWrappedMessage inside is null.
+                body.append(msg.getDisplayMessageBody());
+            }
+            return replaceFormFeeds(body.toString());
+        }
+    }
+
+    // Some providers send formfeeds in their messages. Convert those formfeeds to newlines.
+    private static String replaceFormFeeds(String s) {
+        return s == null ? "" : s.replace('\f', '\n');
     }
 }

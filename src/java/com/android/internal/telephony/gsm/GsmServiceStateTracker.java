@@ -49,6 +49,7 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.gsm.GsmCellLocation;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.EventLog;
 import android.util.TimeUtils;
@@ -57,10 +58,14 @@ import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.EventLogTags;
 import com.android.internal.telephony.MccTable;
+import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.ProxyController;
 import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.RestrictedState;
 import com.android.internal.telephony.ServiceStateTracker;
+import android.telephony.SubscriptionManager;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DcTrackerBase;
@@ -83,10 +88,11 @@ import java.util.TimeZone;
  * {@hide}
  */
 final class GsmServiceStateTracker extends ServiceStateTracker {
-    private static final String LOG_TAG = "GsmSST";
-    private static final boolean VDBG = false;
-
-    GSMPhone mPhone;
+    static final String LOG_TAG = "GsmSST";
+    static final boolean VDBG = false;
+    //CAF_MSIM make it private ??
+    private static final int EVENT_ALL_DATA_DISCONNECTED = 1001;
+    private GSMPhone mPhone;
     GsmCellLocation mCellLoc;
     GsmCellLocation mNewCellLoc;
     int mPreferredNetworkType;
@@ -177,6 +183,10 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
             if (intent.getAction().equals(Intent.ACTION_LOCALE_CHANGED)) {
                 // update emergency string whenever locale changed
                 updateSpnDisplay();
+            } else if (intent.getAction().equals(ACTION_RADIO_OFF)) {
+                mAlarmSwitch = false;
+                DcTrackerBase dcTracker = mPhone.mDcTracker;
+                powerOffRadioSafely(dcTracker);
             }
         }
     };
@@ -236,8 +246,10 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
         filter.addAction(Intent.ACTION_LOCALE_CHANGED);
         phone.getContext().registerReceiver(mIntentReceiver, filter);
 
-        // Gsm doesn't support OTASP so its not needed
-        phone.notifyOtaspChanged(OTASP_NOT_NEEDED);
+        filter = new IntentFilter();
+        Context context = phone.getContext();
+        filter.addAction(ACTION_RADIO_OFF);
+        context.registerReceiver(mIntentReceiver, filter);
     }
 
     @Override
@@ -289,7 +301,8 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
 
             case EVENT_SIM_READY:
                 // Set the network type, in case the radio does not restore it.
-                mCi.setCurrentPreferredNetworkType();
+                int networkType = PhoneFactory.calculatePreferredNetworkType(mPhone.getContext());
+                mCi.setPreferredNetworkType(networkType, null);
 
                 boolean skipRestoringSelection = mPhone.getContext().getResources().getBoolean(
                         com.android.internal.R.bool.skip_restoring_network_selection);
@@ -395,6 +408,8 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
 
             case EVENT_SIM_RECORDS_LOADED:
                 log("EVENT_SIM_RECORDS_LOADED: what=" + msg.what);
+                // Gsm doesn't support OTASP so its not needed
+                mPhone.notifyOtaspChanged(OTASP_NOT_NEEDED);
 
                 updatePhoneObject();
                 updateSpnDisplay();
@@ -464,6 +479,26 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                 onRestrictedStateChanged(ar);
                 break;
 
+            case EVENT_ALL_DATA_DISCONNECTED:
+                long dds = SubscriptionManager.getDefaultDataSubId();
+                ProxyController.getInstance().unregisterForAllDataDisconnected(dds, this);
+                synchronized(this) {
+                    if (mPendingRadioPowerOffAfterDataOff) {
+                        if (DBG) log("EVENT_ALL_DATA_DISCONNECTED, turn radio off now.");
+                        hangupAndPowerOff();
+                        mPendingRadioPowerOffAfterDataOff = false;
+                    } else {
+                        log("EVENT_ALL_DATA_DISCONNECTED is stale");
+                    }
+                }
+                break;
+
+            case EVENT_CHANGE_IMS_STATE:
+                if (DBG) log("EVENT_CHANGE_IMS_STATE:");
+
+                setPowerStateToDesired();
+                break;
+
             default:
                 super.handleMessage(msg);
             break;
@@ -472,15 +507,53 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
 
     @Override
     protected void setPowerStateToDesired() {
+
+        if (DBG) {
+            log("mDeviceShuttingDown = " + mDeviceShuttingDown);
+            log("mDesiredPowerState = " + mDesiredPowerState);
+            log("getRadioState = " + mCi.getRadioState());
+            log("mPowerOffDelayNeed = " + mPowerOffDelayNeed);
+            log("mAlarmSwitch = " + mAlarmSwitch);
+        }
+
+        if (mAlarmSwitch) {
+            if(DBG) log("mAlarmSwitch == true");
+            Context context = mPhone.getContext();
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            am.cancel(mRadioOffIntent);
+            mAlarmSwitch = false;
+        }
+
         // If we want it on and it's off, turn it on
         if (mDesiredPowerState
-            && mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
+                && mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
             mCi.setRadioPower(true, null);
         } else if (!mDesiredPowerState && mCi.getRadioState().isOn()) {
             // If it's on and available and we want it off gracefully
-            DcTrackerBase dcTracker = mPhone.mDcTracker;
-            powerOffRadioSafely(dcTracker);
-        } // Otherwise, we're in the desired state
+            if (mPowerOffDelayNeed) {
+                if (mImsRegistrationOnOff && !mAlarmSwitch) {
+                    if(DBG) log("mImsRegistrationOnOff == true");
+                    Context context = mPhone.getContext();
+                    AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+
+                    Intent intent = new Intent(ACTION_RADIO_OFF);
+                    mRadioOffIntent = PendingIntent.getBroadcast(context, 0, intent, 0);
+
+                    mAlarmSwitch = true;
+                    if (DBG) log("Alarm setting");
+                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            SystemClock.elapsedRealtime() + 3000, mRadioOffIntent);
+                } else {
+                    DcTrackerBase dcTracker = mPhone.mDcTracker;
+                    powerOffRadioSafely(dcTracker);
+                }
+            } else {
+                DcTrackerBase dcTracker = mPhone.mDcTracker;
+                powerOffRadioSafely(dcTracker);
+            }
+        } else if (mDeviceShuttingDown && mCi.getRadioState().isAvailable()) {
+            mCi.requestShutdown(null);
+        }
     }
 
     @Override
@@ -570,6 +643,7 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
             intent.putExtra(TelephonyIntents.EXTRA_SPN, spn);
             intent.putExtra(TelephonyIntents.EXTRA_SHOW_PLMN, showPlmn);
             intent.putExtra(TelephonyIntents.EXTRA_PLMN, plmn);
+            SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
             mPhone.getContext().sendStickyBroadcastAsUser(intent, UserHandle.ALL);
         }
 
@@ -713,7 +787,13 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                     String opNames[] = (String[])ar.result;
 
                     if (opNames != null && opNames.length >= 3) {
-                         mNewSS.setOperatorName (opNames[0], opNames[1], opNames[2]);
+                        String brandOverride = mUiccController.getUiccCard() != null ?
+                            mUiccController.getUiccCard().getOperatorBrandOverride() : null;
+                        if (brandOverride != null) {
+                            mNewSS.setOperatorName(brandOverride, brandOverride, opNames[2]);
+                        } else {
+                            mNewSS.setOperatorName(opNames[0], opNames[1], opNames[2]);
+                        }
                     }
                     break;
                 }
@@ -746,9 +826,8 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
              * agreements and MVNO's.
              */
             boolean roaming = (mGsmRoaming || mDataRoaming);
-            if ((mGsmRoaming && isSameNamedOperators(mNewSS)
-                        && !isSameNamedOperatorConsideredRoaming(mNewSS))
-                    || isOperatorConsideredNonRoaming(mNewSS)) {
+            if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS) &&
+                (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
                 roaming = false;
             }
             mNewSS.setRoaming(roaming);
@@ -769,7 +848,8 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
      * and start over again if the radio notifies us that some
      * event has changed
      */
-    private void pollState() {
+    @Override
+    public void pollState() {
         mPollingContext = new int[1];
         mPollingContext[0] = 0;
 
@@ -1012,6 +1092,12 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                             "' iso-cc-idx=" + Arrays.binarySearch(GMT_COUNTRY_CODES, iso));
                     }
 
+                    if ("".equals(iso) && mNeedFixZoneAfterNitz) {
+                        // Country code not found.  This is likely a test network.
+                        // Get a TimeZone based only on the NITZ parameters (best guess).
+                        zone = getNitzTimeZone(mZoneOffset, mZoneDst, mZoneTime);
+                        if (DBG) log("pollStateDone: using NITZ TimeZone");
+                    } else
                     // "(mZoneOffset == 0) && (mZoneDst == false) &&
                     //  (Arrays.binarySearch(GMT_COUNTRY_CODES, iso) < 0)"
                     // means that we received a NITZ string telling
@@ -1042,11 +1128,6 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                             }
                         }
                         if (DBG) log("pollStateDone: using default TimeZone");
-                    } else if (iso.equals("")){
-                        // Country code not found.  This is likely a test network.
-                        // Get a TimeZone based only on the NITZ parameters (best guess).
-                        zone = getNitzTimeZone(mZoneOffset, mZoneDst, mZoneTime);
-                        if (DBG) log("pollStateDone: using NITZ TimeZone");
                     } else {
                         zone = TimeUtils.getTimeZone(mZoneOffset, mZoneDst, mZoneTime, iso);
                         if (DBG) log("pollStateDone: using getTimeZone(off, dst, time, iso)");
@@ -1321,7 +1402,7 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
      * @return true if same operator
      */
     private boolean isSameNamedOperators(ServiceState s) {
-        String spn = SystemProperties.get(TelephonyProperties.PROPERTY_ICC_OPERATOR_ALPHA, "empty");
+        String spn = getSystemProperty(TelephonyProperties.PROPERTY_ICC_OPERATOR_ALPHA, "empty");
 
         String onsl = s.getOperatorAlphaLong();
         String onss = s.getOperatorAlphaShort();
@@ -1339,7 +1420,7 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
      * @return true if both are same
      */
     private boolean currentMccEqualsSimMcc(ServiceState s) {
-        String simNumeric = SystemProperties.get(
+        String simNumeric = getSystemProperty(
                 TelephonyProperties.PROPERTY_ICC_OPERATOR_NUMERIC, "");
         String operatorNumeric = s.getOperatorNumeric();
         boolean equalsMcc = true;
@@ -1379,7 +1460,7 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
         return false;
     }
 
-    private boolean isSameNamedOperatorConsideredRoaming(ServiceState s) {
+    private boolean isOperatorConsideredRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
         String[] numericArray = mPhone.getContext().getResources().getStringArray(
                     com.android.internal.R.array.config_sameNamedOperatorConsideredRoaming);
@@ -1560,8 +1641,7 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
                 }
             }
 
-
-            String iso = SystemProperties.get(TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY);
+            String iso = getSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY, "");
 
             if (zone == null) {
 
@@ -1795,6 +1875,8 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
 
         if (DBG) log("setNotification: put notification " + title + " / " +details);
         mNotification.tickerText = title;
+        mNotification.color = context.getResources().getColor(
+                com.android.internal.R.color.system_notification_accent_color);
         mNotification.setLatestEventInfo(context, title, details,
                 mNotification.contentIntent);
 
@@ -1810,14 +1892,18 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
         }
     }
 
+    private UiccCardApplication getUiccCardApplication() {
+            return  mUiccController.getUiccCardApplication(mPhone.getPhoneId(),
+                    UiccController.APP_FAM_3GPP);
+    }
+
     @Override
     protected void onUpdateIccAvailability() {
         if (mUiccController == null ) {
             return;
         }
 
-        UiccCardApplication newUiccApplication =
-                mUiccController.getUiccCardApplication(UiccController.APP_FAM_3GPP);
+        UiccCardApplication newUiccApplication = getUiccCardApplication();
 
         if (mUiccApplcation != newUiccApplication) {
             if (mUiccApplcation != null) {
@@ -1884,5 +1970,71 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
         pw.println(" mCurShowSpn=" + mCurShowSpn);
         pw.println(" mCurPlmn=" + mCurPlmn);
         pw.println(" mCurShowPlmn=" + mCurShowPlmn);
+    }
+
+
+    /**
+     * Clean up existing voice and data connection then turn off radio power.
+     *
+     * Hang up the existing voice calls to decrease call drop rate.
+     */
+    @Override
+    public void powerOffRadioSafely(DcTrackerBase dcTracker) {
+        synchronized (this) {
+            if (!mPendingRadioPowerOffAfterDataOff) {
+                long dds = SubscriptionManager.getDefaultDataSubId();
+                // To minimize race conditions we call cleanUpAllConnections on
+                // both if else paths instead of before this isDisconnected test.
+                if (dcTracker.isDisconnected()
+                        && (dds == mPhone.getSubId()
+                            || (dds != mPhone.getSubId()
+                                && ProxyController.getInstance().isDataDisconnected(dds)))) {
+                    // To minimize race conditions we do this after isDisconnected
+                    dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
+                    if (DBG) log("Data disconnected, turn off radio right away.");
+                    hangupAndPowerOff();
+                } else {
+                    dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
+                    if (dds != mPhone.getSubId()
+                            && !ProxyController.getInstance().isDataDisconnected(dds)) {
+                        if (DBG) log("Data is active on DDS.  Wait for all data disconnect");
+                        // Data is not disconnected on DDS. Wait for the data disconnect complete
+                        // before sending the RADIO_POWER off.
+                        ProxyController.getInstance().registerForAllDataDisconnected(dds, this,
+                                EVENT_ALL_DATA_DISCONNECTED, null);
+                        mPendingRadioPowerOffAfterDataOff = true;
+                    }
+                    Message msg = Message.obtain(this);
+                    msg.what = EVENT_SET_RADIO_POWER_OFF;
+                    msg.arg1 = ++mPendingRadioPowerOffAfterDataOffTag;
+                    if (sendMessageDelayed(msg, 30000)) {
+                        if (DBG) log("Wait upto 30s for data to disconnect, then turn off radio.");
+                        mPendingRadioPowerOffAfterDataOff = true;
+                    } else {
+                        log("Cannot send delayed Msg, turn off radio right away.");
+                        hangupAndPowerOff();
+                        mPendingRadioPowerOffAfterDataOff = false;
+                    }
+                }
+            }
+        }
+
+    }
+
+    public void setImsRegistrationState(boolean registered){
+        if (mImsRegistrationOnOff && !registered) {
+            if (mAlarmSwitch) {
+                mImsRegistrationOnOff = registered;
+
+                Context context = mPhone.getContext();
+                AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                am.cancel(mRadioOffIntent);
+                mAlarmSwitch = false;
+
+                sendMessage(obtainMessage(EVENT_CHANGE_IMS_STATE));
+                return;
+            }
+        }
+        mImsRegistrationOnOff = registered;
     }
 }

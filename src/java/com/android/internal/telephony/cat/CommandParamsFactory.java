@@ -962,4 +962,12 @@ class CommandParamsFactory extends Handler {
         }
         return false;
     }
+
+    public void dispose() {
+        mIconLoader.dispose();
+        mIconLoader = null;
+        mCmdParams = null;
+        mCaller = null;
+        sInstance = null;
+    }
 }

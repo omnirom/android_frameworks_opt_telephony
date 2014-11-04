@@ -17,8 +17,8 @@
 package com.android.internal.telephony;
 
 import android.content.Context;
-import android.net.LinkCapabilities;
 import android.net.LinkProperties;
+import android.net.NetworkCapabilities;
 import android.os.Handler;
 import android.os.Message;
 import android.telephony.CellInfo;
@@ -27,11 +27,13 @@ import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 
+import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IsimRecords;
+import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UsimServiceTable;
 
-import com.android.internal.telephony.PhoneConstants.*; // ???? 
+import com.android.internal.telephony.PhoneConstants.*; // ????
 
 import java.util.List;
 
@@ -75,6 +77,7 @@ public interface Phone {
     static final String FEATURE_ENABLE_FOTA = "enableFOTA";
     static final String FEATURE_ENABLE_IMS = "enableIMS";
     static final String FEATURE_ENABLE_CBS = "enableCBS";
+    static final String FEATURE_ENABLE_EMERGENCY = "enableEmergency";
 
     /**
      * Optional reasons for disconnect and connect
@@ -105,6 +108,7 @@ public interface Phone {
     static final String REASON_CONNECTED = "connected";
     static final String REASON_NV_READY = "nvReady";
     static final String REASON_SINGLE_PDN_ARBITRATION = "SinglePdnArbitration";
+    static final String REASON_DATA_SPECIFIC_DISABLED = "specificDisabled";
 
     // Used for band mode selection methods
     static final int BM_UNSPECIFIED = 0; // selected by baseband automatically
@@ -130,7 +134,7 @@ public interface Phone {
 
     int NT_MODE_LTE_CDMA_AND_EVDO        = RILConstants.NETWORK_MODE_LTE_CDMA_EVDO;
     int NT_MODE_LTE_GSM_WCDMA            = RILConstants.NETWORK_MODE_LTE_GSM_WCDMA;
-    int NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA  = RILConstants.NETWORK_MODE_LTE_CMDA_EVDO_GSM_WCDMA;
+    int NT_MODE_LTE_CDMA_EVDO_GSM_WCDMA  = RILConstants.NETWORK_MODE_LTE_CDMA_EVDO_GSM_WCDMA;
     int NT_MODE_LTE_ONLY                 = RILConstants.NETWORK_MODE_LTE_ONLY;
     int NT_MODE_LTE_WCDMA                = RILConstants.NETWORK_MODE_LTE_WCDMA;
     int PREFERRED_NT_MODE                = RILConstants.PREFERRED_NETWORK_MODE;
@@ -284,9 +288,9 @@ public interface Phone {
     LinkProperties getLinkProperties(String apnType);
 
     /**
-     * Return the LinkCapabilities
+     * Return the NetworkCapabilities
      */
-    LinkCapabilities getLinkCapabilities(String apnType);
+    NetworkCapabilities getNetworkCapabilities(String apnType);
 
     /**
      * Get current signal strength. No change notification available on this
@@ -312,6 +316,16 @@ public interface Phone {
     void unregisterForUnknownConnection(Handler h);
 
     /**
+     * Notifies when a Handover happens due to SRVCC or Silent Redial
+     */
+    void registerForHandoverStateChanged(Handler h, int what, Object obj);
+
+    /**
+     * Unregisters for handover state notifications
+     */
+    void unregisterForHandoverStateChanged(Handler h);
+
+    /**
      * Register for getting notifications for change in the Call State {@link Call.State}
      * This is called PreciseCallState because the call state is more precise than the
      * {@link PhoneConstants.State} which can be obtained using the {@link PhoneStateListener}
@@ -327,7 +341,6 @@ public interface Phone {
      * Extraneous calls are tolerated silently.
      */
     void unregisterForPreciseCallStateChanged(Handler h);
-
 
     /**
      * Notifies when a new ringing or waiting connection has appeared.<p>
@@ -383,6 +396,23 @@ public interface Phone {
      */
 
     void unregisterForRingbackTone(Handler h);
+
+    /**
+     * Notifies when out-band on-hold tone is needed.<p>
+     *
+     *  Messages received from this:
+     *  Message.obj will be an AsyncResult
+     *  AsyncResult.userObj = obj
+     *  AsyncResult.result = boolean, true to start play on-hold tone
+     *                       and false to stop. <p>
+     */
+    void registerForOnHoldTone(Handler h, int what, Object obj);
+
+    /**
+     * Unregisters for on-hold tone notification.
+     */
+
+    void unregisterForOnHoldTone(Handler h);
 
     /**
      * Registers the handler to reset the uplink mute state to get
@@ -593,6 +623,20 @@ public interface Phone {
     public void unregisterForSubscriptionInfoReady(Handler h);
 
     /**
+     * Registration point for Sim records loaded
+     * @param h handler to notify
+     * @param what what code of message when delivered
+     * @param obj placed in Message.obj
+     */
+    public void registerForSimRecordsLoaded(Handler h, int what, Object obj);
+
+    /**
+     * Unregister for notifications for Sim records loaded
+     * @param h Handler to be removed from the registrant list.
+     */
+    public void unregisterForSimRecordsLoaded(Handler h);
+
+    /**
      * Returns SIM record load state. Use
      * <code>getSimCard().registerForReady()</code> for change notification.
      *
@@ -614,9 +658,10 @@ public interface Phone {
      * {@link #registerForPreciseCallStateChanged(android.os.Handler, int,
      * java.lang.Object) registerForPreciseCallStateChanged()}.
      *
+     * @param videoState The video state in which to answer the call.
      * @exception CallStateException when no call is ringing or waiting
      */
-    void acceptCall() throws CallStateException;
+    void acceptCall(int videoState) throws CallStateException;
 
     /**
      * Reject (ignore) a ringing call. In GSM, this means UDUB
@@ -758,12 +803,14 @@ public interface Phone {
      * cannot assume the audio path is connected (or a call index has been
      * assigned) until PhoneStateChanged notification has occurred.
      *
+     * @param dialString The dial string.
+     * @param videoState The desired video state for the connection.
      * @exception CallStateException if a new outgoing call is not currently
      * possible because no more call slots exist or a call exists that is
      * dialing, alerting, ringing, or waiting.  Other errors are
      * handled asynchronously.
      */
-    Connection dial(String dialString) throws CallStateException;
+    Connection dial(String dialString, int videoState) throws CallStateException;
 
     /**
      * Initiate a new voice connection with supplementary User to User
@@ -771,12 +818,15 @@ public interface Phone {
      * path is connected (or a call index has been assigned) until
      * PhoneStateChanged notification has occurred.
      *
+     * @param dialString The dial string.
+     * @param uusInfo The UUSInfo.
+     * @param videoState The desired video state for the connection.
      * @exception CallStateException if a new outgoing call is not currently
      *                possible because no more call slots exist or a call exists
      *                that is dialing, alerting, ringing, or waiting. Other
      *                errors are handled asynchronously.
      */
-    Connection dial(String dialString, UUSInfo uusInfo) throws CallStateException;
+    Connection dial(String dialString, UUSInfo uusInfo, int videoState) throws CallStateException;
 
     /**
      * Handles PIN MMI commands (PIN/PIN2/PUK/PUK2), which are initiated
@@ -1147,7 +1197,7 @@ public interface Phone {
     /**
      * Enables or disables echo suppression.
      */
-    void setEchoSuppressionEnabled(boolean enabled);
+    void setEchoSuppressionEnabled();
 
     /**
      * Invokes RIL_REQUEST_OEM_HOOK_RAW on RIL implementation.
@@ -1231,8 +1281,9 @@ public interface Phone {
      * Query the list of band mode supported by RF.
      *
      * @param response is callback message
-     *        ((AsyncResult)response.obj).result  is an int[] with every
-     *        element representing one avialable BM_*_BAND
+     *        ((AsyncResult)response.obj).result  is an int[] where int[0] is
+     *        the size of the array and the rest of each element representing
+     *        one available BM_*_BAND
      */
     void queryAvailableBandMode(Message response);
 
@@ -1245,6 +1296,16 @@ public interface Phone {
      * @param enable set true if enable data connection on roaming
      */
     void setDataRoamingEnabled(boolean enable);
+
+    /**
+     * @return true if user has enabled data
+     */
+    boolean getDataEnabled();
+
+    /**
+     * @param @enable set {@code true} if enable data connection
+     */
+    void setDataEnabled(boolean enable);
 
     /**
      *  Query the CDMA roaming preference setting
@@ -1273,38 +1334,6 @@ public interface Phone {
      * otherwise, null.
      */
     SimulatedRadioControl getSimulatedRadioControl();
-
-    /**
-     * Enables the specified APN type. Only works for "special" APN types,
-     * i.e., not the default APN.
-     * @param type The desired APN type. Cannot be {@link PhoneConstants#APN_TYPE_DEFAULT}.
-     * @return <code>APN_ALREADY_ACTIVE</code> if the current APN
-     * services the requested type.<br/>
-     * <code>APN_TYPE_NOT_AVAILABLE</code> if the carrier does not
-     * support the requested APN.<br/>
-     * <code>APN_REQUEST_STARTED</code> if the request has been initiated.<br/>
-     * <code>APN_REQUEST_FAILED</code> if the request was invalid.<br/>
-     * A <code>ACTION_ANY_DATA_CONNECTION_STATE_CHANGED</code> broadcast will
-     * indicate connection state progress.
-     */
-    int enableApnType(String type);
-
-    /**
-     * Disables the specified APN type, and switches back to the default APN,
-     * if necessary. Switching to the default APN will not happen if default
-     * data traffic has been explicitly disabled via a call to ITelephony#disableDataConnectivity.
-     * <p/>Only works for "special" APN types,
-     * i.e., not the default APN.
-     * @param type The desired APN type. Cannot be {@link PhoneConstants#APN_TYPE_DEFAULT}.
-     * @return <code>APN_ALREADY_ACTIVE</code> if the default APN
-     * is already active.<br/>
-     * <code>APN_REQUEST_STARTED</code> if the request to switch to the default
-     * APN has been initiated.<br/>
-     * <code>APN_REQUEST_FAILED</code> if the request was invalid.<br/>
-     * A <code>ACTION_ANY_DATA_CONNECTION_STATE_CHANGED</code> broadcast will
-     * indicate connection state progress.
-     */
-    int disableApnType(String type);
 
     /**
      * Report on whether data connectivity is allowed.
@@ -1689,16 +1718,6 @@ public interface Phone {
     IsimRecords getIsimRecords();
 
     /**
-     * Request the ISIM application on the UICC to perform the AKA
-     * challenge/response algorithm for IMS authentication. The nonce string
-     * and challenge response are Base64 encoded Strings.
-     *
-     * @param nonce the nonce string to pass with the ISIM authentication request
-     * @param response a callback message with the String response in the obj field
-     */
-    void requestIsimAuthentication(String nonce, Message response);
-
-    /**
      * Sets the SIM voice message waiting indicator records.
      * @param line GSM Subscriber Profile Number, one-based. Only '1' is supported
      * @param countWaiting The number of messages waiting, if known. Use
@@ -1712,6 +1731,12 @@ public interface Phone {
      * @return an interface to the UsimServiceTable record, or null if not available
      */
     UsimServiceTable getUsimServiceTable();
+
+    /**
+     * Gets the Uicc card corresponding to this phone.
+     * @return the UiccCard object corresponding to the phone ID.
+     */
+    UiccCard getUiccCard();
 
     /**
      * Unregister from all events it registered for and dispose objects
@@ -1730,4 +1755,103 @@ public interface Phone {
      * @param voiceRadioTech The new voice radio technology
      */
     void updatePhoneObject(int voiceRadioTech);
+
+    /**
+     * Read one of the NV items defined in {@link RadioNVItems} / {@code ril_nv_items.h}.
+     * Used for device configuration by some CDMA operators.
+     *
+     * @param itemID the ID of the item to read
+     * @param response callback message with the String response in the obj field
+     */
+    void nvReadItem(int itemID, Message response);
+
+    /**
+     * Write one of the NV items defined in {@link RadioNVItems} / {@code ril_nv_items.h}.
+     * Used for device configuration by some CDMA operators.
+     *
+     * @param itemID the ID of the item to read
+     * @param itemValue the value to write, as a String
+     * @param response Callback message.
+     */
+    void nvWriteItem(int itemID, String itemValue, Message response);
+
+    /**
+     * Update the CDMA Preferred Roaming List (PRL) in the radio NV storage.
+     * Used for device configuration by some CDMA operators.
+     *
+     * @param preferredRoamingList byte array containing the new PRL
+     * @param response Callback message.
+     */
+    void nvWriteCdmaPrl(byte[] preferredRoamingList, Message response);
+
+    /**
+     * Perform the specified type of NV config reset. The radio will be taken offline
+     * and the device must be rebooted after erasing the NV. Used for device
+     * configuration by some CDMA operators.
+     *
+     * @param resetType reset type: 1: reload NV reset, 2: erase NV reset, 3: factory NV reset
+     * @param response Callback message.
+     */
+    void nvResetConfig(int resetType, Message response);
+
+    /*
+     * Returns the subscription id.
+     */
+    public long getSubId();
+
+    /*
+     * Returns the phone id.
+     */
+    public int getPhoneId();
+
+    /**
+     * Get P-CSCF address from PCO after data connection is established or modified.
+     * @param apnType the apnType, "ims" for IMS APN, "emergency" for EMERGENCY APN
+     */
+    public String[] getPcscfAddress(String apnType);
+
+    /**
+     * Set IMS registration state
+     */
+    public void setImsRegistrationState(boolean registered);
+
+    /**
+     * Return the ImsPhone phone co-managed with this phone
+     * @return an instance of an ImsPhone phone
+     */
+    public Phone getImsPhone();
+
+    /**
+     * Release the local instance of the ImsPhone and disconnect from
+     * the phone.
+     * @return the instance of the ImsPhone phone previously owned
+     */
+    public ImsPhone relinquishOwnershipOfImsPhone();
+
+    /**
+     * Take ownership and wire-up the input ImsPhone
+     * @param imsPhone ImsPhone to be used.
+     */
+    public void acquireOwnershipOfImsPhone(ImsPhone imsPhone);
+
+    /**
+     * Return the service state of mImsPhone if it is STATE_IN_SERVICE
+     * otherwise return the current voice service state
+     */
+    int getVoicePhoneServiceState();
+
+    /**
+     * Override the service provider name and the operator name for the current ICCID.
+     */
+    public boolean setOperatorBrandOverride(String brand);
+
+    /**
+     * Is Radio Present on the device and is it accessible
+     */
+    public boolean isRadioAvailable();
+
+    /**
+     * shutdown Radio gracefully
+     */
+    public void shutdownRadio();
 }

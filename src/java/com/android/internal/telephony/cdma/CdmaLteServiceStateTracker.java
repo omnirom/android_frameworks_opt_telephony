@@ -16,11 +16,15 @@
 
 package com.android.internal.telephony.cdma;
 
+import android.content.Intent;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.MccTable;
 import com.android.internal.telephony.EventLogTags;
 import com.android.internal.telephony.uicc.RuimRecords;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.PhoneFactory;
 
 import android.telephony.CellInfo;
 import android.telephony.CellInfoLte;
@@ -29,14 +33,22 @@ import android.telephony.CellIdentityLte;
 import android.telephony.SignalStrength;
 import android.telephony.ServiceState;
 import android.telephony.cdma.CdmaCellLocation;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.os.AsyncResult;
 import android.os.Message;
+import android.os.UserHandle;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 
 import android.telephony.Rlog;
 import android.util.EventLog;
+
+import com.android.internal.telephony.dataconnection.DcTrackerBase;
+import com.android.internal.telephony.ProxyController;
+import android.telephony.SubscriptionManager;
+import com.android.internal.telephony.uicc.UiccCardApplication;
+import com.android.internal.telephony.uicc.UiccController;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -46,6 +58,7 @@ import java.util.List;
 public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
     private CDMALTEPhone mCdmaLtePhone;
     private final CellInfoLte mCellInfoLte;
+    private static final int EVENT_ALL_DATA_DISCONNECTED = 1001;
 
     private CellIdentityLte mNewCellIdentityLte = new CellIdentityLte();
     private CellIdentityLte mLasteCellIdentityLte = new CellIdentityLte();
@@ -73,6 +86,7 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
             return;
         }
 
+        if (DBG) log("handleMessage: " + msg.what);
         switch (msg.what) {
         case EVENT_POLL_STATE_GPRS:
             if (DBG) log("handleMessage EVENT_POLL_STATE_GPRS");
@@ -82,18 +96,36 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
         case EVENT_RUIM_RECORDS_LOADED:
             updatePhoneObject();
             RuimRecords ruim = (RuimRecords)mIccRecords;
-            if ((ruim != null) && ruim.isProvisioned()) {
-                mMdn = ruim.getMdn();
-                mMin = ruim.getMin();
-                parseSidNid(ruim.getSid(), ruim.getNid());
-                mPrlVersion = ruim.getPrlVersion();
-                mIsMinInfoReady = true;
+            if (ruim != null) {
+                if (ruim.isProvisioned()) {
+                    mMdn = ruim.getMdn();
+                    mMin = ruim.getMin();
+                    parseSidNid(ruim.getSid(), ruim.getNid());
+                    mPrlVersion = ruim.getPrlVersion();
+                    mIsMinInfoReady = true;
+                }
                 updateOtaspState();
             }
+            // reload eri in case of IMSI changed
+            // eri.xml can be defined by mcc mnc
+            mPhone.prepareEri();
             // SID/NID/PRL is loaded. Poll service state
             // again to update to the roaming state with
             // the latest variables.
             pollState();
+            break;
+        case EVENT_ALL_DATA_DISCONNECTED:
+            long dds = SubscriptionManager.getDefaultDataSubId();
+            ProxyController.getInstance().unregisterForAllDataDisconnected(dds, this);
+            synchronized(this) {
+                if (mPendingRadioPowerOffAfterDataOff) {
+                    if (DBG) log("EVENT_ALL_DATA_DISCONNECTED, turn radio off now.");
+                    hangupAndPowerOff();
+                    mPendingRadioPowerOffAfterDataOff = false;
+                } else {
+                    log("EVENT_ALL_DATA_DISCONNECTED is stale");
+                }
+            }
             break;
         default:
             super.handleMessage(msg);
@@ -213,7 +245,7 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
     }
 
     @Override
-    protected void pollState() {
+    public void pollState() {
         mPollingContext = new int[1];
         mPollingContext[0] = 0;
 
@@ -363,7 +395,9 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
         }
 
         if (hasChanged) {
-            if (mPhone.isEriFileLoaded()) {
+            boolean hasBrandOverride = mUiccController.getUiccCard() == null ? false :
+                    (mUiccController.getUiccCard().getOperatorBrandOverride() != null);
+            if (!hasBrandOverride && (mCi.getRadioState().isOn()) && (mPhone.isEriFileLoaded())) {
                 String eriText;
                 // Now the CDMAPhone sees the new ServiceState so it can get the
                 // new ERI text
@@ -409,11 +443,16 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
             String prevOperatorNumeric =
                     SystemProperties.get(TelephonyProperties.PROPERTY_OPERATOR_NUMERIC, "");
             operatorNumeric = mSS.getOperatorNumeric();
+            // try to fix the invalid Operator Numeric
+            if (isInvalidOperatorNumeric(operatorNumeric)) {
+                int sid = mSS.getSystemId();
+                operatorNumeric = fixUnknownMcc(operatorNumeric, sid);
+            }
             mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_NUMERIC, operatorNumeric);
             updateCarrierMccMncConfiguration(operatorNumeric,
                     prevOperatorNumeric, mPhone.getContext());
 
-            if (operatorNumeric == null) {
+            if (isInvalidOperatorNumeric(operatorNumeric)) {
                 if (DBG) log("operatorNumeric is null");
                 mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY, "");
                 mGotCountryCode = false;
@@ -432,6 +471,8 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
                 mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY,
                         isoCountryCode);
                 mGotCountryCode = true;
+
+                setOperatorIdd(operatorNumeric);
 
                 if (shouldFixTimeZoneNow(mPhone, operatorNumeric, prevOperatorNumeric,
                         mNeedFixZone)) {
@@ -487,7 +528,7 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
                 boolean registered = mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE;
                 mLasteCellIdentityLte = mNewCellIdentityLte;
 
-                cil.setRegisterd(registered);
+                cil.setRegistered(registered);
                 cil.setCellIdentity(mLasteCellIdentityLte);
                 if (DBG) {
                     log("pollStateDone: hasRegistered=" + hasRegistered +
@@ -582,6 +623,85 @@ public class CdmaLteServiceStateTracker extends CdmaServiceStateTracker {
             }
             if (DBG) log ("getAllCellInfo: arrayList=" + arrayList);
             return arrayList;
+        }
+    }
+
+    @Override
+    protected UiccCardApplication getUiccCardApplication() {
+            return  mUiccController.getUiccCardApplication(((CDMALTEPhone)mPhone).
+                    getPhoneId(), UiccController.APP_FAM_3GPP2);
+    }
+
+    protected void updateCdmaSubscription() {
+        mCi.getCDMASubscription(obtainMessage(EVENT_POLL_STATE_CDMA_SUBSCRIPTION));
+    }
+
+    /**
+     * Clean up existing voice and data connection then turn off radio power.
+     *
+     * Hang up the existing voice calls to decrease call drop rate.
+     */
+    @Override
+    public void powerOffRadioSafely(DcTrackerBase dcTracker) {
+        synchronized (this) {
+            if (!mPendingRadioPowerOffAfterDataOff) {
+                long dds = SubscriptionManager.getDefaultDataSubId();
+                // To minimize race conditions we call cleanUpAllConnections on
+                // both if else paths instead of before this isDisconnected test.
+                if (dcTracker.isDisconnected()
+                        && (dds == mPhone.getSubId()
+                            || (dds != mPhone.getSubId()
+                                && ProxyController.getInstance().isDataDisconnected(dds)))) {
+                    // To minimize race conditions we do this after isDisconnected
+                    dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
+                    if (DBG) log("Data disconnected, turn off radio right away.");
+                    hangupAndPowerOff();
+                } else {
+                    dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
+                    if (dds != mPhone.getSubId()
+                            && !ProxyController.getInstance().isDataDisconnected(dds)) {
+                        if (DBG) log("Data is active on DDS.  Wait for all data disconnect");
+                        // Data is not disconnected on DDS. Wait for the data disconnect complete
+                        // before sending the RADIO_POWER off.
+                        ProxyController.getInstance().registerForAllDataDisconnected(dds, this,
+                                EVENT_ALL_DATA_DISCONNECTED, null);
+                        mPendingRadioPowerOffAfterDataOff = true;
+                    }
+                    Message msg = Message.obtain(this);
+                    msg.what = EVENT_SET_RADIO_POWER_OFF;
+                    msg.arg1 = ++mPendingRadioPowerOffAfterDataOffTag;
+                    if (sendMessageDelayed(msg, 30000)) {
+                        if (DBG) log("Wait upto 30s for data to disconnect, then turn off radio.");
+                        mPendingRadioPowerOffAfterDataOff = true;
+                    } else {
+                        log("Cannot send delayed Msg, turn off radio right away.");
+                        hangupAndPowerOff();
+                        mPendingRadioPowerOffAfterDataOff = false;
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void updatePhoneObject() {
+        int voiceRat = mSS.getRilVoiceRadioTechnology();
+        if (mPhone.getContext().getResources().
+                getBoolean(com.android.internal.R.bool.config_switch_phone_on_voice_reg_state_change)) {
+            // For CDMA-LTE phone don't update phone to GSM
+            // if replacement RAT is unknown
+            // If there is a  real need to switch to LTE, then it will be done via
+            // RIL_UNSOL_VOICE_RADIO_TECH_CHANGED from RIL.
+
+            int volteReplacementRat = mPhoneBase.getContext().getResources().getInteger(
+                    com.android.internal.R.integer.config_volte_replacement_rat);
+            Rlog.d(LOG_TAG, "updatePhoneObject: volteReplacementRat=" + volteReplacementRat);
+
+            if (voiceRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE &&
+                    volteReplacementRat == ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN) {
+                voiceRat = ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT;
+            }
+            mPhoneBase.updatePhoneObject(voiceRat);
         }
     }
 

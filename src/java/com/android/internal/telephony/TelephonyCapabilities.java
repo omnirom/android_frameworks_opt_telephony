@@ -45,7 +45,10 @@ public class TelephonyCapabilities {
      * otherwise.
      */
     public static boolean supportsEcm(Phone phone) {
-        return (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA);
+        Rlog.d(LOG_TAG, "supportsEcm: Phone type = " + phone.getPhoneType() +
+                  " Ims Phone = " + phone.getImsPhone());
+        return (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA ||
+                phone.getImsPhone() != null);
     }
 
     /**
@@ -136,7 +139,8 @@ public class TelephonyCapabilities {
      */
     public static boolean supportsHoldAndUnhold(Phone phone) {
         return ((phone.getPhoneType() == PhoneConstants.PHONE_TYPE_GSM)
-                || (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_SIP));
+                || (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_SIP)
+                || (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_IMS));
     }
 
     /**

@@ -16,7 +16,9 @@
 
 package com.android.internal.telephony;
 
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
@@ -26,6 +28,7 @@ import android.os.SystemClock;
 import android.telephony.CellInfo;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Pair;
 import android.util.TimeUtils;
@@ -106,8 +109,8 @@ public abstract class ServiceStateTracker extends Handler {
     protected RegistrantList mPsRestrictDisabledRegistrants = new RegistrantList();
 
     /* Radio power off pending flag and tag counter */
-    private boolean mPendingRadioPowerOffAfterDataOff = false;
-    private int mPendingRadioPowerOffAfterDataOffTag = 0;
+    protected boolean mPendingRadioPowerOffAfterDataOff = false;
+    protected int mPendingRadioPowerOffAfterDataOffTag = 0;
 
     /** Signal strength poll rate. */
     protected static final int POLL_PERIOD_MILLIS = 20 * 1000;
@@ -156,9 +159,10 @@ public abstract class ServiceStateTracker extends Handler {
     protected static final int EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED  = 39;
     protected static final int EVENT_CDMA_PRL_VERSION_CHANGED          = 40;
     protected static final int EVENT_RADIO_ON                          = 41;
-    protected static final int EVENT_ICC_CHANGED                       = 42;
+    public static final int EVENT_ICC_CHANGED                          = 42;
     protected static final int EVENT_GET_CELL_INFO_LIST                = 43;
     protected static final int EVENT_UNSOL_CELL_INFO_LIST              = 44;
+    protected static final int EVENT_CHANGE_IMS_STATE                  = 45;
 
     protected static final String TIMEZONE_PROPERTY = "persist.sys.timezone";
 
@@ -200,6 +204,15 @@ public abstract class ServiceStateTracker extends Handler {
     protected static final String REGISTRATION_DENIED_GEN  = "General";
     protected static final String REGISTRATION_DENIED_AUTH = "Authentication Failure";
 
+    protected boolean mImsRegistrationOnOff = false;
+    protected boolean mAlarmSwitch = false;
+    protected IntentFilter mIntentFilter = null;
+    protected PendingIntent mRadioOffIntent = null;
+    protected static final String ACTION_RADIO_OFF = "android.intent.action.ACTION_RADIO_OFF";
+    protected boolean mPowerOffDelayNeed = true;
+    protected boolean mDeviceShuttingDown = false;
+
+
     protected ServiceStateTracker(PhoneBase phoneBase, CommandsInterface ci, CellInfo cellInfo) {
         mPhoneBase = phoneBase;
         mCellInfo = cellInfo;
@@ -213,6 +226,13 @@ public abstract class ServiceStateTracker extends Handler {
 
         mPhoneBase.setSystemProperty(TelephonyProperties.PROPERTY_DATA_NETWORK_TYPE,
             ServiceState.rilRadioTechnologyToString(ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN));
+    }
+
+    void requestShutdown() {
+        if (mDeviceShuttingDown == true) return;
+        mDeviceShuttingDown = true;
+        mDesiredPowerState = false;
+        setPowerStateToDesired();
     }
 
     public void dispose() {
@@ -272,7 +292,10 @@ public abstract class ServiceStateTracker extends Handler {
     }
 
     protected void updatePhoneObject() {
-        mPhoneBase.updatePhoneObject(mSS.getRilVoiceRadioTechnology());
+        if (mPhoneBase.getContext().getResources().
+                getBoolean(com.android.internal.R.bool.config_switch_phone_on_voice_reg_state_change)) {
+            mPhoneBase.updatePhoneObject(mSS.getRilVoiceRadioTechnology());
+        }
     }
 
     /**
@@ -455,6 +478,9 @@ public abstract class ServiceStateTracker extends Handler {
     public abstract int getCurrentDataConnectionState();
     public abstract boolean isConcurrentVoiceAndDataAllowed();
 
+    public abstract void setImsRegistrationState(boolean registered);
+    public abstract void pollState();
+
     /**
      * Registration point for transition into DataConnection attached.
      * @param h handler to notify
@@ -573,6 +599,24 @@ public abstract class ServiceStateTracker extends Handler {
     public void powerOffRadioSafely(DcTrackerBase dcTracker) {
         synchronized (this) {
             if (!mPendingRadioPowerOffAfterDataOff) {
+                // In some network, deactivate PDP connection cause releasing of RRC connection,
+                // which MM/IMSI detaching request needs. Without this detaching, network can
+                // not release the network resources previously attached.
+                // So we are avoiding data detaching on these networks.
+                String[] networkNotClearData = mPhoneBase.getContext().getResources()
+                        .getStringArray(com.android.internal.R.array.networks_not_clear_data);
+                String currentNetwork = mSS.getOperatorNumeric();
+                if ((networkNotClearData != null) && (currentNetwork != null)) {
+                    for (int i = 0; i < networkNotClearData.length; i++) {
+                        if (currentNetwork.equals(networkNotClearData[i])) {
+                            // Don't clear data connection for this carrier
+                            if (DBG)
+                                log("Not disconnecting data for " + currentNetwork);
+                            hangupAndPowerOff();
+                            return;
+                        }
+                    }
+                }
                 // To minimize race conditions we call cleanUpAllConnections on
                 // both if else paths instead of before this isDisconnected test.
                 if (dcTracker.isDisconnected()) {
@@ -707,6 +751,10 @@ public abstract class ServiceStateTracker extends Handler {
         return retVal;
     }
 
+    public String getSystemProperty(String property, String defValue) {
+        return TelephonyManager.getTelephonyProperty(property, mPhoneBase.getSubId(), defValue);
+    }
+
     /**
      * @return all available cell information or null if none.
      */
@@ -720,12 +768,12 @@ public abstract class ServiceStateTracker extends Handler {
                         > LAST_CELL_INFO_LIST_MAX_AGE_MS) {
                     Message msg = obtainMessage(EVENT_GET_CELL_INFO_LIST, result);
                     synchronized(result.lockObj) {
+                        result.list = null;
                         mCi.getCellInfoList(msg);
                         try {
-                            result.lockObj.wait();
+                            result.lockObj.wait(5000);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
-                            result.list = null;
                         }
                     }
                 } else {
@@ -740,15 +788,16 @@ public abstract class ServiceStateTracker extends Handler {
             if (DBG) log("SST.getAllCellInfo(): not implemented");
             result.list = null;
         }
-        if (DBG) {
+        synchronized(result.lockObj) {
             if (result.list != null) {
-                log("SST.getAllCellInfo(): X size=" + result.list.size()
+                if (DBG) log("SST.getAllCellInfo(): X size=" + result.list.size()
                         + " list=" + result.list);
+                return result.list;
             } else {
-                log("SST.getAllCellInfo(): X size=0 list=null");
+                if (DBG) log("SST.getAllCellInfo(): X size=0 list=null");
+                return null;
             }
         }
-        return result.list;
     }
 
     /**
@@ -798,6 +847,7 @@ public abstract class ServiceStateTracker extends Handler {
         // if we have a change in operator, notify wifi (even to/from none)
         if (((newOp == null) && (TextUtils.isEmpty(oldOp) == false)) ||
                 ((newOp != null) && (newOp.equals(oldOp) == false))) {
+            log("update mccmnc=" + newOp + " fromServiceState=true");
             MccTable.updateMccMncConfiguration(context, newOp, true);
         }
     }

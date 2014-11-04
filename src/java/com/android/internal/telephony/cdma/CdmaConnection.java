@@ -25,6 +25,7 @@ import android.os.Message;
 import android.os.PowerManager;
 import android.os.Registrant;
 import android.os.SystemClock;
+import android.telephony.DisconnectCause;
 import android.telephony.Rlog;
 import android.text.TextUtils;
 
@@ -48,10 +49,7 @@ public class CdmaConnection extends Connection {
     CdmaCall mParent;
 
 
-    String mAddress;             // MAY BE NULL!!!
-    String mDialString;          // outgoing calls only
     String mPostDialString;      // outgoing calls only
-    boolean mIsIncoming;
     boolean mDisconnected;
     int mIndex;          // index in CdmaCallTracker.connections[], -1 if unassigned
 
@@ -59,26 +57,13 @@ public class CdmaConnection extends Connection {
      * These time/timespan values are based on System.currentTimeMillis(),
      * i.e., "wall clock" time.
      */
-    long mCreateTime;
-    long mConnectTime;
     long mDisconnectTime;
-
-    /*
-     * These time/timespan values are based on SystemClock.elapsedRealTime(),
-     * i.e., time since boot.  They are appropriate for comparison and
-     * calculating deltas.
-     */
-    long mConnectTimeReal;
-    long mDuration;
-    long mHoldingStartTime;  // The time when the Connection last transitioned
-                            // into HOLDING
 
     int mNextPostDialChar;       // index into postDialString
 
-    DisconnectCause mCause = DisconnectCause.NOT_DISCONNECTED;
+    int mCause = DisconnectCause.NOT_DISCONNECTED;
     PostDialState mPostDialState = PostDialState.NOT_STARTED;
-    int mNumberPresentation = PhoneConstants.PRESENTATION_ALLOWED;
-
+    int mPreciseCause = 0;
 
     Handler mHandler;
 
@@ -229,39 +214,13 @@ public class CdmaConnection extends Connection {
     }
 
     @Override
-    public String getAddress() {
-        return mAddress;
-    }
-
-    @Override
     public CdmaCall getCall() {
         return mParent;
     }
 
     @Override
-    public long getCreateTime() {
-        return mCreateTime;
-    }
-
-    @Override
-    public long getConnectTime() {
-        return mConnectTime;
-    }
-
-    @Override
     public long getDisconnectTime() {
         return mDisconnectTime;
-    }
-
-    @Override
-    public long getDurationMillis() {
-        if (mConnectTimeReal == 0) {
-            return 0;
-        } else if (mDuration == 0) {
-            return SystemClock.elapsedRealtime() - mConnectTimeReal;
-        } else {
-            return mDuration;
-        }
     }
 
     @Override
@@ -275,13 +234,8 @@ public class CdmaConnection extends Connection {
     }
 
     @Override
-    public DisconnectCause getDisconnectCause() {
+    public int getDisconnectCause() {
         return mCause;
-    }
-
-    @Override
-    public boolean isIncoming() {
-        return mIsIncoming;
     }
 
     @Override
@@ -367,10 +321,15 @@ public class CdmaConnection extends Connection {
     void
     onHangupLocal() {
         mCause = DisconnectCause.LOCAL;
+        mPreciseCause = 0;
     }
 
-    DisconnectCause
-    disconnectCauseFromCode(int causeCode) {
+    /**
+     * Maps RIL call disconnect code to {@link DisconnectCause}.
+     * @param causeCode RIL disconnect code
+     * @return the corresponding value from {@link DisconnectCause}
+     */
+    int disconnectCauseFromCode(int causeCode) {
         /**
          * See 22.001 Annex F.4 for mapping of cause codes
          * to local tones
@@ -435,12 +394,16 @@ public class CdmaConnection extends Connection {
 
     /*package*/ void
     onRemoteDisconnect(int causeCode) {
+        this.mPreciseCause = causeCode;
         onDisconnect(disconnectCauseFromCode(causeCode));
     }
 
-    /** Called when the radio indicates the connection has been disconnected */
+    /**
+     * Called when the radio indicates the connection has been disconnected.
+     * @param cause call disconnect cause; values are defined in {@link DisconnectCause}
+     */
     /*package*/ boolean
-    onDisconnect(DisconnectCause cause) {
+    onDisconnect(int cause) {
         boolean changed = false;
 
         mCause = cause;
@@ -485,7 +448,9 @@ public class CdmaConnection extends Connection {
 
         if (Phone.DEBUG_PHONE) log("parent= " +mParent +", newParent= " + newParent);
 
-        if (!equalsHandlesNulls(mAddress, dc.number)) {
+        log(" mNumberConverted " + mNumberConverted);
+        if (!equalsHandlesNulls(mAddress, dc.number) && (!mNumberConverted
+                || !equalsHandlesNulls(mConvertedNumber, dc.number)))  {
             if (Phone.DEBUG_PHONE) log("update: phone # changed!");
             mAddress = dc.number;
             changed = true;
@@ -594,10 +559,11 @@ public class CdmaConnection extends Connection {
 
     private void
     doDisconnect() {
-       mIndex = -1;
-       mDisconnectTime = System.currentTimeMillis();
-       mDuration = SystemClock.elapsedRealtime() - mConnectTimeReal;
-       mDisconnected = true;
+        mIndex = -1;
+        mDisconnectTime = System.currentTimeMillis();
+        mDuration = SystemClock.elapsedRealtime() - mConnectTimeReal;
+        mDisconnected = true;
+        clearPostDialListeners();
     }
 
     /*package*/ void
@@ -793,6 +759,7 @@ public class CdmaConnection extends Connection {
             releaseWakeLock();
         }
         mPostDialState = s;
+        notifyPostDialListeners();
     }
 
     private void createWakeLock(Context context) {
@@ -944,5 +911,19 @@ public class CdmaConnection extends Connection {
     public UUSInfo getUUSInfo() {
         // UUS information not supported in CDMA
         return null;
+    }
+
+    public int getPreciseDisconnectCause() {
+        return mPreciseCause;
+    }
+
+    @Override
+    public Connection getOrigConnection() {
+        return null;
+    }
+
+    @Override
+    public boolean isMultiparty() {
+        return false;
     }
 }

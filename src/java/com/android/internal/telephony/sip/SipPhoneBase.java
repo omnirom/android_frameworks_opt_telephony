@@ -70,30 +70,15 @@ abstract class SipPhoneBase extends PhoneBase {
     public abstract Call getRingingCall();
 
     @Override
-    public Connection dial(String dialString, UUSInfo uusInfo)
+    public Connection dial(String dialString, UUSInfo uusInfo, int videoState)
             throws CallStateException {
         // ignore UUSInfo
-        return dial(dialString);
+        return dial(dialString, videoState);
     }
 
     void migrateFrom(SipPhoneBase from) {
+        super.migrateFrom(from);
         migrate(mRingbackRegistrants, from.mRingbackRegistrants);
-        migrate(mPreciseCallStateRegistrants, from.mPreciseCallStateRegistrants);
-        migrate(mNewRingingConnectionRegistrants, from.mNewRingingConnectionRegistrants);
-        migrate(mIncomingRingRegistrants, from.mIncomingRingRegistrants);
-        migrate(mDisconnectRegistrants, from.mDisconnectRegistrants);
-        migrate(mServiceStateRegistrants, from.mServiceStateRegistrants);
-        migrate(mMmiCompleteRegistrants, from.mMmiCompleteRegistrants);
-        migrate(mMmiRegistrants, from.mMmiRegistrants);
-        migrate(mUnknownConnectionRegistrants, from.mUnknownConnectionRegistrants);
-        migrate(mSuppServiceFailedRegistrants, from.mSuppServiceFailedRegistrants);
-    }
-
-    static void migrate(RegistrantList to, RegistrantList from) {
-        from.removeCleared();
-        for (int i = 0, n = from.size(); i < n; i++) {
-            to.add((Registrant) from.get(i));
-        }
     }
 
     @Override
@@ -444,6 +429,15 @@ abstract class SipPhoneBase extends PhoneBase {
 
     @Override
     public void setDataRoamingEnabled(boolean enable) {
+    }
+
+    @Override
+    public boolean getDataEnabled() {
+        return false;
+    }
+
+    @Override
+    public void setDataEnabled(boolean enable) {
     }
 
     public boolean enableDataConnectivity() {

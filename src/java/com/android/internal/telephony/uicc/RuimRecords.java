@@ -32,6 +32,7 @@ import android.content.Context;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.os.SystemProperties;
+import android.telephony.TelephonyManager;
 import android.telephony.Rlog;
 import android.text.TextUtils;
 
@@ -135,6 +136,7 @@ public final class RuimRecords extends IccRecords {
     protected void resetRecords() {
         mCountVoiceMessages = 0;
         mMncLength = UNINITIALIZED;
+        log("setting0 mMncLength" + mMncLength);
         mIccId = null;
 
         mAdnCache.reset();
@@ -294,22 +296,38 @@ public final class RuimRecords extends IccRecords {
             }
 
             if (numBytes == 0) {
-                mSpn = "";
+                setServiceProviderName("");
                 return;
             }
             try {
                 switch (encoding) {
                 case UserData.ENCODING_OCTET:
                 case UserData.ENCODING_LATIN:
-                    mSpn = new String(spnData, 0, numBytes, "ISO-8859-1");
+                    setServiceProviderName(new String(spnData, 0, numBytes, "ISO-8859-1"));
                     break;
                 case UserData.ENCODING_IA5:
                 case UserData.ENCODING_GSM_7BIT_ALPHABET:
-                case UserData.ENCODING_7BIT_ASCII:
-                    mSpn = GsmAlphabet.gsm7BitPackedToString(spnData, 0, (numBytes*8)/7);
+                    setServiceProviderName(
+                            GsmAlphabet.gsm7BitPackedToString(spnData, 0, (numBytes*8)/7));
                     break;
+                case UserData.ENCODING_7BIT_ASCII:
+                    String spn = new String(spnData, 0, numBytes, "US-ASCII");
+                    // To address issues with incorrect encoding scheme
+                    // programmed in some commercial CSIM cards, the decoded
+                    // SPN is checked to have characters in printable ASCII
+                    // range. If not, they are decoded with
+                    // ENCODING_GSM_7BIT_ALPHABET scheme.
+                    if (TextUtils.isPrintableAsciiOnly(spn)) {
+                        setServiceProviderName(spn);
+                    } else {
+                        if (DBG) log("Some corruption in SPN decoding = " + spn);
+                        if (DBG) log("Using ENCODING_GSM_7BIT_ALPHABET scheme...");
+                        setServiceProviderName(
+                                GsmAlphabet.gsm7BitPackedToString(spnData, 0, (numBytes * 8) / 7));
+                    }
+                break;
                 case UserData.ENCODING_UNICODE_16:
-                    mSpn =  new String(spnData, 0, numBytes, "utf-16");
+                    setServiceProviderName(new String(spnData, 0, numBytes, "utf-16"));
                     break;
                 default:
                     log("SPN encoding not supported");
@@ -317,9 +335,9 @@ public final class RuimRecords extends IccRecords {
             } catch(Exception e) {
                 log("spn decode error: " + e);
             }
-            if (DBG) log("spn=" + mSpn);
+            if (DBG) log("spn=" + getServiceProviderName());
             if (DBG) log("spnCondition=" + mCsimSpnDisplayCondition);
-            SystemProperties.set(PROPERTY_ICC_OPERATOR_ALPHA, mSpn);
+            SystemProperties.set(PROPERTY_ICC_OPERATOR_ALPHA, getServiceProviderName());
         }
     }
 
@@ -478,14 +496,22 @@ public final class RuimRecords extends IccRecords {
                     mImsi = null;
                 }
 
-                log("IMSI: " + mImsi.substring(0, 6) + "xxxxxxxxx");
+                // FIXME: CSIM IMSI may not contain the MNC.
+                if (false) {
+                    log("IMSI: " + mImsi.substring(0, 6) + "xxxxxxxxx");
 
-                String operatorNumeric = getRUIMOperatorNumeric();
-                if (operatorNumeric != null) {
-                    if(operatorNumeric.length() <= 6){
-                        MccTable.updateMccMncConfiguration(mContext, operatorNumeric, false);
+                    String operatorNumeric = getRUIMOperatorNumeric();
+                    if (operatorNumeric != null) {
+                        if (operatorNumeric.length() <= 6) {
+                            log("update mccmnc=" + operatorNumeric);
+                            MccTable.updateMccMncConfiguration(mContext, operatorNumeric, false);
+                        }
                     }
+                } else {
+                    String operatorNumeric = getRUIMOperatorNumeric();
+                    log("NO update mccmnc=" + operatorNumeric);
                 }
+
             break;
 
             case EVENT_GET_CDMA_SUBSCRIPTION_DONE:
@@ -560,27 +586,50 @@ public final class RuimRecords extends IccRecords {
         }
     }
 
-    private String findBestLanguage(byte[] languages) {
-        String bestMatch = null;
-        String[] locales = mContext.getAssets().getLocales();
+    /**
+     * Returns an array of languages we have assets for.
+     *
+     * NOTE: This array will have duplicates. If this method will be caused
+     * frequently or in a tight loop, it can be rewritten for efficiency.
+     */
+    private static String[] getAssetLanguages(Context ctx) {
+        final String[] locales = ctx.getAssets().getLocales();
+        final String[] localeLangs = new String[locales.length];
+        for (int i = 0; i < locales.length; ++i) {
+            final String localeStr = locales[i];
+            final int separator = localeStr.indexOf('-');
+            if (separator < 0) {
+                localeLangs[i] = localeStr;
+            } else {
+                localeLangs[i] = localeStr.substring(0, separator);
+            }
+        }
 
-        if ((languages == null) || (locales == null)) return null;
+        return localeLangs;
+    }
+
+    private String findBestLanguage(byte[] languages) {
+        final String[] assetLanguages = getAssetLanguages(mContext);
+
+        if ((languages == null) || (assetLanguages == null)) return null;
 
         // Each 2-bytes consists of one language
         for (int i = 0; (i + 1) < languages.length; i += 2) {
+            final String lang;
             try {
-                String lang = new String(languages, i, 2, "ISO-8859-1");
-                for (int j = 0; j < locales.length; j++) {
-                    if (locales[j] != null && locales[j].length() >= 2 &&
-                        locales[j].substring(0, 2).equals(lang)) {
-                        return lang;
-                    }
-                }
-                if (bestMatch != null) break;
+                lang = new String(languages, i, 2, "ISO-8859-1");
             } catch(java.io.UnsupportedEncodingException e) {
-                log ("Failed to parse SIM language records");
+                log("Failed to parse SIM language records");
+                continue;
+            }
+
+            for (int j = 0; j < assetLanguages.length; j++) {
+                if (assetLanguages[j].equals(lang)) {
+                    return lang;
+                }
             }
         }
+
         // no match found. return null
         return null;
     }
@@ -630,21 +679,25 @@ public final class RuimRecords extends IccRecords {
 
         // Further records that can be inserted are Operator/OEM dependent
 
-        String operator = getRUIMOperatorNumeric();
-        if (!TextUtils.isEmpty(operator)) {
-            log("onAllRecordsLoaded set 'gsm.sim.operator.numeric' to operator='" +
-                    operator + "'");
-            SystemProperties.set(PROPERTY_ICC_OPERATOR_NUMERIC, operator);
-        } else {
-            log("onAllRecordsLoaded empty 'gsm.sim.operator.numeric' skipping");
-        }
+        // FIXME: CSIM IMSI may not contain the MNC.
+        if (false) {
+            String operator = getRUIMOperatorNumeric();
+            if (!TextUtils.isEmpty(operator)) {
+                log("onAllRecordsLoaded set 'gsm.sim.operator.numeric' to operator='" +
+                        operator + "'");
+                log("update icc_operator_numeric=" + operator);
+                SystemProperties.set(PROPERTY_ICC_OPERATOR_NUMERIC, operator);
+            } else {
+                log("onAllRecordsLoaded empty 'gsm.sim.operator.numeric' skipping");
+            }
 
-        if (!TextUtils.isEmpty(mImsi)) {
-            log("onAllRecordsLoaded set mcc imsi=" + mImsi);
-            SystemProperties.set(PROPERTY_ICC_OPERATOR_ISO_COUNTRY,
-                    MccTable.countryCodeForMcc(Integer.parseInt(mImsi.substring(0,3))));
-        } else {
-            log("onAllRecordsLoaded empty imsi skipping setting mcc");
+            if (!TextUtils.isEmpty(mImsi)) {
+                log("onAllRecordsLoaded set mcc imsi=" + mImsi);
+                SystemProperties.set(PROPERTY_ICC_OPERATOR_ISO_COUNTRY,
+                        MccTable.countryCodeForMcc(Integer.parseInt(mImsi.substring(0,3))));
+            } else {
+                log("onAllRecordsLoaded empty imsi skipping setting mcc");
+            }
         }
 
         setLocaleFromCsim();
@@ -785,14 +838,16 @@ public final class RuimRecords extends IccRecords {
                 break;
             case IccRefreshResponse.REFRESH_RESULT_RESET:
                 if (DBG) log("handleRuimRefresh with SIM_REFRESH_RESET");
-                mCi.setRadioPower(false, null);
-                /* Note: no need to call setRadioPower(true).  Assuming the desired
-                * radio power state is still ON (as tracked by ServiceStateTracker),
-                * ServiceStateTracker will call setRadioPower when it receives the
-                * RADIO_STATE_CHANGED notification for the power off.  And if the
-                * desired power state has changed in the interim, we don't want to
-                * override it with an unconditional power on.
-                */
+                if (requirePowerOffOnSimRefreshReset()) {
+                    mCi.setRadioPower(false, null);
+                    /* Note: no need to call setRadioPower(true).  Assuming the desired
+                    * radio power state is still ON (as tracked by ServiceStateTracker),
+                    * ServiceStateTracker will call setRadioPower when it receives the
+                    * RADIO_STATE_CHANGED notification for the power off.  And if the
+                    * desired power state has changed in the interim, we don't want to
+                    * override it with an unconditional power on.
+                    */
+                }
                 break;
             default:
                 // unknown refresh operation
@@ -847,5 +902,13 @@ public final class RuimRecords extends IccRecords {
         pw.println(" mHomeSystemId=" + mHomeSystemId);
         pw.println(" mHomeNetworkId=" + mHomeNetworkId);
         pw.flush();
+    }
+
+    private void setSystemProperty(String key, String val) {
+        // Update the system properties only in case NON-DSDS.
+        // TODO: Shall have a better approach!
+        if (!TelephonyManager.getDefault().isMultiSimEnabled()) {
+            SystemProperties.set(key, val);
+        }
     }
 }

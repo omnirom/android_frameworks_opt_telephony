@@ -19,6 +19,7 @@ package com.android.internal.telephony;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
+import android.os.RemoteException;
 import android.os.ServiceManager;
 
 
@@ -27,9 +28,6 @@ public class PhoneSubInfoProxy extends IPhoneSubInfo.Stub {
 
     public PhoneSubInfoProxy(PhoneSubInfo phoneSubInfo) {
         mPhoneSubInfo = phoneSubInfo;
-        if(ServiceManager.getService("iphonesubinfo") == null) {
-            ServiceManager.addService("iphonesubinfo", this);
-        }
     }
 
     public void setmPhoneSubInfo(PhoneSubInfo phoneSubInfo) {
@@ -39,6 +37,10 @@ public class PhoneSubInfoProxy extends IPhoneSubInfo.Stub {
     @Override
     public String getDeviceId() {
         return mPhoneSubInfo.getDeviceId();
+    }
+
+    public String getImei() {
+        return mPhoneSubInfo.getImei();
     }
 
     @Override
@@ -143,6 +145,116 @@ public class PhoneSubInfoProxy extends IPhoneSubInfo.Stub {
     @Override
     public String[] getIsimImpu() {
         return mPhoneSubInfo.getIsimImpu();
+    }
+
+    @Override
+    public String getDeviceIdForSubscriber(long subId) throws RemoteException {
+        // FIXME: getDeviceIdForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getImeiForSubscriber(long subId) throws RemoteException {
+        // FIXME: getImeiForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getSubscriberIdForSubscriber(long subId) throws RemoteException {
+        // FIXME: getSubscriberIdForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getGroupIdLevel1ForSubscriber(long subId) throws RemoteException {
+        // FIXME: getGroupIdLevel1ForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getIccSerialNumberForSubscriber(long subId) throws RemoteException {
+        // FIXME: getIccSerialNumberForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getLine1NumberForSubscriber(long subId) throws RemoteException {
+        // FIXME: getLine1NumberForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getLine1AlphaTagForSubscriber(long subId) throws RemoteException {
+        // FIXME: getLine1AlphaTagForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getMsisdnForSubscriber(long subId) throws RemoteException {
+        // FIXME: getMsisdnForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getVoiceMailNumberForSubscriber(long subId) throws RemoteException {
+        // FIXME: getVoiceMailNumberForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getCompleteVoiceMailNumberForSubscriber(long subId) throws RemoteException {
+        // FIXME: getCompleteVoiceMailNumberForSubscriber
+        return null;
+    }
+
+    @Override
+    public String getVoiceMailAlphaTagForSubscriber(long subId) throws RemoteException {
+        // FIXME: getVoiceMailAlphaTagForSubscriber
+        return null;
+    }
+
+    /**
+     * Returns the IMS Service Table (IST) that was loaded from the ISIM.
+     * @return IMS Service Table or null if not present or not loaded
+     */
+    @Override
+    public String getIsimIst() {
+        return mPhoneSubInfo.getIsimIst();
+    }
+
+    /**
+     * Returns the IMS Proxy Call Session Control Function(PCSCF) that were loaded from the ISIM.
+     * @return an array of  PCSCF strings with one PCSCF per string, or null if
+     *      not present or not loaded
+     */
+    @Override
+    public String[] getIsimPcscf() {
+        return mPhoneSubInfo.getIsimPcscf();
+    }
+
+    /**
+     * Returns the response of ISIM Authetification through RIL.
+     * Returns null if the Authentification hasn't been successed or isn't present iphonesubinfo.
+     * @return the response of ISIM Authetification, or null if not available
+     * @deprecated
+     * @see getIccSimChallengeResponse
+     */
+    public String getIsimChallengeResponse(String nonce) {
+        return mPhoneSubInfo.getIsimChallengeResponse(nonce);
+    }
+
+    /**
+     * Returns the response of the SIM application on the UICC to authentication
+     * challenge/response algorithm. The data string and challenge response are
+     * Base64 encoded Strings.
+     * Can support EAP-SIM, EAP-AKA with results encoded per 3GPP TS 31.102.
+     *
+     * @param appType ICC application type (@see com.android.internal.telephony.PhoneConstants#APPTYPE_xxx)
+     * @param data authentication challenge data
+     * @return challenge response
+     */
+    public String getIccSimChallengeResponse(long subId, int appType, String data) {
+        return mPhoneSubInfo.getIccSimChallengeResponse(subId, appType, data);
     }
 
     @Override

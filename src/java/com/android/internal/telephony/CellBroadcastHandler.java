@@ -23,6 +23,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Message;
 import android.provider.Telephony;
+import android.telephony.SubscriptionManager;
 import android.telephony.SmsCbMessage;
 
 /**
@@ -31,8 +32,8 @@ import android.telephony.SmsCbMessage;
  */
 public class CellBroadcastHandler extends WakeLockStateMachine {
 
-    private CellBroadcastHandler(Context context) {
-        this("CellBroadcastHandler", context, null);
+    private CellBroadcastHandler(Context context, PhoneBase phone) {
+        this("CellBroadcastHandler", context, phone);
     }
 
     protected CellBroadcastHandler(String debugTag, Context context, PhoneBase phone) {
@@ -44,8 +45,8 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
      * @param context the context to use for dispatching Intents
      * @return the new handler
      */
-    public static CellBroadcastHandler makeCellBroadcastHandler(Context context) {
-        CellBroadcastHandler handler = new CellBroadcastHandler(context);
+    public static CellBroadcastHandler makeCellBroadcastHandler(Context context, PhoneBase phone) {
+        CellBroadcastHandler handler = new CellBroadcastHandler(context, phone);
         handler.start();
         return handler;
     }
@@ -88,6 +89,7 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
             appOp = AppOpsManager.OP_RECEIVE_SMS;
         }
         intent.putExtra("message", message);
+        SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
         mContext.sendOrderedBroadcast(intent, receiverPermission, appOp, mReceiver,
                 getHandler(), Activity.RESULT_OK, null, null);
     }

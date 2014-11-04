@@ -26,6 +26,8 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
 import android.os.*;
 import android.telephony.PhoneNumberUtils;
 import android.text.SpannableStringBuilder;
+import android.text.BidiFormatter;
+import android.text.TextDirectionHeuristics;
 import android.text.TextUtils;
 import android.telephony.Rlog;
 
@@ -430,6 +432,11 @@ public final class GsmMmiCode extends Handler implements MmiCode {
         return mMessage;
     }
 
+    public Phone
+    getPhone() {
+        return ((Phone) mPhone);
+    }
+
     // inherited javadoc suffices
     @Override
     public void
@@ -488,7 +495,7 @@ public final class GsmMmiCode extends Handler implements MmiCode {
     isTwoDigitShortCode(Context context, String dialString) {
         Rlog.d(LOG_TAG, "isTwoDigitShortCode");
 
-        if (dialString == null || dialString.length() != 2) return false;
+        if (dialString == null || dialString.length() > 2) return false;
 
         if (sTwoDigitNumberPattern == null) {
             sTwoDigitNumberPattern = context.getResources().getStringArray(
@@ -525,7 +532,7 @@ public final class GsmMmiCode extends Handler implements MmiCode {
             return false;
         }
 
-        if (PhoneNumberUtils.isLocalEmergencyNumber(dialString, phone.getContext())) {
+        if (PhoneNumberUtils.isLocalEmergencyNumber(phone.getContext(), dialString)) {
             return false;
         } else {
             return isShortCodeUSSD(dialString, phone);
@@ -1260,7 +1267,8 @@ public final class GsmMmiCode extends Handler implements MmiCode {
         //      {2} is time in seconds
 
         destinations[0] = serviceClassToCFString(info.serviceClass & serviceClassMask);
-        destinations[1] = PhoneNumberUtils.stringFromStringAndTOA(info.number, info.toa);
+        destinations[1] = formatLtr(
+                PhoneNumberUtils.stringFromStringAndTOA(info.number, info.toa));
         destinations[2] = Integer.toString(info.timeSeconds);
 
         if (info.reason == CommandsInterface.CF_REASON_UNCONDITIONAL &&
@@ -1275,6 +1283,13 @@ public final class GsmMmiCode extends Handler implements MmiCode {
         return TextUtils.replace(template, sources, destinations);
     }
 
+    /**
+     * Used to format a string that should be displayed as LTR even in RTL locales
+     */
+    private String formatLtr(String str) {
+        BidiFormatter fmt = BidiFormatter.getInstance();
+        return str == null ? str : fmt.unicodeWrap(str, TextDirectionHeuristics.LTR, true);
+    }
 
     private void
     onQueryCfComplete(AsyncResult ar) {
