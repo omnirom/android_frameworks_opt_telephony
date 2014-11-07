@@ -1874,7 +1874,6 @@ public interface CommandsInterface {
      *  ar.result contains a List of HardwareConfig
      */
     void getHardwareConfig (Message result);
->>>>>>> android-5.0.0_r2
 
     /**
      * @return version of the ril.
