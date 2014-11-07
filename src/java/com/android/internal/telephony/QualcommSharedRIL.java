@@ -67,7 +67,6 @@ public class QualcommSharedRIL extends RIL implements CommandsInterface {
 
     public QualcommSharedRIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
-        mSetPreferredNetworkType = -1;
         mQANElements = 5;
     }
 
@@ -207,7 +206,6 @@ public class QualcommSharedRIL extends RIL implements CommandsInterface {
             mAid = application.aid;
             mUSIM = application.app_type
                       == IccCardApplicationStatus.AppType.APPTYPE_USIM;
-            mSetPreferredNetworkType = mPreferredNetworkType;
 
             if (TextUtils.isEmpty(mAid))
                mAid = "";
@@ -331,26 +329,6 @@ public class QualcommSharedRIL extends RIL implements CommandsInterface {
         if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
 
         send(rr);
-    }
-
-    @Override
-    public void setCurrentPreferredNetworkType() {
-        if (RILJ_LOGD) riljLog("setCurrentPreferredNetworkType: " + mSetPreferredNetworkType);
-        setPreferredNetworkType(mSetPreferredNetworkType, null);
-    }
-
-    @Override
-    public void setPreferredNetworkType(int networkType , Message response) {
-        /**
-          * If not using a USIM, ignore LTE mode and go to 3G
-          */
-        if (!mUSIM && networkType == RILConstants.NETWORK_MODE_LTE_GSM_WCDMA &&
-                 mSetPreferredNetworkType >= RILConstants.NETWORK_MODE_WCDMA_PREF) {
-            networkType = RILConstants.NETWORK_MODE_WCDMA_PREF;
-        }
-        mSetPreferredNetworkType = networkType;
-
-        super.setPreferredNetworkType(networkType, response);
     }
 
     @Override

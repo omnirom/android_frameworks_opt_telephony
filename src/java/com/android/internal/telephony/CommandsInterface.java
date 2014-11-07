@@ -1332,7 +1332,7 @@ public interface CommandsInterface {
      *        one available BM_*_BAND
      */
     void queryAvailableBandMode (Message response);
-
+    
     /**
      *  Requests to set the preferred network type for searching and registering
      * (CS/PS domain, RAT, and operation mode)
@@ -1874,7 +1874,6 @@ public interface CommandsInterface {
      *  ar.result contains a List of HardwareConfig
      */
     void getHardwareConfig (Message result);
->>>>>>> android-5.0.0_r2
 
     /**
      * @return version of the ril.

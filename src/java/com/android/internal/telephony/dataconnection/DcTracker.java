@@ -764,72 +764,6 @@ public final class DcTracker extends DcTrackerBase {
         }
     }
 
-    /**
-     * Ensure that we are connected to an APN of the specified type.
-     *
-     * @param apnType the APN type
-     * @return Success is indicated by {@code PhoneConstants.APN_ALREADY_ACTIVE} or
-     *         {@code PhoneConstants.APN_REQUEST_STARTED}. In the latter case, a
-     *         broadcast will be sent by the ConnectivityManager when a
-     *         connection to the APN has been established.
-     */
-    @Override
-    public synchronized int enableApnType(String apnType) {
-        ApnContext apnContext = mApnContexts.get(apnType);
-        if (apnContext == null || (!TextUtils.equals(apnType, PhoneConstants.APN_TYPE_DEFAULT)
-                && !isApnTypeAvailable(apnType))) {
-            if (DBG) log("enableApnType: " + apnType + " is type not available");
-            return PhoneConstants.APN_TYPE_NOT_AVAILABLE;
-        }
-
-        // If already active, return
-        if (DBG) log("enableApnType: " + apnType + " mState(" + apnContext.getState() + ")");
-
-        if (apnContext.getState() == DctConstants.State.CONNECTED) {
-            if (DBG) log("enableApnType: return APN_ALREADY_ACTIVE");
-            return PhoneConstants.APN_ALREADY_ACTIVE;
-        }
-        if (mPhone.mCi.needsOldRilFeature("singlepdp") && !PhoneConstants.APN_TYPE_DEFAULT.equals(apnType)) {
-            ApnContext defContext = mApnContexts.get(PhoneConstants.APN_TYPE_DEFAULT);
-            if (defContext.isEnabled()) {
-                setEnabled(apnTypeToId(PhoneConstants.APN_TYPE_DEFAULT), false);
-            }
-        }
-        setEnabled(apnTypeToId(apnType), true);
-        if (DBG) {
-            log("enableApnType: new apn request for type " + apnType +
-                    " return APN_REQUEST_STARTED");
-        }
-        return PhoneConstants.APN_REQUEST_STARTED;
-    }
-
-    @Override
-    public synchronized int disableApnType(String type) {
-        if (DBG) log("disableApnType:" + type);
-        ApnContext apnContext = mApnContexts.get(type);
-
-        if (apnContext != null) {
-            setEnabled(apnTypeToId(type), false);
-            if (mPhone.mCi.needsOldRilFeature("singlepdp") && !PhoneConstants.APN_TYPE_DEFAULT.equals(type)) {
-                setEnabled(apnTypeToId(PhoneConstants.APN_TYPE_DEFAULT), true);
-            }
-            if (apnContext.getState() != DctConstants.State.IDLE && apnContext.getState()
-                    != DctConstants.State.FAILED) {
-                if (DBG) log("diableApnType: return APN_REQUEST_STARTED");
-                return PhoneConstants.APN_REQUEST_STARTED;
-            } else {
-                if (DBG) log("disableApnType: return APN_ALREADY_INACTIVE");
-                return PhoneConstants.APN_ALREADY_INACTIVE;
-            }
-
-        } else {
-            if (DBG) {
-                log("disableApnType: no apn context was found, return APN_REQUEST_FAILED");
-            }
-            return PhoneConstants.APN_REQUEST_FAILED;
-        }
-    }
-
     @Override
     protected boolean isApnTypeAvailable(String type) {
         if (type.equals(PhoneConstants.APN_TYPE_DUN) && fetchDunApn() != null) {
@@ -2551,14 +2485,6 @@ public final class DcTracker extends DcTrackerBase {
         dedupeApnSettings();
 
         if (mAllApnSettings.isEmpty()) {
-            radioTech = mPhone.getServiceState().getRilDataRadioTechnology();
-            techFamily = UiccController.getFamilyFromRadioTechnology(radioTech);
-            if (techFamily == UiccController.APP_FAM_3GPP2) {
-                addDummyDataProfiles(operator);
-            }
-        }
-
-        if (mAllApnSettings.isEmpty()) {
             if (DBG) log("createAllApnList: No APN found for carrier: " + operator
                     + " radioTech = " + String.valueOf(radioTech)
                     + " Tech Family = " + String.valueOf(techFamily));
@@ -2684,38 +2610,6 @@ public final class DcTracker extends DcTrackerBase {
                 dest.maxConnsTime, dest.mtu, dest.mvnoType, dest.mvnoMatchData);
     }
 
-    private void addDummyDataProfiles(String operator) {
-        mAllApnSettings.addAll(createDummyDataProfiles(operator));
-    }
-
-    private ArrayList<ApnSetting> createDummyDataProfiles(String operator) {
-        // Create dummy data profiles.
-        if (DBG) log("createAllApnList: Creating dummy apn for cdma operator:" + operator);
-        String[] defaultApnTypes = {
-                PhoneConstants.APN_TYPE_DEFAULT,
-                PhoneConstants.APN_TYPE_MMS,
-                PhoneConstants.APN_TYPE_SUPL,
-                PhoneConstants.APN_TYPE_HIPRI,
-                PhoneConstants.APN_TYPE_FOTA,
-                PhoneConstants.APN_TYPE_IMS,
-                PhoneConstants.APN_TYPE_CBS};
-        String[] dunApnTypes = {
-                PhoneConstants.APN_TYPE_DUN};
-
-        ArrayList<ApnSetting> dummyApns = new ArrayList<ApnSetting>(2);
-        ApnSetting apn = new ApnSetting(DctConstants.APN_DEFAULT_ID, operator, null, null,
-                null, null, null, null, null, null, null,
-                RILConstants.SETUP_DATA_AUTH_PAP_CHAP, defaultApnTypes,
-                PROPERTY_CDMA_IPPROTOCOL, PROPERTY_CDMA_ROAMING_IPPROTOCOL, true, 0);
-        dummyApns.add(apn);
-        apn = new ApnSetting(DctConstants.APN_DUN_ID, operator, null, null,
-                null, null, null, null, null, null, null,
-                RILConstants.SETUP_DATA_AUTH_PAP_CHAP, dunApnTypes,
-                PROPERTY_CDMA_IPPROTOCOL, PROPERTY_CDMA_ROAMING_IPPROTOCOL, true, 0);
-        dummyApns.add(apn);
-        return dummyApns;
-    }
-
     /** Return the DC AsyncChannel for the new data connection */
     private DcAsyncChannel createDataConnection() {
         if (DBG) log("createDataConnection E");
@@ -2831,10 +2725,6 @@ public final class DcTracker extends DcTrackerBase {
             }
         } else {
             loge("mAllApnSettings is empty!");
-        }
-
-        if (apnList.isEmpty()) {
-            apnList = createDummyDataProfiles(operator);
         }
 
         if (DBG) log("buildWaitingApns: X apnList=" + apnList);
@@ -3019,11 +2909,6 @@ public final class DcTracker extends DcTrackerBase {
                 super.handleMessage(mCause);
                 break;
 
-            case DctConstants.EVENT_DATA_RAT_CHANGED:
-                //May new Network allow setupData, so try it here
-                setupDataOnConnectableApns(Phone.REASON_NW_TYPE_CHANGED);
-                break;
-
             case DctConstants.CMD_CLEAR_PROVISIONING_SPINNER:
                 // Check message sender intended to clear the current spinner.
                 if (mProvisioningSpinner == msg.obj) {
@@ -3102,7 +2987,7 @@ public final class DcTracker extends DcTrackerBase {
 
         int dataRat = mPhone.getServiceState().getRilDataRadioTechnology();
         int appFamily = UiccController.getFamilyFromRadioTechnology(dataRat);
-        IccRecords newIccRecords = mUiccController.getIccRecords(appFamily);
+        IccRecords newIccRecords = getUiccRecords(appFamily);
         log("onUpdateIcc: newIccRecords " + ((newIccRecords != null) ?
                 newIccRecords.getClass().getName() : null));
         if (dataRat == ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN) {
@@ -3111,8 +2996,6 @@ public final class DcTracker extends DcTrackerBase {
             // call in case we are out of service.
             return false;
         }
-
-        IccRecords newIccRecords = getUiccRecords(UiccController.APP_FAM_3GPP);
 
         IccRecords r = mIccRecords.get();
         if (r != newIccRecords) {
