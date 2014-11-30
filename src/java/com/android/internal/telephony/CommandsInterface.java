@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,11 +114,11 @@ public interface CommandsInterface {
     /**
      * response.obj.result is an int[2]
      *
-     * response.obj.result[0] is IMS registration state
+     * response.obj.result[0] is registration state
      *                        0 - Not registered
      *                        1 - Registered
-     * response.obj.result[1] is of type RILConstants.GSM_PHONE or
-     *                                    RILConstants.CDMA_PHONE
+     * response.obj.result[1] is of type const RIL_IMS_SMS_Format,
+     *                        corresponds to sms format used for SMS over IMS.
      */
     void getImsRegistrationState(Message result);
 
@@ -643,6 +644,7 @@ public interface CommandsInterface {
      *
      *  AID (Application ID), See ETSI 102.221 8.1 and 101.220 4
      *
+     *  returned message
      *  retMsg.obj = AsyncResult ar
      *  ar.exception carries exception on failure
      *  This exception is CommandException with an error of PASSWORD_INCORRECT
@@ -1327,11 +1329,17 @@ public interface CommandsInterface {
      * Query the list of band mode supported by RF.
      *
      * @param response is callback message
-     *        ((AsyncResult)response.obj).result  is an int[] where int[0] is
+     *        ((AsyncResult)response.obj).result  is an int[] with every
      *        the size of the array and the rest of each element representing
-     *        one available BM_*_BAND
+     *        element representing one avialable BM_*_BAND
      */
     void queryAvailableBandMode (Message response);
+
+    /**
+     * Set the current preferred network type. This will be the last
+     * networkType that was passed to setPreferredNetworkType.
+     */
+    void setCurrentPreferredNetworkType();
 
     /**
      *  Requests to set the preferred network type for searching and registering
@@ -1703,11 +1711,11 @@ public interface CommandsInterface {
      * Sets the minimum time in milli-seconds between when RIL_UNSOL_CELL_INFO_LIST
      * should be invoked.
      *
-     * The default, 0, means invoke RIL_UNSOL_CELL_INFO_LIST when any of the reported
+     * The default, 0, means invoke RIL_UNSOL_CELL_INFO_LIST when any of the reported 
      * information changes. Setting the value to INT_MAX(0x7fffffff) means never issue
      * A RIL_UNSOL_CELL_INFO_LIST.
      *
-     *
+     * 
 
      * @param rateInMillis is sent back to handler and result.obj is a AsyncResult
      * @param response.obj is AsyncResult ar when sent to associated handler

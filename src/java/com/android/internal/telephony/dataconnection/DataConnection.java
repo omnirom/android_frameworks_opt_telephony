@@ -421,7 +421,7 @@ public final class DataConnection extends StateMachine {
         mDataRegState = mPhone.getServiceState().getDataRegState();
         int networkType = ss.getDataNetworkType();
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_MOBILE,
-                networkType, NETWORK_TYPE, TelephonyManager.getNetworkTypeName(networkType));
+                networkType, "Cellular", TelephonyManager.getNetworkTypeName(networkType));
         mNetworkInfo.setRoaming(ss.getRoaming());
         mNetworkInfo.setIsAvailable(true);
 
@@ -1590,14 +1590,14 @@ public final class DataConnection extends StateMachine {
                                         + " result.isRestartRadioFail=" +
                                         result.mFailCause.isRestartRadioFail()
                                         + " result.isPermanentFail=" +
-                                        mDct.isPermanentFail(result.mFailCause));
+                                                result.mFailCause.isPermanentFail());
                             }
                             if (result.mFailCause.isRestartRadioFail()) {
                                 if (DBG) log("DcActivatingState: ERR_RilError restart radio");
                                 mDct.sendRestartRadio();
                                 mInactiveState.setEnterNotificationParams(cp, result.mFailCause);
                                 transitionTo(mInactiveState);
-                            } else if (mDct.isPermanentFail(result.mFailCause)) {
+                            } else if (result.mFailCause.isPermanentFail()) {
                                 if (DBG) log("DcActivatingState: ERR_RilError perm error");
                                 mInactiveState.setEnterNotificationParams(cp, result.mFailCause);
                                 transitionTo(mInactiveState);
@@ -1662,7 +1662,7 @@ public final class DataConnection extends StateMachine {
                             mDct.sendRestartRadio();
                             mInactiveState.setEnterNotificationParams(cp, cause);
                             transitionTo(mInactiveState);
-                        } else if (mDct.isPermanentFail(cause)) {
+                        } else if (cause.isPermanentFail()) {
                             if (DBG) log("DcActivatingState: EVENT_GET_LAST_FAIL_DONE perm er");
                             mInactiveState.setEnterNotificationParams(cp, cause);
                             transitionTo(mInactiveState);
@@ -1954,6 +1954,7 @@ public final class DataConnection extends StateMachine {
             }
             // this can only happen if our exit has been called - we're already disconnected
             if (mApnContexts == null) return;
+
             for (ApnContext apnContext : mApnContexts) {
                 Message msg = mDct.obtainMessage(DctConstants.EVENT_DISCONNECT_DONE, apnContext);
                 DisconnectParams dp = new DisconnectParams(apnContext, apnContext.getReason(), msg);
