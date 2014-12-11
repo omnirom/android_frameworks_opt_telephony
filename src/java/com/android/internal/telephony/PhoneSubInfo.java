@@ -18,6 +18,7 @@ package com.android.internal.telephony;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
+import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Binder;
@@ -36,6 +37,7 @@ public class PhoneSubInfo {
 
     private Phone mPhone;
     private Context mContext;
+    private AppOpsManager mAppOps;
     private static final String READ_PHONE_STATE =
         android.Manifest.permission.READ_PHONE_STATE;
     // TODO: change getCompleteVoiceMailNumber() to require READ_PRIVILEGED_PHONE_STATE
@@ -43,10 +45,12 @@ public class PhoneSubInfo {
         android.Manifest.permission.CALL_PRIVILEGED;
     private static final String READ_PRIVILEGED_PHONE_STATE =
         android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE;
+    private static final int READ_PHONE_INFO = AppOpsManager.OP_READ_PHONE_INFO;
 
     public PhoneSubInfo(Phone phone) {
         mPhone = phone;
         mContext = phone.getContext();
+        mAppOps = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
     }
 
     public void dispose() {
@@ -62,12 +66,18 @@ public class PhoneSubInfo {
         if (DBG) log("PhoneSubInfo finalized");
     }
 
+    private boolean isOpAllowed(int op) {
+        String[] names = mContext.getPackageManager().getPackagesForUid(Binder.getCallingUid());
+        return mAppOps.noteOp(op, Binder.getCallingUid(), names==null ? null : names[0])
+                == AppOpsManager.MODE_ALLOWED;
+    }
+
     /**
      * Retrieves the unique device ID, e.g., IMEI for GSM phones and MEID for CDMA phones.
      */
     public String getDeviceId() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getDeviceId();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getDeviceId() : "009999012345678";
     }
 
     /**
@@ -75,7 +85,7 @@ public class PhoneSubInfo {
      */
     public String getImei() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getImei();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getImei() : "009999012345678";
     }
 
     /**
@@ -84,7 +94,7 @@ public class PhoneSubInfo {
      */
     public String getDeviceSvn() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getDeviceSvn();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getDeviceSvn() : "0099990123456799";
     }
 
     /**
@@ -92,7 +102,7 @@ public class PhoneSubInfo {
      */
     public String getSubscriberId() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getSubscriberId();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getSubscriberId() : "001010123456789";
     }
 
     /**
@@ -100,7 +110,7 @@ public class PhoneSubInfo {
      */
     public String getGroupIdLevel1() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getGroupIdLevel1();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getGroupIdLevel1() : "";
     }
 
     /**
@@ -108,7 +118,7 @@ public class PhoneSubInfo {
      */
     public String getIccSerialNumber() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getIccSerialNumber();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getIccSerialNumber() : "899990000123456789";
     }
 
     /**
@@ -116,7 +126,7 @@ public class PhoneSubInfo {
      */
     public String getLine1Number() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getLine1Number();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getLine1Number() : "+99900123456";
     }
 
     /**
@@ -124,7 +134,7 @@ public class PhoneSubInfo {
      */
     public String getLine1AlphaTag() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getLine1AlphaTag();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getLine1AlphaTag() : "+99900123456";
     }
 
     /**
@@ -132,7 +142,7 @@ public class PhoneSubInfo {
      */
     public String getMsisdn() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getMsisdn();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getMsisdn() : "99900123456";
     }
 
     /**
@@ -142,7 +152,7 @@ public class PhoneSubInfo {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
         String number = PhoneNumberUtils.extractNetworkPortion(mPhone.getVoiceMailNumber());
         if (VDBG) log("VM: PhoneSubInfo.getVoiceMailNUmber: " + number);
-        return number;
+        return isOpAllowed(READ_PHONE_INFO) ? number : "+99900123456";
     }
 
     /**
@@ -155,7 +165,7 @@ public class PhoneSubInfo {
                 "Requires CALL_PRIVILEGED");
         String number = mPhone.getVoiceMailNumber();
         if (VDBG) log("VM: PhoneSubInfo.getCompleteVoiceMailNUmber: " + number);
-        return number;
+        return isOpAllowed(READ_PHONE_INFO) ? number : "+99900123456";
     }
 
     /**
@@ -163,7 +173,7 @@ public class PhoneSubInfo {
      */
     public String getVoiceMailAlphaTag() {
         mContext.enforceCallingOrSelfPermission(READ_PHONE_STATE, "Requires READ_PHONE_STATE");
-        return mPhone.getVoiceMailAlphaTag();
+        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getVoiceMailAlphaTag() : "";
     }
 
     /**
