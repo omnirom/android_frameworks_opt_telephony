@@ -1,0 +1,159 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "ab30f9cd_cd5e1d7a",
+        "filename": "src/java/com/android/internal/telephony/QualcommMSIM42RIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 41,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public QualcommMSIM42RIL(Context context, int preferredNetworkType, int cdmaSubscription, Integer instanceId) {",
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_ed63e13a",
+        "filename": "src/java/com/android/internal/telephony/QualcommSharedRIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 68,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public QualcommSharedRIL(Context context, int preferredNetworkType, int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 68,
+        "startChar": 11,
+        "endLine": 68,
+        "endChar": 28
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_0d591590",
+        "filename": "src/java/com/android/internal/telephony/SamsungCDMAv6RIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 63,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public SamsungCDMAv6RIL(Context context, int preferredNetworkType, int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 63,
+        "startChar": 11,
+        "endLine": 63,
+        "endChar": 27
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_2d56d960",
+        "filename": "src/java/com/android/internal/telephony/SamsungExynos3RIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 68,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public SamsungExynos3RIL(Context context, int preferredNetworkType, int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 68,
+        "startChar": 11,
+        "endLine": 68,
+        "endChar": 28
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_4d530d70",
+        "filename": "src/java/com/android/internal/telephony/SamsungExynos4RIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 123,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public SamsungExynos4RIL(Context context, int preferredNetworkType,\n            int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 123,
+        "startChar": 11,
+        "endLine": 123,
+        "endChar": 28
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_6d50d162",
+        "filename": "src/java/com/android/internal/telephony/SamsungQualcommRIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 76,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public SamsungQualcommRIL(Context context, int preferredNetworkType,\n            int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 76,
+        "startChar": 11,
+        "endLine": 76,
+        "endChar": 29
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "ab30f9cd_8dc18505",
+        "filename": "src/java/com/android/internal/telephony/SemcQualcomm7x30RIL.java",
+        "patchSetId": 6
+      },
+      "lineNbr": 53,
+      "author": {
+        "id": 1000328
+      },
+      "writtenOn": "2015-01-04T15:05:00Z",
+      "side": 1,
+      "message": "public SemcQualcomm7x30RIL(Context context, int preferredNetworkType,\n            int cdmaSubscription, Integer instanceId) {",
+      "range": {
+        "startLine": 53,
+        "startChar": 11,
+        "endLine": 53,
+        "endChar": 30
+      },
+      "revId": "26ebccc97ae22080ccb9d58d472a28f224632e51",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
