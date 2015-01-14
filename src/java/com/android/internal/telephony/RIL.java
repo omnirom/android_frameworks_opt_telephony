@@ -3362,7 +3362,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return new IccIoResult(sw1, sw2, s);
     }
 
-    private Object
+    protected Object
     responseICC_IOBase64(Parcel p) {
         int sw1, sw2;
         Message ret;
@@ -3911,7 +3911,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return response;
     }
 
-   private Object
+   protected Object
    responseHardwareConfig(Parcel p) {
       int num;
       ArrayList<HardwareConfig> response;
