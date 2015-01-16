@@ -1754,5 +1754,9 @@ public final class SimulatedCommands extends BaseCommands
         setRadioState(RadioState.RADIO_UNAVAILABLE);
     }
 
-    public boolean needsOldRilFeature(String feature) { return false; }
+    @Override
+    public boolean needsOldRilFeature(String feature) {
+      return false;
+    }
+
 }
