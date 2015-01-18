@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "8b25f591_208176ff",
+        "filename": "src/java/com/android/internal/telephony/RIL.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 2599,
+      "author": {
+        "id": 1000032
+      },
+      "writtenOn": "2015-01-18T04:10:36Z",
+      "side": 0,
+      "message": "Everything below here is deleted and not in the new method.",
+      "revId": "fe3ef31e8f5bf53d2124c9306ffd742c496d834a",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
