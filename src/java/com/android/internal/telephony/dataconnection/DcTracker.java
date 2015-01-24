@@ -873,8 +873,12 @@ public final class DcTracker extends DcTrackerBase {
             }
 
             if (DBG) {
-                log("trySetupData: call setupData, waitingApns : "
+                if (apnContext.getWaitingApns() == null) {
+                    log("trySetupData: call setupData, waitingApns : null");
+                } else {
+                    log("trySetupData: call setupData, waitingApns : "
                         + apnListToString(apnContext.getWaitingApns()));
+                }
             }
             boolean retValue = setupData(apnContext, radioTech);
             notifyOffApnsOfAvailability(apnContext.getReason());
@@ -1985,10 +1989,16 @@ public final class DcTracker extends DcTrackerBase {
 
             apnContext.removeWaitingApn(apnContext.getApnSetting());
             if (DBG) {
-                log(String.format("onDataSetupComplete: WaitingApns.size=%d" +
+                if (apnContext.getWaitingApns() == null) {
+                    log(String.format("onDataSetupComplete: WaitingApns.size = null" +
                         " WaitingApnsPermFailureCountDown=%d",
-                        apnContext.getWaitingApns().size(),
                         apnContext.getWaitingApnsPermFailCount()));
+                } else {
+                    log(String.format("onDataSetupComplete: WaitingApns.size=%d" +
+                            " WaitingApnsPermFailureCountDown=%d",
+                            apnContext.getWaitingApns().size(),
+                            apnContext.getWaitingApnsPermFailCount()));
+                }
             }
             handleError = true;
         }
@@ -2036,7 +2046,7 @@ public final class DcTracker extends DcTrackerBase {
         }
 
         // See if there are more APN's to try
-        if (apnContext.getWaitingApns().isEmpty()) {
+        if (apnContext.getWaitingApns() == null || apnContext.getWaitingApns().isEmpty()) {
             apnContext.setState(DctConstants.State.FAILED);
             mPhone.notifyDataConnection(Phone.REASON_APN_FAILED, apnContext.getApnType());
 
@@ -2519,13 +2529,18 @@ public final class DcTracker extends DcTrackerBase {
     }
 
     private String apnListToString (ArrayList<ApnSetting> apns) {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0, size = apns.size(); i < size; i++) {
-            result.append('[')
-                  .append(apns.get(i).toString())
-                  .append(']');
+        if (apns == null) {
+            log("apnListToString: apns = null.");
+            return "";
+        } else {
+            StringBuilder result = new StringBuilder();
+            for (int i = 0, size = apns.size(); i < size; i++) {
+                result.append('[')
+                      .append(apns.get(i).toString())
+                      .append(']');
+            }
+            return result.toString();
         }
-        return result.toString();
     }
 
     private void setPreferredApn(int pos) {
