@@ -77,7 +77,7 @@ import java.util.PriorityQueue;
  * {@hide}
  */
 public abstract class DcTrackerBase extends Handler {
-    protected static final boolean DBG = true;
+    protected static final boolean DBG = false;
     protected static final boolean VDBG = false; // STOPSHIP if true
     protected static final boolean VDBG_STALL = true; // STOPSHIP if true
     protected static final boolean RADIO_TESTS = false;
