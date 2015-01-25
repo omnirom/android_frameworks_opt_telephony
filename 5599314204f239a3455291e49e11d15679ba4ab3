@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "8b25f591_6defe6ac",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DataConnection.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 556,
+      "author": {
+        "id": 1000032
+      },
+      "writtenOn": "2015-01-25T21:22:04Z",
+      "side": 1,
+      "message": "Should pass cp.mRilRat as a parameter",
+      "revId": "5599314204f239a3455291e49e11d15679ba4ab3",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "8b25f591_8dec22b8",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DataConnection.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 708,
+      "author": {
+        "id": 1000032
+      },
+      "writtenOn": "2015-01-25T21:22:04Z",
+      "side": 1,
+      "message": "Otherwise, this doesn\u0027t make sense.",
+      "revId": "5599314204f239a3455291e49e11d15679ba4ab3",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
