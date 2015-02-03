@@ -84,8 +84,8 @@ public class DataCallResponse {
            .append(" cid=").append(cid)
            .append(" active=").append(active)
            .append(" type=").append(type)
-           .append(" ifname=").append(ifname)
-           .append(" mtu=").append(mtu)
+           .append("' ifname='").append(ifname);
+        sb.append("' addresses=[");
            .append(" addresses=[");
         for (String addr : addresses) {
             sb.append(addr);
@@ -179,7 +179,7 @@ public class DataCallResponse {
                             throw new UnknownHostException("Non-numeric dns addr=" + addr);
                         }
                         if (! ia.isAnyLocalAddress()) {
-                            linkProperties.addDnsServer(ia);
+                            linkProperties.addDns(ia);
                         }
                     }
                 } else if (okToUseSystemPropertyDns){
@@ -196,7 +196,7 @@ public class DataCallResponse {
                             throw new UnknownHostException("Non-numeric dns addr=" + dnsAddr);
                         }
                         if (! ia.isAnyLocalAddress()) {
-                            linkProperties.addDnsServer(ia);
+                            linkProperties.addDns(ia);
                         }
                     }
                 } else {
