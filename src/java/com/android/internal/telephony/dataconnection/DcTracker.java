@@ -2709,14 +2709,6 @@ public final class DcTracker extends DcTrackerBase {
                 }
                 break;
 
-            case DctConstants.CMD_CLEAR_PROVISIONING_SPINNER:
-                // Check message sender intended to clear the current spinner.
-                if (mProvisioningSpinner == msg.obj) {
-                    mProvisioningSpinner.dismiss();
-                    mProvisioningSpinner = null;
-                }
-                break;
-
             default:
                 // handle the message in the super class DataConnectionTracker
                 super.handleMessage(msg);

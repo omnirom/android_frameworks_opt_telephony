@@ -3241,6 +3241,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                         mCatSendSmsResultRegistrant.notifyRegistrant(
                                 new AsyncResult (null, ret, null));
                     }
+                 }
                  break;
             case RIL_UNSOL_RADIO_CAPABILITY:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
