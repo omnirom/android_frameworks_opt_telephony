@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6b22818b_a695698c",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DcTracker.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 876,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2015-04-03T19:33:30Z",
+      "side": 1,
+      "message": "is DBG enabled by default?\nif yes we shoud set it to false in the same change",
+      "revId": "151bf123670adb8186260b1fbb4bee793513e09c",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
