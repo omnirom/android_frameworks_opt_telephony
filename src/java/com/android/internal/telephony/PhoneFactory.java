@@ -143,14 +143,9 @@ public class PhoneFactory {
                         sCommandsInterfaces[i] = instantiateCustomRIL(
                                                      sRILClassname, context, networkModes[i], cdmaSubscription, i);
                     } catch (Exception e) {
-                        // 6 different types of exceptions are thrown here that it's
-                        // easier to just catch Exception as our "error handling" is the same.
-                        // Yes, we're blocking the whole thing and making the radio unusable. That's by design.
-                        // The log message should make it clear why the radio is broken
-                        while (true) {
-                            Rlog.e(LOG_TAG, "Unable to construct custom RIL class", e);
-                            try {Thread.sleep(10000);} catch (InterruptedException ie) {}
-                        }
+                        Rlog.e(LOG_TAG, "Unable to construct custom RIL class " + sRILClassname + " Fallback to default", e);
+                   	    sCommandsInterfaces[i] = instantiateCustomRIL(
+                                "RIL", context, networkModes[i], cdmaSubscription, i);
                     }
                 }
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
