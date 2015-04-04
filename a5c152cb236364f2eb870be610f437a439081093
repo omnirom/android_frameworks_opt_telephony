@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6b22818b_a64c89e4",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DcTracker.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 2281,
+      "author": {
+        "id": 1000515
+      },
+      "writtenOn": "2015-04-04T15:40:17Z",
+      "side": 1,
+      "message": "I think that we can leave it as it is... you know due the logic is different.",
+      "range": {
+        "startLine": 2281,
+        "startChar": 16,
+        "endLine": 2281,
+        "endChar": 29
+      },
+      "revId": "a5c152cb236364f2eb870be610f437a439081093",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
