@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6b22818b_66cc5166",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DcTrackerBase.java",
+        "patchSetId": 2
+      },
+      "lineNbr": 82,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2015-04-04T14:57:29Z",
+      "side": 1,
+      "message": "LMAO  - please set this also to false\nor we ned to STOPSHIP :)",
+      "revId": "896660d2ed1362608ed5b462ed3d622ae4d42827",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
