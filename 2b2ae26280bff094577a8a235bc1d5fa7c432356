@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "6b22818b_41001f6c",
+        "filename": "src/java/com/android/internal/telephony/dataconnection/DctController.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 345,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2015-04-08T14:08:05Z",
+      "side": 1,
+      "message": "the two lists are always of the same size - so actually it doesnt matter which one to use here to check length. Same code is used below again (about line 415 in onSettingsChange)",
+      "revId": "2b2ae26280bff094577a8a235bc1d5fa7c432356",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
