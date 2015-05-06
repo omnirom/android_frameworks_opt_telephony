@@ -172,6 +172,7 @@ public final class DcTracker extends DcTrackerBase {
         if (DBG) log("GsmDCT.constructor");
 
         mDataConnectionTracker = this;
+        registerForAllEvents();
         update();
         mApnObserver = new ApnChangeObserver();
         p.getContext().getContentResolver().registerContentObserver(
@@ -258,6 +259,7 @@ public final class DcTracker extends DcTrackerBase {
             mCdmaSsm.dispose(this);
         }
 
+        unregisterForAllEvents();
         destroyDataConnections();
     }
     protected void unregisterForAllEvents() {
@@ -2975,7 +2977,6 @@ public final class DcTracker extends DcTrackerBase {
     public void update() {
         log("update sub = " + mPhone.getSubId());
         log("update(): Active DDS, register for all events now!");
-        registerForAllEvents();
         onUpdateIcc();
 
         mUserDataEnabled = getDataEnabled();
