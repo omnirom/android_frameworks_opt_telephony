@@ -16,7 +16,12 @@
 
 package com.android.internal.telephony.imsphone;
 
+import android.app.Activity;
 import android.app.ActivityManagerNative;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncResult;
@@ -37,9 +42,11 @@ import android.text.TextUtils;
 
 import com.android.ims.ImsCallForwardInfo;
 import com.android.ims.ImsCallProfile;
+import com.android.ims.ImsConfig;
 import com.android.ims.ImsEcbm;
 import com.android.ims.ImsEcbmStateListener;
 import com.android.ims.ImsException;
+import com.android.ims.ImsManager;
 import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsSsInfo;
 import com.android.ims.ImsUtInterface;
@@ -77,6 +84,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneNotifier;
+import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.cdma.CDMAPhone;
@@ -100,6 +108,11 @@ public class ImsPhone extends ImsPhoneBase {
     protected static final int EVENT_GET_CALL_WAITING_DONE          = EVENT_LAST + 4;
 
     public static final String CS_FALLBACK = "cs_fallback";
+
+    public static final String EXTRA_KEY_ALERT_TITLE = "alertTitle";
+    public static final String EXTRA_KEY_ALERT_MESSAGE = "alertMessage";
+    public static final String EXTRA_KEY_ALERT_SHOW = "alertShow";
+    public static final String EXTRA_KEY_NOTIFICATION_MESSAGE = "notificationMessage";
 
     static final int RESTART_ECM_TIMER = 0; // restart Ecm timer
     static final int CANCEL_ECM_TIMER = 1; // cancel Ecm timer
@@ -468,6 +481,21 @@ public class ImsPhone extends ImsPhoneBase {
         mDefaultPhone.notifyNewRingingConnectionP(c);
     }
 
+    public static void checkWfcWifiOnlyModeBeforeDial(ImsPhone imsPhone, Context context)
+            throws CallStateException {
+        if (imsPhone == null ||
+                !imsPhone.isVowifiEnabled()) {
+            boolean wfcWiFiOnly = (ImsManager.isWfcEnabledByPlatform(context) &&
+                    ImsManager.isWfcEnabledByUser(context) &&
+                    (ImsManager.getWfcMode(context) ==
+                            ImsConfig.WfcModeFeatureValueConstants.WIFI_ONLY));
+            if (wfcWiFiOnly) {
+                throw new CallStateException(
+                        CallStateException.ERROR_DISCONNECTED,
+                        "WFC Wi-Fi Only Mode: IMS not registered");
+            }
+        }
+    }
 
     @Override
     public Connection
@@ -673,8 +701,18 @@ public class ImsPhone extends ImsPhoneBase {
             String dialingNumber,
             int timerSeconds,
             Message onComplete) {
+        setCallForwardingOption(commandInterfaceCFAction, commandInterfaceCFReason, dialingNumber,
+                CommandsInterface.SERVICE_CLASS_VOICE, timerSeconds, onComplete);
+    }
+
+    public void setCallForwardingOption(int commandInterfaceCFAction,
+            int commandInterfaceCFReason,
+            String dialingNumber,
+            int serviceClass,
+            int timerSeconds,
+            Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "setCallForwardingOption action=" + commandInterfaceCFAction
-                + ", reason=" + commandInterfaceCFReason);
+                + ", reason=" + commandInterfaceCFReason + " serviceClass=" + serviceClass);
         if ((isValidCommandInterfaceCFAction(commandInterfaceCFAction)) &&
                 (isValidCommandInterfaceCFReason(commandInterfaceCFReason))) {
             Message resp;
@@ -689,6 +727,7 @@ public class ImsPhone extends ImsPhoneBase {
                 ut.updateCallForward(getActionFromCFAction(commandInterfaceCFAction),
                         getConditionFromCFReason(commandInterfaceCFReason),
                         dialingNumber,
+                        serviceClass,
                         timerSeconds,
                         onComplete);
              } catch (ImsException e) {
@@ -715,13 +754,17 @@ public class ImsPhone extends ImsPhoneBase {
 
     @Override
     public void setCallWaiting(boolean enable, Message onComplete) {
+        setCallWaiting(enable, CommandsInterface.SERVICE_CLASS_VOICE, onComplete);
+    }
+
+    public void setCallWaiting(boolean enable, int serviceClass, Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "setCallWaiting enable=" + enable);
         Message resp;
         resp = obtainMessage(EVENT_SET_CALL_WAITING_DONE, onComplete);
 
         try {
             ImsUtInterface ut = mCT.getUtInterface();
-            ut.updateCallWaiting(enable, resp);
+            ut.updateCallWaiting(enable, serviceClass, resp);
         } catch (ImsException e) {
             sendErrorResponse(onComplete, e);
         }
@@ -838,6 +881,8 @@ public class ImsPhone extends ImsPhoneBase {
             case ImsReasonInfo.CODE_UT_CB_PASSWORD_MISMATCH:
                 error = CommandException.Error.PASSWORD_INCORRECT;
                 break;
+            case ImsReasonInfo.CODE_UT_SERVICE_UNAVAILABLE:
+                error = CommandException.Error.RADIO_NOT_AVAILABLE;
             default:
                 break;
         }
@@ -1044,18 +1089,10 @@ public class ImsPhone extends ImsPhoneBase {
     sendResponse(Message onComplete, Object result, Throwable e) {
         if (onComplete != null) {
             CommandException ex = null;
-            ImsException imsEx = null;
             if (e != null) {
-                if (e instanceof ImsException) {
-                    imsEx = (ImsException) e;
-                    AsyncResult.forMessage(onComplete, result, imsEx);
-                } else {
-                    ex = getCommandException(e);
-                    AsyncResult.forMessage(onComplete, result, ex);
-                }
-            } else {
-                AsyncResult.forMessage(onComplete, result, null);
+                ex = getCommandException(e);
             }
+            AsyncResult.forMessage(onComplete, result, ex);
             onComplete.sendToTarget();
         }
     }
@@ -1239,8 +1276,16 @@ public class ImsPhone extends ImsPhoneBase {
         mEcmExitRespRegistrant.clear();
     }
 
+    public void onFeatureCapabilityChanged() {
+        mDefaultPhone.getServiceStateTracker().onImsCapabilityChanged();
+    }
+
     public boolean isVolteEnabled() {
         return mCT.isVolteEnabled();
+    }
+
+    public boolean isVowifiEnabled() {
+        return mCT.isVowifiEnabled();
     }
 
     public boolean isVtEnabled() {
@@ -1261,5 +1306,121 @@ public class ImsPhone extends ImsPhoneBase {
 
     public void callEndCleanupHandOverCallIfAny() {
         mCT.callEndCleanupHandOverCallIfAny();
+    }
+
+    private BroadcastReceiver mResultReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // Add notification only if alert was not shown by WfcSettings
+            if (getResultCode() == Activity.RESULT_OK) {
+                // Default result code (as passed to sendOrderedBroadcast)
+                // means that intent was not received by WfcSettings.
+
+                CharSequence title = intent.getCharSequenceExtra(EXTRA_KEY_ALERT_TITLE);
+                CharSequence messageAlert = intent.getCharSequenceExtra(EXTRA_KEY_ALERT_MESSAGE);
+                CharSequence messageNotification = intent.getCharSequenceExtra(EXTRA_KEY_NOTIFICATION_MESSAGE);
+
+                Intent resultIntent = new Intent(Intent.ACTION_MAIN);
+                resultIntent.setClassName("com.android.settings",
+                        "com.android.settings.Settings$WifiCallingSettingsActivity");
+                resultIntent.putExtra(EXTRA_KEY_ALERT_SHOW, true);
+                resultIntent.putExtra(EXTRA_KEY_ALERT_TITLE, title);
+                resultIntent.putExtra(EXTRA_KEY_ALERT_MESSAGE, messageAlert);
+                PendingIntent resultPendingIntent =
+                        PendingIntent.getActivity(
+                                mContext,
+                                0,
+                                resultIntent,
+                                PendingIntent.FLAG_UPDATE_CURRENT
+                        );
+
+                final Notification notification =
+                        new Notification.Builder(mContext)
+                                .setSmallIcon(android.R.drawable.stat_sys_warning)
+                                .setContentTitle(title)
+                                .setContentText(messageNotification)
+                                .setAutoCancel(true)
+                                .setContentIntent(resultPendingIntent)
+                                .setStyle(new Notification.BigTextStyle().bigText(messageNotification))
+                                .build();
+                final String notificationTag = "wifi_calling";
+                final int notificationId = 1;
+
+                NotificationManager notificationManager =
+                        (NotificationManager) mContext.getSystemService(
+                                Context.NOTIFICATION_SERVICE);
+                notificationManager.notify(notificationTag, notificationId,
+                        notification);
+            }
+        }
+    };
+
+    /**
+     * Show notification in case of some error codes.
+     */
+    public void processDisconnectReason(ImsReasonInfo imsReasonInfo) {
+        if (imsReasonInfo.mCode == imsReasonInfo.CODE_REGISTRATION_ERROR
+                && imsReasonInfo.mExtraMessage != null) {
+
+            final String[] wfcOperatorErrorCodes =
+                    mContext.getResources().getStringArray(
+                            com.android.internal.R.array.wfcOperatorErrorCodes);
+            final String[] wfcOperatorErrorAlertMessages =
+                    mContext.getResources().getStringArray(
+                            com.android.internal.R.array.wfcOperatorErrorAlertMessages);
+            final String[] wfcOperatorErrorNotificationMessages =
+                    mContext.getResources().getStringArray(
+                            com.android.internal.R.array.wfcOperatorErrorNotificationMessages);
+
+            for (int i = 0; i < wfcOperatorErrorCodes.length; i++) {
+                // Match error code.
+                if (!imsReasonInfo.mExtraMessage.startsWith(
+                        wfcOperatorErrorCodes[i])) {
+                    continue;
+                }
+                // If there is no delimiter at the end of error code string
+                // then we need to verify that we are not matching partial code.
+                // EXAMPLE: "REG9" must not match "REG99".
+                // NOTE: Error code must not be empty.
+                int codeStringLength = wfcOperatorErrorCodes[i].length();
+                char lastChar = wfcOperatorErrorCodes[i].charAt(codeStringLength-1);
+                if (Character.isLetterOrDigit(lastChar)) {
+                    if (imsReasonInfo.mExtraMessage.length() > codeStringLength) {
+                        char nextChar = imsReasonInfo.mExtraMessage.charAt(codeStringLength);
+                        if (Character.isLetterOrDigit(nextChar)) {
+                            continue;
+                        }
+                    }
+                }
+
+                final CharSequence title = mContext.getText(
+                        com.android.internal.R.string.wfcRegErrorTitle);
+
+                CharSequence messageAlert = imsReasonInfo.mExtraMessage;
+                CharSequence messageNotification = imsReasonInfo.mExtraMessage;
+                if (!wfcOperatorErrorAlertMessages[i].isEmpty()) {
+                    messageAlert = wfcOperatorErrorAlertMessages[i];
+                }
+                if (!wfcOperatorErrorNotificationMessages[i].isEmpty()) {
+                    messageNotification = wfcOperatorErrorNotificationMessages[i];
+                }
+
+                // UX requirement is to disable WFC in case of "permanent" registration failures.
+                ImsManager.setWfcSetting(mContext, false);
+
+                // If WfcSettings are active then alert will be shown
+                // otherwise notification will be added.
+                Intent intent = new Intent(ImsManager.ACTION_IMS_REGISTRATION_ERROR);
+                intent.putExtra(EXTRA_KEY_ALERT_TITLE, title);
+                intent.putExtra(EXTRA_KEY_ALERT_MESSAGE, messageAlert);
+                intent.putExtra(EXTRA_KEY_NOTIFICATION_MESSAGE, messageNotification);
+                mContext.sendOrderedBroadcast(intent, null, mResultReceiver,
+                        null, Activity.RESULT_OK, null, null);
+
+                // We can only match a single error code
+                // so should break the loop after a successful match.
+                break;
+            }
+        }
     }
 }

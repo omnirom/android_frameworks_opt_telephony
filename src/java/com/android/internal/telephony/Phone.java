@@ -109,6 +109,8 @@ public interface Phone {
     static final String REASON_CONNECTED = "connected";
     static final String REASON_SINGLE_PDN_ARBITRATION = "SinglePdnArbitration";
     static final String REASON_DATA_SPECIFIC_DISABLED = "specificDisabled";
+    static final String REASON_SIM_NOT_READY = "simNotReady";
+    static final String REASON_IWLAN_AVAILABLE = "iwlanAvailable";
 
     // Used for band mode selection methods
     static final int BM_UNSPECIFIED = 0; // selected by baseband automatically
@@ -1887,6 +1889,11 @@ public interface Phone {
     public Phone getImsPhone();
 
     /**
+     * Start listening for IMS service UP/DOWN events.
+     */
+    public void startMonitoringImsService();
+
+    /**
      * Release the local instance of the ImsPhone and disconnect from
      * the phone.
      * @return the instance of the ImsPhone phone previously owned
@@ -1921,6 +1928,11 @@ public interface Phone {
      * Is Radio Present on the device and is it accessible
      */
     public boolean isRadioAvailable();
+
+    /**
+     * Is Radio turned on
+     */
+    public boolean isRadioOn();
 
     /**
      * shutdown Radio gracefully
@@ -1972,4 +1984,16 @@ public interface Phone {
      * @return true if IMS is Registered
      */
     public boolean isImsRegistered();
+
+    /**
+     * Returns the Status of Wi-Fi Calling
+     *@hide
+     */
+    public boolean isWifiCallingEnabled();
+
+     /**
+     * Returns the Status of Volte
+     *@hide
+     */
+    public boolean isVolteEnabled();
 }

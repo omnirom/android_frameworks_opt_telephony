@@ -39,6 +39,9 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 import android.util.TimeUtils;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.content.Context;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -177,6 +180,7 @@ public abstract class ServiceStateTracker extends Handler {
     protected static final int EVENT_CHANGE_IMS_STATE                  = 45;
     protected static final int EVENT_IMS_STATE_CHANGED                 = 46;
     protected static final int EVENT_IMS_STATE_DONE                    = 47;
+    protected static final int EVENT_IMS_CAPABILITY_CHANGED            = 48;
 
     protected static final String TIMEZONE_PROPERTY = "persist.sys.timezone";
 
@@ -228,6 +232,7 @@ public abstract class ServiceStateTracker extends Handler {
     /** Keep track of SPN display rules, so we only broadcast intent if something changes. */
     protected boolean mSpnUpdatePending = false;
     protected String mCurSpn = null;
+    protected String mCurDataSpn = null;
     protected String mCurPlmn = null;
     protected boolean mCurShowPlmn = false;
     protected boolean mCurShowSpn = false;
@@ -635,6 +640,7 @@ public abstract class ServiceStateTracker extends Handler {
     public abstract boolean isConcurrentVoiceAndDataAllowed();
 
     public abstract void setImsRegistrationState(boolean registered);
+    public void onImsCapabilityChanged() {}
     public abstract void pollState();
 
     /**
@@ -1057,5 +1063,27 @@ public abstract class ServiceStateTracker extends Handler {
 
     protected int getPhoneId() {
         return mPhoneBase.getPhoneId();
+    }
+
+    /* Reset Service state when IWLAN is enabled as polling in airplane mode
+     * causes state to go to OUT_OF_SERVICE state instead of STATE_OFF
+     */
+    protected void resetServiceStateInIwlanMode() {
+        if (mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
+            boolean resetIwlanRatVal = false;
+            log("set service state as POWER_OFF");
+            if (ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
+                        == mNewSS.getRilDataRadioTechnology()) {
+                log("pollStateDone: mNewSS = " + mNewSS);
+                log("pollStateDone: reset iwlan RAT value");
+                resetIwlanRatVal = true;
+            }
+            mNewSS.setStateOff();
+            if (resetIwlanRatVal) {
+                mNewSS.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN);
+                mNewSS.setDataRegState(ServiceState.STATE_IN_SERVICE);
+                log("pollStateDone: mNewSS = " + mNewSS);
+            }
+        }
     }
 }

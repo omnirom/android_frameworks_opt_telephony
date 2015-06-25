@@ -86,6 +86,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public abstract class PhoneBase extends Handler implements Phone {
     private static final String LOG_TAG = "PhoneBase";
 
+    private boolean mImsIntentReceiverRegistered = false;
     private BroadcastReceiver mImsIntentReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -100,12 +101,14 @@ public abstract class PhoneBase extends Handler implements Phone {
                 }
             }
 
-            if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_UP)) {
-                mImsServiceReady = true;
-                updateImsPhone();
-            } else if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_DOWN)) {
-                mImsServiceReady = false;
-                updateImsPhone();
+            synchronized (PhoneProxy.lockForRadioTechnologyChange) {
+                if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_UP)) {
+                    mImsServiceReady = true;
+                    updateImsPhone();
+                } else if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_DOWN)) {
+                    mImsServiceReady = false;
+                    updateImsPhone();
+                }
             }
         }
     };
@@ -218,7 +221,6 @@ public abstract class PhoneBase extends Handler implements Phone {
 
     protected int mPhoneId;
 
-    private final Object mImsLock = new Object();
     private boolean mImsServiceReady = false;
     protected static ImsPhone mImsPhone = null;
 
@@ -442,9 +444,31 @@ public abstract class PhoneBase extends Handler implements Phone {
     }
 
     @Override
+    public void startMonitoringImsService() {
+        synchronized(PhoneProxy.lockForRadioTechnologyChange) {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
+            filter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
+            mContext.registerReceiver(mImsIntentReceiver, filter);
+            mImsIntentReceiverRegistered = true;
+
+            // Monitor IMS service - but first poll to see if already up (could miss
+            // intent)
+            ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
+            if (imsManager != null && imsManager.isServiceAvailable()) {
+                mImsServiceReady = true;
+                updateImsPhone();
+            }
+        }
+    }
+
+    @Override
     public void dispose() {
         synchronized(PhoneProxy.lockForRadioTechnologyChange) {
-            mContext.unregisterReceiver(mImsIntentReceiver);
+            if (mImsIntentReceiverRegistered) {
+                mContext.unregisterReceiver(mImsIntentReceiver);
+                mImsIntentReceiverRegistered = false;
+            }
             mCi.unSetOnCallRing(this);
             // Must cleanup all connectionS and needs to use sendMessage!
             mDcTracker.cleanUpAllConnections(null);
@@ -1905,9 +1929,14 @@ public abstract class PhoneBase extends Handler implements Phone {
 
     @Override
     public ImsPhone relinquishOwnershipOfImsPhone() {
-        synchronized (mImsLock) {
+        synchronized (PhoneProxy.lockForRadioTechnologyChange) {
             if (mImsPhone == null)
                 return null;
+
+            if (mImsIntentReceiverRegistered) {
+                mContext.unregisterReceiver(mImsIntentReceiver);
+                mImsIntentReceiverRegistered = false;
+            }
 
             ImsPhone imsPhone = mImsPhone;
             mImsPhone = null;
@@ -1921,7 +1950,7 @@ public abstract class PhoneBase extends Handler implements Phone {
 
     @Override
     public void acquireOwnershipOfImsPhone(ImsPhone imsPhone) {
-        synchronized (mImsLock) {
+        synchronized (PhoneProxy.lockForRadioTechnologyChange) {
             if (imsPhone == null)
                 return;
 
@@ -1946,26 +1975,24 @@ public abstract class PhoneBase extends Handler implements Phone {
     }
 
     protected void updateImsPhone() {
-        synchronized (mImsLock) {
-            Rlog.d(LOG_TAG, "updateImsPhone"
-                    + " mImsServiceReady=" + mImsServiceReady);
+        Rlog.d(LOG_TAG, "updateImsPhone"
+                + " mImsServiceReady=" + mImsServiceReady);
 
-            if (mImsServiceReady && (mImsPhone == null)) {
-                mImsPhone = PhoneFactory.makeImsPhone(mNotifier, this);
-                CallManager.getInstance().registerPhone(mImsPhone);
-                mImsPhone.registerForSilentRedial(
-                        this, EVENT_INITIATE_SILENT_REDIAL, null);
-            } else if (!mImsServiceReady && (mImsPhone != null)) {
-                CallManager.getInstance().unregisterPhone(mImsPhone);
-                mImsPhone.unregisterForSilentRedial(this);
+        if (mImsServiceReady && (mImsPhone == null)) {
+            mImsPhone = PhoneFactory.makeImsPhone(mNotifier, this);
+            CallManager.getInstance().registerPhone(mImsPhone);
+            mImsPhone.registerForSilentRedial(
+                    this, EVENT_INITIATE_SILENT_REDIAL, null);
+        } else if (!mImsServiceReady && (mImsPhone != null)) {
+            CallManager.getInstance().unregisterPhone(mImsPhone);
+            mImsPhone.unregisterForSilentRedial(this);
 
-                mImsPhone.dispose();
-                // Potential GC issue if someone keeps a reference to ImsPhone.
-                // However: this change will make sure that such a reference does
-                // not access functions through NULL pointer.
-                //mImsPhone.removeReferences();
-                mImsPhone = null;
-            }
+            mImsPhone.dispose();
+            // Potential GC issue if someone keeps a reference to ImsPhone.
+            // However: this change will make sure that such a reference does
+            // not access functions through NULL pointer.
+            //mImsPhone.removeReferences();
+            mImsPhone = null;
         }
     }
 
@@ -2087,6 +2114,34 @@ public abstract class PhoneBase extends Handler implements Phone {
         return isImsRegistered;
     }
 
+    /**
+     * Get Wifi Calling Feature Availability
+     */
+    @Override
+    public boolean isWifiCallingEnabled() {
+        ImsPhone imsPhone = mImsPhone;
+        boolean isWifiCallingEnabled = false;
+        if (imsPhone != null) {
+            isWifiCallingEnabled = imsPhone.isVowifiEnabled();
+        }
+        Rlog.d(LOG_TAG, "isWifiCallingEnabled =" + isWifiCallingEnabled);
+        return isWifiCallingEnabled;
+    }
+
+    /**
+     * Get Volte Feature Availability
+     */
+    @Override
+    public boolean isVolteEnabled() {
+        ImsPhone imsPhone = mImsPhone;
+        boolean isVolteEnabled = false;
+        if (imsPhone != null) {
+            isVolteEnabled = imsPhone.isVolteEnabled();
+        }
+        Rlog.d(LOG_TAG, "isImsRegistered =" + isVolteEnabled);
+        return isVolteEnabled;
+    }
+
     private boolean getRoamingOverrideHelper(String prefix, String key) {
         String iccId = getIccSerialNumber();
         if (TextUtils.isEmpty(iccId) || TextUtils.isEmpty(key)) {
@@ -2104,6 +2159,11 @@ public abstract class PhoneBase extends Handler implements Phone {
     @Override
     public boolean isRadioAvailable() {
         return mCi.getRadioState().isAvailable();
+    }
+
+    @Override
+    public boolean isRadioOn() {
+        return mCi.getRadioState().isOn();
     }
 
     @Override
@@ -2134,6 +2194,21 @@ public abstract class PhoneBase extends Handler implements Phone {
     @Override
     public void unregisterForRadioCapabilityChanged(Handler h) {
         mCi.unregisterForRadioCapabilityChanged(this);
+    }
+
+    /**
+     * Determines if  IMS is enabled for call.
+     *
+     * @return {@code true} if IMS calling is enabled.
+     */
+    public boolean isImsUseEnabled() {
+        boolean imsUseEnabled =
+                ((ImsManager.isVolteEnabledByPlatform(mContext) &&
+                ImsManager.isEnhanced4gLteModeSettingEnabledByUser(mContext)) ||
+                (ImsManager.isWfcEnabledByPlatform(mContext) &&
+                ImsManager.isWfcEnabledByUser(mContext)) &&
+                ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext));
+        return imsUseEnabled;
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {

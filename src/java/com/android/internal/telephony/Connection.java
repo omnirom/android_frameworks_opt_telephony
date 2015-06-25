@@ -45,10 +45,12 @@ public abstract class Connection {
         public void onVideoStateChanged(int videoState);
         public void onLocalVideoCapabilityChanged(boolean capable);
         public void onRemoteVideoCapabilityChanged(boolean capable);
+        public void onWifiChanged(boolean isWifi);
         public void onVideoProviderChanged(
                 android.telecom.Connection.VideoProvider videoProvider);
         public void onAudioQualityChanged(int audioQuality);
         public void onConferenceParticipantsChanged(List<ConferenceParticipant> participants);
+        public void onMultipartyStateChanged(boolean isMultiParty);
     }
 
     /**
@@ -62,12 +64,16 @@ public abstract class Connection {
         @Override
         public void onRemoteVideoCapabilityChanged(boolean capable) {}
         @Override
+        public void onWifiChanged(boolean isWifi) {}
+        @Override
         public void onVideoProviderChanged(
                 android.telecom.Connection.VideoProvider videoProvider) {}
         @Override
         public void onAudioQualityChanged(int audioQuality) {}
         @Override
         public void onConferenceParticipantsChanged(List<ConferenceParticipant> participants) {}
+        @Override
+        public void onMultipartyStateChanged(boolean isMultiParty) {}
     }
 
     public static final int AUDIO_QUALITY_STANDARD = 1;
@@ -108,6 +114,7 @@ public abstract class Connection {
     private int mVideoState;
     private boolean mLocalVideoCapable;
     private boolean mRemoteVideoCapable;
+    private boolean mIsWifi;
     private int mAudioQuality;
     private android.telecom.Connection.VideoProvider mVideoProvider;
     public Call.State mPreHandoverState = Call.State.IDLE;
@@ -487,6 +494,15 @@ public abstract class Connection {
     }
 
     /**
+     * Returns whether the connection is using a wifi network.
+     *
+     * @return {@code True} if the connection is using a wifi network.
+     */
+    public boolean isWifi() {
+        return mIsWifi;
+    }
+
+    /**
      * Returns the {@link android.telecom.Connection.VideoProvider} for the connection.
      *
      * @return The {@link android.telecom.Connection.VideoProvider}.
@@ -542,6 +558,18 @@ public abstract class Connection {
     }
 
     /**
+     * Sets whether a wifi network is used for the connection.
+     *
+     * @param isWifi {@code True} if wifi is being used.
+     */
+    public void setWifi(boolean isWifi) {
+        mIsWifi = isWifi;
+        for (Listener l : mListeners) {
+            l.onWifiChanged(mIsWifi);
+        }
+    }
+
+    /**
      * Set the audio quality for the connection.
      *
      * @param audioQuality The audio quality.
@@ -580,6 +608,17 @@ public abstract class Connection {
     public void updateConferenceParticipants(List<ConferenceParticipant> conferenceParticipants) {
         for (Listener l : mListeners) {
             l.onConferenceParticipantsChanged(conferenceParticipants);
+        }
+    }
+
+    /**
+     * Notifies listeners of a change to the multiparty state of the connection..
+     *
+     * @param isMultiparty The participant(s).
+     */
+    public void updateMultipartyState(boolean isMultiparty) {
+        for (Listener l : mListeners) {
+            l.onMultipartyStateChanged(isMultiparty);
         }
     }
 

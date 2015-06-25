@@ -131,7 +131,6 @@ public class ImsPhoneConnection extends Connection {
                     imsCall.getCallProfile().getCallExtraInt(ImsCallProfile.EXTRA_OIR));
             mCnapNamePresentation = ImsCallProfile.OIRToPresentation(
                     imsCall.getCallProfile().getCallExtraInt(ImsCallProfile.EXTRA_CNAP));
-
             updateMediaCapabilities(imsCall);
         } else {
             mNumberPresentation = PhoneConstants.PRESENTATION_UNKNOWN;
@@ -143,6 +142,8 @@ public class ImsPhoneConnection extends Connection {
         mUusInfo = null;
 
         //mIndex = index;
+
+        updateWifiState();
 
         mParent = parent;
         mParent.attach(this, ImsPhoneCall.State.INCOMING);
@@ -535,6 +536,21 @@ public class ImsPhoneConnection extends Connection {
         return mImsCall != null && mImsCall.isMultiparty();
     }
 
+    /**
+     * Where {@link #isMultiparty()} is {@code true}, determines if this {@link ImsCall} is the
+     * origin of the conference call (i.e. {@code #isConferenceHost()} is {@code true}), or if this
+     * {@link ImsCall} is a member of a conference hosted on another device.
+     *
+     * @return {@code true} if this call is the origin of the conference call it is a member of,
+     *      {@code false} otherwise.
+     */
+    public boolean isConferenceHost() {
+        if (mImsCall == null) {
+            return false;
+        }
+        return mImsCall.isConferenceHost();
+    }
+
     /*package*/ ImsCall getImsCall() {
         return mImsCall;
     }
@@ -572,7 +588,9 @@ public class ImsPhoneConnection extends Connection {
 
         boolean updateParent = mParent.update(this, imsCall, state);
         boolean updateMediaCapabilities = updateMediaCapabilities(imsCall);
-        return updateParent || updateMediaCapabilities;
+        boolean updateWifiState = updateWifiState();
+
+        return updateParent || updateMediaCapabilities || updateWifiState;
     }
 
     @Override
@@ -671,6 +689,21 @@ public class ImsPhoneConnection extends Connection {
         }
 
         return changed;
+    }
+
+    /**
+     * Check for a change in the wifi state of the ImsPhoneCallTracker and update the
+     * {@link ImsPhoneConnection} with this information.
+     *
+     * @return Whether the ImsPhoneCallTracker's usage of wifi has been changed.
+     */
+    public boolean updateWifiState() {
+        Rlog.d(LOG_TAG, "updateWifiState: " + mOwner.isVowifiEnabled());
+        if (isWifi() != mOwner.isVowifiEnabled()) {
+            setWifi(mOwner.isVowifiEnabled());
+            return true;
+        }
+        return false;
     }
 
     /**

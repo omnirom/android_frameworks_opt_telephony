@@ -380,6 +380,14 @@ public final class DcTracker extends DcTrackerBase {
         boolean dataAllowed = isEmergencyApn || isDataAllowed();
         boolean possible = dataAllowed && apnTypePossible;
 
+        if ((apnContext.getApnType().equals(PhoneConstants.APN_TYPE_DEFAULT)
+                    || apnContext.getApnType().equals(PhoneConstants.APN_TYPE_IA))
+                && (mPhone.getServiceState().getRilDataRadioTechnology()
+                == ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN)) {
+            log("Default data call activation not possible in iwlan.");
+            possible = false;
+        }
+
         if (VDBG) {
             log(String.format("isDataPossible(%s): possible=%b isDataAllowed=%b " +
                     "apnTypePossible=%b apnContextisEnabled=%b apnContextState()=%s",
@@ -660,7 +668,17 @@ public final class DcTracker extends DcTrackerBase {
     }
 
     private boolean isDataAllowed(ApnContext apnContext) {
-        return apnContext.isReady() && isDataAllowed();
+        //If RAT is iwlan then dont allow default/IA PDP at all.
+        //Rest of APN types can be evaluated for remaining conditions.
+        if ((apnContext.getApnType().equals(PhoneConstants.APN_TYPE_DEFAULT)
+                    || apnContext.getApnType().equals(PhoneConstants.APN_TYPE_IA))
+                && (mPhone.getServiceState().getRilDataRadioTechnology()
+                == ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN)) {
+            log("Default data call activation not allowed in iwlan.");
+            return false;
+        } else {
+            return apnContext.isReady() && isDataAllowed();
+        }
     }
 
     //****** Called from ServiceStateTracker
@@ -707,6 +725,11 @@ public final class DcTracker extends DcTrackerBase {
 
         boolean attachedState = mAttached.get();
         boolean desiredPowerState = mPhone.getServiceStateTracker().getDesiredPowerState();
+        int radioTech = mPhone.getServiceState().getRilDataRadioTechnology();
+        if (radioTech == ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN) {
+            desiredPowerState = true;
+        }
+
         IccRecords r = mIccRecords.get();
         boolean recordsLoaded = false;
         if (r != null) {
@@ -1530,6 +1553,14 @@ public final class DcTracker extends DcTrackerBase {
             notifyOffApnsOfAvailability(Phone.REASON_SIM_LOADED);
         }
         setupDataOnConnectableApns(Phone.REASON_SIM_LOADED);
+    }
+
+    private void onSimNotReady() {
+        if (DBG) log("onSimNotReady");
+
+        cleanUpAllConnections(true, Phone.REASON_SIM_NOT_READY);
+        mAllApnSettings = null;
+        mAutoAttachOnCreationConfig = false;
     }
 
     @Override
@@ -2786,6 +2817,8 @@ public final class DcTracker extends DcTrackerBase {
                 mIccRecords.set(newIccRecords);
                 newIccRecords.registerForRecordsLoaded(
                         this, DctConstants.EVENT_RECORDS_LOADED, null);
+            } else {
+                onSimNotReady();
             }
         }
     }

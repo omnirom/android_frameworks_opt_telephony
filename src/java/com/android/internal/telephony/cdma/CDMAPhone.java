@@ -70,7 +70,6 @@ import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.uicc.IccException;
 import com.android.internal.telephony.uicc.IccRecords;
-import com.android.internal.telephony.uicc.RuimRecords;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
@@ -409,28 +408,33 @@ public class CDMAPhone extends PhoneBase {
     dial (String dialString, int videoState) throws CallStateException {
         ImsPhone imsPhone = mImsPhone;
 
-        boolean imsUseEnabled =
-                ImsManager.isVolteEnabledByPlatform(mContext) &&
-                ImsManager.isEnhanced4gLteModeSettingEnabledByUser(mContext) &&
-                ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext);
-        if (!imsUseEnabled) {
-            Rlog.w(LOG_TAG, "IMS is disabled: forced to CS");
-        }
+        boolean imsUseEnabled = isImsUseEnabled()
+                 && imsPhone != null
+                 && (imsPhone.isVolteEnabled() || imsPhone.isVowifiEnabled())
+                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
+
+        boolean useImsForEmergency = imsPhone != null
+                && PhoneNumberUtils.isEmergencyNumber(dialString)
+                &&  mContext.getResources().getBoolean(
+                        com.android.internal.R.bool.useImsAlwaysForEmergencyCall)
+                && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
+                && (imsPhone.getServiceState().getState() != ServiceState.STATE_POWER_OFF);
 
         if (DBG) {
-            Rlog.d(LOG_TAG, "imsUseEnabled=" + imsUseEnabled + ", imsPhone=" + imsPhone
+            Rlog.d(LOG_TAG, "imsUseEnabled=" + imsUseEnabled
+                    + ", useImsForEmergency=" + useImsForEmergency
+                    + ", imsPhone=" + imsPhone
                     + ", imsPhone.isVolteEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVolteEnabled() : "N/A")
+                    + ", imsPhone.isVowifiEnabled()="
+                    + ((imsPhone != null) ? imsPhone.isVowifiEnabled() : "N/A")
                     + ", imsPhone.getServiceState().getState()="
                     + ((imsPhone != null) ? imsPhone.getServiceState().getState() : "N/A"));
         }
 
-        if (imsUseEnabled && imsPhone != null && imsPhone.isVolteEnabled()
-                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE
-                && !PhoneNumberUtils.isEmergencyNumber(dialString))
-                || (PhoneNumberUtils.isEmergencyNumber(dialString)
-                && mContext.getResources().getBoolean(
-                        com.android.internal.R.bool.useImsAlwaysForEmergencyCall))) ) {
+        ImsPhone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mContext);
+
+        if (imsUseEnabled || useImsForEmergency) {
             try {
                 if (DBG) Rlog.d(LOG_TAG, "Trying IMS PS call");
                 return imsPhone.dial(dialString, videoState);
