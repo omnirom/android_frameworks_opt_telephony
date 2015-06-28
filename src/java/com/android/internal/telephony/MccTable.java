@@ -407,10 +407,19 @@ public final class MccTable {
      */
     private static void setWifiCountryCodeFromMcc(Context context, int mcc) {
         String country = MccTable.countryCodeForMcc(mcc);
-        Slog.d(LOG_TAG, "WIFI_COUNTRY_CODE set to " + country);
-        WifiManager wM = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        //persist
-        wM.setCountryCode(country, true);
+        // safe if we need it later
+        Settings.Global.putString(context.getContentResolver(),
+                Settings.Global.WIFI_COUNTRY_CODE_SIM0, country.toUpperCase(Locale.ROOT));
+
+        // dont override by default only if reset == value is null
+        String countryCode = Settings.Global.getString(context.getContentResolver(),
+                Settings.Global.WIFI_COUNTRY_CODE);
+        if(countryCode == null || countryCode.isEmpty()){
+            Slog.i(LOG_TAG, "WIFI_COUNTRY_CODE set to " + country);
+            WifiManager wM = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            //persist
+            wM.setCountryCode(country, true);
+        }
     }
 
     static {
