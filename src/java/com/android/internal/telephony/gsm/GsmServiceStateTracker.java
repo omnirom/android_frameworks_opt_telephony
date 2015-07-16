@@ -1533,7 +1533,11 @@ final class GsmServiceStateTracker extends ServiceStateTracker {
         boolean equalsOnsl = onsl != null && spn.equals(onsl);
         boolean equalsOnss = onss != null && spn.equals(onss);
 
-        return currentMccEqualsSimMcc(s) && (equalsOnsl || equalsOnss);
+        // Add national roaming and make it optional
+        boolean mvnoRoaming = Settings.Global.getInt(mPhone.getContext().getContentResolver(),
+                Settings.Global.MVNO_ROAMING, 0) == 1;
+
+        return currentMccEqualsSimMcc(s) && (equalsOnsl || equalsOnss || mvnoRoaming);
     }
 
     /**
