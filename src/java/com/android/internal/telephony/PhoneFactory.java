@@ -160,7 +160,8 @@ public class PhoneFactory {
                     }
                 }
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
-                SubscriptionController.init(context, sCommandsInterfaces);
+                TelephonyPluginDelegate.getInstance().initSubscriptionController(context,
+                        sCommandsInterfaces);
 
                 // Instantiate UiccController so that all other classes can just
                 // call getInstance()
