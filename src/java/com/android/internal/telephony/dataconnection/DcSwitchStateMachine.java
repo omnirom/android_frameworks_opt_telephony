@@ -26,6 +26,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.PhoneProxy;
+import com.android.internal.telephony.dataconnection.DcSwitchAsyncChannel.ConnectInfo;
 import com.android.internal.telephony.dataconnection.DcSwitchAsyncChannel.RequestInfo;
 
 import android.os.AsyncResult;
@@ -48,6 +49,8 @@ public class DcSwitchStateMachine extends StateMachine {
     private int mId;
     private Phone mPhone;
     private AsyncChannel mAc;
+
+    private Message mResponseMsg = null;
 
     private IdleState mIdleState = new IdleState();
     private EmergencyState mEmergencyState = new EmergencyState();
@@ -88,7 +91,7 @@ public class DcSwitchStateMachine extends StateMachine {
         @Override
         public void enter() {
             if (DBG) log("IdleState: enter");
-
+            mResponseMsg = null;
             try {
                 DctController.getInstance().processRequests();
             } catch (RuntimeException e) {
@@ -102,7 +105,9 @@ public class DcSwitchStateMachine extends StateMachine {
 
             switch (msg.what) {
                 case DcSwitchAsyncChannel.REQ_CONNECT: {
-                    RequestInfo apnRequest = (RequestInfo)msg.obj;
+                    ConnectInfo connectInfo = (ConnectInfo)msg.obj;
+                    RequestInfo apnRequest = connectInfo.request;
+                    mResponseMsg = connectInfo.responseMessage;
                     apnRequest.log("DcSwitchStateMachine.IdleState: REQ_CONNECT");
                     if (DBG) log("IdleState: REQ_CONNECT, apnRequest=" + apnRequest);
                     transitionTo(mAttachingState);
@@ -218,12 +223,18 @@ public class DcSwitchStateMachine extends StateMachine {
         }
 
         @Override
+        public void exit() {
+            mResponseMsg = null;
+        }
+
+        @Override
         public boolean processMessage(Message msg) {
             boolean retVal;
 
             switch (msg.what) {
                 case DcSwitchAsyncChannel.REQ_CONNECT: {
-                    RequestInfo apnRequest = (RequestInfo)msg.obj;
+                    ConnectInfo connectInfo = (ConnectInfo)msg.obj;
+                    RequestInfo apnRequest = connectInfo.request;
                     apnRequest.log("DcSwitchStateMachine.AttachingState: REQ_CONNECT");
                     if (DBG) log("AttachingState: REQ_CONNECT, apnRequest=" + apnRequest);
 
@@ -242,34 +253,27 @@ public class DcSwitchStateMachine extends StateMachine {
                     if (mCurrentAllowedSequence != msg.arg1) {
                         loge("EVENT_DATA_ALLOWED ignored arg1=" + msg.arg1 + ", seq=" +
                                 mCurrentAllowedSequence);
-                    } else if (ar.exception != null) {
-                        if (ar.exception instanceof CommandException) {
-                            CommandException e = (CommandException)ar.exception;
-                            if (e.getCommandError() ==
-                                    CommandException.Error.REQUEST_NOT_SUPPORTED) {
-                                // must be on a single-sim device so stay in Attaching
-                                // this is important to avoid an infinite loop
-                                retVal = HANDLED;
-                                break;
+                    } else {
+                        if (ar.exception != null) {
+                            loge("EVENT_DATA_ALLOWED failed, " + ar.exception);
+                            if (mResponseMsg != null) {
+                                // Inform DctController about the failure.
+                                Message responseMsg = Message.obtain(mResponseMsg);
+                                responseMsg.obj = new AsyncResult(null, null, ar.exception);
+                                responseMsg.sendToTarget();
                             }
                         } else {
                             logd("EVENT_DATA_ALLOWED success");
                             mResponseMsg = null;
-
-                            /* If the data service state is IN_SERVICE then move to
-                             * ATTACHED state.
-                             */
-                            int dataState = mPhone.getServiceState().getDataRegState();
-                            if (dataState == ServiceState.STATE_IN_SERVICE) {
-                                logd("AttachingState: Already attached, move to ATTACHED state");
-                                transitionTo(mAttachedState);
-                            }
-
-
                         }
-                        loge("EVENT_DATA_ALLOWED failed, " + ar.exception);
-                        transitionTo(mIdleState);
                     }
+                    retVal = HANDLED;
+                    break;
+                }
+
+                case DcSwitchAsyncChannel.EVENT_RESET: {
+                    if (DBG) log("AttachingState requested abort/reset");
+                    transitionTo(mIdleState);
                     retVal = HANDLED;
                     break;
                 }
@@ -336,7 +340,8 @@ public class DcSwitchStateMachine extends StateMachine {
 
             switch (msg.what) {
                 case DcSwitchAsyncChannel.REQ_CONNECT: {
-                    RequestInfo apnRequest = (RequestInfo)msg.obj;
+                    ConnectInfo connectInfo = (ConnectInfo)msg.obj;
+                    RequestInfo apnRequest = connectInfo.request;
                     apnRequest.log("DcSwitchStateMachine.AttachedState: REQ_CONNECT");
                     if (DBG) log("AttachedState: REQ_CONNECT, apnRequest=" + apnRequest);
 
@@ -393,7 +398,8 @@ public class DcSwitchStateMachine extends StateMachine {
 
             switch (msg.what) {
                 case DcSwitchAsyncChannel.REQ_CONNECT: {
-                    RequestInfo apnRequest = (RequestInfo)msg.obj;
+                    ConnectInfo connectInfo = (ConnectInfo)msg.obj;
+                    RequestInfo apnRequest = connectInfo.request;
                     apnRequest.log("DcSwitchStateMachine.DetachingState: REQ_CONNECT");
                     if (DBG) log("DetachingState: REQ_CONNECT, apnRequest=" + apnRequest);
 
@@ -488,11 +494,13 @@ public class DcSwitchStateMachine extends StateMachine {
                             DcSwitchAsyncChannel.RSP_IS_IDLE_OR_DETACHING_STATE, val ? 1 : 0);
                     break;
                 }
+
                 case DcSwitchAsyncChannel.EVENT_EMERGENCY_CALL_STARTED: {
                     mPreEmergencyState = getCurrentState();
                     transitionTo(mEmergencyState);
                     break;
                 }
+
                 default:
                     if (DBG) {
                         log("DefaultState: shouldn't happen but ignore msg.what=0x" +
