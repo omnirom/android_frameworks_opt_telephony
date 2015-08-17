@@ -170,10 +170,10 @@ public class PhoneFactory {
                     PhoneBase phone = null;
                     int phoneType = TelephonyManager.getPhoneType(networkModes[i]);
                     if (phoneType == PhoneConstants.PHONE_TYPE_GSM) {
-                        phone = new GSMPhone(context,
+                        phone = TelephonyPluginDelegate.getInstance().makeGSMPhone(context,
                                 sCommandsInterfaces[i], sPhoneNotifier, i);
                     } else if (phoneType == PhoneConstants.PHONE_TYPE_CDMA) {
-                        phone = new CDMALTEPhone(context,
+                        phone = TelephonyPluginDelegate.getInstance().makeCDMALTEPhone(context,
                                 sCommandsInterfaces[i], sPhoneNotifier, i);
                     }
                     Rlog.i(LOG_TAG, "Creating Phone with type = " + phoneType + " sub = " + i);
@@ -209,12 +209,8 @@ public class PhoneFactory {
                         makeSubscriptionInfoUpdater(context, sProxyPhones, sCommandsInterfaces);
                 SubscriptionController.getInstance().updatePhonesAvailability(sProxyPhones);
 
-                // Start monitoring after defaults have been made.
-                // Default phone must be ready before ImsPhone is created
-                // because ImsService might need it when it is being opened.
-                for (int i = 0; i < numPhones; i++) {
-                    sProxyPhones[i].startMonitoringImsService();
-                }
+                TelephonyPluginDelegate.getInstance().
+                        initExtTelephonyClasses(context, sProxyPhones, sCommandsInterfaces);
             }
         }
     }
@@ -222,16 +218,16 @@ public class PhoneFactory {
     public static Phone getCdmaPhone(int phoneId) {
         Phone phone;
         synchronized(PhoneProxy.lockForRadioTechnologyChange) {
-            phone = new CDMALTEPhone(sContext, sCommandsInterfaces[phoneId],
-                    sPhoneNotifier, phoneId);
+            phone = TelephonyPluginDelegate.getInstance().makeCDMALTEPhone(sContext,
+                    sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId);
         }
         return phone;
     }
 
     public static Phone getGsmPhone(int phoneId) {
         synchronized(PhoneProxy.lockForRadioTechnologyChange) {
-            Phone phone = new GSMPhone(sContext, sCommandsInterfaces[phoneId],
-                    sPhoneNotifier, phoneId);
+            Phone phone = TelephonyPluginDelegate.getInstance().makeGSMPhone(sContext,
+                    sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId);
             return phone;
         }
     }
