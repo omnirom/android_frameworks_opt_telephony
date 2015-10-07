@@ -33,6 +33,7 @@ import android.telephony.Rlog;
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.dataconnection.DataConnection.ConnectionParams;
 import com.android.internal.telephony.dataconnection.DataConnection.UpdateLinkPropertyResult;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -277,8 +278,19 @@ class DcController extends StateMachine {
                                 if (DBG) log("onDataStateChanged: inactive, add to cleanup list");
                                 apnsToCleanup.addAll(dc.mApnContexts.keySet());
                             } else {
-                                if (DBG) log("onDataStateChanged: inactive, add to retry list");
-                                dcsToRetry.add(dc);
+                                for (ConnectionParams cp : dc.mApnContexts.values()) {
+                                    ApnContext apnContext = cp.mApnContext;
+                                    if (apnContext.isEnabled()) {
+                                        if (DBG) {
+                                            log("onDataStateChanged: inactive, add to retry list");
+                                        }
+                                        dcsToRetry.add(dc);
+                                        break;
+                                    } else {
+                                        apnsToCleanup.add(apnContext);
+                                        if (DBG) log("APN is disabled, not retrying.");
+                                    }
+                                }
                             }
                         }
                     } else {
