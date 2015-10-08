@@ -611,5 +611,23 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void requestShutdown(Message result) {
     }
 
+    @Override
     public boolean needsOldRilFeature(String feature) { return false; }
+
+    @Override
+    public void startLceService(int reportIntervalMs, boolean pullMode, Message result) {
+    }
+
+    @Override
+    public void stopLceService(Message result) {
+    }
+
+    @Override
+    public void pullLceData(Message result) {
+    }
+
+    @Override
+    public void getModemActivityInfo(Message result) {
+    }
+
 }

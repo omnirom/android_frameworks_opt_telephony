@@ -1768,5 +1768,26 @@ public final class SimulatedCommands extends BaseCommands
         setRadioState(RadioState.RADIO_UNAVAILABLE);
     }
 
+    @Override
     public boolean needsOldRilFeature(String feature) { return false; }
+
+    @Override
+    public void startLceService(int report_interval_ms, boolean pullMode, Message result) {
+        unimplemented(result);
+    }
+
+    @Override
+    public void stopLceService(Message result) {
+        unimplemented(result);
+    }
+
+    @Override
+    public void pullLceData(Message result) {
+        unimplemented(result);
+    }
+
+    @Override
+    public void getModemActivityInfo(Message result) {
+        unimplemented(result);
+    }
 }

@@ -25,6 +25,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncResult;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
@@ -87,6 +88,7 @@ import com.android.internal.telephony.PhoneNotifier;
 import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.TelephonyProperties;
+import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.cdma.CDMAPhone;
 import com.android.internal.telephony.gsm.GSMPhone;
 import com.android.internal.telephony.uicc.IccRecords;
@@ -106,6 +108,7 @@ public class ImsPhone extends ImsPhoneBase {
     protected static final int EVENT_GET_CALL_BARRING_DONE          = EVENT_LAST + 2;
     protected static final int EVENT_SET_CALL_WAITING_DONE          = EVENT_LAST + 3;
     protected static final int EVENT_GET_CALL_WAITING_DONE          = EVENT_LAST + 4;
+    protected static final int EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED  = EVENT_LAST + 5;
 
     public static final String CS_FALLBACK = "cs_fallback";
 
@@ -141,6 +144,7 @@ public class ImsPhone extends ImsPhoneBase {
     private final RegistrantList mSilentRedialRegistrants = new RegistrantList();
 
     private boolean mImsRegistered = false;
+
     // A runnable which is used to automatically exit from Ecm after a period of time.
     private Runnable mExitEcmRunnable = new Runnable() {
         @Override
@@ -184,12 +188,34 @@ public class ImsPhone extends ImsPhoneBase {
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, LOG_TAG);
         mWakeLock.setReferenceCounted(false);
+
+        if (mDefaultPhone.getServiceStateTracker() != null) {
+            mDefaultPhone.getServiceStateTracker()
+                    .registerForDataRegStateOrRatChanged(this,
+                    EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED, null);
+        }
+        updateDataServiceState();
     }
 
     public void updateParentPhone(PhoneBase parentPhone) {
         // synchronization is managed at the PhoneBase scope (which calls this function)
+        if (mDefaultPhone != null && mDefaultPhone.getServiceStateTracker() != null) {
+            mDefaultPhone.getServiceStateTracker().
+                    unregisterForDataRegStateOrRatChanged(this);
+        }
         mDefaultPhone = parentPhone;
         mPhoneId = mDefaultPhone.getPhoneId();
+        if (mDefaultPhone.getServiceStateTracker() != null) {
+            mDefaultPhone.getServiceStateTracker()
+                    .registerForDataRegStateOrRatChanged(this,
+                    EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED, null);
+        }
+        updateDataServiceState();
+
+        // When the parent phone is updated, we need to notify listeners of the cached video
+        // capability.
+        Rlog.d(LOG_TAG, "updateParentPhone - Notify video capability changed " + mIsVideoCapable);
+        notifyForVideoCapabilityChanged(mIsVideoCapable);
     }
 
     @Override
@@ -201,6 +227,10 @@ public class ImsPhone extends ImsPhoneBase {
         mCT.dispose();
 
         //Force all referenced classes to unregister their former registered events
+        if (mDefaultPhone != null && mDefaultPhone.getServiceStateTracker() != null) {
+            mDefaultPhone.getServiceStateTracker().
+                    unregisterForDataRegStateOrRatChanged(this);
+        }
     }
 
     @Override
@@ -225,6 +255,7 @@ public class ImsPhone extends ImsPhoneBase {
 
     /* package */ void setServiceState(int state) {
         mSS.setState(state);
+        updateDataServiceState();
     }
 
     @Override
@@ -497,13 +528,26 @@ public class ImsPhone extends ImsPhoneBase {
         }
     }
 
+    public void notifyForVideoCapabilityChanged(boolean isVideoCapable) {
+        mIsVideoCapable = isVideoCapable;
+        mDefaultPhone.notifyForVideoCapabilityChanged(isVideoCapable);
+    }
+
     @Override
     public Connection
     dial(String dialString, int videoState) throws CallStateException {
-        return dialInternal(dialString, videoState);
+        return dialInternal(dialString, videoState, null);
     }
 
-    protected Connection dialInternal(String dialString, int videoState)
+    @Override
+    public Connection
+    dial(String dialString, UUSInfo uusInfo, int videoState, Bundle intentExtras)
+            throws CallStateException {
+        // ignore UUSInfo
+        return dialInternal (dialString, videoState, intentExtras);
+    }
+
+    protected Connection dialInternal(String dialString, int videoState, Bundle intentExtras)
             throws CallStateException {
         // Need to make sure dialString gets parsed properly
         String newDialString = PhoneNumberUtils.stripSeparators(dialString);
@@ -514,7 +558,7 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         if (mDefaultPhone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
-            return mCT.dial(dialString, videoState);
+            return mCT.dial(dialString, videoState, intentExtras);
         }
 
         // Only look at the Network portion for mmi
@@ -525,9 +569,9 @@ public class ImsPhone extends ImsPhoneBase {
                 "dialing w/ mmi '" + mmi + "'...");
 
         if (mmi == null) {
-            return mCT.dial(dialString, videoState);
+            return mCT.dial(dialString, videoState, intentExtras);
         } else if (mmi.isTemporaryModeCLIR()) {
-            return mCT.dial(mmi.getDialingNumber(), mmi.getCLIRMode(), videoState);
+            return mCT.dial(mmi.getDialingNumber(), mmi.getCLIRMode(), videoState, intentExtras);
         } else if (!mmi.isSupportedOverImsPhone()) {
             // If the mmi is not supported by IMS service,
             // try to initiate dialing with default phone
@@ -1097,6 +1141,16 @@ public class ImsPhone extends ImsPhoneBase {
         }
     }
 
+    private void updateDataServiceState() {
+        if (mSS != null && mDefaultPhone.getServiceStateTracker() != null
+                && mDefaultPhone.getServiceStateTracker().mSS != null) {
+            ServiceState ss = mDefaultPhone.getServiceStateTracker().mSS;
+            mSS.setDataRegState(ss.getDataRegState());
+            mSS.setRilDataRadioTechnology(ss.getRilDataRadioTechnology());
+            Rlog.d(LOG_TAG, "updateDataServiceState: defSs = " + ss + " imsSs = " + mSS);
+        }
+    }
+
     @Override
     public void handleMessage (Message msg) {
         AsyncResult ar = (AsyncResult) msg.obj;
@@ -1138,6 +1192,11 @@ public class ImsPhone extends ImsPhoneBase {
              case EVENT_SET_CALL_WAITING_DONE:
                 sendResponse((Message) ar.userObj, null, ar.exception);
                 break;
+
+             case EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED:
+                 if (DBG) Rlog.d(LOG_TAG, "EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED");
+                 updateDataServiceState();
+                 break;
 
              default:
                  super.handleMessage(msg);
@@ -1288,8 +1347,8 @@ public class ImsPhone extends ImsPhoneBase {
         return mCT.isVowifiEnabled();
     }
 
-    public boolean isVtEnabled() {
-        return mCT.isVtEnabled();
+    public boolean isVideoCallEnabled() {
+        return mCT.isVideoCallEnabled();
     }
 
     public Phone getDefaultPhone() {

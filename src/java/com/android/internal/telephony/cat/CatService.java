@@ -661,9 +661,8 @@ public class CatService extends Handler implements AppInterface {
     }
 
     private void getPliResponse(ByteArrayOutputStream buf) {
-
         // Locale Language Setting
-        String lang = SystemProperties.get("persist.sys.language");
+        final String lang = Locale.getDefault().getLanguage();
 
         if (lang != null) {
             // tag
@@ -1059,6 +1058,7 @@ public class CatService extends Handler implements AppInterface {
         case PRFRMD_WITH_MODIFICATION:
         case PRFRMD_NAA_NOT_ACTIVE:
         case PRFRMD_TONE_NOT_PLAYED:
+        case LAUNCH_BROWSER_ERROR:
         case TERMINAL_CRNTLY_UNABLE_TO_PROCESS:
             switch (type) {
             case SET_UP_MENU:

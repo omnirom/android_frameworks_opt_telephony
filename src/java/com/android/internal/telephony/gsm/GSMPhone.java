@@ -22,6 +22,7 @@ import android.content.SharedPreferences;
 import android.database.SQLException;
 import android.net.Uri;
 import android.os.AsyncResult;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Registrant;
@@ -794,12 +795,14 @@ public class GSMPhone extends PhoneBase {
     @Override
     public Connection
     dial(String dialString, int videoState) throws CallStateException {
-        return dial(dialString, null, videoState);
+        return dial(dialString, null, videoState, null);
     }
 
     @Override
     public Connection
-    dial (String dialString, UUSInfo uusInfo, int videoState) throws CallStateException {
+    dial (String dialString, UUSInfo uusInfo, int videoState, Bundle intentExtras)
+            throws CallStateException {
+        boolean isEmergency = PhoneNumberUtils.isEmergencyNumber(dialString);
         ImsPhone imsPhone = mImsPhone;
 
         boolean imsUseEnabled = isImsUseEnabled()
@@ -807,8 +810,9 @@ public class GSMPhone extends PhoneBase {
                  && (imsPhone.isVolteEnabled() || imsPhone.isVowifiEnabled())
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
 
-        boolean useImsForEmergency = imsPhone != null
-                && PhoneNumberUtils.isEmergencyNumber(dialString)
+        boolean useImsForEmergency = ImsManager.isVolteEnabledByPlatform(mContext)
+                && imsPhone != null
+                && isEmergency
                 &&  mContext.getResources().getBoolean(
                         com.android.internal.R.bool.useImsAlwaysForEmergencyCall)
                 && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
@@ -831,7 +835,7 @@ public class GSMPhone extends PhoneBase {
         if (imsUseEnabled || useImsForEmergency) {
             try {
                 if (LOCAL_DEBUG) Rlog.d(LOG_TAG, "Trying IMS PS call");
-                return imsPhone.dial(dialString, videoState);
+                return imsPhone.dial(dialString, uusInfo, videoState, intentExtras);
             } catch (CallStateException e) {
                 if (LOCAL_DEBUG) Rlog.d(LOG_TAG, "IMS PS call exception " + e +
                         "imsUseEnabled =" + imsUseEnabled + ", imsPhone =" + imsPhone);
@@ -843,13 +847,17 @@ public class GSMPhone extends PhoneBase {
             }
         }
 
+        if (mSST != null && mSST.mSS.getState() == ServiceState.STATE_OUT_OF_SERVICE
+                && mSST.mSS.getDataRegState() != ServiceState.STATE_IN_SERVICE && !isEmergency) {
+            throw new CallStateException("cannot dial in current state");
+        }
         if (LOCAL_DEBUG) Rlog.d(LOG_TAG, "Trying (non-IMS) CS call");
-        return dialInternal(dialString, null, VideoProfile.VideoState.AUDIO_ONLY);
+        return dialInternal(dialString, null, VideoProfile.STATE_AUDIO_ONLY, intentExtras);
     }
 
     @Override
     protected Connection
-    dialInternal (String dialString, UUSInfo uusInfo, int videoState)
+    dialInternal (String dialString, UUSInfo uusInfo, int videoState, Bundle intentExtras)
             throws CallStateException {
 
         // Need to make sure dialString gets parsed properly
@@ -868,9 +876,9 @@ public class GSMPhone extends PhoneBase {
                                "dialing w/ mmi '" + mmi + "'...");
 
         if (mmi == null) {
-            return mCT.dial(newDialString, uusInfo);
+            return mCT.dial(newDialString, uusInfo, intentExtras);
         } else if (mmi.isTemporaryModeCLIR()) {
-            return mCT.dial(mmi.mDialingNumber, mmi.getCLIRMode(), uusInfo);
+            return mCT.dial(mmi.mDialingNumber, mmi.getCLIRMode(), uusInfo, intentExtras);
         } else {
             mPendingMMIs.add(mmi);
             mMmiRegistrants.notifyRegistrants(new AsyncResult(null, mmi, null));
@@ -1064,6 +1072,12 @@ public class GSMPhone extends PhoneBase {
     public String getGroupIdLevel1() {
         IccRecords r = mIccRecords.get();
         return (r != null) ? r.getGid1() : null;
+    }
+
+    @Override
+    public String getGroupIdLevel2() {
+        IccRecords r = mIccRecords.get();
+        return (r != null) ? r.getGid2() : null;
     }
 
     @Override
@@ -1437,11 +1451,14 @@ public class GSMPhone extends PhoneBase {
                 mCi.getIMEI(obtainMessage(EVENT_GET_IMEI_DONE));
                 mCi.getIMEISV(obtainMessage(EVENT_GET_IMEISV_DONE));
                 mCi.getRadioCapability(obtainMessage(EVENT_GET_RADIO_CAPABILITY));
+                startLceAfterRadioIsAvailable();
             }
             break;
 
             case EVENT_RADIO_ON:
-                // do-nothing
+                // If this is on APM off, SIM may already be loaded. Send setPreferredNetworkType
+                // request to RIL to preserve user setting across APM toggling
+                setPreferredNetworkTypeIfSimLoaded();
                 break;
 
             case EVENT_REGISTERED_TO_NETWORK:
