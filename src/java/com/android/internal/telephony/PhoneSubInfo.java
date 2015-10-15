@@ -44,7 +44,6 @@ public class PhoneSubInfo {
         android.Manifest.permission.CALL_PRIVILEGED;
     private static final String READ_PRIVILEGED_PHONE_STATE =
         android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE;
-    private static final int READ_PHONE_INFO = AppOpsManager.OP_READ_PHONE_INFO;
 
     public PhoneSubInfo(Phone phone) {
         mPhone = phone;
