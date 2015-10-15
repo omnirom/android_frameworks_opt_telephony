@@ -44,7 +44,6 @@ public class PhoneSubInfo {
         android.Manifest.permission.CALL_PRIVILEGED;
     private static final String READ_PRIVILEGED_PHONE_STATE =
         android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE;
-    private static final int READ_PHONE_INFO = AppOpsManager.OP_READ_PHONE_INFO;
 
     public PhoneSubInfo(Phone phone) {
         mPhone = phone;
@@ -78,7 +77,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getDeviceId")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getDeviceId() : "009999012345678";
+        return mPhone.getDeviceId();
     }
 
     /**
@@ -88,7 +87,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getImei")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getImei() : "009999012345678";
+        return mPhone.getImei();
     }
 
     /**
@@ -109,8 +108,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getDeviceSvn")) {
             return null;
         }
-
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getDeviceSvn() : "0099990123456799";
+        return mPhone.getDeviceSvn();
     }
 
     /**
@@ -120,7 +118,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getSubscriberId")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getSubscriberId() : "001010123456789";
+        return mPhone.getSubscriberId();
     }
 
     /**
@@ -130,7 +128,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getGroupIdLevel1")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getGroupIdLevel1() : "";
+        return mPhone.getGroupIdLevel1();
     }
 
     /**
@@ -140,7 +138,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getIccSerialNumber")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getIccSerialNumber() : "899990000123456789";
+        return mPhone.getIccSerialNumber();
     }
 
     /**
@@ -151,7 +149,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneNumber(callingPackage, "getLine1Number")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getLine1Number() : "+99900123456";
+        return mPhone.getLine1Number();
     }
 
     /**
@@ -161,7 +159,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getLine1AlphaTag")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getLine1AlphaTag() : "+99900123456";
+        return mPhone.getLine1AlphaTag();
     }
 
     /**
@@ -171,7 +169,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getMsisdn")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getMsisdn() : "99900123456";
+        return mPhone.getMsisdn();
     }
 
     /**
@@ -183,7 +181,7 @@ public class PhoneSubInfo {
         }
         String number = PhoneNumberUtils.extractNetworkPortion(mPhone.getVoiceMailNumber());
         if (VDBG) log("VM: PhoneSubInfo.getVoiceMailNUmber: " + number);
-        return isOpAllowed(READ_PHONE_INFO) ? number : "+99900123456";
+        return number;
     }
 
     /**
@@ -196,7 +194,7 @@ public class PhoneSubInfo {
                 "Requires CALL_PRIVILEGED");
         String number = mPhone.getVoiceMailNumber();
         if (VDBG) log("VM: PhoneSubInfo.getCompleteVoiceMailNUmber: " + number);
-        return isOpAllowed(READ_PHONE_INFO) ? number : "+99900123456";
+        return number;
     }
 
     /**
@@ -206,7 +204,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getVoiceMailAlphaTag")) {
             return null;
         }
-        return isOpAllowed(READ_PHONE_INFO) ? mPhone.getVoiceMailAlphaTag() : "";
+        return mPhone.getVoiceMailAlphaTag();
     }
 
     /**
