@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "b8f5b13e_7f4c0fa5",
+        "filename": "src/java/com/android/internal/telephony/PhoneSubInfo.java",
+        "patchSetId": 2
+      },
+      "lineNbr": 67,
+      "author": {
+        "id": 1001175
+      },
+      "writtenOn": "2015-10-15T17:58:06Z",
+      "side": 1,
+      "message": "Is unused now.",
+      "revId": "fc37c0a449fd7c5bc258756e67db3639a8a8fcd0",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": false
+    }
+  ]
+}
