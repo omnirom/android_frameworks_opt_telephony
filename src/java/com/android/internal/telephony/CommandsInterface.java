@@ -2032,5 +2032,4 @@ public interface CommandsInterface {
      * @param result Callback message contains the modem activity information
      */
     public void getModemActivityInfo(Message result);
->>>>>>> android-6.0.0_r1
 }
