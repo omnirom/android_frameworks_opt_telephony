@@ -280,6 +280,16 @@ public class DcSwitchStateMachine extends StateMachine {
                         } else {
                             logd("EVENT_DATA_ALLOWED success");
                             mResponseMsg = null;
+
+                            /* If the data service state is IN_SERVICE then move to
+                             * ATTACHED state.
+                             */
+                            int dataState = mPhone.getServiceState().getDataRegState();
+                            if (dataState == ServiceState.STATE_IN_SERVICE) {
+                                logd("AttachingState: Already attached, move to ATTACHED state");
+                                transitionTo(mAttachedState);
+                            }
+
                         }
                     }
                     retVal = HANDLED;
