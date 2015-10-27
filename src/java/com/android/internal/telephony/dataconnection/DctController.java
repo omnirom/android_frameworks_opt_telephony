@@ -404,7 +404,6 @@ public class DctController extends Handler {
                 }
             }
         } else {
-            // otherwise detatch so we can try connecting to the high-priority phone
             mDcSwitchAsyncChannel[activePhoneId].disconnectAll();
         }
     }
