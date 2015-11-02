@@ -440,11 +440,10 @@ public final class CallManager {
                         phone.getPhoneName() + " " + phone + ")");
             }
 
-            // ImsPhone is unregistered in PhoneBase.updateImsPhone()
-            //Phone vPhone = basePhone.getImsPhone();
-            //if (vPhone != null) {
-            //   unregisterPhone(vPhone);
-            //}
+            Phone vPhone = basePhone.getImsPhone();
+            if (vPhone != null) {
+               unregisterPhone(vPhone);
+            }
 
             mPhones.remove(basePhone);
             mRingingCalls.remove(basePhone.getRingingCall());
