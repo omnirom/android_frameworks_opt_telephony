@@ -102,6 +102,7 @@ public class PhoneSubInfo {
         if (!checkReadPhoneState(callingPackage, "getDeviceSvn")) {
             return null;
         }
+
         return mPhone.getDeviceSvn();
     }
 

@@ -234,7 +234,7 @@ public abstract class PhoneBase extends Handler implements Phone {
     protected int mPhoneId;
 
     private boolean mImsServiceReady = false;
-    protected static ImsPhone mImsPhone = null;
+    protected ImsPhone mImsPhone = null;
 
     private final AtomicReference<RadioCapability> mRadioCapability =
             new AtomicReference<RadioCapability>();
@@ -522,12 +522,11 @@ public abstract class PhoneBase extends Handler implements Phone {
                 mTelephonyTester.dispose();
             }
 
-            // No deed to dispose static object
-            //ImsPhone imsPhone = mImsPhone;
-            //if (imsPhone != null) {
-            //    imsPhone.unregisterForSilentRedial(this);
-            //    imsPhone.dispose();
-            //}
+            ImsPhone imsPhone = mImsPhone;
+            if (imsPhone != null) {
+                imsPhone.unregisterForSilentRedial(this);
+                imsPhone.dispose();
+            }
         }
     }
 

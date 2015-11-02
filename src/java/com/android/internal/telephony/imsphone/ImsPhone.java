@@ -234,11 +234,6 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
-    public Phone getImsPhone() {
-        return null;
-    }
-
-    @Override
     public void removeReferences() {
         Rlog.d(LOG_TAG, "removeReferences");
         super.removeReferences();
