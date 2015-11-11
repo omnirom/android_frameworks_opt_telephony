@@ -19,8 +19,10 @@ package com.android.internal.telephony;
 
 
 import android.app.ActivityManagerNative;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.LinkProperties;
 import android.net.NetworkCapabilities;
 import android.os.AsyncResult;
@@ -38,6 +40,7 @@ import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 
+import com.android.ims.ImsManager;
 import com.android.internal.telephony.cdma.CDMAPhone;
 import com.android.internal.telephony.gsm.GSMPhone;
 import com.android.internal.telephony.imsphone.ImsPhone;
@@ -75,10 +78,20 @@ public class PhoneProxy extends Handler implements Phone {
     private static final int EVENT_REQUEST_VOICE_RADIO_TECH_DONE = 3;
     private static final int EVENT_RIL_CONNECTED = 4;
     private static final int EVENT_UPDATE_PHONE_OBJECT = 5;
-    private static final int EVENT_SIM_RECORDS_LOADED = 6;
+    private static final int EVENT_CARRIER_CONFIG_CHANGED = 6;
 
     private int mPhoneId = 0;
 
+    private Context mContext;
+    private BroadcastReceiver mPhoneProxyReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Rlog.d(LOG_TAG, "mPhoneProxyReceiver: action " + intent.getAction());
+            if (intent.getAction().equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED)) {
+                sendMessage(obtainMessage(EVENT_CARRIER_CONFIG_CHANGED));
+            }
+        }
+    };
     private static final String LOG_TAG = "PhoneProxy";
 
     //***** Class Methods
@@ -98,7 +111,8 @@ public class PhoneProxy extends Handler implements Phone {
         mPhoneId = phone.getPhoneId();
         mIccSmsInterfaceManager =
                 new IccSmsInterfaceManager((PhoneBase)this.mActivePhone);
-        mIccCardProxy = new IccCardProxy(mActivePhone.getContext(), mCommandsInterface, mActivePhone.getPhoneId());
+        mContext = mActivePhone.getContext();
+        mIccCardProxy = new IccCardProxy(mContext, mCommandsInterface, mActivePhone.getPhoneId());
 
         if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_GSM) {
             // For the purpose of IccCardProxy we only care about the technology family
@@ -106,6 +120,9 @@ public class PhoneProxy extends Handler implements Phone {
         } else if (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
             mIccCardProxy.setVoiceRadioTech(ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT);
         }
+
+        mContext.registerReceiver(mPhoneProxyReceiver, new IntentFilter(
+                CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED));
     }
 
     @Override
@@ -148,14 +165,16 @@ public class PhoneProxy extends Handler implements Phone {
             phoneObjectUpdater(msg.arg1);
             break;
 
-        case EVENT_SIM_RECORDS_LOADED:
+        case EVENT_CARRIER_CONFIG_CHANGED:
             // Only check for the voice radio tech if it not going to be updated by the voice
             // registration changes.
-            if (!mActivePhone.getContext().getResources().getBoolean(
+            if (mActivePhone != null && !mContext.getResources().getBoolean(
                     com.android.internal.R.bool.config_switch_phone_on_voice_reg_state_change)) {
                 mCommandsInterface.getVoiceRadioTechnology(obtainMessage(
                         EVENT_REQUEST_VOICE_RADIO_TECH_DONE));
             }
+            // Force update IMS service
+            ImsManager.updateImsServiceConfig(mContext, mPhoneId, true);
             break;
 
         default:
@@ -213,6 +232,14 @@ public class PhoneProxy extends Handler implements Phone {
                     newVoiceRadioTech = ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT;
                 }
             } else {
+
+                // If the device is shutting down, then there is no need to switch to the new phone
+                // which might send unnecessary attach request to the modem.
+                if (isShuttingDown()) {
+                    logd("Device is shutting down. No need to switch phone now.");
+                    return;
+                }
+
                 boolean matchCdma = ServiceState.isCdma(newVoiceRadioTech);
                 boolean matchGsm = ServiceState.isGsm(newVoiceRadioTech);
                 if ((matchCdma  &&
@@ -285,7 +312,6 @@ public class PhoneProxy extends Handler implements Phone {
 
         if (oldPhone != null) {
             outgoingPhoneName = ((PhoneBase) oldPhone).getPhoneName();
-            oldPhone.unregisterForSimRecordsLoaded(this);
         }
 
         logd("Switching Voice Phone : " + outgoingPhoneName + " >>> "
@@ -311,7 +337,6 @@ public class PhoneProxy extends Handler implements Phone {
                 mActivePhone.acquireOwnershipOfImsPhone(imsPhone);
             }
             mActivePhone.startMonitoringImsService();
-            mActivePhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
         }
 
         if (oldPhone != null) {
@@ -915,8 +940,9 @@ public class PhoneProxy extends Handler implements Phone {
     }
 
     @Override
-    public void selectNetworkManually(OperatorInfo network, Message response) {
-        mActivePhone.selectNetworkManually(network, response);
+    public void selectNetworkManually(OperatorInfo network, boolean persistSelection,
+            Message response) {
+        mActivePhone.selectNetworkManually(network, persistSelection, response);
     }
 
     @Override
@@ -1356,12 +1382,10 @@ public class PhoneProxy extends Handler implements Phone {
 
     @Override
     public void dispose() {
-        if (mActivePhone != null) {
-            mActivePhone.unregisterForSimRecordsLoaded(this);
-        }
         mCommandsInterface.unregisterForOn(this);
         mCommandsInterface.unregisterForVoiceRadioTechChanged(this);
         mCommandsInterface.unregisterForRilConnected(this);
+        mContext.unregisterReceiver(mPhoneProxyReceiver);
     }
 
     @Override
@@ -1473,10 +1497,19 @@ public class PhoneProxy extends Handler implements Phone {
     }
 
     @Override
+    public boolean isUtEnabled() {
+        return mActivePhone.isUtEnabled();
+    }
+
+    @Override
     public ImsPhone relinquishOwnershipOfImsPhone() { return null; }
 
     @Override
-    public void startMonitoringImsService() {}
+    public void startMonitoringImsService() {
+        if (mActivePhone != null) {
+            mActivePhone.startMonitoringImsService();
+        }
+    }
 
     @Override
     public void acquireOwnershipOfImsPhone(ImsPhone imsPhone) { }
@@ -1513,6 +1546,9 @@ public class PhoneProxy extends Handler implements Phone {
     public void shutdownRadio() {
         mActivePhone.shutdownRadio();
     }
+
+    @Override
+    public boolean isShuttingDown() { return mActivePhone.isShuttingDown(); }
 
     @Override
     public void setRadioCapability(RadioCapability rc, Message response) {

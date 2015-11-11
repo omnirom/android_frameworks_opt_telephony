@@ -435,17 +435,23 @@ public class CDMAPhone extends PhoneBase {
                  && (imsPhone.isVolteEnabled() || imsPhone.isVowifiEnabled())
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
 
-        boolean useImsForEmergency = ImsManager.isVolteEnabledByPlatform(mContext)
-                && imsPhone != null
+        boolean useImsForEmergency = imsPhone != null
                 && isEmergency
                 &&  mContext.getResources().getBoolean(
                         com.android.internal.R.bool.useImsAlwaysForEmergencyCall)
                 && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
                 && (imsPhone.getServiceState().getState() != ServiceState.STATE_POWER_OFF);
 
+        boolean isUt = PhoneNumberUtils.extractNetworkPortionAlt(PhoneNumberUtils.
+                stripSeparators(dialString)).endsWith("#");
+
+        boolean useImsForUt = imsPhone != null && imsPhone.isUtEnabled();
+
         if (DBG) {
             Rlog.d(LOG_TAG, "imsUseEnabled=" + imsUseEnabled
                     + ", useImsForEmergency=" + useImsForEmergency
+                    + ", useImsForUt=" + useImsForUt
+                    + ", isUt=" + isUt
                     + ", imsPhone=" + imsPhone
                     + ", imsPhone.isVolteEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVolteEnabled() : "N/A")
@@ -457,7 +463,7 @@ public class CDMAPhone extends PhoneBase {
 
         ImsPhone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mContext);
 
-        if (imsUseEnabled || useImsForEmergency) {
+        if ((imsUseEnabled && (!isUt || useImsForUt)) || useImsForEmergency) {
             try {
                 if (DBG) Rlog.d(LOG_TAG, "Trying IMS PS call");
                 return imsPhone.dial(dialString, uusInfo, videoState, intentExtras);
@@ -1069,12 +1075,17 @@ public class CDMAPhone extends PhoneBase {
     }
 
     void notifyUnknownConnection(Connection connection) {
-        mUnknownConnectionRegistrants.notifyResult(connection);
+        super.notifyUnknownConnectionP(connection);
     }
 
     @Override
     public boolean isInEmergencyCall() {
         return mCT.isInEmergencyCall();
+    }
+
+    @Override
+    protected void setIsInEmergencyCall() {
+        mCT.setIsInEmergencyCall();
     }
 
     @Override
@@ -1148,7 +1159,7 @@ public class CDMAPhone extends PhoneBase {
         }
     }
 
-    protected void notifyEmergencyCallRegistrants(boolean started) {
+    public void notifyEmergencyCallRegistrants(boolean started) {
         mEmergencyCallToggledRegistrants.notifyResult(started ? 1 : 0);
     }
 
@@ -1868,4 +1879,16 @@ public class CDMAPhone extends PhoneBase {
         }
         return status;
     }
+
+    public boolean isUtEnabled() {
+        ImsPhone imsPhone = mImsPhone;
+        if (imsPhone != null) {
+            return imsPhone.isUtEnabled();
+        } else {
+            Rlog.d(LOG_TAG, "isUtEnabled: called for CDMA");
+            return false;
+        }
+    }
+
+
 }

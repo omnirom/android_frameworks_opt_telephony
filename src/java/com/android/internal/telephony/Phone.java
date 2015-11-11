@@ -142,6 +142,18 @@ public interface Phone {
     int NT_MODE_LTE_CDMA_EVDO_GSM_WCDMA  = RILConstants.NETWORK_MODE_LTE_CDMA_EVDO_GSM_WCDMA;
     int NT_MODE_LTE_ONLY                 = RILConstants.NETWORK_MODE_LTE_ONLY;
     int NT_MODE_LTE_WCDMA                = RILConstants.NETWORK_MODE_LTE_WCDMA;
+
+    int NT_MODE_TDSCDMA_ONLY            = RILConstants.NETWORK_MODE_TDSCDMA_ONLY;
+    int NT_MODE_TDSCDMA_WCDMA           = RILConstants.NETWORK_MODE_TDSCDMA_WCDMA;
+    int NT_MODE_LTE_TDSCDMA             = RILConstants.NETWORK_MODE_LTE_TDSCDMA;
+    int NT_MODE_TDSCDMA_GSM             = RILConstants.NETWORK_MODE_TDSCDMA_GSM;
+    int NT_MODE_LTE_TDSCDMA_GSM         = RILConstants.NETWORK_MODE_LTE_TDSCDMA_GSM;
+    int NT_MODE_TDSCDMA_GSM_WCDMA       = RILConstants.NETWORK_MODE_TDSCDMA_GSM_WCDMA;
+    int NT_MODE_LTE_TDSCDMA_WCDMA       = RILConstants.NETWORK_MODE_LTE_TDSCDMA_WCDMA;
+    int NT_MODE_LTE_TDSCDMA_GSM_WCDMA   = RILConstants.NETWORK_MODE_LTE_TDSCDMA_GSM_WCDMA;
+    int NT_MODE_TDSCDMA_CDMA_EVDO_GSM_WCDMA = RILConstants.NETWORK_MODE_TDSCDMA_CDMA_EVDO_GSM_WCDMA;
+    int NT_MODE_LTE_TDSCDMA_CDMA_EVDO_GSM_WCDMA = RILConstants.NETWORK_MODE_LTE_TDSCDMA_CDMA_EVDO_GSM_WCDMA;
+
     int PREFERRED_NT_MODE                = RILConstants.PREFERRED_NETWORK_MODE;
 
     // Used for CDMA roaming mode
@@ -1144,8 +1156,7 @@ public interface Phone {
      *
      * @see #setNetworkSelectionModeAutomatic(Message)
      */
-    void selectNetworkManually(OperatorInfo network,
-                            Message response);
+    void selectNetworkManually(OperatorInfo network, boolean persistSelection, Message response);
 
     /**
      * Query the radio for the current network selection mode.
@@ -1923,6 +1934,11 @@ public interface Phone {
     public void startMonitoringImsService();
 
     /**
+     * Return if UT capability of ImsPhone is enabled or not
+     */
+    public boolean isUtEnabled();
+
+    /**
      * Release the local instance of the ImsPhone and disconnect from
      * the phone.
      * @return the instance of the ImsPhone phone previously owned
@@ -1967,6 +1983,11 @@ public interface Phone {
      * shutdown Radio gracefully
      */
     public void shutdownRadio();
+
+    /**
+     * Return true if the device is shutting down.
+     */
+    public boolean isShuttingDown();
 
     /**
      *  Set phone radio capability

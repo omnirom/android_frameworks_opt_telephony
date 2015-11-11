@@ -29,6 +29,7 @@ import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.telephony.gsm.GsmCellLocation;
 import android.util.EventLog;
+import java.util.Iterator;
 import android.telephony.Rlog;
 
 import com.android.internal.telephony.Call;
@@ -67,7 +68,7 @@ public final class GsmCallTracker extends CallTracker {
 
     //***** Constants
 
-    static final int MAX_CONNECTIONS = 7;   // only 7 connections allowed in GSM
+    static final int MAX_CONNECTIONS = 19;   // 7 allowed in GSM + 12 from IMS for SRVCC
     static final int MAX_CONNECTIONS_PER_CALL = 5; // only 5 connections allowed per call
 
     //***** Instance Variables
@@ -118,8 +119,13 @@ public final class GsmCallTracker extends CallTracker {
         mCi.unregisterForOn(this);
         mCi.unregisterForNotAvailable(this);
 
-
         clearDisconnected();
+
+        for (GsmConnection gsmConnection : mConnections) {
+            if (gsmConnection != null) {
+                gsmConnection.dispose();
+            }
+        }
     }
 
     @Override
@@ -213,7 +219,7 @@ public final class GsmCallTracker extends CallTracker {
             throw new CallStateException("cannot dial in current state");
         }
 
-        mPendingMO = new GsmConnection(mPhone.getContext(), checkForTestEmergencyNumber(dialString),
+        mPendingMO = new GsmConnection(mPhone, checkForTestEmergencyNumber(dialString),
                 this, mForegroundCall);
         mHangupPendingMO = false;
 
@@ -450,7 +456,7 @@ public final class GsmCallTracker extends CallTracker {
         }
 
         Connection newRinging = null; //or waiting
-        Connection newUnknown = null;
+        ArrayList<Connection> newUnknownConnections = new ArrayList<Connection>();
         boolean hasNonHangupStateChanged = false;   // Any change besides
                                                     // a dropped connection
         boolean hasAnyCallDisconnected = false;
@@ -504,15 +510,29 @@ public final class GsmCallTracker extends CallTracker {
                         return;
                     }
                 } else {
-                    mConnections[i] = new GsmConnection(mPhone.getContext(), dc, this, i);
+                    mConnections[i] = new GsmConnection(mPhone, dc, this, i);
 
                     Connection hoConnection = getHoConnection(dc);
                     if (hoConnection != null) {
                         // Single Radio Voice Call Continuity (SRVCC) completed
                         mConnections[i].migrateFrom(hoConnection);
-                        if (!hoConnection.isMultiparty()) {
-                            // Remove only if it is not multiparty
-                            mHandoverConnections.remove(hoConnection);
+                        // Updating connect time for silent redial cases (ex: Calls are transferred
+                        // from DIALING/ALERTING/INCOMING/WAITING to ACTIVE)
+                        if (hoConnection.mPreHandoverState != GsmCall.State.ACTIVE &&
+                                hoConnection.mPreHandoverState != GsmCall.State.HOLDING) {
+                            mConnections[i].onConnectedInOrOut();
+                        }
+
+                        mHandoverConnections.remove(hoConnection);
+                        for (Iterator<Connection> it = mHandoverConnections.iterator();
+                            it.hasNext();) {
+                            Connection c = it.next();
+                            Rlog.i(LOG_TAG, "HO Conn state is " + c.mPreHandoverState);
+                            if (c.mPreHandoverState == mConnections[i].getState()) {
+                                Rlog.i(LOG_TAG, "Removing HO conn "
+                                    + hoConnection + c.mPreHandoverState);
+                                it.remove();
+                            }
                         }
                         mPhone.notifyHandoverStateChanged(mConnections[i]);
                     } else if ( mConnections[i].getCall() == mRingingCall ) { // it's a ringing call
@@ -537,7 +557,7 @@ public final class GsmCallTracker extends CallTracker {
                             }
                         }
 
-                        newUnknown = mConnections[i];
+                        newUnknownConnections.add(mConnections[i]);
 
                         unknownConnectionAppeared = true;
                     }
@@ -555,7 +575,7 @@ public final class GsmCallTracker extends CallTracker {
                 // we were tracking. Assume dropped call and new call
 
                 mDroppedDuringPoll.add(conn);
-                mConnections[i] = new GsmConnection (mPhone.getContext(), dc, this, i);
+                mConnections[i] = new GsmConnection (mPhone, dc, this, i);
 
                 if (mConnections[i].getCall() == mRingingCall) {
                     newRinging = mConnections[i];
@@ -632,10 +652,12 @@ public final class GsmCallTracker extends CallTracker {
         }
 
         /* Disconnect any pending Handover connections */
-        for (Connection hoConnection : mHandoverConnections) {
-            log("handlePollCalls - disconnect hoConn= " + hoConnection.toString());
+        for (Iterator<Connection> it = mHandoverConnections.iterator();
+                it.hasNext();) {
+            Connection hoConnection = it.next();
+            log("handlePollCalls - disconnect hoConn= " + hoConnection);
             ((ImsPhoneConnection)hoConnection).onDisconnect(DisconnectCause.NOT_VALID);
-            mHandoverConnections.remove(hoConnection);
+            it.remove();
         }
 
         // Any non-local disconnects: determine cause
@@ -660,7 +682,10 @@ public final class GsmCallTracker extends CallTracker {
         updatePhoneState();
 
         if (unknownConnectionAppeared) {
-            mPhone.notifyUnknownConnection(newUnknown);
+           for (Connection c : newUnknownConnections) {
+               log("Notify unknown for " + c);
+               mPhone.notifyUnknownConnection(c);
+           }
         }
 
         if (hasNonHangupStateChanged || newRinging != null || hasAnyCallDisconnected) {

@@ -91,6 +91,7 @@ import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.cdma.CDMAPhone;
 import com.android.internal.telephony.gsm.GSMPhone;
+import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.uicc.IccRecords;
 
 import java.util.ArrayList;
@@ -108,7 +109,9 @@ public class ImsPhone extends ImsPhoneBase {
     protected static final int EVENT_GET_CALL_BARRING_DONE          = EVENT_LAST + 2;
     protected static final int EVENT_SET_CALL_WAITING_DONE          = EVENT_LAST + 3;
     protected static final int EVENT_GET_CALL_WAITING_DONE          = EVENT_LAST + 4;
-    protected static final int EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED  = EVENT_LAST + 5;
+    protected static final int EVENT_SET_CLIR_DONE                  = EVENT_LAST + 5;
+    protected static final int EVENT_GET_CLIR_DONE                  = EVENT_LAST + 6;
+    protected static final int EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED  = EVENT_LAST + 7;
 
     public static final String CS_FALLBACK = "cs_fallback";
 
@@ -144,6 +147,9 @@ public class ImsPhone extends ImsPhoneBase {
     private final RegistrantList mSilentRedialRegistrants = new RegistrantList();
 
     private boolean mImsRegistered = false;
+
+    // List of Registrants to send supplementary service notifications to.
+    private RegistrantList mSsnRegistrants = new RegistrantList();
 
     // A runnable which is used to automatically exit from Ecm after a period of time.
     private Runnable mExitEcmRunnable = new Runnable() {
@@ -453,6 +459,13 @@ public class ImsPhone extends ImsPhoneBase {
         return true;
     }
 
+    public void notifySuppSvcNotification(SuppServiceNotification suppSvc) {
+        Rlog.d(LOG_TAG, "notifySuppSvcNotification: suppSvc = " + suppSvc);
+
+        AsyncResult ar = new AsyncResult(null, suppSvc, null);
+        mSsnRegistrants.notifyRegistrants(ar);
+    }
+
     @Override
     public boolean handleInCallMmiCommands(String dialString) {
         if (!isInCall()) {
@@ -521,6 +534,10 @@ public class ImsPhone extends ImsPhoneBase {
                         "WFC Wi-Fi Only Mode: IMS not registered");
             }
         }
+    }
+
+    void notifyUnknownConnection(Connection c) {
+        mDefaultPhone.notifyUnknownConnectionP(c);
     }
 
     public void notifyForVideoCapabilityChanged(boolean isVideoCapable) {
@@ -715,6 +732,36 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
+    public void getOutgoingCallerIdDisplay(Message onComplete) {
+        if (DBG) Rlog.d(LOG_TAG, "getCLIR");
+        Message resp;
+        resp = obtainMessage(EVENT_GET_CLIR_DONE, onComplete);
+
+        try {
+            ImsUtInterface ut = mCT.getUtInterface();
+            ut.queryCLIR(resp);
+        } catch (ImsException e) {
+            sendErrorResponse(onComplete, e);
+        }
+    }
+
+    @Override
+    public void setOutgoingCallerIdDisplay(int clirMode, Message onComplete) {
+        if (DBG) Rlog.d(LOG_TAG, "setCLIR action= " + clirMode);
+        Message resp;
+        // Packing CLIR value in the message. This will be required for
+        // SharedPreference caching, if the message comes back as part of
+        // a success response.
+        resp = obtainMessage(EVENT_SET_CLIR_DONE, clirMode, 0, onComplete);
+        try {
+            ImsUtInterface ut = mCT.getUtInterface();
+            ut.updateCLIR(clirMode, resp);
+        } catch (ImsException e) {
+            sendErrorResponse(onComplete, e);
+        }
+    }
+
+    @Override
     public void getCallForwardingOption(int commandInterfaceCFReason,
             Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "getCallForwardingOption reason=" + commandInterfaceCFReason);
@@ -852,10 +899,18 @@ public class ImsPhone extends ImsPhoneBase {
         Message resp;
         resp = obtainMessage(EVENT_SET_CALL_BARRING_DONE, onComplete);
 
+        int action;
+        if (lockState) {
+            action = CommandsInterface.CF_ACTION_ENABLE;
+        }
+        else {
+            action = CommandsInterface.CF_ACTION_DISABLE;
+        }
+
         try {
             ImsUtInterface ut = mCT.getUtInterface();
             // password is not required with Ut interface
-            ut.updateCallBarring(getCBTypeFromFacility(facility), lockState, resp, null);
+            ut.updateCallBarring(getCBTypeFromFacility(facility), action, resp, null);
         } catch (ImsException e) {
             sendErrorResponse(onComplete, e);
         }
@@ -910,7 +965,12 @@ public class ImsPhone extends ImsPhoneBase {
 
     /* package */
     CommandException getCommandException(int code) {
-        Rlog.d(LOG_TAG, "getCommandException code=" + code);
+        return getCommandException(code, null);
+    }
+
+    CommandException getCommandException(int code, String errorString) {
+        Rlog.d(LOG_TAG, "getCommandException code= " + code
+                + ", errorString= " + errorString);
         CommandException.Error error = CommandException.Error.GENERIC_FAILURE;
 
         switch(code) {
@@ -926,7 +986,7 @@ public class ImsPhone extends ImsPhoneBase {
                 break;
         }
 
-        return new CommandException(error);
+        return new CommandException(error, errorString);
     }
 
     /* package */
@@ -934,7 +994,7 @@ public class ImsPhone extends ImsPhoneBase {
         CommandException ex = null;
 
         if (e instanceof ImsException) {
-            ex = getCommandException(((ImsException)e).getCode());
+            ex = getCommandException(((ImsException)e).getCode(), e.getMessage());
         } else {
             Rlog.d(LOG_TAG, "getCommandException generic failure");
             ex = new CommandException(CommandException.Error.GENERIC_FAILURE);
@@ -1048,6 +1108,16 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
+    public void registerForSuppServiceNotification(Handler h, int what, Object obj) {
+        mSsnRegistrants.addUnique(h, what, obj);
+    }
+
+    @Override
+    public void unregisterForSuppServiceNotification(Handler h) {
+        mSsnRegistrants.remove(h);
+    }
+
+    @Override
     public int getSubId() {
         return mDefaultPhone.getSubId();
     }
@@ -1130,6 +1200,9 @@ public class ImsPhone extends ImsPhoneBase {
             CommandException ex = null;
             if (e != null) {
                 ex = getCommandException(e);
+                AsyncResult.forMessage(onComplete, result, ex);
+            } else {
+                AsyncResult.forMessage(onComplete, result, null);
             }
             AsyncResult.forMessage(onComplete, result, ex);
             onComplete.sendToTarget();
@@ -1183,6 +1256,20 @@ public class ImsPhone extends ImsPhoneBase {
                 sendResponse((Message) ar.userObj, ssInfos, ar.exception);
                 break;
 
+              case EVENT_GET_CLIR_DONE:
+                Bundle ssInfo = (Bundle) ar.result;
+                int[] clirInfo = null;
+                if (ssInfo != null) {
+                    clirInfo = ssInfo.getIntArray(ImsPhoneMmiCode.UT_BUNDLE_KEY_CLIR);
+                }
+                sendResponse((Message) ar.userObj, clirInfo, ar.exception);
+                break;
+
+             case EVENT_SET_CLIR_DONE:
+                 if (ar.exception == null) {
+                     saveClirSetting(msg.arg1);
+                 }
+                 // (Intentional fallthrough)
              case EVENT_SET_CALL_BARRING_DONE:
              case EVENT_SET_CALL_WAITING_DONE:
                 sendResponse((Message) ar.userObj, null, ar.exception);
@@ -1476,5 +1563,9 @@ public class ImsPhone extends ImsPhoneBase {
                 break;
             }
         }
+    }
+
+    public boolean isUtEnabled() {
+        return mCT.isUtEnabled();
     }
 }

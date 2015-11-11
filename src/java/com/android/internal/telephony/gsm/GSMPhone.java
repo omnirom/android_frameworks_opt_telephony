@@ -444,7 +444,7 @@ public class GSMPhone extends PhoneBase {
     }
 
     void notifyUnknownConnection(Connection cn) {
-        mUnknownConnectionRegistrants.notifyResult(cn);
+        super.notifyUnknownConnectionP(cn);
     }
 
     void notifySuppServiceFailed(SuppService code) {
@@ -810,17 +810,23 @@ public class GSMPhone extends PhoneBase {
                  && (imsPhone.isVolteEnabled() || imsPhone.isVowifiEnabled())
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
 
-        boolean useImsForEmergency = ImsManager.isVolteEnabledByPlatform(mContext)
-                && imsPhone != null
+        boolean useImsForEmergency = imsPhone != null
                 && isEmergency
-                &&  mContext.getResources().getBoolean(
+                && mContext.getResources().getBoolean(
                         com.android.internal.R.bool.useImsAlwaysForEmergencyCall)
                 && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
                 && (imsPhone.getServiceState().getState() != ServiceState.STATE_POWER_OFF);
 
+        boolean isUt = PhoneNumberUtils.extractNetworkPortionAlt(PhoneNumberUtils.
+                stripSeparators(dialString)).endsWith("#");
+
+        boolean useImsForUt = imsPhone != null && imsPhone.isUtEnabled();
+
         if (LOCAL_DEBUG) {
             Rlog.d(LOG_TAG, "imsUseEnabled=" + imsUseEnabled
                     + ", useImsForEmergency=" + useImsForEmergency
+                    + ", useImsForUt=" + useImsForUt
+                    + ", isUt=" + isUt
                     + ", imsPhone=" + imsPhone
                     + ", imsPhone.isVolteEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVolteEnabled() : "N/A")
@@ -832,7 +838,7 @@ public class GSMPhone extends PhoneBase {
 
         ImsPhone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mContext);
 
-        if (imsUseEnabled || useImsForEmergency) {
+        if ((imsUseEnabled && (!isUt || useImsForUt)) || useImsForEmergency) {
             try {
                 if (LOCAL_DEBUG) Rlog.d(LOG_TAG, "Trying IMS PS call");
                 return imsPhone.dial(dialString, uusInfo, videoState, intentExtras);
@@ -1169,7 +1175,8 @@ public class GSMPhone extends PhoneBase {
     public void getCallForwardingOption(int commandInterfaceCFReason, Message onComplete) {
         ImsPhone imsPhone = mImsPhone;
         if ((imsPhone != null)
-                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                || imsPhone.isUtEnabled())) {
             imsPhone.getCallForwardingOption(commandInterfaceCFReason, onComplete);
             return;
         }
@@ -1194,7 +1201,8 @@ public class GSMPhone extends PhoneBase {
             Message onComplete) {
         ImsPhone imsPhone = mImsPhone;
         if ((imsPhone != null)
-                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                || imsPhone.isUtEnabled())) {
             imsPhone.setCallForwardingOption(commandInterfaceCFAction,
                     commandInterfaceCFReason, dialingNumber, timerSeconds, onComplete);
             return;
@@ -1222,12 +1230,27 @@ public class GSMPhone extends PhoneBase {
 
     @Override
     public void getOutgoingCallerIdDisplay(Message onComplete) {
+        ImsPhone imsPhone = mImsPhone;
+        if ((imsPhone != null)
+                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+            imsPhone.getOutgoingCallerIdDisplay(onComplete);
+            return;
+        }
         mCi.getCLIR(onComplete);
     }
 
     @Override
     public void setOutgoingCallerIdDisplay(int commandInterfaceCLIRMode,
                                            Message onComplete) {
+        ImsPhone imsPhone = mImsPhone;
+        if ((imsPhone != null)
+                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+            imsPhone.setOutgoingCallerIdDisplay(commandInterfaceCLIRMode, onComplete);
+            return;
+        }
+        // Packing CLIR value in the message. This will be required for
+        // SharedPreference caching, if the message comes back as part of
+        // a success response.
         mCi.setCLIR(commandInterfaceCLIRMode,
                 obtainMessage(EVENT_SET_CLIR_COMPLETE, commandInterfaceCLIRMode, 0, onComplete));
     }
@@ -1236,7 +1259,8 @@ public class GSMPhone extends PhoneBase {
     public void getCallWaiting(Message onComplete) {
         ImsPhone imsPhone = mImsPhone;
         if ((imsPhone != null)
-                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                || imsPhone.isUtEnabled())) {
             imsPhone.getCallWaiting(onComplete);
             return;
         }
@@ -1250,7 +1274,8 @@ public class GSMPhone extends PhoneBase {
     public void setCallWaiting(boolean enable, Message onComplete) {
         ImsPhone imsPhone = mImsPhone;
         if ((imsPhone != null)
-                && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                || imsPhone.isUtEnabled())) {
             imsPhone.setCallWaiting(enable, onComplete);
             return;
         }
@@ -1713,22 +1738,6 @@ public class GSMPhone extends PhoneBase {
         return false;
     }
 
-    /**
-     * Saves CLIR setting so that we can re-apply it as necessary
-     * (in case the RIL resets it across reboots).
-     */
-    public void saveClirSetting(int commandInterfaceCLIRMode) {
-        // open the shared preferences editor, and write the value.
-        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(getContext());
-        SharedPreferences.Editor editor = sp.edit();
-        editor.putInt(CLIR_KEY + getPhoneId(), commandInterfaceCLIRMode);
-
-        // commit and log the result.
-        if (! editor.commit()) {
-            Rlog.e(LOG_TAG, "failed to commit CLIR preference");
-        }
-    }
-
     private void handleCfuQueryResult(CallForwardInfo[] infos) {
         IccRecords r = mIccRecords.get();
         if (r != null) {
@@ -1999,4 +2008,15 @@ public class GSMPhone extends PhoneBase {
     protected void log(String s) {
         Rlog.d(LOG_TAG, "[GSMPhone] " + s);
     }
+
+    public boolean isUtEnabled() {
+        ImsPhone imsPhone = mImsPhone;
+        if (imsPhone != null) {
+            return imsPhone.isUtEnabled();
+        } else {
+            Rlog.d(LOG_TAG, "isUtEnabled: called for GSM");
+            return false;
+        }
+    }
+
 }
