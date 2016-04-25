@@ -19,11 +19,15 @@ package com.android.internal.telephony.cdma;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.PendingIntent.CanceledException;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Message;
+import android.os.PersistableBundle;
 import android.os.SystemProperties;
 import android.provider.Telephony.Sms;
+import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SmsManager;
@@ -194,7 +198,9 @@ public class CdmaSMSDispatcher extends SMSDispatcher {
         uData.payloadStr = message;
         uData.userDataHeader = smsHeader;
         if (encoding == SmsConstants.ENCODING_7BIT) {
-            uData.msgEncoding = UserData.ENCODING_GSM_7BIT_ALPHABET;
+            uData.msgEncoding = isAscii7bitSupportedForLongMessage()
+                    ? UserData.ENCODING_7BIT_ASCII : UserData.ENCODING_GSM_7BIT_ALPHABET;
+            Rlog.d(TAG, "Message ecoding for proper 7 bit: " + uData.msgEncoding);
         } else { // assume UTF-16
             uData.msgEncoding = UserData.ENCODING_UNICODE_16;
         }
@@ -213,6 +219,22 @@ public class CdmaSMSDispatcher extends SMSDispatcher {
                 getFormat(), unsentPartCount, anyPartFailed, messageUri, smsHeader,
                 false /*isExpextMore*/, fullMessageText, true /*isText*/,
                 true /*persistMessage*/);
+    }
+
+    private boolean isAscii7bitSupportedForLongMessage() {
+        CarrierConfigManager configManager = (CarrierConfigManager)mContext.getSystemService(
+                Context.CARRIER_CONFIG_SERVICE);
+        PersistableBundle pb = null;
+        final long ident = Binder.clearCallingIdentity();
+        try {
+            pb = configManager.getConfigForSubId(mPhone.getSubId());
+        } finally {
+            Binder.restoreCallingIdentity(ident);
+        }
+        if (pb != null) {
+            return pb.getBoolean("ascii_7_bit_support_for_long_message");
+        }
+        return false;
     }
 
     @Override
