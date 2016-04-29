@@ -1398,11 +1398,15 @@ public class SubscriptionController extends ISub.Stub {
 
     @Override
     public int getDefaultDataSubId() {
+        boolean isWifiOnly = mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_device_wifi_only);
+
         int subId = Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION,
                 SubscriptionManager.INVALID_SUBSCRIPTION_ID);
 
-        if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+        // On a device that is WifiOnly, INVALID_SUBSCRIPTION_ID should be returned
+        if ((subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) && !isWifiOnly) {
             subId = getDefaultSubId();
         }
 
