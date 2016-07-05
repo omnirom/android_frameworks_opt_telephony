@@ -66,7 +66,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private static final String LOG_TAG = "SubscriptionInfoUpdater";
     private static final int PROJECT_SIM_NUM = TelephonyManager.getDefault().getPhoneCount();
 
-    private static final int EVENT_SIM_LOCKED_QUERY_ICCID_DONE = 1;
+    protected static final int EVENT_SIM_LOCKED_QUERY_ICCID_DONE = 1;
     private static final int EVENT_GET_NETWORK_SELECTION_MODE_DONE = 2;
     private static final int EVENT_SIM_LOADED = 3;
     private static final int EVENT_SIM_ABSENT = 4;
@@ -340,7 +340,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    private static class QueryIccIdUserObj {
+    protected static class QueryIccIdUserObj {
         public String reason;
         public int slotId;
 
@@ -350,7 +350,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     };
 
-    private void handleSimLocked(int slotId, String reason) {
+    protected void handleSimLocked(int slotId, String reason) {
         if (mIccId[slotId] != null && mIccId[slotId].equals(ICCID_STRING_FOR_NO_SIM)) {
             logd("SIM" + (slotId + 1) + " hot plug in");
             mIccId[slotId] = null;
@@ -377,7 +377,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    private void handleSimLoaded(int slotId) {
+    protected void handleSimLoaded(int slotId) {
         logd("handleSimStateLoadedInternal: slotId: " + slotId);
 
         // The SIM should be loaded at this state, but it is possible in cases such as SIM being
