@@ -42,6 +42,7 @@ import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
 
 import com.android.ims.ImsCall;
@@ -195,18 +196,32 @@ public class ImsPhoneConnection extends Connection implements
 
     /** This is an MO call, created when dialing */
     public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
-            ImsPhoneCall parent, boolean isEmergency) {
+            ImsPhoneCall parent, boolean isEmergency, Bundle extras) {
         super(PhoneConstants.PHONE_TYPE_IMS);
         createWakeLock(phone.getContext());
         acquireWakeLock();
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+
+        if (extras != null) {
+            isConferenceUri = extras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = extras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
 
         mOwner = ct;
         mHandler = new MyHandler(mOwner.getLooper());
 
         mDialString = dialString;
 
-        mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
-        mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
+        if (isConferenceUri || isSkipSchemaParsing) {
+            mAddress = dialString;
+            mPostDialString = "";
+        } else {
+            mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
+            mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
+        }
 
         //mIndex = -1;
 
@@ -238,6 +253,10 @@ public class ImsPhoneConnection extends Connection implements
                 Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
 
         switch (localProfile.mCallType) {
+            case ImsCallProfile.CALL_TYPE_VOICE:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
+                break;
             case ImsCallProfile.CALL_TYPE_VT:
                 // Fall-through
             case ImsCallProfile.CALL_TYPE_VIDEO_N_VOICE:
@@ -254,6 +273,10 @@ public class ImsPhoneConnection extends Connection implements
                 Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
 
         switch (remoteProfile.mCallType) {
+            case ImsCallProfile.CALL_TYPE_VOICE:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
+                break;
             case ImsCallProfile.CALL_TYPE_VT:
                 // fall-through
             case ImsCallProfile.CALL_TYPE_VIDEO_N_VOICE:

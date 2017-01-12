@@ -104,14 +104,14 @@ public class ServiceStateTracker extends Handler {
     private static final String PROP_FORCE_ROAMING = "telephony.test.forceRoaming";
 
     private CommandsInterface mCi;
-    private UiccController mUiccController = null;
+    protected UiccController mUiccController = null;
     private UiccCardApplication mUiccApplcation = null;
     private IccRecords mIccRecords = null;
 
     private boolean mVoiceCapable;
 
     public ServiceState mSS;
-    private ServiceState mNewSS;
+    protected ServiceState mNewSS;
 
     private static final long LAST_CELL_INFO_LIST_MAX_AGE_MS = 2000;
     private long mLastCellInfoListTime;
@@ -211,6 +211,7 @@ public class ServiceStateTracker extends Handler {
     protected static final int EVENT_IMS_CAPABILITY_CHANGED            = 48;
     protected static final int EVENT_ALL_DATA_DISCONNECTED             = 49;
     protected static final int EVENT_PHONE_TYPE_SWITCHED               = 50;
+    protected static final int EVENT_RADIO_POWER_OFF_DONE              = 51;
 
     protected static final String TIMEZONE_PROPERTY = "persist.sys.timezone";
 
@@ -298,7 +299,7 @@ public class ServiceStateTracker extends Handler {
             // Set the network type, in case the radio does not restore it.
             int subId = mPhone.getSubId();
             if (mPreviousSubId.getAndSet(subId) != subId) {
-                if (SubscriptionManager.isValidSubscriptionId(subId)) {
+                if (mSubscriptionController.isActiveSubId(subId)) {
                     Context context = mPhone.getContext();
 
                     mPhone.notifyPhoneStateChanged();
@@ -357,7 +358,7 @@ public class ServiceStateTracker extends Handler {
     };
 
     //Common
-    private GsmCdmaPhone mPhone;
+    protected GsmCdmaPhone mPhone;
     public CellLocation mCellLoc;
     private CellLocation mNewCellLoc;
     public static final int MS_PER_HOUR = 60 * 60 * 1000;
@@ -589,9 +590,7 @@ public class ServiceStateTracker extends Handler {
             mCi.unregisterForAvailable(this);
             mCi.unSetOnRestrictedStateChanged(this);
 
-            if (mPhone.isPhoneTypeCdmaLte()) {
-                mPhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
-            }
+            mPhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
             mCellLoc = new CdmaCellLocation();
             mNewCellLoc = new CdmaCellLocation();
             mCdmaSSM = CdmaSubscriptionSourceManager.getInstance(mPhone.getContext(), mCi, this,
@@ -941,6 +940,15 @@ public class ServiceStateTracker extends Handler {
                 }
                 break;
 
+            case EVENT_RADIO_POWER_OFF_DONE:
+                if (DBG) log("EVENT_RADIO_POWER_OFF_DONE");
+                if (mDeviceShuttingDown && mCi.getRadioState().isAvailable()) {
+                    // during shutdown the modem may not send radio state changed event
+                    // as a result of radio power request
+                    // Hence, issuing shut down regardless of radio power response
+                    mCi.requestShutdown(null);
+                }
+                break;
             //GSM
             case EVENT_RADIO_AVAILABLE:
                 //this is unnecessary
@@ -1205,6 +1213,7 @@ public class ServiceStateTracker extends Handler {
             case EVENT_IMS_CAPABILITY_CHANGED:
                 if (DBG) log("EVENT_IMS_CAPABILITY_CHANGED");
                 updateSpnDisplay();
+                updateRilImsRadioTechnology();
                 break;
 
             //CDMA
@@ -1607,7 +1616,7 @@ public class ServiceStateTracker extends Handler {
         return cdmaRoaming && !isSameOperatorNameFromSimAndSS(s);
     }
 
-    void handlePollStateResultMessage(int what, AsyncResult ar) {
+    protected void handlePollStateResultMessage(int what, AsyncResult ar) {
         int ints[];
         String states[];
         switch (what) {
@@ -1620,6 +1629,7 @@ public class ServiceStateTracker extends Handler {
                     int regState = ServiceState.RIL_REG_STATE_UNKNOWN;
                     int reasonRegStateDenied = -1;
                     int psc = -1;
+                    int cssIndicator = 0;
                     if (states.length > 0) {
                         try {
                             regState = Integer.parseInt(states[0]);
@@ -1636,6 +1646,9 @@ public class ServiceStateTracker extends Handler {
                                     type = Integer.parseInt(states[3]);
                                 }
                             }
+                            if (states.length >= 8 && (states[7] != null)) {
+                                cssIndicator = Integer.parseInt(states[7]);
+                            }
                             if (states.length > 14) {
                                 if (states[14] != null && states[14].length() > 0) {
                                     psc = Integer.parseInt(states[14], 16);
@@ -1649,6 +1662,7 @@ public class ServiceStateTracker extends Handler {
                     mGsmRoaming = regCodeIsRoaming(regState);
                     mNewSS.setVoiceRegState(regCodeToServiceState(regState));
                     mNewSS.setRilVoiceRadioTechnology(type);
+                    mNewSS.setCssIndicator(cssIndicator);
 
                     boolean isVoiceCapable = mPhone.getContext().getResources()
                             .getBoolean(com.android.internal.R.bool.config_voice_capable);
@@ -2155,8 +2169,9 @@ public class ServiceStateTracker extends Handler {
             String plmn = null;
             boolean showPlmn = false;
             int rule = (iccRecords != null) ? iccRecords.getDisplayRule(mSS.getOperatorNumeric()) : 0;
-            if (mSS.getVoiceRegState() == ServiceState.STATE_OUT_OF_SERVICE
-                    || mSS.getVoiceRegState() == ServiceState.STATE_EMERGENCY_ONLY) {
+            int combinedRegState = getCombinedRegState();
+            if (combinedRegState == ServiceState.STATE_OUT_OF_SERVICE
+                    || combinedRegState == ServiceState.STATE_EMERGENCY_ONLY) {
                 showPlmn = true;
                 if (mEmergencyOnly) {
                     // No service but emergency call allowed
@@ -2169,7 +2184,7 @@ public class ServiceStateTracker extends Handler {
                 }
                 if (DBG) log("updateSpnDisplay: radio is on but out " +
                         "of service, set plmn='" + plmn + "'");
-            } else if (mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE) {
+            } else if (combinedRegState == ServiceState.STATE_IN_SERVICE) {
                 // In either home or roaming service
                 plmn = mSS.getOperatorAlphaLong();
                 showPlmn = !TextUtils.isEmpty(plmn) &&
@@ -2261,6 +2276,14 @@ public class ServiceStateTracker extends Handler {
             int[] subIds = SubscriptionManager.getSubId(mPhone.getPhoneId());
             if (subIds != null && subIds.length > 0) {
                 subId = subIds[0];
+            }
+
+            int combinedRegState = getCombinedRegState();
+            if (combinedRegState == ServiceState.STATE_OUT_OF_SERVICE) {
+                plmn = Resources.getSystem().getText(com.android.internal.
+                    R.string.lockscreen_carrier_default).toString();
+                if (DBG) log("updateSpnDisplay: radio is on but out " +
+                    "of service, set plmn='" + plmn + "'");
             }
 
             if (!TextUtils.isEmpty(plmn) && !TextUtils.isEmpty(wfcVoiceSpnFormat)) {
@@ -2433,7 +2456,11 @@ public class ServiceStateTracker extends Handler {
      */
     public boolean isConcurrentVoiceAndDataAllowed() {
         if (mPhone.isPhoneTypeGsm()) {
-            return (mSS.getRilVoiceRadioTechnology() >= ServiceState.RIL_RADIO_TECHNOLOGY_UMTS);
+            if (mSS.getRilVoiceRadioTechnology() >= ServiceState.RIL_RADIO_TECHNOLOGY_UMTS) {
+                return true;
+            } else {
+                return mSS.getCssIndicator() == 1;
+            }
         } else if (mPhone.isPhoneTypeCdma()) {
             // Note: it needs to be confirmed which CDMA network types
             // can support voice and data calls concurrently.
@@ -2470,6 +2497,18 @@ public class ServiceStateTracker extends Handler {
 
     public boolean isRadioOn() {
         return mCi.getRadioState() == CommandsInterface.RadioState.RADIO_ON;
+    }
+
+    private void updateRilImsRadioTechnology() {
+        int imsRadioTechnology = mPhone.getImsPhone() != null ?
+                mPhone.getImsPhone().getServiceState().getRilImsRadioTechnology() :
+                ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN;
+        if (imsRadioTechnology != mSS.getRilImsRadioTechnology()) {
+            Rlog.i(LOG_TAG, "updateRilImsRadioTechnology : Old ims RAT: " +
+                    mSS.getRilImsRadioTechnology() + " new ims RAT: " + imsRadioTechnology);
+            mSS.setRilImsRadioTechnology(imsRadioTechnology);
+            mPhone.notifyServiceStateChanged(mSS);
+        }
     }
 
     /**
@@ -2617,6 +2656,8 @@ public class ServiceStateTracker extends Handler {
 
         boolean hasDataRoamingOff = mSS.getDataRoaming() && !mNewSS.getDataRoaming();
 
+        boolean hasCssIndicatorChanged = (mSS.getCssIndicator() != mNewSS.getCssIndicator());
+
         TelephonyManager tm =
                 (TelephonyManager) mPhone.getContext().getSystemService(Context.TELEPHONY_SERVICE);
 
@@ -2650,6 +2691,8 @@ public class ServiceStateTracker extends Handler {
             }
         }
 
+        // Ims call capable rat will be filled as part of service state changed.
+        mNewSS.setRilImsRadioTechnology(mSS.getRilImsRadioTechnology());
         // swap mSS and mNewSS to put new state in mSS
         ServiceState tss = mSS;
         mSS = mNewSS;
@@ -2815,6 +2858,10 @@ public class ServiceStateTracker extends Handler {
             mPhone.notifyLocationChanged();
         }
 
+        if (hasCssIndicatorChanged) {
+            mPhone.notifyDataConnection(Phone.REASON_CSS_INDICATOR_CHANGED);
+        }
+
         if (!isGprsConsistent(mSS.getDataRegState(), mSS.getVoiceRegState())) {
             if (!mStartedGprsRegCheck && !mReportedGprsNoReg) {
                 mStartedGprsRegCheck = true;
@@ -2888,6 +2935,8 @@ public class ServiceStateTracker extends Handler {
                     mNewSS.getVoiceRegState(), mNewSS.getDataRegState());
         }
 
+        // Ims call capable rat will be filled as part of service state changed.
+        mNewSS.setRilImsRadioTechnology(mSS.getRilImsRadioTechnology());
         ServiceState tss;
         tss = mSS;
         mSS = mNewSS;
@@ -4318,7 +4367,8 @@ public class ServiceStateTracker extends Handler {
     public void powerOffRadioSafely(DcTracker dcTracker) {
         synchronized (this) {
             if (!mPendingRadioPowerOffAfterDataOff) {
-                if (mPhone.isPhoneTypeGsm() || mPhone.isPhoneTypeCdmaLte()) {
+                if (mPhone.isPhoneTypeGsm() || mPhone.isPhoneTypeCdma()
+                        || mPhone.isPhoneTypeCdmaLte()) {
                     int dds = SubscriptionManager.getDefaultDataSubscriptionId();
                     // To minimize race conditions we call cleanUpAllConnections on
                     // both if else paths instead of before this isDisconnected test.
@@ -4465,7 +4515,7 @@ public class ServiceStateTracker extends Handler {
             mPhone.mCT.mForegroundCall.hangupIfAlive();
         }
 
-        mCi.setRadioPower(false, null);
+        mCi.setRadioPower(false, obtainMessage(EVENT_RADIO_POWER_OFF_DONE));
 
     }
 
@@ -4985,7 +5035,21 @@ public class ServiceStateTracker extends Handler {
         return isInNetwork(b, network, CarrierConfigManager.KEY_CDMA_NONROAMING_NETWORKS_STRING_ARRAY);
     }
 
-    /** Check if the device is shutting down. */
+   /**
+     * Consider dataRegState if voiceRegState is OOS to determine SPN to be displayed
+     */
+    protected int getCombinedRegState() {
+        int regState = mSS.getVoiceRegState();
+        int dataRegState = mSS.getDataRegState();
+        if ((regState == ServiceState.STATE_OUT_OF_SERVICE)
+                && (dataRegState == ServiceState.STATE_IN_SERVICE)) {
+                    log("getCombinedRegState: return STATE_IN_SERVICE as Data is in service");
+                     regState = dataRegState;
+        }
+        return regState;
+    }
+
+  /** Check if the device is shutting down. */
     public boolean isDeviceShuttingDown() {
         return mDeviceShuttingDown;
     }

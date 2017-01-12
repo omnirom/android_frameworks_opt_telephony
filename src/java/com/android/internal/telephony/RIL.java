@@ -70,6 +70,7 @@ import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.IccIoResult;
 import com.android.internal.telephony.uicc.IccRefreshResponse;
 import com.android.internal.telephony.uicc.IccUtils;
+import com.android.internal.telephony.uicc.SimPhoneBookAdnRecord;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -1614,13 +1615,105 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                 response);
 
         rr.mParcel.writeInt(status);
-        rr.mParcel.writeString(pdu);
+        constructCdmaWriteSmsRilRequest(rr, IccUtils.hexStringToBytes(pdu));
 
         if (RILJ_LOGV) riljLog(rr.serialString() + "> "
                 + requestToString(rr.mRequest)
                 + " " + status);
 
         send(rr);
+    }
+
+    /**
+     *  Restructures PDU data so that it is consistent with RIL
+     *  data structure.
+     *
+     *  @param pdu The data to be written to the RUIM card.
+     */
+    private void constructCdmaWriteSmsRilRequest(RILRequest rr, byte[] pdu) {
+        int address_nbr_of_digits;
+        int subaddr_nbr_of_digits;
+        int bearerDataLength;
+        ByteArrayInputStream bais = new ByteArrayInputStream(pdu);
+        DataInputStream dis = new DataInputStream(bais);
+
+        try {
+            int teleServiceId = 0;
+            byte servicePresent = 0;
+            int serviceCategory = 0;
+
+            int address_digit_mode = 0;
+            int address_nbr_mode = 0;
+            int address_ton = 0;
+            int address_nbr_plan = 0;
+
+            int subaddressType = 0;
+            byte subaddr_odd = 0;
+
+            teleServiceId = dis.readInt();
+            rr.mParcel.writeInt(teleServiceId);
+            servicePresent = (byte) dis.readInt();
+            rr.mParcel.writeByte(servicePresent);
+            serviceCategory = dis.readInt();
+            rr.mParcel.writeInt(serviceCategory);
+
+            address_digit_mode = dis.readByte();
+            rr.mParcel.writeInt(address_digit_mode);
+            address_nbr_mode = dis.readByte();
+            rr.mParcel.writeInt(address_nbr_mode);
+            address_ton = dis.readByte();
+            rr.mParcel.writeInt(address_ton);
+            address_nbr_plan = dis.readByte();
+            rr.mParcel.writeInt(address_nbr_plan);
+
+            address_nbr_of_digits = dis.readByte();
+            rr.mParcel.writeByte((byte) address_nbr_of_digits);
+            for (int i = 0; i < address_nbr_of_digits; i++) {
+                rr.mParcel.writeByte(dis.readByte()); // address_orig_bytes[i]
+            }
+
+            // int
+            subaddressType = dis.readByte();
+            rr.mParcel.writeInt(subaddressType); // subaddressType
+            subaddr_odd = (byte) dis.readByte();
+            rr.mParcel.writeByte(subaddr_odd); // subaddr_odd
+            subaddr_nbr_of_digits = (byte) dis.readByte();
+            rr.mParcel.writeByte((byte) subaddr_nbr_of_digits);
+            for (int i = 0; i < subaddr_nbr_of_digits; i++) {
+                rr.mParcel.writeByte(dis.readByte()); // subaddr_orig_bytes[i]
+            }
+
+            bearerDataLength = dis.readByte() & 0xff;
+            rr.mParcel.writeInt(bearerDataLength);
+            for (int i = 0; i < bearerDataLength; i++) {
+                rr.mParcel.writeByte(dis.readByte()); // bearerData[i]
+            }
+
+            riljLog(" teleServiceId=" + teleServiceId + " servicePresent=" + servicePresent
+                + " serviceCategory=" + serviceCategory
+                + " address_digit_mode=" + address_digit_mode
+                + " address_nbr_mode=" + address_nbr_mode + " address_ton=" + address_ton
+                + " address_nbr_plan=" + address_nbr_plan
+                + " address_nbr_of_digits=" + address_nbr_of_digits
+                + " subaddressType=" + subaddressType + " subaddr_odd= " + subaddr_odd
+                + " subaddr_nbr_of_digits=" + subaddr_nbr_of_digits
+                + " bearerDataLength=" + bearerDataLength);
+        } catch (IOException ex) {
+            if (RILJ_LOGD) riljLog("sendSmsCdma: conversion from input stream to object failed: "
+                    + ex);
+        } finally {
+            try {
+                if (null != bais) {
+                    bais.close();
+                }
+
+                if (null != dis) {
+                    dis.close();
+                }
+            } catch (IOException e) {
+                if (RILJ_LOGD) riljLog("sendSmsCdma: close input stream exception" + e);
+            }
+        }
     }
 
     /**
@@ -2826,8 +2919,10 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_IMS_SEND_SMS: ret =  responseSMS(p); break;
             case RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC: ret =  responseICC_IO(p); break;
             case RIL_REQUEST_SIM_OPEN_CHANNEL: ret  = responseInts(p); break;
+            case RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2: ret = responseInts(p); break;
             case RIL_REQUEST_SIM_CLOSE_CHANNEL: ret  = responseVoid(p); break;
             case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL: ret = responseICC_IO(p); break;
+            case RIL_REQUEST_SIM_GET_ATR: ret = responseString(p); break;
             case RIL_REQUEST_NV_READ_ITEM: ret = responseString(p); break;
             case RIL_REQUEST_NV_WRITE_ITEM: ret = responseVoid(p); break;
             case RIL_REQUEST_NV_WRITE_CDMA_PRL: ret = responseVoid(p); break;
@@ -2845,6 +2940,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_GET_ACTIVITY_INFO: ret = responseActivityData(p); break;
             case RIL_REQUEST_SET_ALLOWED_CARRIERS: ret = responseInts(p); break;
             case RIL_REQUEST_GET_ALLOWED_CARRIERS: ret = responseCarrierIdentifiers(p); break;
+            case RIL_REQUEST_GET_ADN_RECORD: ret =  responseInts(p); break;
+            case RIL_REQUEST_UPDATE_ADN_RECORD: ret =  responseInts(p); break;
             default:
                 throw new RuntimeException("Unrecognized solicited response: " + rr.mRequest);
             //break;
@@ -2965,6 +3062,7 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_GET_IMEI:
             case RIL_REQUEST_GET_IMEISV:
             case RIL_REQUEST_SIM_OPEN_CHANNEL:
+            case RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2:
             case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL:
 
                 if (!RILJ_LOGV) {
@@ -3113,6 +3211,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_UNSOL_STK_CC_ALPHA_NOTIFY: ret =  responseString(p); break;
             case RIL_UNSOL_LCEDATA_RECV: ret = responseLceData(p); break;
             case RIL_UNSOL_PCO_DATA: ret = responsePcoData(p); break;
+            case RIL_UNSOL_RESPONSE_ADN_RECORDS: ret = responseAdnRecords(p); break;
+            case RIL_UNSOL_RESPONSE_ADN_INIT_DONE: ret = responseVoid(p); break;
 
             default:
                 throw new RuntimeException("Unrecognized unsol response: " + response);
@@ -3554,6 +3654,22 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
                 mPcoDataRegistrants.notifyRegistrants(new AsyncResult(null, ret, null));
+                break;
+          case RIL_UNSOL_RESPONSE_ADN_INIT_DONE:
+                if (RILJ_LOGD) unsljLog(response);
+
+                if (mAdnInitDoneRegistrants != null) {
+                    mAdnInitDoneRegistrants.notifyRegistrants(
+                                            new AsyncResult(null, ret, null));
+                }
+                break;
+          case RIL_UNSOL_RESPONSE_ADN_RECORDS:
+                if (RILJ_LOGD) unsljLog(response);
+
+                if (mAdnRecordsInfoRegistrants != null) {
+                    mAdnRecordsInfoRegistrants.notifyRegistrants(
+                                            new AsyncResult(null, ret, null));
+                }
                 break;
         }
     }
@@ -4327,6 +4443,42 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                         idleModeTimeMs, txModeTimeMs, rxModeTimeMs, 0);
     }
 
+    private Object responseAdnRecords(Parcel p) {
+        int numRecords = p.readInt();
+        SimPhoneBookAdnRecord[] AdnRecordsInfoGroup = new SimPhoneBookAdnRecord[numRecords];
+
+        for (int i = 0 ; i < numRecords ; i++) {
+            AdnRecordsInfoGroup[i]= new SimPhoneBookAdnRecord();
+
+            AdnRecordsInfoGroup[i].mRecordIndex = p.readInt();
+            AdnRecordsInfoGroup[i].mAlphaTag = p.readString();
+            AdnRecordsInfoGroup[i].mNumber =
+                    SimPhoneBookAdnRecord.ConvertToPhoneNumber(p.readString());
+
+            int numEmails = p.readInt();
+            if(numEmails > 0) {
+                AdnRecordsInfoGroup[i].mEmailCount = numEmails;
+                AdnRecordsInfoGroup[i].mEmails = new String[numEmails];
+                for (int j = 0 ; j < numEmails; j++) {
+                    AdnRecordsInfoGroup[i].mEmails[j] = p.readString();
+                }
+            }
+
+            int numAnrs = p.readInt();
+            if(numAnrs > 0) {
+                AdnRecordsInfoGroup[i].mAdNumCount = numAnrs;
+                AdnRecordsInfoGroup[i].mAdNumbers = new String[numAnrs];
+                for (int k = 0 ; k < numAnrs; k++) {
+                    AdnRecordsInfoGroup[i].mAdNumbers[k] =
+                        SimPhoneBookAdnRecord.ConvertToPhoneNumber(p.readString());
+                }
+            }
+        }
+        riljLog(Arrays.toString(AdnRecordsInfoGroup));
+
+        return AdnRecordsInfoGroup;
+    }
+
     private Object responseCarrierIdentifiers(Parcel p) {
         List<CarrierIdentifier> retVal = new ArrayList<CarrierIdentifier>();
         int len_allowed_carriers = p.readInt();
@@ -4481,8 +4633,10 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_IMS_SEND_SMS: return "RIL_REQUEST_IMS_SEND_SMS";
             case RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC: return "RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC";
             case RIL_REQUEST_SIM_OPEN_CHANNEL: return "RIL_REQUEST_SIM_OPEN_CHANNEL";
+            case RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2: return "RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2";
             case RIL_REQUEST_SIM_CLOSE_CHANNEL: return "RIL_REQUEST_SIM_CLOSE_CHANNEL";
             case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL: return "RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL";
+            case RIL_REQUEST_SIM_GET_ATR: return "RIL_REQUEST_SIM_GET_ATR";
             case RIL_REQUEST_NV_READ_ITEM: return "RIL_REQUEST_NV_READ_ITEM";
             case RIL_REQUEST_NV_WRITE_ITEM: return "RIL_REQUEST_NV_WRITE_ITEM";
             case RIL_REQUEST_NV_WRITE_CDMA_PRL: return "RIL_REQUEST_NV_WRITE_CDMA_PRL";
@@ -4503,6 +4657,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_SET_ALLOWED_CARRIERS: return "RIL_REQUEST_SET_ALLOWED_CARRIERS";
             case RIL_REQUEST_GET_ALLOWED_CARRIERS: return "RIL_REQUEST_GET_ALLOWED_CARRIERS";
             case RIL_RESPONSE_ACKNOWLEDGEMENT: return "RIL_RESPONSE_ACKNOWLEDGEMENT";
+            case RIL_REQUEST_GET_ADN_RECORD: return "RIL_REQUEST_GET_ADN_RECORD";
+            case RIL_REQUEST_UPDATE_ADN_RECORD: return "RIL_REQUEST_UPDATE_ADN_RECORD";
             default: return "<unknown request>";
         }
     }
@@ -4566,6 +4722,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             case RIL_UNSOL_STK_CC_ALPHA_NOTIFY: return "UNSOL_STK_CC_ALPHA_NOTIFY";
             case RIL_UNSOL_LCEDATA_RECV: return "UNSOL_LCE_INFO_RECV";
             case RIL_UNSOL_PCO_DATA: return "UNSOL_PCO_DATA";
+            case RIL_UNSOL_RESPONSE_ADN_INIT_DONE: return "RIL_UNSOL_RESPONSE_ADN_INIT_DONE";
+            case RIL_UNSOL_RESPONSE_ADN_RECORDS: return "RIL_UNSOL_RESPONSE_ADN_RECORDS";
             default: return "<unknown response>";
         }
     }
@@ -4971,6 +5129,18 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         send(rr);
     }
 
+    @Override
+    public void iccOpenLogicalChannel(String AID, byte p2, Message response) {
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2, response);
+        rr.mParcel.writeByte(p2);
+        rr.mParcel.writeString(AID);
+
+        if (RILJ_LOGD)
+            riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+
+        send(rr);
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -5009,6 +5179,21 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             int p3, String data, Message response) {
         iccTransmitApduHelper(RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC, 0, cla, instruction,
                 p1, p2, p3, data, response);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void getAtr(Message response) {
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_SIM_GET_ATR, response);
+        int slotId = 0;
+        rr.mParcel.writeInt(1);
+        rr.mParcel.writeInt(slotId);
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> iccGetAtr: "
+                + requestToString(rr.mRequest) + " " + slotId);
+
+        send(rr);
     }
 
     /*
@@ -5161,6 +5346,16 @@ public final class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
+    public void
+    getAdnRecord(Message result) {
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_GET_ADN_RECORD, result);
+
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+
+        send(rr);
+    }
+
+    @Override
     public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message response) {
         RILRequest rr = RILRequest.obtain(RIL_REQUEST_SET_ALLOWED_CARRIERS, response);
         rr.mParcel.writeInt(carriers.size()); /* len_allowed_carriers */
@@ -5191,6 +5386,34 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         if (RILJ_LOGD) {
             riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
         }
+        send(rr);
+    }
+
+    @Override
+    public void
+    updateAdnRecord(SimPhoneBookAdnRecord adnRecordInfo, Message result) {
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_UPDATE_ADN_RECORD, result);
+        rr.mParcel.writeInt(adnRecordInfo.getRecordIndex());
+        rr.mParcel.writeString(adnRecordInfo.getAlphaTag());
+        rr.mParcel.writeString(
+                SimPhoneBookAdnRecord.ConvertToRecordNumber(adnRecordInfo.getNumber()));
+
+        int numEmails = adnRecordInfo.getNumEmails();
+        rr.mParcel.writeInt(numEmails);
+        for (int i = 0 ; i < numEmails; i++) {
+            rr.mParcel.writeString(adnRecordInfo.getEmails()[i]);
+        }
+
+        int numAdNumbers = adnRecordInfo.getNumAdNumbers();
+        rr.mParcel.writeInt(numAdNumbers);
+        for (int j = 0 ; j < numAdNumbers; j++) {
+            rr.mParcel.writeString(
+                SimPhoneBookAdnRecord.ConvertToRecordNumber(adnRecordInfo.getAdNumbers()[j]));
+        }
+
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+            + " with " + adnRecordInfo.toString());
+
         send(rr);
     }
 
