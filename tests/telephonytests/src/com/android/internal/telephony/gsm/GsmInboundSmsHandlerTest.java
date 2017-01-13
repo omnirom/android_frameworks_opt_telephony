@@ -575,7 +575,6 @@ public class GsmInboundSmsHandlerTest extends TelephonyTest {
 
     }
 
-    @Postsubmit
     @Test
     @MediumTest
     public void testBroadcastUndeliveredMultiPart() throws Exception {

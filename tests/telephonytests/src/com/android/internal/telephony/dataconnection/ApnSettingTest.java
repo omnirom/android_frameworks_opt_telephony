@@ -28,6 +28,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,6 +41,7 @@ import static com.android.internal.telephony.PhoneConstants.APN_TYPE_MMS;
 import static com.android.internal.telephony.PhoneConstants.APN_TYPE_SUPL;
 import static junit.framework.Assert.assertFalse;
 import static junit.framework.Assert.assertTrue;
+import static junit.framework.Assert.fail;
 import static org.junit.Assert.assertEquals;
 
 
@@ -258,7 +261,6 @@ public class ApnSettingTest extends TelephonyTest {
                 new String[]{PhoneConstants.APN_TYPE_IA, PhoneConstants.APN_TYPE_CBS}).
                 isMetered(mContext, 1, isRoaming));
 
-        //reuse the cached result for subId 1
         assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_DEFAULT,
                 mContext, 1, isRoaming));
         assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_MMS,
@@ -274,6 +276,15 @@ public class ApnSettingTest extends TelephonyTest {
         assertFalse(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_IA,
                 mContext, 1, isRoaming));
         assertFalse(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_HIPRI,
+                mContext, 1, isRoaming));
+
+        // Carrier config settings changes.
+        mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
+                new String[]{PhoneConstants.APN_TYPE_DEFAULT});
+
+        assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_DEFAULT,
+                mContext, 1, isRoaming));
+        assertFalse(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_MMS,
                 mContext, 1, isRoaming));
     }
 
@@ -315,6 +326,17 @@ public class ApnSettingTest extends TelephonyTest {
         assertFalse(createApnSetting(
                 new String[]{PhoneConstants.APN_TYPE_IA, PhoneConstants.APN_TYPE_CBS}).
                 isMetered(mContext, 1, isRoaming));
+
+        // Carrier config settings changes.
+        mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_ROAMING_APN_TYPES_STRINGS,
+                new String[]{PhoneConstants.APN_TYPE_FOTA});
+
+        assertFalse(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_DEFAULT,
+                mContext, 1, isRoaming));
+        assertFalse(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_MMS,
+                mContext, 1, isRoaming));
+        assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_FOTA,
+                mContext, 1, isRoaming));
     }
 
     @Test
@@ -395,7 +417,6 @@ public class ApnSettingTest extends TelephonyTest {
                 new String[]{PhoneConstants.APN_TYPE_IMS}).
                 isMetered(mContext, 2, isRoaming));
 
-        //reuse the cached result for subId 2
         assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_SUPL,
                 mContext, 2, isRoaming));
         assertTrue(ApnSetting.isMeteredApnType(PhoneConstants.APN_TYPE_CBS,
@@ -508,7 +529,6 @@ public class ApnSettingTest extends TelephonyTest {
         assertTrue(createApnSetting(
                 new String[]{PhoneConstants.APN_TYPE_IA, PhoneConstants.APN_TYPE_DUN}).
                 isMetered(mContext, 4, isRoaming));
-
     }
 
     @Test
@@ -569,5 +589,42 @@ public class ApnSettingTest extends TelephonyTest {
         assertFalse(createDisabledApnSetting(new String[]
                 {APN_TYPE_DEFAULT, APN_TYPE_MMS, APN_TYPE_IA}).
                 canHandleType(APN_TYPE_IA));
+    }
+
+    @Test
+    @SmallTest
+    public void testEquals() throws Exception {
+        final int dummyInt = 1;
+        final String dummyString = "dummy";
+        final String[] dummyStringArr = new String[] {"dummy"};
+        // base apn
+        ApnSetting baseApn = createApnSetting(new String[] {"mms", "default"});
+        Field[] fields = ApnSetting.class.getDeclaredFields();
+        for (Field f : fields) {
+            int modifiers = f.getModifiers();
+            if (Modifier.isStatic(modifiers) || !Modifier.isFinal(modifiers)) {
+                continue;
+            }
+            f.setAccessible(true);
+            ApnSetting testApn = null;
+            if (int.class.equals(f.getType())) {
+                testApn = new ApnSetting(baseApn);
+                f.setInt(testApn, dummyInt + f.getInt(testApn));
+            } else if (boolean.class.equals(f.getType())) {
+                testApn = new ApnSetting(baseApn);
+                f.setBoolean(testApn, !f.getBoolean(testApn));
+            } else if (String.class.equals(f.getType())) {
+                testApn = new ApnSetting(baseApn);
+                f.set(testApn, dummyString);
+            } else if (String[].class.equals(f.getType())) {
+                testApn = new ApnSetting(baseApn);
+                f.set(testApn, dummyStringArr);
+            } else {
+                fail("Unsupported field:" + f.getName());
+            }
+            if (testApn != null) {
+                assertFalse(f.getName() + " is NOT checked", testApn.equals(baseApn));
+            }
+        }
     }
 }

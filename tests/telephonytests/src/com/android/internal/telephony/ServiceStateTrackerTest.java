@@ -247,7 +247,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // We only want to verify the intent SPN_STRINGS_UPDATED_ACTION.
         Intent intent = intentArgumentCaptor.getValue();
         assertEquals(TelephonyIntents.SPN_STRINGS_UPDATED_ACTION, intent.getAction());
-        assertEquals(Intent.FLAG_RECEIVER_REPLACE_PENDING, intent.getFlags());
 
         Bundle b = intent.getExtras();
 
@@ -317,7 +316,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         assertFalse(sst.isImsRegistered());
     }
 
-    @Postsubmit
     @Test
     @MediumTest
     public void testSignalStrength() {

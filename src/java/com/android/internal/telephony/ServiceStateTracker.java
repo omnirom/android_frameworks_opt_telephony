@@ -156,6 +156,7 @@ public class ServiceStateTracker extends Handler {
     protected RegistrantList mDetachedRegistrants = new RegistrantList();
     private RegistrantList mDataRegStateOrRatChangedRegistrants = new RegistrantList();
     private RegistrantList mNetworkAttachedRegistrants = new RegistrantList();
+    private RegistrantList mNetworkDetachedRegistrants = new RegistrantList();
     private RegistrantList mPsRestrictEnabledRegistrants = new RegistrantList();
     private RegistrantList mPsRestrictDisabledRegistrants = new RegistrantList();
 
@@ -424,6 +425,8 @@ public class ServiceStateTracker extends Handler {
     private boolean mStartedGprsRegCheck;
     /** Already sent the event-log for no gprs register. */
     private boolean mReportedGprsNoReg;
+
+    private CarrierServiceStateTracker mCSST;
     /**
      * The Notification object given to the NotificationManager.
      */
@@ -553,6 +556,17 @@ public class ServiceStateTracker extends Handler {
         mPhone.notifyOtaspChanged(OTASP_UNINITIALIZED);
 
         updatePhoneType();
+
+        mCSST = new CarrierServiceStateTracker(phone, this);
+
+        registerForNetworkAttached(mCSST,
+                CarrierServiceStateTracker.CARRIER_EVENT_VOICE_REGISTRATION, null);
+        registerForNetworkDetached(mCSST,
+                CarrierServiceStateTracker.CARRIER_EVENT_VOICE_DEREGISTRATION, null);
+        registerForDataConnectionAttached(mCSST,
+                CarrierServiceStateTracker.CARRIER_EVENT_DATA_REGISTRATION, null);
+        registerForDataConnectionDetached(mCSST,
+                CarrierServiceStateTracker.CARRIER_EVENT_DATA_DEREGISTRATION, null);
     }
 
     @VisibleForTesting
@@ -2176,7 +2190,7 @@ public class ServiceStateTracker extends Handler {
                         "of service, set plmn='" + plmn + "'");
             } else if (mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE) {
                 // In either home or roaming service
-                plmn = mSS.getOperatorAlphaLong();
+                plmn = mSS.getOperatorAlpha();
                 showPlmn = !TextUtils.isEmpty(plmn) &&
                         ((rule & SIMRecords.SPN_RULE_SHOW_PLMN)
                                 == SIMRecords.SPN_RULE_SHOW_PLMN);
@@ -2234,7 +2248,6 @@ public class ServiceStateTracker extends Handler {
                             "subId='%d'", showPlmn, plmn, showSpn, spn, dataSpn, subId));
                 }
                 Intent intent = new Intent(TelephonyIntents.SPN_STRINGS_UPDATED_ACTION);
-                intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
                 intent.putExtra(TelephonyIntents.EXTRA_SHOW_SPN, showSpn);
                 intent.putExtra(TelephonyIntents.EXTRA_SPN, spn);
                 intent.putExtra(TelephonyIntents.EXTRA_DATA_SPN, dataSpn);
@@ -2256,8 +2269,8 @@ public class ServiceStateTracker extends Handler {
             mCurDataSpn = dataSpn;
             mCurPlmn = plmn;
         } else {
-            // mOperatorAlphaLong contains the ERI text
-            String plmn = mSS.getOperatorAlphaLong();
+            // mOperatorAlpha contains the ERI text
+            String plmn = mSS.getOperatorAlpha();
             boolean showPlmn = false;
 
             showPlmn = plmn != null;
@@ -2292,7 +2305,6 @@ public class ServiceStateTracker extends Handler {
                             " showPlmn='%b' plmn='%s' subId='%d'", showPlmn, plmn, subId));
                 }
                 Intent intent = new Intent(TelephonyIntents.SPN_STRINGS_UPDATED_ACTION);
-                intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
                 intent.putExtra(TelephonyIntents.EXTRA_SHOW_SPN, false);
                 intent.putExtra(TelephonyIntents.EXTRA_SPN, "");
                 intent.putExtra(TelephonyIntents.EXTRA_SHOW_PLMN, showPlmn);
@@ -2695,12 +2707,16 @@ public class ServiceStateTracker extends Handler {
             mNitzUpdatedTime = false;
         }
 
+        if (hasDeregistered) {
+            mNetworkDetachedRegistrants.notifyRegistrants();
+        }
+
         if (hasChanged) {
             String operatorNumeric;
 
             updateSpnDisplay();
 
-            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlphaLong());
+            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlpha());
 
             String prevOperatorNumeric = tm.getNetworkOperatorForPhone(mPhone.getPhoneId());
             operatorNumeric = mSS.getOperatorNumeric();
@@ -2849,6 +2865,10 @@ public class ServiceStateTracker extends Handler {
                 mSS.getVoiceRegState() != ServiceState.STATE_IN_SERVICE
                         && mNewSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE;
 
+        boolean hasDeregistered =
+                mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE
+                        && mNewSS.getVoiceRegState() != ServiceState.STATE_IN_SERVICE;
+
         boolean hasCdmaDataConnectionAttached =
                 mSS.getDataRegState() != ServiceState.STATE_IN_SERVICE
                         && mNewSS.getDataRegState() == ServiceState.STATE_IN_SERVICE;
@@ -2923,12 +2943,16 @@ public class ServiceStateTracker extends Handler {
             mNetworkAttachedRegistrants.notifyRegistrants();
         }
 
+        if (hasDeregistered) {
+            mNetworkDetachedRegistrants.notifyRegistrants();
+        }
+
         if (hasChanged) {
             updateSpnDisplay();
 
             String operatorNumeric;
 
-            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlphaLong());
+            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlpha());
 
             String prevOperatorNumeric = tm.getNetworkOperatorForPhone(mPhone.getPhoneId());
             operatorNumeric = mSS.getOperatorNumeric();
@@ -3162,12 +3186,16 @@ public class ServiceStateTracker extends Handler {
             mNetworkAttachedRegistrants.notifyRegistrants();
         }
 
+        if (hasDeregistered) {
+            mNetworkDetachedRegistrants.notifyRegistrants();
+        }
+
         if (hasChanged) {
             updateSpnDisplay();
 
             String operatorNumeric;
 
-            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlphaLong());
+            tm.setNetworkOperatorNameForPhone(mPhone.getPhoneId(), mSS.getOperatorAlpha());
 
             String prevOperatorNumeric = tm.getNetworkOperatorForPhone(mPhone.getPhoneId());
             operatorNumeric = mSS.getOperatorNumeric();
@@ -3292,7 +3320,7 @@ public class ServiceStateTracker extends Handler {
                             mPhone.getContext().getResources().getBoolean(com.android.internal.R.
                                     bool.config_LTE_eri_for_network_name))) {
                 // Only when CDMA is in service, ERI will take effect
-                String eriText = mSS.getOperatorAlphaLong();
+                String eriText = mSS.getOperatorAlpha();
                 // Now the Phone sees the new ServiceState so it can get the new ERI text
                 if (mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE) {
                     eriText = mPhone.getCdmaEriText();
@@ -4276,8 +4304,28 @@ public class ServiceStateTracker extends Handler {
             r.notifyRegistrant();
         }
     }
+
     public void unregisterForNetworkAttached(Handler h) {
         mNetworkAttachedRegistrants.remove(h);
+    }
+
+    /**
+     * Registration point for transition into network detached.
+     * @param h handler to notify
+     * @param what what code of message when delivered
+     * @param obj in Message.obj
+     */
+    public void registerForNetworkDetached(Handler h, int what, Object obj) {
+        Registrant r = new Registrant(h, what, obj);
+
+        mNetworkDetachedRegistrants.add(r);
+        if (mSS.getVoiceRegState() != ServiceState.STATE_IN_SERVICE) {
+            r.notifyRegistrant();
+        }
+    }
+
+    public void unregisterForNetworkDetached(Handler h) {
+        mNetworkDetachedRegistrants.remove(h);
     }
 
     /**
