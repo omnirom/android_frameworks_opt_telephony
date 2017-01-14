@@ -3411,18 +3411,25 @@ public class GsmCdmaPhone extends Phone {
         return mWakeLock;
     }
 
-    private boolean isEmergencyNumber(String address) {
-        IExtTelephony mIExtTelephony =
-            IExtTelephony.Stub.asInterface(ServiceManager.getService("extphone"));
-        boolean result = false;
+    private static IExtTelephony getIExtTelephony() {
         try {
-            result = mIExtTelephony.isEmergencyNumber(address);
-        } catch (RemoteException ex) {
-            loge("RemoteException" + ex);
-        } catch (NullPointerException ex) {
-            loge("NullPointerException" + ex);
+            IExtTelephony ex = IExtTelephony.Stub.asInterface(ServiceManager.getService("extphone"));
+            return ex;
+        } catch (NoClassDefFoundError ex) {
+            return null;
         }
-        return result;
+    }
+
+    private boolean isEmergencyNumber(String address) {
+        IExtTelephony mIExtTelephony = getIExtTelephony();
+        if (mIExtTelephony == null) {
+            return PhoneNumberUtils.isEmergencyNumber(address);
+        }
+        try {
+            return mIExtTelephony.isEmergencyNumber(address);
+        } catch (RemoteException ex) {
+            return PhoneNumberUtils.isEmergencyNumber(address);
+        }
     }
 
     @Override
