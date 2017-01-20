@@ -74,12 +74,12 @@ public class TelephonyComponentFactory {
                 Rlog.d(LOG_TAG, "constructor method = " + custMethod);
                 sInstance = (TelephonyComponentFactory) custMethod.newInstance();
             } catch (NoClassDefFoundError e) {
-                e.printStackTrace();
-                Rlog.e(LOG_TAG, "Error loading TelephonyComponentFactory");
+                //e.printStackTrace();
+                //Rlog.e(LOG_TAG, "Error loading TelephonyComponentFactory");
                 sInstance = new TelephonyComponentFactory();
             } catch (Exception  e) {
-                e.printStackTrace();
-                Rlog.e(LOG_TAG, "Error loading TelephonyComponentFactory");
+                //e.printStackTrace();
+                //Rlog.e(LOG_TAG, "Error loading TelephonyComponentFactory");
                 sInstance = new TelephonyComponentFactory();
             }
         }
