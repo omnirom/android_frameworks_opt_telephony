@@ -235,12 +235,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected int mVmCount = 0;
     private boolean mDnsCheckDisabled;
     public DcTracker mDcTracker;
+    /* Used for dispatching signals to configured carrier apps */
+    private CarrierSignalAgent mCarrierSignalAgent;
+    /* Used for dispatching carrier action from carrier apps */
+    private CarrierActionAgent mCarrierActionAgent;
     private boolean mDoesRilSendMultipleCallRing;
     private int mCallRingContinueToken;
     private int mCallRingDelay;
     private boolean mIsVoiceCapable = true;
-    /* Used for communicate between configured CarrierSignalling receivers */
-    private CarrierSignalAgent mCarrierSignalAgent;
     private final AppSmsManager mAppSmsManager;
 
     // Keep track of whether or not the phone is in Emergency Callback Mode for Phone and
@@ -445,7 +447,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mContext = context;
         mLooper = Looper.myLooper();
         mCi = ci;
-        mCarrierSignalAgent = new CarrierSignalAgent(this);
         mActionDetached = this.getClass().getPackage().getName() + ".action_detached";
         mActionAttached = this.getClass().getPackage().getName() + ".action_attached";
         mAppSmsManager = telephonyComponentFactory.makeAppSmsManager(context);
@@ -514,6 +515,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mSmsUsageMonitor = mTelephonyComponentFactory.makeSmsUsageMonitor(context);
         mUiccController = UiccController.getInstance();
         mUiccController.registerForIccChanged(this, EVENT_ICC_CHANGED, null);
+        mCarrierSignalAgent = mTelephonyComponentFactory.makeCarrierSignalAgent(this);
+        mCarrierActionAgent = mTelephonyComponentFactory.makeCarrierActionAgent(this);
         if (getPhoneType() != PhoneConstants.PHONE_TYPE_SIP) {
             mCi.registerForSrvccStateChanged(this, EVENT_SRVCC_STATE_CHANGED, null);
         }
@@ -1756,6 +1759,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return mCarrierSignalAgent;
     }
 
+    public CarrierActionAgent getCarrierActionAgent() {
+        return mCarrierActionAgent;
+    }
+
     /**
      *  Query the CDMA roaming preference setting
      *
@@ -1782,6 +1789,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         } else {
             return sst.getSignalStrength();
         }
+    }
+
+    /**
+     * @return true, if the device is in a state where both voice and data
+     * are supported simultaneously. This can change based on location or network condition.
+     */
+    public boolean isConcurrentVoiceAndDataAllowed() {
+        ServiceStateTracker sst = getServiceStateTracker();
+        return sst == null ? false : sst.isConcurrentVoiceAndDataAllowed();
     }
 
     /**
@@ -2214,6 +2230,30 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Rlog.e(LOG_TAG, "getStoredVoiceMessageCount: invalid subId " + subId);
         }
         return countVoiceMessages;
+    }
+
+    /**
+     * send secret dialer codes to launch arbitrary activities in the form of *#*#<code>#*#*.
+     * If a secret code is encountered, an Intent is started with the android_secret_code://<code>
+     * URI.
+     *
+     * @param code the text to check for a secret code in
+     * @return true if a secret code was encountered
+     */
+    public boolean sendDialerCode(String code) {
+        // Secret dialer codes are in the form *#*#<code>#*#*
+        if (TextUtils.isEmpty(code)) {
+            return false;
+        }
+        int len = code.length();
+        if (len > 8 && code.startsWith("*#*#") && code.endsWith("#*#*")) {
+            Intent intent = new Intent(TelephonyIntents.SECRET_CODE_ACTION,
+                    Uri.parse("android_secret_code://" + code.substring(4, len - 4)));
+            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+            mContext.sendBroadcast(intent);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -2684,18 +2724,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * Action set from carrier signalling broadcast receivers to enable/disable metered apns.
      */
     public void carrierActionSetMeteredApnsEnabled(boolean enabled) {
-        if(mDcTracker != null) {
-            mDcTracker.setApnsEnabledByCarrier(enabled);
-        }
+        mCarrierActionAgent.carrierActionSetMeteredApnsEnabled(enabled);
     }
 
     /**
      * Action set from carrier signalling broadcast receivers to enable/disable radio
      */
     public void carrierActionSetRadioEnabled(boolean enabled) {
-        if(mDcTracker != null) {
-            mDcTracker.carrierActionSetRadioEnabled(enabled);
-        }
+        mCarrierActionAgent.carrierActionSetRadioEnabled(enabled);
     }
 
     /**
@@ -3450,6 +3486,28 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (getServiceStateTracker() != null) {
             try {
                 getServiceStateTracker().dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mCarrierActionAgent != null) {
+            try {
+                mCarrierActionAgent.dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mCarrierSignalAgent != null) {
+            try {
+                mCarrierSignalAgent.dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }

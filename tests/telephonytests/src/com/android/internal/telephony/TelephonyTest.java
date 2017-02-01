@@ -172,6 +172,8 @@ public abstract class TelephonyTest {
     @Mock
     protected CarrierSignalAgent mCarrierSignalAgent;
     @Mock
+    protected CarrierActionAgent mCarrierActionAgent;
+    @Mock
     protected ImsExternalCallTracker mImsExternalCallTracker;
     @Mock
     protected AppSmsManager mAppSmsManager;
@@ -330,10 +332,11 @@ public abstract class TelephonyTest {
                 .makeWspTypeDecoder(any(byte[].class));
         doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
                 .makeInboundSmsTracker(any(byte[].class), anyLong(), anyInt(), anyBoolean(),
-                        anyBoolean(), anyString(), anyString());
+                        anyBoolean(), anyString(), anyString(), anyString());
         doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
                 .makeInboundSmsTracker(any(byte[].class), anyLong(), anyInt(), anyBoolean(),
-                        anyString(), anyInt(), anyInt(), anyInt(), anyBoolean(), anyString());
+                        anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyBoolean(),
+                        anyString());
         doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
                 .makeInboundSmsTracker(any(Cursor.class), anyBoolean());
         doReturn(mImsCT).when(mTelephonyComponentFactory)
@@ -362,6 +365,7 @@ public abstract class TelephonyTest {
         doReturn(mCT).when(mPhone).getCallTracker();
         doReturn(mSST).when(mPhone).getServiceStateTracker();
         doReturn(mCarrierSignalAgent).when(mPhone).getCarrierSignalAgent();
+        doReturn(mCarrierActionAgent).when(mPhone).getCarrierActionAgent();
         doReturn(mAppSmsManager).when(mPhone).getAppSmsManager();
         mPhone.mEriManager = mEriManager;
 
