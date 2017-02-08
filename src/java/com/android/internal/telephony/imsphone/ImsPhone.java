@@ -1465,9 +1465,13 @@ public class ImsPhone extends ImsPhoneBase {
                 if (VDBG) logd("EVENT_SERVICE_STATE_CHANGED");
                 ar = (AsyncResult) msg.obj;
                 ServiceState newServiceState = (ServiceState) ar.result;
-                // only update if roaming status changed
-                if (mRoaming != newServiceState.getRoaming()) {
-                    if (DBG) logd("Roaming state changed");
+                // only update if roaming status changed and voice or data is in service.
+                // The STATE_IN_SERVICE is checked to prevent wifi calling mode change when phone
+                // moves from roaming to no service.
+                if (mRoaming != newServiceState.getRoaming() &&
+                           (newServiceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE ||
+                           newServiceState.getDataRegState() == ServiceState.STATE_IN_SERVICE)) {
+                    if (DBG) logd("Roaming state changed- " + mRoaming);
                     updateRoamingState(newServiceState.getRoaming());
                 }
                 break;
