@@ -23,11 +23,11 @@ import android.service.carrier.CarrierIdentifier;
 
 import com.android.internal.telephony.BaseCommands;
 import com.android.internal.telephony.CommandsInterface;
+import com.android.internal.telephony.RadioCapability;
+import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
 import com.android.internal.telephony.dataconnection.DataProfile;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
-import com.android.internal.telephony.RadioCapability;
-import com.android.internal.telephony.UUSInfo;
 
 import java.util.List;
 
@@ -622,5 +622,9 @@ class ImsPhoneCommandInterface extends BaseCommands implements CommandsInterface
 
     @Override
     public void getAllowedCarriers(Message result) {
+    }
+
+    @Override
+    public void setSimCardPower(boolean powerUp, Message result) {
     }
 }

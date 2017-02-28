@@ -50,7 +50,6 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyManager;
 import android.telephony.VoLteServiceState;
 import android.text.TextUtils;
 
@@ -528,7 +527,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Start listening for IMS service UP/DOWN events.
+     * Start listening for IMS service UP/DOWN events. If using the new ImsResolver APIs, we should
+     * always be setting up ImsPhones.
      */
     public void startMonitoringImsService() {
         if (getPhoneType() == PhoneConstants.PHONE_TYPE_SIP) {
@@ -543,12 +543,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mContext.registerReceiver(mImsIntentReceiver, filter);
 
             // Monitor IMS service - but first poll to see if already up (could miss
-            // intent)
+            // intent). Also, when using new ImsResolver APIs, the service will be available soon,
+            // so start trying to bind.
             ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
-            if (imsManager != null && imsManager.isServiceAvailable()) {
-                mImsServiceReady = true;
-                updateImsPhone();
-                ImsManager.updateImsServiceConfig(mContext, mPhoneId, false);
+            if (imsManager != null) {
+                // If it is dynamic binding, kick off ImsPhone creation now instead of waiting for
+                // the service to be available.
+                if (imsManager.isDynamicBinding() || imsManager.isServiceAvailable()) {
+                    mImsServiceReady = true;
+                    updateImsPhone();
+                    ImsManager.updateImsServiceConfig(mContext, mPhoneId, false);
+                }
             }
         }
     }
@@ -3456,6 +3461,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     public AppSmsManager getAppSmsManager() {
         return mAppSmsManager;
+    }
+
+    /**
+     * Set SIM card power state. Request is equivalent to inserting or removing the card.
+     * @param powerUp True if powering up the SIM, otherwise powering down
+     **/
+    public void setSimPowerState(boolean powerUp) {
+        mCi.setSimCardPower(powerUp, null);
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {

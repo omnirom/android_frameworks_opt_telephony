@@ -16,14 +16,12 @@
 
 package com.android.internal.telephony;
 
-import static com.android.internal.telephony.RILConstants.*;
-import static com.android.internal.util.Preconditions.checkNotNull;
-
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.display.DisplayManager;
+import android.hardware.radio.deprecated.V1_0.IOemHook;
 import android.hardware.radio.V1_0.CellInfoCdma;
 import android.hardware.radio.V1_0.CellInfoGsm;
 import android.hardware.radio.V1_0.CellInfoLte;
@@ -35,22 +33,26 @@ import android.hardware.radio.V1_0.CdmaBroadcastSmsConfigInfo;
 import android.hardware.radio.V1_0.CdmaSmsAck;
 import android.hardware.radio.V1_0.CdmaSmsMessage;
 import android.hardware.radio.V1_0.CdmaSmsWriteArgs;
-import android.hardware.radio.V1_0.DataProfileInfo;
+import android.hardware.radio.V1_0.CellInfoCdma;
+import android.hardware.radio.V1_0.CellInfoGsm;
+import android.hardware.radio.V1_0.CellInfoLte;
+import android.hardware.radio.V1_0.CellInfoType;
+import android.hardware.radio.V1_0.CellInfoWcdma;
 import android.hardware.radio.V1_0.Dial;
-import android.hardware.radio.V1_0.HardwareConfigModem;
 import android.hardware.radio.V1_0.GsmBroadcastSmsConfigInfo;
 import android.hardware.radio.V1_0.GsmSmsMessage;
+import android.hardware.radio.V1_0.HardwareConfigModem;
 import android.hardware.radio.V1_0.IRadio;
-import android.hardware.radio.V1_0.LceDataInfo;
 import android.hardware.radio.V1_0.IccIo;
 import android.hardware.radio.V1_0.ImsSmsMessage;
+import android.hardware.radio.V1_0.LceDataInfo;
 import android.hardware.radio.V1_0.NvWriteItem;
 import android.hardware.radio.V1_0.RadioError;
 import android.hardware.radio.V1_0.RadioIndicationType;
 import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.RadioResponseType;
-import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.SelectUiccSub;
+import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.SimApdu;
 import android.hardware.radio.V1_0.SmsWriteArgs;
 import android.hardware.radio.V1_0.UusInfo;
@@ -111,6 +113,9 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static com.android.internal.telephony.RILConstants.*;
+import static com.android.internal.util.Preconditions.checkNotNull;
 
 /**
  * {@hide}
@@ -376,7 +381,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
     static final int RESPONSE_SOLICITED_ACK_EXP = 3;
     static final int RESPONSE_UNSOLICITED_ACK_EXP = 4;
 
-    static final String[] SOCKET_NAME_RIL = {"rild", "rild2", "rild3"};
+    static final String[] RIL_SERVICE_NAME = {"rild", "rild2", "rild3"};
+    static final String[] OEM_HOOK_SERVICE_NAME = {"oemhook", "oemhook2", "oemhook3"};
 
     static final int SOCKET_OPEN_RETRY_MILLIS = 4 * 1000;
     static final int IRADIO_GET_SERVICE_DELAY_MILLIS = 3 * 1000;
@@ -686,9 +692,9 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                 LocalSocketAddress l;
 
                 if (mPhoneId == null || mPhoneId == 0 ) {
-                    rilSocket = SOCKET_NAME_RIL[0];
+                    rilSocket = RIL_SERVICE_NAME[0];
                 } else {
-                    rilSocket = SOCKET_NAME_RIL[mPhoneId];
+                    rilSocket = RIL_SERVICE_NAME[mPhoneId];
                 }
 
                 try {
@@ -786,9 +792,13 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         }
     }
 
+    boolean mIsMobileNetworkSupported;
     RadioResponse mRadioResponse;
     RadioIndication mRadioIndication;
     volatile IRadio mRadioProxy = null;
+    OemHookResponse mOemHookResponse;
+    OemHookIndication mOemHookIndication;
+    volatile IOemHook mOemHookProxy = null;
     final AtomicLong mRadioProxyCookie = new AtomicLong(0);
     final RadioProxyDeathRecipient mRadioProxyDeathRecipient;
     final RilHandler mRilHandler;
@@ -822,6 +832,7 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
     private void resetProxyAndRequestList() {
         mRadioProxy = null;
+        mOemHookProxy = null;
         RILRequest.resetSerial();
         // Clear request list on close
         clearRequestList(RADIO_NOT_AVAILABLE, false);
@@ -832,17 +843,22 @@ public final class RIL extends BaseCommands implements CommandsInterface {
     }
 
     private IRadio getRadioProxy(Message result) {
+        if (!mIsMobileNetworkSupported) {
+            if (RILJ_LOGV) riljLog("Not calling getService(): wifi-only");
+            return null;
+        }
+
         if (mRadioProxy != null) {
             return mRadioProxy;
         }
         try {
-            mRadioProxy = IRadio.getService(SOCKET_NAME_RIL[mPhoneId == null ? 0 : mPhoneId]);
+            mRadioProxy = IRadio.getService(RIL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId]);
             if (mRadioProxy != null) {
                 mRadioProxy.linkToDeath(mRadioProxyDeathRecipient,
                         mRadioProxyCookie.incrementAndGet());
                 mRadioProxy.setResponseFunctions(mRadioResponse, mRadioIndication);
             } else {
-                riljLoge("getRadioProxy: radioProxy == null");
+                riljLoge("getRadioProxy: mRadioProxy == null");
             }
         } catch (RemoteException | RuntimeException e) {
             mRadioProxy = null;
@@ -861,6 +877,39 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             riljLoge("setResponseFunctions", e);
         }
         return mRadioProxy;
+    }
+
+    private IOemHook getOemHookProxy(Message result) {
+        if (mOemHookProxy != null) {
+            return mOemHookProxy;
+        }
+        try {
+            mOemHookProxy = IOemHook.getService(
+                    OEM_HOOK_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId]);
+            if (mOemHookProxy != null) {
+                // not calling linkToDeath() as ril service runs in the same process and death
+                // notification for that should be sufficient
+                mOemHookProxy.setResponseFunctions(mOemHookResponse, mOemHookIndication);
+            } else {
+                riljLoge("getOemHookProxy: mOemHookProxy == null");
+            }
+        } catch (RemoteException | RuntimeException e) {
+            mOemHookProxy = null;
+
+            if (result != null) {
+                AsyncResult.forMessage(result, null,
+                        CommandException.fromRilErrno(RADIO_NOT_AVAILABLE));
+                result.sendToTarget();
+            }
+
+            // if service is not up, treat it like death notification to try to get service again
+            mRilHandler.sendMessageDelayed(
+                    mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD, mRadioProxyCookie.get()),
+                    IRADIO_GET_SERVICE_DELAY_MILLIS);
+
+            riljLoge("setResponseFunctions", e);
+        }
+        return mOemHookProxy;
     }
 
     //***** Constructors
@@ -883,12 +932,19 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         mPhoneType = RILConstants.NO_PHONE;
         mPhoneId = instanceId;
 
+        ConnectivityManager cm = (ConnectivityManager)context.getSystemService(
+                Context.CONNECTIVITY_SERVICE);
+        mIsMobileNetworkSupported = cm.isNetworkSupported(ConnectivityManager.TYPE_MOBILE);
+
         mRadioResponse = new RadioResponse(this);
         mRadioIndication = new RadioIndication(this);
+        mOemHookResponse = new OemHookResponse(this);
+        mOemHookIndication = new OemHookIndication(this);
         mRilHandler = new RilHandler();
         mRadioProxyDeathRecipient = new RadioProxyDeathRecipient();
         // set radio callback; needed to set RadioIndication callback
         getRadioProxy(null);
+        getOemHookProxy(null);
 
         PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, RILJ_LOG_TAG);
@@ -908,9 +964,7 @@ public final class RIL extends BaseCommands implements CommandsInterface {
         Looper looper = mSenderThread.getLooper();
         mSender = new RILSender(looper);
 
-        ConnectivityManager cm = (ConnectivityManager)context.getSystemService(
-                Context.CONNECTIVITY_SERVICE);
-        if (cm.isNetworkSupported(ConnectivityManager.TYPE_MOBILE) == false) {
+        if (!mIsMobileNetworkSupported) {
             riljLog("Not starting RILReceiver: wifi-only");
         } else {
             riljLog("Starting RILReceiver" + mPhoneId);
@@ -2192,22 +2246,28 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
     @Override
     public void invokeOemRilRequestRaw(byte[] data, Message response) {
-        RILRequest rr
-                = RILRequest.obtain(RIL_REQUEST_OEM_HOOK_RAW, response, mRILDefaultWorkSource);
+        IOemHook oemHookProxy = getOemHookProxy(response);
+        if (oemHookProxy != null) {
+            RILRequest rr = obtainRequest(RIL_REQUEST_OEM_HOOK_RAW, response,
+                    mRILDefaultWorkSource);
 
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                + "[" + IccUtils.bytesToHexString(data) + "]");
+            if (RILJ_LOGD) {
+                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                        + "[" + IccUtils.bytesToHexString(data) + "]");
+            }
 
-        rr.mParcel.writeByteArray(data);
-
-        send(rr);
-
+            try {
+                oemHookProxy.sendRequestRaw(rr.mSerial, primitiveArrayToArrayList(data));
+            } catch (RemoteException | RuntimeException e) {
+                handleRadioProxyExceptionForRR(rr, "invokeOemRilRequestStrings", e);
+            }
+        }
     }
 
     @Override
     public void invokeOemRilRequestStrings(String[] strings, Message result) {
-        IRadio radioProxy = getRadioProxy(result);
-        if (radioProxy != null) {
+        IOemHook oemHookProxy = getOemHookProxy(result);
+        if (oemHookProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_OEM_HOOK_STRINGS, result,
                     mRILDefaultWorkSource);
 
@@ -2221,7 +2281,7 @@ public final class RIL extends BaseCommands implements CommandsInterface {
             }
 
             try {
-                radioProxy.sendOemRadioRequestStrings(rr.mSerial,
+                oemHookProxy.sendRequestStrings(rr.mSerial,
                         new ArrayList<String>(Arrays.asList(strings)));
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "invokeOemRilRequestStrings", e);
@@ -3819,6 +3879,7 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
     @Override
     public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message result) {
+        checkNotNull(carriers, "Allowed carriers list cannot be null.");
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_SET_ALLOWED_CARRIERS, result,
@@ -3890,6 +3951,25 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                 radioProxy.getAllowedCarriers(rr.mSerial);
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "getAllowedCarriers", e);
+            }
+        }
+    }
+
+    @Override
+    public void setSimCardPower(boolean powerUp, Message result) {
+        IRadio radioProxy = getRadioProxy(result);
+        if (radioProxy != null) {
+            RILRequest rr = obtainRequest(RIL_REQUEST_SET_SIM_CARD_POWER, result,
+                    mRILDefaultWorkSource);
+
+            if (RILJ_LOGD) {
+                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+            }
+
+            try {
+                radioProxy.setSimCardPower(rr.mSerial, powerUp);
+            } catch (RemoteException | RuntimeException e) {
+                handleRadioProxyExceptionForRR(rr, "setSimCardPower", e);
             }
         }
     }
@@ -4464,7 +4544,6 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                     // separate CL. Other RIL commands below are deprecated and require framework
                     // code to be modified to remove them completely.
                     case RIL_REQUEST_SETUP_DATA_CALL: ret =  responseSetupDataCall(p); break;
-                    case RIL_REQUEST_OEM_HOOK_RAW: ret =  responseRaw(p); break;
                     case RIL_REQUEST_SET_INITIAL_ATTACH_APN: ret = responseVoid(p); break;
                     case RIL_REQUEST_SET_DATA_PROFILE: ret = responseVoid(p); break;
                     default:
@@ -5321,6 +5400,8 @@ public final class RIL extends BaseCommands implements CommandsInterface {
                 return "RIL_REQUEST_SET_ALLOWED_CARRIERS";
             case RIL_REQUEST_GET_ALLOWED_CARRIERS:
                 return "RIL_REQUEST_GET_ALLOWED_CARRIERS";
+            case RIL_REQUEST_SET_SIM_CARD_POWER:
+                return "RIL_REQUEST_SET_SIM_CARD_POWER";
             case RIL_RESPONSE_ACKNOWLEDGEMENT:
                 return "RIL_RESPONSE_ACKNOWLEDGEMENT";
             default: return "<unknown request>";
@@ -5506,6 +5587,14 @@ public final class RIL extends BaseCommands implements CommandsInterface {
 
     public List<ClientRequestStats> getClientRequestStats() {
         return mClientWakelockTracker.getClientRequestStats();
+    }
+
+    public static ArrayList<Byte> primitiveArrayToArrayList(byte[] arr) {
+        ArrayList<Byte> arrayList = new ArrayList<>(arr.length);
+        for (byte b : arr) {
+            arrayList.add(b);
+        }
+        return arrayList;
     }
 
     public static byte[] arrayListToPrimitiveArray(ArrayList<Byte> bytes) {
