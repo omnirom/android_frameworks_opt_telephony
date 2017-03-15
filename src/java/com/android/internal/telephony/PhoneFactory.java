@@ -227,7 +227,8 @@ public class PhoneFactory {
 
                 sSubscriptionMonitor = new SubscriptionMonitor(tr, sContext, sc, numPhones);
 
-                sPhoneSwitcher = new PhoneSwitcher(MAX_ACTIVE_PHONES, numPhones,
+                sPhoneSwitcher = telephonyComponentFactory.
+                        makePhoneSwitcher(MAX_ACTIVE_PHONES, numPhones,
                         sContext, sc, Looper.myLooper(), tr, sCommandsInterfaces,
                         sPhones);
 
@@ -240,6 +241,9 @@ public class PhoneFactory {
                             sPhoneSwitcher, sc, sSubscriptionMonitor, Looper.myLooper(),
                             sContext, i, sPhones[i].mDcTracker);
                 }
+
+                telephonyComponentFactory.makeExtTelephonyClasses(
+                        context, sPhones, sCommandsInterfaces);
             }
         }
     }
