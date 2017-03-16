@@ -49,6 +49,7 @@ import android.database.MatrixCursor;
 import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IInterface;
@@ -220,9 +221,6 @@ public class ContextFixture implements TestFixture<Context> {
                     return mUserManager;
                 case Context.CARRIER_CONFIG_SERVICE:
                     return mCarrierConfigManager;
-                case Context.POWER_SERVICE:
-                    // PowerManager is a final class so cannot be mocked, return real service
-                    return TestApplication.getAppContext().getSystemService(name);
                 case Context.TELEPHONY_SUBSCRIPTION_SERVICE:
                     return mSubscriptionManager;
                 case Context.WIFI_SERVICE:
@@ -233,6 +231,13 @@ public class ContextFixture implements TestFixture<Context> {
                     return mConnectivityManager;
                 case Context.USAGE_STATS_SERVICE:
                     return mUsageStatManager;
+                case Context.BATTERY_SERVICE:
+                    return mBatteryManager;
+                case Context.DISPLAY_SERVICE:
+                case Context.POWER_SERVICE:
+                    // PowerManager and DisplayManager are final classes so cannot be mocked,
+                    // return real services.
+                    return TestApplication.getAppContext().getSystemService(name);
                 default:
                     return null;
             }
@@ -485,6 +490,7 @@ public class ContextFixture implements TestFixture<Context> {
     private final ConnectivityManager mConnectivityManager = mock(ConnectivityManager.class);
     private final UsageStatsManager mUsageStatManager = null;
     private final WifiManager mWifiManager = mock(WifiManager.class);
+    private final BatteryManager mBatteryManager = mock(BatteryManager.class);
 
     private final ContentProvider mContentProvider = spy(new FakeContentProvider());
 

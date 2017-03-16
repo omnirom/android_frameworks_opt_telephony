@@ -16,7 +16,7 @@
 
 package com.android.internal.telephony;
 
-import android.platform.test.annotations.Postsubmit;
+import android.support.test.filters.FlakyTest;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.junit.After;
@@ -50,14 +50,14 @@ public class Sms7BitEncodingTranslatorTest extends TelephonyTest {
         super.tearDown();
     }
 
-    @Postsubmit
+    @FlakyTest
     @Test
     @SmallTest
     public void testNoTranslate() {
         assertEquals("123", Sms7BitEncodingTranslator.translate("123"));
     }
 
-    @Postsubmit
+    @FlakyTest
     @Test
     @SmallTest
     public void testCommonTranslate() {
@@ -71,7 +71,7 @@ public class Sms7BitEncodingTranslatorTest extends TelephonyTest {
         assertEquals("OIA", Sms7BitEncodingTranslator.translate(s));
     }
 
-    @Postsubmit
+    @FlakyTest
     @Test
     @SmallTest
     public void testGsmTranslate() {
@@ -85,7 +85,7 @@ public class Sms7BitEncodingTranslatorTest extends TelephonyTest {
         assertEquals("??Ç", Sms7BitEncodingTranslator.translate(s));
     }
 
-    @Postsubmit
+    @FlakyTest
     @Test
     @SmallTest
     public void testCdmaTranslate() {

@@ -42,6 +42,7 @@ import android.telephony.SmsMessage;
 
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
+import com.android.internal.telephony.cdma.SmsMessageConverter;
 import com.android.internal.telephony.dataconnection.DataCallResponse;
 import com.android.internal.telephony.gsm.SsData;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
@@ -231,7 +232,12 @@ public class RadioIndication extends IRadioIndication.Stub {
     public void dataCallListChanged(int indicationType, ArrayList<SetupDataCallResult> dcList) {
         mRil.processIndication(indicationType);
 
-        ArrayList<DataCallResponse> response = RIL.convertHalDcList(dcList);
+        ArrayList<DataCallResponse> response = new ArrayList<>();
+
+        for (SetupDataCallResult dcResult : dcList) {
+            response.add(RIL.convertDataCallResult(dcResult));
+        }
+
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_DATA_CALL_LIST_CHANGED, response);
 
         mRil.mDataCallListChangedRegistrants.notifyRegistrants(
@@ -359,7 +365,7 @@ public class RadioIndication extends IRadioIndication.Stub {
 
         // todo: conversion from CdmaSmsMessage to SmsMessage should be contained in this class so
         // that usage of auto-generated HAL classes is limited to this file
-        SmsMessage sms = SmsMessage.newCdmaSmsFromRil(msg);
+        SmsMessage sms = SmsMessageConverter.newSmsMessageFromCdmaSmsMessage(msg);
         if (mRil.mCdmaSmsRegistrant != null) {
             mRil.mCdmaSmsRegistrant.notifyRegistrant(new AsyncResult(null, sms, null));
         }
@@ -599,10 +605,6 @@ public class RadioIndication extends IRadioIndication.Stub {
         // todo: this should not require a version number now. Setting it to latest RIL version for
         // now.
         mRil.notifyRegistrantsRilConnectionChanged(15);
-        // When modem crashes, if user turns the screen off before RIL reconnects, screen
-        // state cannot be sent to modem. Resend the display state here so that modem
-        // has the correct state (to stop signal strength reporting, etc).
-        mRil.updateScreenState(true);
     }
 
     public void voiceRadioTechChanged(int indicationType, int rat) {
