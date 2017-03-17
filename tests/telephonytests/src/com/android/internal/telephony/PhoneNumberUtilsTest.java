@@ -17,11 +17,11 @@
 package com.android.internal.telephony;
 
 import android.net.Uri;
-import android.platform.test.annotations.Postsubmit;
+import android.support.test.filters.FlakyTest;
+import android.telephony.PhoneNumberUtils;
 import android.test.AndroidTestCase;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.SpannableStringBuilder;
-import android.telephony.PhoneNumberUtils;
 
 public class PhoneNumberUtilsTest extends AndroidTestCase {
 
@@ -413,7 +413,7 @@ public class PhoneNumberUtilsTest extends AndroidTestCase {
     }
 
     // To run this test, the device has to be registered with network
-    @Postsubmit
+    @FlakyTest
     public void testCheckAndProcessPlusCode() {
         assertEquals("0118475797000",
                 PhoneNumberUtils.cdmaCheckAndProcessPlusCode("+8475797000"));
@@ -510,6 +510,28 @@ public class PhoneNumberUtilsTest extends AndroidTestCase {
         assertEquals("800-GOOG-114", PhoneNumberUtils.formatNumber("800-GOOG-114", "US"));
     }
 
+    /**
+     * Tests ability to format phone numbers from Japan using the international format when the
+     * current country is not Japan.
+     */
+    @SmallTest
+    public void testFormatJapanInternational() {
+        assertEquals("+81 90-6657-1180", PhoneNumberUtils.formatNumber("+819066571180", "US"));
+    }
+
+    /**
+     * Tests ability to format phone numbers from Japan using the national format when the current
+     * country is Japan.
+     */
+    @SmallTest
+    public void testFormatJapanNational() {
+        assertEquals("090-6657-0660", PhoneNumberUtils.formatNumber("09066570660", "JP"));
+        assertEquals("090-6657-1180", PhoneNumberUtils.formatNumber("+819066571180", "JP"));
+
+        // US number should still be internationally formatted
+        assertEquals("+1 650-555-1212", PhoneNumberUtils.formatNumber("+16505551212", "JP"));
+    }
+
     @SmallTest
     public void testFormatNumber_LeadingStarAndHash() {
         // Numbers with a leading '*' or '#' should be left unchanged.
@@ -562,7 +584,7 @@ public class PhoneNumberUtilsTest extends AndroidTestCase {
                 PhoneNumberUtils.formatNumber("011861088880000", "", "GB"));
     }
 
-    @Postsubmit
+    @FlakyTest
     @SmallTest
     public void testIsEmergencyNumber() {
         // There are two parallel sets of tests here: one for the
@@ -667,5 +689,18 @@ public class PhoneNumberUtilsTest extends AndroidTestCase {
         source = Uri.fromParts("sip", "+16505551212@something.com;user=phone", null);
         converted = PhoneNumberUtils.convertSipUriToTelUri(source);
         assertEquals(expected, converted);
+    }
+
+    @SmallTest
+    public void testIsInternational() {
+        assertFalse(PhoneNumberUtils.isInternationalNumber("+16505551212", "US"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("+16505551212", "UK"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("+16505551212", "JP"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("+86 10 8888 0000", "US"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("001-541-754-3010", "DE"));
+        assertFalse(PhoneNumberUtils.isInternationalNumber("001-541-754-3010", "US"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("01161396694916", "US"));
+        assertTrue(PhoneNumberUtils.isInternationalNumber("011-613-966-94916", "US"));
+        assertFalse(PhoneNumberUtils.isInternationalNumber("011-613-966-94916", "AU"));
     }
 }

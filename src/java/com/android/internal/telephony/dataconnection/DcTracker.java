@@ -273,6 +273,7 @@ public class DcTracker extends Handler {
             String action = intent.getAction();
 
             if (action.equals(Intent.ACTION_SCREEN_ON)) {
+                // TODO: Evaluate hooking this up with DeviceStateMonitor
                 if (DBG) log("screen on");
                 mIsScreenOn = true;
                 stopNetStatPoll();
@@ -2219,9 +2220,8 @@ public class DcTracker extends Handler {
         } else {
             if (DBG) log("setInitialAttachApn: X selected Apn=" + initialAttachApnSetting);
 
-            mPhone.mCi.setInitialAttachApn(initialAttachApnSetting.apn,
-                    initialAttachApnSetting.protocol, initialAttachApnSetting.authType,
-                    initialAttachApnSetting.user, initialAttachApnSetting.password, null);
+            mPhone.mCi.setInitialAttachApn(new DataProfile(initialAttachApnSetting),
+                    mPhone.getServiceState().getDataRoaming(), null);
         }
     }
 
@@ -2443,7 +2443,7 @@ public class DcTracker extends Handler {
 
                 if (!enabled) {
                     // Send otasp_sim_unprovisioned so that SuW is able to proceed and notify users
-                    mPhone.notifyOtaspChanged(ServiceStateTracker.OTASP_SIM_UNPROVISIONED);
+                    mPhone.notifyOtaspChanged(TelephonyManager.OTASP_SIM_UNPROVISIONED);
                     // Tear down all metered apns
                     cleanUpAllConnections(true, Phone.REASON_CARRIER_ACTION_DISABLE_METERED_APN);
                 } else {
@@ -2801,6 +2801,11 @@ public class DcTracker extends Handler {
     private void onRoamingOff() {
         if (DBG) log("onRoamingOff");
 
+        // TODO: Remove this once all old vendor RILs are gone. We don't need to send the
+        // data profile again as the modem should have both roaming and non-roaming protocol in
+        // place. Modem should choose the right protocol based on roaming condition.
+        setDataProfilesAsNeeded();
+
         if (!mDataEnabledSettings.isUserDataEnabled()) return;
 
         if (getDataOnRoamingEnabled() == false) {
@@ -2813,6 +2818,11 @@ public class DcTracker extends Handler {
 
     private void onRoamingOn() {
         if (DBG) log("onRoamingOn");
+
+        // TODO: Remove this once all old vendor RILs are gone. We don't need to send the
+        // data profile again as the modem should have both roaming and non-roaming protocol in
+        // place. Modem should choose the right protocol based on roaming condition.
+        setDataProfilesAsNeeded();
 
         if (!mDataEnabledSettings.isUserDataEnabled()) {
             if (DBG) log("data not enabled by user");
@@ -3340,22 +3350,15 @@ public class DcTracker extends Handler {
             ArrayList<DataProfile> dps = new ArrayList<DataProfile>();
             for (ApnSetting apn : mAllApnSettings) {
                 if (apn.modemCognitive) {
-                    DataProfile dp = new DataProfile(apn,
-                            mPhone.getServiceState().getDataRoaming());
-                    boolean isDup = false;
-                    for(DataProfile dpIn : dps) {
-                        if (dp.equals(dpIn)) {
-                            isDup = true;
-                            break;
-                        }
-                    }
-                    if (!isDup) {
+                    DataProfile dp = new DataProfile(apn);
+                    if (!dps.contains(dp)) {
                         dps.add(dp);
                     }
                 }
             }
-            if(dps.size() > 0) {
-                mPhone.mCi.setDataProfile(dps.toArray(new DataProfile[0]), null);
+            if (dps.size() > 0) {
+                mPhone.mCi.setDataProfile(dps.toArray(new DataProfile[0]),
+                        mPhone.getServiceState().getDataRoaming(), null);
             }
         }
     }
@@ -3366,7 +3369,7 @@ public class DcTracker extends Handler {
      */
     protected void createAllApnList() {
         mMvnoMatched = false;
-        mAllApnSettings = new ArrayList<ApnSetting>();
+        mAllApnSettings = new ArrayList<>();
         IccRecords r = mIccRecords.get();
         String operator = mPhone.getOperatorNumeric();
         if (operator != null) {

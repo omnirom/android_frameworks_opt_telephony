@@ -44,35 +44,21 @@ import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellLocation;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.Rlog;
 import android.telephony.ServiceState;
+import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.UssdResponse;
-
 import android.telephony.cdma.CdmaCellLocation;
 import android.text.TextUtils;
-import android.telephony.Rlog;
-
 import android.util.Log;
 
 import com.android.ims.ImsManager;
-import static com.android.internal.telephony.CommandsInterface.CF_ACTION_DISABLE;
-import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ENABLE;
-import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ERASURE;
-import static com.android.internal.telephony.CommandsInterface.CF_ACTION_REGISTRATION;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL_CONDITIONAL;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_NO_REPLY;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_NOT_REACHABLE;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_BUSY;
-import static com.android.internal.telephony.CommandsInterface.CF_REASON_UNCONDITIONAL;
-import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
-
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaMmiCode;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
-import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -80,13 +66,13 @@ import com.android.internal.telephony.uicc.IccCardProxy;
 import com.android.internal.telephony.uicc.IccException;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.uicc.IccVmNotSupportedException;
+import com.android.internal.telephony.uicc.IsimRecords;
+import com.android.internal.telephony.uicc.IsimUiccRecords;
 import com.android.internal.telephony.uicc.RuimRecords;
 import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
-import com.android.internal.telephony.uicc.IsimRecords;
-import com.android.internal.telephony.uicc.IsimUiccRecords;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -97,6 +83,17 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_DISABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ENABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ERASURE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_REGISTRATION;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL_CONDITIONAL;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_BUSY;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_NOT_REACHABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_NO_REPLY;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_UNCONDITIONAL;
+import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
 
 /**
  * {@hide}
@@ -160,6 +157,7 @@ public class GsmCdmaPhone extends Phone {
     private ArrayList <MmiCode> mPendingMMIs = new ArrayList<MmiCode>();
     private final Deque<MmiCode> mMMIQueue = new ArrayDeque<MmiCode>(USSD_MAX_QUEUE);
     private IccPhoneBookInterfaceManager mIccPhoneBookIntManager;
+    private DeviceStateMonitor mDeviceStateMonitor;
 
     private int mPrecisePhoneType;
 
@@ -212,6 +210,7 @@ public class GsmCdmaPhone extends Phone {
         // DcTracker uses SST so needs to be created after it is instantiated
         mDcTracker = mTelephonyComponentFactory.makeDcTracker(this);
         mSST.registerForNetworkAttached(this, EVENT_REGISTERED_TO_NETWORK, null);
+        mDeviceStateMonitor = mTelephonyComponentFactory.makeDeviceStateMonitor(this);
         logd("GsmCdmaPhone: constructor: sub = " + mPhoneId);
     }
 
@@ -474,9 +473,8 @@ public class GsmCdmaPhone extends Phone {
                 // get voice mail count from SIM
                 countVoiceMessages = r.getVoiceMessageCount();
             }
-            int countVoiceMessagesStored = getStoredVoiceMessageCount();
-            if (countVoiceMessages == -1 && countVoiceMessagesStored != 0) {
-                countVoiceMessages = countVoiceMessagesStored;
+            if (countVoiceMessages == IccRecords.DEFAULT_VOICE_MESSAGE_COUNT) {
+                countVoiceMessages = getStoredVoiceMessageCount();
             }
             logd("updateVoiceMail countVoiceMessages = " + countVoiceMessages
                     + " subId " + getSubId());
@@ -1140,6 +1138,42 @@ public class GsmCdmaPhone extends Phone {
         } else {
             return dialInternal(dialString, null, videoState, intentExtras);
         }
+    }
+
+    /**
+     * @return {@code true} if the user should be informed of an attempt to dial an international
+     * number while on WFC only, {@code false} otherwise.
+     */
+    public boolean isNotificationOfWfcCallRequired(String dialString) {
+        CarrierConfigManager configManager =
+                (CarrierConfigManager) mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        PersistableBundle config = configManager.getConfigForSubId(getSubId());
+
+        // Determine if carrier config indicates that international calls over WFC should trigger a
+        // notification to the user. This is controlled by carrier configuration and is off by
+        // default.
+        boolean shouldNotifyInternationalCallOnWfc = config != null
+                && config.getBoolean(
+                        CarrierConfigManager.KEY_NOTIFY_INTERNATIONAL_CALL_ON_WFC_BOOL);
+
+        if (!shouldNotifyInternationalCallOnWfc) {
+            return false;
+        }
+
+        Phone imsPhone = mImsPhone;
+        boolean isEmergency = PhoneNumberUtils.isEmergencyNumber(getSubId(), dialString);
+        boolean shouldConfirmCall =
+                        // Using IMS
+                        isImsUseEnabled()
+                        && imsPhone != null
+                        // VoLTE not available
+                        && !imsPhone.isVolteEnabled()
+                        // WFC is available
+                        && imsPhone.isWifiCallingEnabled()
+                        && !isEmergency
+                        // Dialing international number
+                        && PhoneNumberUtils.isInternationalNumber(dialString, getCountryIso());
+        return shouldConfirmCall;
     }
 
     private synchronized boolean addToMMIQueue(MmiCode mmi) {
@@ -2651,7 +2685,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             return false;
         } else {
-            return mSST.getOtasp() != ServiceStateTracker.OTASP_NOT_NEEDED;
+            return mSST.getOtasp() != TelephonyManager.OTASP_NOT_NEEDED;
         }
     }
 
@@ -3254,6 +3288,9 @@ public class GsmCdmaPhone extends Phone {
         }
         pw.flush();
         pw.println("++++++++++++++++++++++++++++++++");
+        pw.println("DeviceStateMonitor:");
+        mDeviceStateMonitor.dump(fd, pw, args);
+        pw.println("++++++++++++++++++++++++++++++++");
     }
 
     @Override
@@ -3322,6 +3359,19 @@ public class GsmCdmaPhone extends Phone {
 
         }
         return operatorNumeric;
+    }
+
+    /**
+     * @return The country ISO for the subscription associated with this phone.
+     */
+    public String getCountryIso() {
+        int subId = getSubId();
+        SubscriptionInfo subInfo = SubscriptionManager.from(getContext())
+                .getActiveSubscriptionInfo(subId);
+        if (subInfo == null) {
+            return null;
+        }
+        return subInfo.getCountryIso().toUpperCase();
     }
 
     public void notifyEcbmTimerReset(Boolean flag) {

@@ -248,20 +248,14 @@ public class RadioResponse extends IRadioResponse.Stub {
      */
     public void getVoiceRegistrationStateResponse(RadioResponseInfo responseInfo,
                                                   VoiceRegStateResult voiceRegResponse) {
-        responseStrings(responseInfo, Integer.toString(voiceRegResponse.regState),
-                Integer.toString(voiceRegResponse.lac), Integer.toString(voiceRegResponse.cid),
-                Integer.toString(voiceRegResponse.rat),
-                Integer.toString(voiceRegResponse.baseStationId),
-                Integer.toString(voiceRegResponse.baseStationLatitude),
-                Integer.toString(voiceRegResponse.baseStationLongitude),
-                Integer.toString(voiceRegResponse.cssSupported ? 1 : 0),
-                Integer.toString(voiceRegResponse.systemId),
-                Integer.toString(voiceRegResponse.networkId),
-                Integer.toString(voiceRegResponse.roamingIndicator),
-                Integer.toString(voiceRegResponse.systemIsInPrl),
-                Integer.toString(voiceRegResponse.defaultRoamingIndicator),
-                Integer.toString(voiceRegResponse.reasonForDenial),
-                Integer.toString(voiceRegResponse.psc));
+        RILRequest rr = mRil.processResponse(responseInfo);
+
+        if (rr != null) {
+            if (responseInfo.error == RadioError.NONE) {
+                sendMessageResponse(rr.mResult, voiceRegResponse);
+            }
+            mRil.processResponseDone(rr, responseInfo, voiceRegResponse);
+        }
     }
 
     /**
@@ -271,16 +265,14 @@ public class RadioResponse extends IRadioResponse.Stub {
      */
     public void getDataRegistrationStateResponse(RadioResponseInfo responseInfo,
                                                  DataRegStateResult dataRegResponse) {
-        responseStrings(responseInfo, Integer.toString(dataRegResponse.regState),
-                Integer.toString(dataRegResponse.lac), Integer.toString(dataRegResponse.cid),
-                Integer.toString(dataRegResponse.rat),
-                Integer.toString(dataRegResponse.reasonDataDenied),
-                Integer.toString(dataRegResponse.maxDataCalls),
-                Integer.toString(dataRegResponse.tac),
-                Integer.toString(dataRegResponse.phyCid),
-                Integer.toString(dataRegResponse.eci),
-                Integer.toString(dataRegResponse.csgid),
-                Integer.toString(dataRegResponse.tadv));
+        RILRequest rr = mRil.processResponse(responseInfo);
+
+        if (rr != null) {
+            if (responseInfo.error == RadioError.NONE) {
+                sendMessageResponse(rr.mResult, dataRegResponse);
+            }
+            mRil.processResponseDone(rr, responseInfo, dataRegResponse);
+        }
     }
 
     /**
@@ -328,9 +320,14 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseSms(responseInfo, sms);
     }
 
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param setupDataCallResult Response to data call setup as defined by setupDataCallResult in
+     *                            types.hal
+     */
     public void setupDataCallResponse(RadioResponseInfo responseInfo,
-                                      SetupDataCallResult dcResponse) {
-        responseSetupDataCall(responseInfo, dcResponse);
+                                      SetupDataCallResult setupDataCallResult) {
+        responseSetupDataCall(responseInfo, setupDataCallResult);
     }
 
     /**
@@ -551,9 +548,14 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseInts(responseInfo, status);
     }
 
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param dataCallResultList Response to get data call list as defined by setupDataCallResult in
+     *                           types.hal
+     */
     public void getDataCallListResponse(RadioResponseInfo responseInfo,
-                                        ArrayList<SetupDataCallResult> dcResponse) {
-        responseDataCallList(responseInfo, dcResponse);
+                                        ArrayList<SetupDataCallResult> dataCallResultList) {
+        responseDataCallList(responseInfo, dataCallResultList);
     }
 
     public void sendOemRilRequestRawResponse(RadioResponseInfo responseInfo,
@@ -1172,9 +1174,19 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseCarrierIdentifiers(responseInfo, allAllowed, carriers);
     }
 
-    public void sendDeviceStateResponse(RadioResponseInfo responseInfo) {}
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     */
+    public void sendDeviceStateResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
 
-    public void setIndicationFilterResponse(RadioResponseInfo responseInfo) {}
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     */
+    public void setIndicationFilterResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
 
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
@@ -1429,13 +1441,12 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     private void responseSetupDataCall(RadioResponseInfo responseInfo,
-                                       SetupDataCallResult dcResponse) {
+                                       SetupDataCallResult setupDataCallResult) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
-            DataCallResponse ret = null;
+            DataCallResponse ret = RIL.convertDataCallResult(setupDataCallResult);
             if (responseInfo.error == RadioError.NONE) {
-                ret = RIL.convertHalDc(dcResponse);
                 sendMessageResponse(rr.mResult, ret);
             }
             mRil.processResponseDone(rr, responseInfo, ret);
@@ -1460,12 +1471,12 @@ public class RadioResponse extends IRadioResponse.Stub {
                                          ArrayList<android.hardware.radio.V1_0.CallForwardInfo>
                                                  callForwardInfos) {
         RILRequest rr = mRil.processResponse(responseInfo);
-
         if (rr != null) {
             CallForwardInfo[] ret = null;
             if (responseInfo.error == RadioError.NONE) {
                 ret = new CallForwardInfo[callForwardInfos.size()];
                 for (int i = 0; i < callForwardInfos.size(); i++) {
+                    ret[i] = new CallForwardInfo();
                     ret[i].status = callForwardInfos.get(i).status;
                     ret[i].reason = callForwardInfos.get(i).reason;
                     ret[i].serviceClass = callForwardInfos.get(i).serviceClass;
@@ -1479,7 +1490,7 @@ public class RadioResponse extends IRadioResponse.Stub {
         }
     }
 
-    private String convertOpertatorInfoToString(int status) {
+    private static String convertOpertatorInfoToString(int status) {
         if (status == android.hardware.radio.V1_0.OperatorStatus.UNKNOWN) {
             return "unknown";
         } else if (status == android.hardware.radio.V1_0.OperatorStatus.AVAILABLE) {
@@ -1514,16 +1525,19 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     private void responseDataCallList(RadioResponseInfo responseInfo,
-                                      ArrayList<SetupDataCallResult> dcResponse) {
+                                      ArrayList<SetupDataCallResult> dataCallResultList) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
-            ArrayList<DataCallResponse> ret = null;
+            ArrayList<DataCallResponse> dcResponseList = null;
             if (responseInfo.error == RadioError.NONE) {
-                ret = RIL.convertHalDcList(dcResponse);
-                sendMessageResponse(rr.mResult, ret);
+                dcResponseList = new ArrayList<>();
+                for (SetupDataCallResult dcResult : dataCallResultList) {
+                    dcResponseList.add(RIL.convertDataCallResult(dcResult));
+                }
+                sendMessageResponse(rr.mResult, dcResponseList);
             }
-            mRil.processResponseDone(rr, responseInfo, ret);
+            mRil.processResponseDone(rr, responseInfo, dcResponseList);
         }
     }
 

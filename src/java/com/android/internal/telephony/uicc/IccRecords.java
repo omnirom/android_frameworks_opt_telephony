@@ -25,7 +25,6 @@ import android.os.RegistrantList;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.TelephonyManager;
-import android.text.TextUtils;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
@@ -34,7 +33,9 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * {@hide}
@@ -97,6 +98,13 @@ public abstract class IccRecords extends Handler implements IccConstants {
 
     private final Object mLock = new Object();
 
+    //Arbitrary offset for the Handler
+    protected static final int HANDLER_ACTION_BASE = 0x12E500;
+    protected static final int HANDLER_ACTION_NONE = HANDLER_ACTION_BASE + 0;
+    protected static final int HANDLER_ACTION_SEND_RESPONSE = HANDLER_ACTION_BASE + 1;
+    protected static AtomicInteger sNextRequestId = new AtomicInteger(1);
+    protected final HashMap<Integer, Message> mPendingResponses = new HashMap<>();
+
     // ***** Constants
 
     // Markers for mncLength
@@ -119,6 +127,9 @@ public abstract class IccRecords extends Handler implements IccConstants {
     public static final int CALL_FORWARDING_STATUS_DISABLED = 0;
     public static final int CALL_FORWARDING_STATUS_ENABLED = 1;
     public static final int CALL_FORWARDING_STATUS_UNKNOWN = -1;
+
+    public static final int DEFAULT_VOICE_MESSAGE_COUNT = -2;
+    public static final int UNKNOWN_VOICE_MESSAGE_COUNT = -1;
 
     @Override
     public String toString() {
@@ -202,6 +213,28 @@ public abstract class IccRecords extends Handler implements IccConstants {
     //***** Public Methods
     public AdnRecordCache getAdnCache() {
         return mAdnCache;
+    }
+
+    /**
+     * Adds a message to the pending requests list by generating a unique
+     * (integer) hash key and returning it. The message should never be null.
+     */
+    public int storePendingResponseMessage(Message msg) {
+        int key = sNextRequestId.getAndIncrement();
+        synchronized (mPendingResponses) {
+            mPendingResponses.put(key, msg);
+        }
+        return key;
+    }
+
+    /**
+     * Returns the pending request, if any or null
+     */
+    public Message retrievePendingResponseMessage(Integer key) {
+        Message m;
+        synchronized (mPendingResponses) {
+            return mPendingResponses.remove(key);
+        }
     }
 
     /**

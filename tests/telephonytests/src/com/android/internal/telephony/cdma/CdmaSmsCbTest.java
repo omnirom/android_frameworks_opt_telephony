@@ -18,7 +18,7 @@ package com.android.internal.telephony.cdma;
 
 import android.hardware.radio.V1_0.CdmaSmsMessage;
 import android.os.Parcel;
-import android.platform.test.annotations.Postsubmit;
+import android.support.test.filters.FlakyTest;
 import android.telephony.SmsCbCmasInfo;
 import android.telephony.SmsCbMessage;
 import android.telephony.cdma.CdmaSmsCbProgramData;
@@ -27,6 +27,7 @@ import android.telephony.Rlog;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.internal.telephony.GsmAlphabet;
+import com.android.internal.telephony.cdma.SmsMessageConverter;
 import com.android.internal.telephony.cdma.sms.BearerData;
 import com.android.internal.telephony.cdma.sms.CdmaSmsAddress;
 import com.android.internal.telephony.cdma.sms.SmsEnvelope;
@@ -121,7 +122,7 @@ public class CdmaSmsCbTest extends AndroidTestCase {
         for (byte b : bearerData) {
             msg.bearerData.add(b);
         }
-        SmsMessage message = SmsMessage.newFromRil(msg);
+        SmsMessage message = SmsMessageConverter.newCdmaSmsMessageFromRil(msg);
         return message;
     }
 
@@ -480,6 +481,7 @@ public class CdmaSmsCbTest extends AndroidTestCase {
 
     // VZW requirement is to discard message with unsupported charset. Verify that we return null
     // for this unsupported character set.
+    @FlakyTest
     @Test @SmallTest
     public void testCmasUnsupportedCharSet() throws Exception {
         SmsMessage msg = createCmasSmsMessage(SmsEnvelope.SERVICE_CATEGORY_CMAS_EXTREME_THREAT,

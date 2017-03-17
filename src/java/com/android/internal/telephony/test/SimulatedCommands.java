@@ -16,6 +16,8 @@
 
 package com.android.internal.telephony.test;
 
+import android.hardware.radio.V1_0.DataRegStateResult;
+import android.hardware.radio.V1_0.VoiceRegStateResult;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -916,10 +918,10 @@ public class SimulatedCommands extends BaseCommands
     @Override
     public void getVoiceRegistrationState(Message result) {
         mGetVoiceRegistrationStateCallCount.incrementAndGet();
-        String ret[] = new String[14];
 
-        ret[0] = Integer.toString(mVoiceRegState);
-        ret[3] = Integer.toString(mVoiceRadioTech);
+        VoiceRegStateResult ret = new VoiceRegStateResult();
+        ret.regState = mVoiceRegState;
+        ret.rat = mVoiceRadioTech;
 
         resultSuccess(result, ret);
     }
@@ -942,10 +944,10 @@ public class SimulatedCommands extends BaseCommands
     @Override
     public void getDataRegistrationState (Message result) {
         mGetDataRegistrationStateCallCount.incrementAndGet();
-        String ret[] = new String[11];
 
-        ret[0] = Integer.toString(mDataRegState);
-        ret[3] = Integer.toString(mDataRadioTech);
+        DataRegStateResult ret = new DataRegStateResult();
+        ret.regState = mDataRegState;
+        ret.rat = mDataRadioTech;
 
         resultSuccess(result, ret);
     }
@@ -1086,26 +1088,15 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
-    public void setupDataCall(int radioTechnology, int profile,
-            String apn, String user, String password, int authType,
-            String protocol, Message result) {
-        SimulatedCommandsVerifier.getInstance().setupDataCall(radioTechnology, profile, apn, user,
-                password, authType, protocol, result);
+    public void setupDataCall(int radioTechnology, DataProfile dataProfile, boolean isRoaming,
+                              boolean allowRoaming, Message result) {
+
+        SimulatedCommandsVerifier.getInstance().setupDataCall(radioTechnology, dataProfile,
+                isRoaming, allowRoaming, result);
 
         if (mDcResponse == null) {
-            mDcResponse = new DataCallResponse();
-            mDcResponse.version = 11;
-            mDcResponse.status = 0;
-            mDcResponse.suggestedRetryTime = -1;
-            mDcResponse.cid = 1;
-            mDcResponse.active = 2;
-            mDcResponse.type = "IP";
-            mDcResponse.ifname = "rmnet_data7";
-            mDcResponse.mtu = 1440;
-            mDcResponse.addresses = new String[]{"12.34.56.78"};
-            mDcResponse.dnses = new String[]{"98.76.54.32"};
-            mDcResponse.gateways = new String[]{"11.22.33.44"};
-            mDcResponse.pcscf = new String[]{};
+            mDcResponse = new DataCallResponse(0, -1, 1, 2, "IP", "rmnet_data7",
+                    "12.34.56.78", "98.76.54.32", "11.22.33.44", "", 1440);
         }
 
         if (mDcSuccess) {
@@ -1837,12 +1828,11 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
-    public void setInitialAttachApn(String apn, String protocol, int authType, String username,
-            String password, Message result) {
+    public void setInitialAttachApn(DataProfile dataProfile, boolean isRoaming, Message result) {
     }
 
     @Override
-    public void setDataProfile(DataProfile[] dps, Message result) {
+    public void setDataProfile(DataProfile[] dps, boolean isRoaming, Message result) {
     }
 
     public void setImsRegistrationState(int[] regState) {
@@ -2100,6 +2090,18 @@ public class SimulatedCommands extends BaseCommands
 
     @Override
     public void unregisterForPcoData(Handler h) {
+    }
+
+    @Override
+    public void sendDeviceState(int stateType, boolean state, Message result) {
+        SimulatedCommandsVerifier.getInstance().sendDeviceState(stateType, state, result);
+        resultSuccess(result, null);
+    }
+
+    @Override
+    public void setUnsolResponseFilter(int filter, Message result) {
+        SimulatedCommandsVerifier.getInstance().setUnsolResponseFilter(filter, result);
+        resultSuccess(result, null);
     }
 
     @Override
