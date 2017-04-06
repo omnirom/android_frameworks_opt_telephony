@@ -2465,6 +2465,8 @@ public class DcTracker extends Handler {
         cleanUpAllConnections(true, Phone.REASON_SIM_NOT_READY);
         mAllApnSettings = null;
         mAutoAttachOnCreationConfig = false;
+        // Clear auto attach as modem is expected to do a new attach once SIM is ready
+        mAutoAttachOnCreation.set(false);
     }
 
     private void onSetDependencyMet(String apnType, boolean met) {
@@ -2802,9 +2804,11 @@ public class DcTracker extends Handler {
     private void onRoamingOff() {
         if (DBG) log("onRoamingOff");
 
-        // TODO: Remove this once all old vendor RILs are gone. We don't need to send the
-        // data profile again as the modem should have both roaming and non-roaming protocol in
-        // place. Modem should choose the right protocol based on roaming condition.
+        // TODO: Remove this once all old vendor RILs are gone. We don't need to set initial apn
+        // attach and send the data profile again as the modem should have both roaming and
+        // non-roaming protocol in place. Modem should choose the right protocol based on the
+        // roaming condition.
+        setInitialAttachApn();
         setDataProfilesAsNeeded();
 
         if (!mDataEnabledSettings.isUserDataEnabled()) return;
@@ -2820,9 +2824,11 @@ public class DcTracker extends Handler {
     private void onRoamingOn() {
         if (DBG) log("onRoamingOn");
 
-        // TODO: Remove this once all old vendor RILs are gone. We don't need to send the
-        // data profile again as the modem should have both roaming and non-roaming protocol in
-        // place. Modem should choose the right protocol based on roaming condition.
+        // TODO: Remove this once all old vendor RILs are gone. We don't need to set initial apn
+        // attach and send the data profile again as the modem should have both roaming and
+        // non-roaming protocol in place. Modem should choose the right protocol based on the
+        // roaming condition.
+        setInitialAttachApn();
         setDataProfilesAsNeeded();
 
         if (!mDataEnabledSettings.isUserDataEnabled()) {
@@ -2873,6 +2879,9 @@ public class DcTracker extends Handler {
         // next time the radio comes on
 
         mReregisterOnReconnectFailure = false;
+
+        // Clear auto attach as modem is expected to do a new attach
+        mAutoAttachOnCreation.set(false);
 
         if (mPhone.getSimulatedRadioControl() != null) {
             // Assume data is connected on the simulator

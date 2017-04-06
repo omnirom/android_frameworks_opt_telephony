@@ -161,9 +161,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     // If there is an active call.
                     if (mForegroundCall.hasConnections()) {
                         ImsCall activeCall = mForegroundCall.getFirstConnection().getImsCall();
-                        boolean answeringWillDisconnect =
-                                shouldDisconnectActiveCallOnAnswer(activeCall, imsCall);
-                        conn.setActiveCallDisconnectedOnAnswer(answeringWillDisconnect);
+                        if (activeCall != null && imsCall != null) {
+                            // activeCall could be null if the foreground call is in a disconnected
+                            // state.  If either of the calls is null there is no need to check if
+                            // one will be disconnected on answer.
+                            boolean answeringWillDisconnect =
+                                    shouldDisconnectActiveCallOnAnswer(activeCall, imsCall);
+                            conn.setActiveCallDisconnectedOnAnswer(answeringWillDisconnect);
+                        }
                     }
                     conn.setAllowAddCallDuringVideoCall(mAllowAddCallDuringVideoCall);
                     addConnection(conn);
@@ -217,13 +222,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private static final int EVENT_DATA_ENABLED_CHANGED = 23;
     private static final int EVENT_GET_IMS_SERVICE = 24;
     private static final int EVENT_CHECK_FOR_WIFI_HANDOVER = 25;
-    private static final int EVENT_CLEAR_DISCONNECTING_CONN = 26;
 
     private static final int TIMEOUT_HANGUP_PENDINGMO = 500;
-
-    // The number of milliseconds the CallTracker will wait before manually disconnecting the
-    // connection due to the modem not responding.
-    private static final int TIMEOUT_CLEAR_DISCONNECTING_CONN = 5000;
 
     // Initial condition for ims connection retry.
     private static final int IMS_RETRY_STARTING_TIMEOUT_MS = 500; // ms
@@ -1360,8 +1360,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
 
         ImsCall imsCall = call.getImsCall();
-        // Get first connection that is associated with imsCall.
-        ImsPhoneConnection imsPhoneConnection = call.getFirstConnection();
         boolean rejectCall = false;
 
         if (call == mRingingCall) {
@@ -1388,12 +1386,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
 
         call.onHangupLocal();
-        // Schedule a cleaning event for the ImsPhoneCall. If the modem has not responded in
-        // TIMEOUT_CLEAR_DISCONNECTING_CONN milliseconds, manually disconnect the connection.
-        if (!hasMessages(EVENT_CLEAR_DISCONNECTING_CONN, imsPhoneConnection)) {
-            sendMessageDelayed(obtainMessage(EVENT_CLEAR_DISCONNECTING_CONN, imsPhoneConnection),
-                    TIMEOUT_CLEAR_DISCONNECTING_CONN);
-        }
 
         try {
             if (imsCall != null) {
@@ -2706,20 +2698,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     }
                 }
                 break;
-            case EVENT_CLEAR_DISCONNECTING_CONN:
-                if (msg.obj instanceof ImsPhoneConnection) {
-                    ImsPhoneConnection imsPhoneConnection = (ImsPhoneConnection) msg.obj;
-                    removeMessages(EVENT_CLEAR_DISCONNECTING_CONN, imsPhoneConnection);
-
-                    // We have timed out waiting for the modem while disconnecting this connection.
-                    // Manually disconnect to avoid tracking an invalid call.
-                    if (imsPhoneConnection != null && imsPhoneConnection.isDisconnecting()) {
-                        Rlog.e(LOG_TAG, "No response from modem. Manually disconnecting: " +
-                                imsPhoneConnection);
-                        imsPhoneConnection.onDisconnect();
-                    }
-                }
-                break;
         }
     }
 
@@ -2999,6 +2977,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
      */
     private boolean shouldDisconnectActiveCallOnAnswer(ImsCall activeCall,
             ImsCall incomingCall) {
+
+        if (activeCall == null || incomingCall == null) {
+            return false;
+        }
 
         if (!mDropVideoCallWhenAnsweringAudioCall) {
             return false;
