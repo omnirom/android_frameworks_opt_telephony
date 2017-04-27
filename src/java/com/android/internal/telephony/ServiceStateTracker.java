@@ -3283,7 +3283,8 @@ public class ServiceStateTracker extends Handler {
      */
     private boolean isOperatorConsideredNonRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = mPhone.getContext().getResources().getStringArray(
+        String[] numericArray = SubscriptionManager.getResourcesForSubId(
+                mPhone.getContext(), mPhone.getSubId()).getStringArray(
                 com.android.internal.R.array.config_operatorConsideredNonRoaming);
 
         if (numericArray.length == 0 || operatorNumeric == null) {
@@ -3300,7 +3301,8 @@ public class ServiceStateTracker extends Handler {
 
     private boolean isOperatorConsideredRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = mPhone.getContext().getResources().getStringArray(
+        String[] numericArray = SubscriptionManager.getResourcesForSubId(
+                mPhone.getContext(), mPhone.getSubId()).getStringArray(
                 com.android.internal.R.array.config_sameNamedOperatorConsideredRoaming);
 
         if (numericArray.length == 0 || operatorNumeric == null) {
