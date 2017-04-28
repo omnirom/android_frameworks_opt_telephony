@@ -16,6 +16,9 @@
 
 package com.android.internal.telephony;
 
+import static android.provider.Telephony.ServiceStateTable.getContentValuesForServiceState;
+import static android.provider.Telephony.ServiceStateTable.getUriForSubscriptionId;
+
 import static com.android.internal.telephony.CarrierActionAgent.CARRIER_ACTION_SET_RADIO_ENABLED;
 
 import android.app.AlarmManager;
@@ -83,6 +86,7 @@ import com.android.internal.telephony.uicc.RuimRecords;
 import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
+import com.android.internal.telephony.util.TelephonyNotificationBuilder;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
@@ -2529,11 +2533,11 @@ public class ServiceStateTracker extends Handler {
                 setSignalStrengthDefaultValues();
                 mGotCountryCode = false;
                 mNitzUpdatedTime = false;
-                // don't poll for state when the radio is off
-                // EXCEPT, if the poll was modemTrigged (they sent us new radio data)
-                // or we're on IWLAN
-                if (!modemTriggered && ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
-                        != mSS.getRilDataRadioTechnology()) {
+                // don't poll when device is shutting down or the poll was not modemTrigged
+                // (they sent us new radio data) and current network is not IWLAN
+                if (mDeviceShuttingDown ||
+                        (!modemTriggered && ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
+                        != mSS.getRilDataRadioTechnology())) {
                     pollStateDone();
                     break;
                 }
@@ -2842,7 +2846,13 @@ public class ServiceStateTracker extends Handler {
 
             setRoamingType(mSS);
             log("Broadcasting ServiceState : " + mSS);
+            // notify using PhoneStateListener and the legacy intent ACTION_SERVICE_STATE_CHANGED
             mPhone.notifyServiceStateChanged(mSS);
+
+            // insert into ServiceStateProvider. This will trigger apps to wake through JobScheduler
+            mPhone.getContext().getContentResolver()
+                    .insert(getUriForSubscriptionId(mPhone.getSubId()),
+                            getContentValuesForServiceState(mSS));
 
             TelephonyMetrics.getInstance().writeServiceStateChanged(mPhone.getPhoneId(), mSS);
         }
@@ -3847,7 +3857,7 @@ public class ServiceStateTracker extends Handler {
                     + ", title: " + title + ", details: " + details);
         }
 
-        mNotification = new Notification.Builder(context)
+        mNotification = new TelephonyNotificationBuilder(context)
                 .setWhen(System.currentTimeMillis())
                 .setAutoCancel(true)
                 .setSmallIcon(icon)
@@ -3856,6 +3866,7 @@ public class ServiceStateTracker extends Handler {
                         com.android.internal.R.color.system_notification_accent_color))
                 .setContentTitle(title)
                 .setContentText(details)
+                .setChannel(TelephonyNotificationBuilder.CHANNEL_ID_ALERT)
                 .build();
 
         NotificationManager notificationManager = (NotificationManager)
