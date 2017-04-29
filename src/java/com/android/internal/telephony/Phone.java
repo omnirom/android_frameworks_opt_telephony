@@ -1298,7 +1298,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * automatic selection, all depending upon the value in the shared
      * preferences.
      */
-    private void restoreSavedNetworkSelection(Message response) {
+    protected void restoreSavedNetworkSelection(Message response) {
         // retrieve the operator
         OperatorInfo networkSelection = getSavedNetworkSelection();
 
