@@ -1581,16 +1581,6 @@ public class DcTracker extends Handler {
                 !(ApnSetting.isMeteredApnType(apnContext.getApnType(), mPhone.getContext(),
                 mPhone.getSubId(), mPhone.getServiceState().getDataRoaming())));
 
-        if (apnContext.getApnType().equals(PhoneConstants.APN_TYPE_MMS)) {
-            CarrierConfigManager configManager = (CarrierConfigManager)mPhone.getContext().
-                    getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            PersistableBundle pb = configManager.getConfigForSubId(mPhone.getSubId());
-            if (pb != null) {
-                checkUserDataEnabled = checkUserDataEnabled &&
-                        !(pb.getBoolean("config_enable_mms_with_mobile_data_off"));
-            }
-        }
-
         if (apnContext.isConnectable() && (isEmergencyApn ||
                 (isDataAllowed && isDataAllowedForApn(apnContext) &&
                         mDataEnabledSettings.isDataEnabled(checkUserDataEnabled) && !isEmergency()))) {
