@@ -70,6 +70,7 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccFileHandler;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.uicc.IsimRecords;
+import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
@@ -3657,6 +3658,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void setCallForwardingOption(int commandInterfaceCFReason,
             int commandInterfaceCFAction, String dialingNumber,
             int commandInterfaceServiceClass, int timerSeconds, Message onComplete) {
+    }
+
+    public SIMRecords getSIMRecords() {
+        return null;
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
