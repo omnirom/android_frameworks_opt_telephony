@@ -38,7 +38,6 @@ import android.os.PowerManager.WakeLock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 
-import android.provider.Telephony;
 import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
 import android.telephony.PhoneNumberUtils;
@@ -55,7 +54,6 @@ import com.android.ims.ImsEcbm;
 import com.android.ims.ImsEcbmStateListener;
 import com.android.ims.ImsException;
 import com.android.ims.ImsManager;
-import com.android.ims.ImsMultiEndpoint;
 import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsSsInfo;
 import com.android.ims.ImsUtInterface;
@@ -101,7 +99,7 @@ import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.uicc.IccRecords;
-import com.android.internal.telephony.util.TelephonyNotificationBuilder;
+import com.android.internal.telephony.util.NotificationChannelController;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -139,9 +137,6 @@ public class ImsPhone extends ImsPhoneBase {
     ImsPhoneCallTracker mCT;
     ImsExternalCallTracker mExternalCallTracker;
     private ArrayList <ImsPhoneMmiCode> mPendingMMIs = new ArrayList<ImsPhoneMmiCode>();
-    private final Deque<ImsPhoneMmiCode> mMMIQueue =
-            new ArrayDeque<ImsPhoneMmiCode>(USSD_MAX_QUEUE);
-
     private ServiceState mSS = new ServiceState();
 
     // To redial silently through GSM or CDMA when dialing through IMS fails
@@ -375,10 +370,6 @@ public class ImsPhone extends ImsPhoneBase {
         return true;
     }
 
-    private synchronized boolean isMmiQueueFull() {
-        return (mMMIQueue.size() >= USSD_MAX_QUEUE - 1);
-    }
-
     private void sendUssdResponse(String ussdRequest, CharSequence message, int returnCode,
                                    ResultReceiver wrappedCallback) {
         UssdResponse response = new UssdResponse(ussdRequest, message);
@@ -389,17 +380,29 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
-    public boolean handleUssdRequest(String ussdRequest, ResultReceiver wrappedCallback) {
-        if (isMmiQueueFull()) {
-            //todo: replace the generic failure with specific error code.
+    public boolean handleUssdRequest(String ussdRequest, ResultReceiver wrappedCallback)
+            throws CallStateException {
+        if (mPendingMMIs.size() > 0) {
+            // There are MMI codes in progress; fail attempt now.
+            Rlog.i(LOG_TAG, "handleUssdRequest: queue full: " + Rlog.pii(LOG_TAG, ussdRequest));
             sendUssdResponse(ussdRequest, null, TelephonyManager.USSD_RETURN_FAILURE,
                     wrappedCallback );
             return true;
         }
         try {
             dialInternal(ussdRequest, VideoProfile.STATE_AUDIO_ONLY, null, wrappedCallback);
+        } catch (CallStateException cse) {
+            if (CS_FALLBACK.equals(cse.getMessage())) {
+                throw cse;
+            } else {
+                Rlog.w(LOG_TAG, "Could not execute USSD " + cse);
+                sendUssdResponse(ussdRequest, null, TelephonyManager.USSD_RETURN_FAILURE,
+                        wrappedCallback);
+            }
         } catch (Exception e) {
-            Rlog.d(LOG_TAG, "exception" + e);
+            Rlog.w(LOG_TAG, "Could not execute USSD " + e);
+            sendUssdResponse(ussdRequest, null, TelephonyManager.USSD_RETURN_FAILURE,
+                    wrappedCallback);
             return false;
         }
         return true;
@@ -580,16 +583,6 @@ public class ImsPhone extends ImsPhoneBase {
         mDefaultPhone.notifyForVideoCapabilityChanged(isVideoCapable);
     }
 
-    protected synchronized boolean addToMMIQueue(ImsPhoneMmiCode mmi) {
-        if (mPendingMMIs.size() >= 1) {
-            mMMIQueue.offerLast(mmi);
-            return true;
-        }
-        mPendingMMIs.add(mmi);
-        mMmiRegistrants.notifyRegistrants(new AsyncResult(null, mmi, null));
-        return false;
-    }
-
     @Override
     public Connection
     dial(String dialString, int videoState) throws CallStateException {
@@ -627,9 +620,9 @@ public class ImsPhone extends ImsPhoneBase {
         // Only look at the Network portion for mmi
         String networkPortion = PhoneNumberUtils.extractNetworkPortionAlt(newDialString);
         ImsPhoneMmiCode mmi =
-                ImsPhoneMmiCode.newFromDialString(networkPortion, this);
+                ImsPhoneMmiCode.newFromDialString(networkPortion, this, wrappedCallback);
         if (DBG) Rlog.d(LOG_TAG,
-                "dialing w/ mmi '" + mmi + "'...");
+                "dialInternal: dialing w/ mmi '" + mmi + "'...");
 
         if (mmi == null) {
             return mCT.dial(dialString, videoState, intentExtras);
@@ -638,24 +631,29 @@ public class ImsPhone extends ImsPhoneBase {
         } else if (!mmi.isSupportedOverImsPhone()) {
             // If the mmi is not supported by IMS service,
             // try to initiate dialing with default phone
+            // Note: This code is never reached; there is a bug in isSupportedOverImsPhone which
+            // causes it to return true even though the "processCode" method ultimately throws the
+            // exception.
+            Rlog.i(LOG_TAG, "dialInternal: USSD not supported by IMS; fallback to CS.");
             throw new CallStateException(CS_FALLBACK);
         } else {
-            return dialInternal(mmi);
-        }
-    }
+            mPendingMMIs.add(mmi);
+            mMmiRegistrants.notifyRegistrants(new AsyncResult(null, mmi, null));
 
-    protected Connection dialInternal(ImsPhoneMmiCode mmi) {
-        if (addToMMIQueue(mmi)) {
+            try {
+                mmi.processCode();
+            } catch (CallStateException cse) {
+                if (CS_FALLBACK.equals(cse.getMessage())) {
+                    Rlog.i(LOG_TAG, "dialInternal: fallback to GSM required.");
+                    // Make sure we remove from the list of pending MMIs since it will handover to
+                    // GSM.
+                    mPendingMMIs.remove(mmi);
+                    throw cse;
+                }
+            }
+
             return null;
         }
-        try {
-            mmi.processCode();
-        } catch (CallStateException e) {
-            //do nothing
-        }
-
-        // FIXME should this return null or something else?
-        return null;
     }
 
     @Override
@@ -1010,8 +1008,8 @@ public class ImsPhone extends ImsPhoneBase {
         }
     }
 
-    /* package */
-    void sendErrorResponse(Message onComplete, Throwable e) {
+    @VisibleForTesting
+    public void sendErrorResponse(Message onComplete, Throwable e) {
         Rlog.d(LOG_TAG, "sendErrorResponse");
         if (onComplete != null) {
             AsyncResult.forMessage(onComplete, null, getCommandException(e));
@@ -1099,15 +1097,6 @@ public class ImsPhone extends ImsPhoneBase {
                         isUssdRequest,
                         this);
                 onNetworkInitiatedUssd(mmi);
-        } else {
-            if (mMMIQueue.peek() != null) {
-                try {
-
-                    dialInternal(mMMIQueue.remove());
-                } catch (Exception e) {
-                    Rlog.d(LOG_TAG,"Exception:" + e);
-                }
-            }
         }
     }
 
@@ -1568,8 +1557,7 @@ public class ImsPhone extends ImsPhoneBase {
                                 PendingIntent.FLAG_UPDATE_CURRENT
                         );
 
-                final Notification notification =
-                        new TelephonyNotificationBuilder(mContext)
+                final Notification notification = new Notification.Builder(mContext)
                                 .setSmallIcon(android.R.drawable.stat_sys_warning)
                                 .setContentTitle(title)
                                 .setContentText(messageNotification)
@@ -1577,7 +1565,7 @@ public class ImsPhone extends ImsPhoneBase {
                                 .setContentIntent(resultPendingIntent)
                                 .setStyle(new Notification.BigTextStyle()
                                 .bigText(messageNotification))
-                                .setChannelId(TelephonyNotificationBuilder.CHANNEL_ID_WFC)
+                                .setChannelId(NotificationChannelController.CHANNEL_ID_WFC)
                                 .build();
                 final String notificationTag = "wifi_calling";
                 final int notificationId = 1;
