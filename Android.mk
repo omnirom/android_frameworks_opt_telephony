@@ -27,7 +27,8 @@ LOCAL_SRC_FILES := $(call all-java-files-under, src/java) \
 
 LOCAL_JAVA_LIBRARIES := voip-common ims-common
 LOCAL_STATIC_JAVA_LIBRARIES := android.hardware.radio-V1.0-java-static \
-    android.hardware.radio.deprecated-V1.0-java-static
+    android.hardware.radio.deprecated-V1.0-java-static \
+    ims-ext-common
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := telephony-common
 LOCAL_PROTOC_OPTIMIZE_TYPE := nano
