@@ -19,15 +19,18 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.ContentObserver;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Registrant;
 import android.os.RegistrantList;
+import android.provider.Settings;
 import android.telephony.Rlog;
 import android.util.LocalLog;
 import android.util.Log;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -65,25 +68,46 @@ public class CarrierActionAgent extends Handler {
     /** carrier actions, true by default */
     private Boolean mCarrierActionOnMeteredApnEnabled = true;
     private Boolean mCarrierActionOnRadioEnabled = true;
+    /** content observer for APM change */
+    private final SettingsObserver mSettingsObserver;
 
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             final String action = intent.getAction();
+            final String iccState = intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE);
             if (TelephonyIntents.ACTION_SIM_STATE_CHANGED.equals(action)){
-                if (IccCardConstants.INTENT_VALUE_ICC_LOADED.equals(
-                        intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE))) {
+                if (IccCardConstants.INTENT_VALUE_ICC_LOADED.equals(iccState) ||
+                        IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(iccState)) {
                     sendEmptyMessage(CARRIER_ACTION_RESET);
                 }
             }
         }
     };
 
+    private class SettingsObserver extends ContentObserver {
+        SettingsObserver() {
+            super(null);
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            if (Settings.Global.getInt(mPhone.getContext().getContentResolver(),
+                    Settings.Global.AIRPLANE_MODE_ON, 0) != 0) {
+                sendEmptyMessage(CARRIER_ACTION_RESET);
+            }
+        }
+    }
+
     /** Constructor */
     public CarrierActionAgent(Phone phone) {
         mPhone = phone;
         mPhone.getContext().registerReceiver(mReceiver,
                 new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED));
+        mSettingsObserver = new SettingsObserver();
+        mPhone.getContext().getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.AIRPLANE_MODE_ON),
+                false, mSettingsObserver);
         if (DBG) log("Creating CarrierActionAgent");
     }
 
@@ -109,6 +133,9 @@ public class CarrierActionAgent extends Handler {
                 log("CARRIER_ACTION_RESET");
                 carrierActionSetMeteredApnsEnabled(true);
                 carrierActionSetRadioEnabled(true);
+                // notify configured carrier apps for reset
+                mPhone.getCarrierSignalAgent().notifyCarrierSignalReceivers(
+                        new Intent(TelephonyIntents.ACTION_CARRIER_SIGNAL_RESET));
                 break;
             default:
                 loge("Unknown carrier action: " + msg.what);
@@ -194,6 +221,11 @@ public class CarrierActionAgent extends Handler {
             throw new IllegalArgumentException("invalid carrier action: " + action);
         }
         list.remove(h);
+    }
+
+    @VisibleForTesting
+    public ContentObserver getContentObserver() {
+        return mSettingsObserver;
     }
 
     private void log(String s) {

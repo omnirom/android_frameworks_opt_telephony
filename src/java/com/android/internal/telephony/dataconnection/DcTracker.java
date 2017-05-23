@@ -909,8 +909,7 @@ public class DcTracker extends Handler {
                     Settings.Global.putInt(mResolver, Settings.Global.MOBILE_DATA + phoneSubId,
                             enabled ? 1 : 0);
                 }
-                if (getDataOnRoamingEnabled() == false &&
-                        mPhone.getServiceState().getDataRoaming() == true) {
+                if (!getDataRoamingEnabled() && mPhone.getServiceState().getDataRoaming()) {
                     if (enabled) {
                         notifyOffApnsOfAvailability(Phone.REASON_ROAMING_ON);
                     } else {
@@ -921,7 +920,7 @@ public class DcTracker extends Handler {
                 // TODO: We should register for DataEnabledSetting's data enabled/disabled event and
                 // handle the rest from there.
                 if (enabled) {
-                    teardownRestrictedMeteredConnections();
+                    reevaluateDataConnections();
                     onTrySetupData(Phone.REASON_DATA_ENABLED);
                 } else {
                     onCleanUpAllConnections(Phone.REASON_DATA_SPECIFIC_DISABLED);
@@ -931,33 +930,49 @@ public class DcTracker extends Handler {
     }
 
     /**
-     * Handle reverting restricted networks back to unrestricted.
-     * If we're changing user data to enabled and this makes data
-     * truely enabled (not disabled by other factors) we need to
-     * tear down any metered apn type that was enabled anyway by
-     * a privileged request.  This allows us to reconnect
-     * to it in an unrestricted way.
+     * Reevaluate existing data connections when conditions change.
+     *
+     * For example, handle reverting restricted networks back to unrestricted. If we're changing
+     * user data to enabled and this makes data truly enabled (not disabled by other factors) we
+     * need to tear down any metered apn type that was enabled anyway by a privileged request.
+     * This allows us to reconnect to it in an unrestricted way.
+     *
+     * Or when we brought up a unmetered data connection while data is off, we only limit this
+     * data connection for unmetered use only. When data is turned back on, we need to tear that
+     * down so a full capable data connection can be re-established.
      */
-    private void teardownRestrictedMeteredConnections() {
-        if (mDataEnabledSettings.isDataEnabled(true)) {
+    private void reevaluateDataConnections() {
+        if (mDataEnabledSettings.isDataEnabled()) {
             for (ApnContext apnContext : mApnContexts.values()) {
-                if (apnContext.isConnectedOrConnecting() &&
-                        apnContext.getApnSetting().isMetered(mPhone.getContext(),
-                        mPhone.getSubId(), mPhone.getServiceState().getDataRoaming())) {
-
-                    final DcAsyncChannel dataConnectionAc = apnContext.getDcAc();
-                    if (dataConnectionAc != null) {
-                        final NetworkCapabilities nc =
-                                dataConnectionAc.getNetworkCapabilitiesSync();
-                        if (nc != null && nc.hasCapability(NetworkCapabilities.
-                              NET_CAPABILITY_NOT_RESTRICTED)) {
-                            if (DBG) log("not tearing down unrestricted metered net:" + apnContext);
-                            continue;
+                if (apnContext.isConnectedOrConnecting()) {
+                    final DcAsyncChannel dcac = apnContext.getDcAc();
+                    if (dcac != null) {
+                        final NetworkCapabilities netCaps = dcac.getNetworkCapabilitiesSync();
+                        if (netCaps != null && !netCaps.hasCapability(NetworkCapabilities
+                                .NET_CAPABILITY_NOT_RESTRICTED)) {
+                            if (DBG) {
+                                log("Tearing down restricted net:" + apnContext);
+                            }
+                            // Tearing down the restricted data call (metered or unmetered) when
+                            // conditions change. This will allow reestablishing a new unrestricted
+                            // data connection.
+                            apnContext.setReason(Phone.REASON_DATA_ENABLED);
+                            cleanUpConnection(true, apnContext);
+                        } else if (apnContext.getApnSetting().isMetered(mPhone.getContext(),
+                                mPhone.getSubId(), mPhone.getServiceState().getDataRoaming())
+                                && (netCaps != null && netCaps.hasCapability(
+                                        NetworkCapabilities.NET_CAPABILITY_NOT_METERED))) {
+                            if (DBG) {
+                                log("Tearing down unmetered net:" + apnContext);
+                            }
+                            // The APN settings is metered, but the data was still marked as
+                            // unmetered data, must be the unmetered data connection brought up when
+                            // data is off. We need to tear that down when data is enabled again.
+                            // This will allow reestablishing a new full capability data connection.
+                            apnContext.setReason(Phone.REASON_DATA_ENABLED);
+                            cleanUpConnection(true, apnContext);
                         }
                     }
-                    if (DBG) log("tearing down restricted metered net: " + apnContext);
-                    apnContext.setReason(Phone.REASON_DATA_ENABLED);
-                    cleanUpConnection(true, apnContext);
                 }
             }
         }
@@ -966,7 +981,7 @@ public class DcTracker extends Handler {
     private void onDeviceProvisionedChange() {
         if (getDataEnabled()) {
             mDataEnabledSettings.setUserDataEnabled(true);
-            teardownRestrictedMeteredConnections();
+            reevaluateDataConnections();
             onTrySetupData(Phone.REASON_DATA_ENABLED);
         } else {
             mDataEnabledSettings.setUserDataEnabled(false);
@@ -1307,7 +1322,7 @@ public class DcTracker extends Handler {
      * {@code true} otherwise.
      */
     public boolean getAnyDataEnabled() {
-        if (!mDataEnabledSettings.isDataEnabled(true)) return false;
+        if (!mDataEnabledSettings.isDataEnabled()) return false;
         DataAllowFailReason failureReason = new DataAllowFailReason();
         if (!isDataAllowed(failureReason)) {
             if (DBG) log(failureReason.getDataAllowFailReason());
@@ -1324,8 +1339,8 @@ public class DcTracker extends Handler {
     }
 
     @VisibleForTesting
-    public boolean isDataEnabled(boolean checkUserDataEnabled) {
-        return mDataEnabledSettings.isDataEnabled(checkUserDataEnabled);
+    public boolean isDataEnabled() {
+        return mDataEnabledSettings.isDataEnabled();
     }
 
     private boolean isDataAllowedForApn(ApnContext apnContext) {
@@ -1441,7 +1456,7 @@ public class DcTracker extends Handler {
             failureReason.addDataAllowFailReason(
                     DataAllowFailReasonType.DEFAULT_DATA_UNSELECTED);
         }
-        if (mPhone.getServiceState().getDataRoaming() && !getDataOnRoamingEnabled()) {
+        if (mPhone.getServiceState().getDataRoaming() && !getDataRoamingEnabled()) {
             if(failureReason == null) return false;
             failureReason.addDataAllowFailReason(DataAllowFailReasonType.ROAMING_DISABLED);
         }
@@ -1561,39 +1576,53 @@ public class DcTracker extends Handler {
         boolean isEmergencyApn = apnContext.getApnType().equals(PhoneConstants.APN_TYPE_EMERGENCY);
         final ServiceStateTracker sst = mPhone.getServiceStateTracker();
 
-        // set to false if apn type is non-metered or if we have a restricted (privileged)
-        // request for the network.
-        // TODO - may want restricted requests to only apply to carrier-limited data access
-        //        rather than applying to user limited as well.
-        // Exclude DUN for the purposes of the override until we get finer grained
-        // intention in NetworkRequests
-        boolean checkUserDataEnabled =
-                ApnSetting.isMeteredApnType(apnContext.getApnType(), mPhone.getContext(),
-                        mPhone.getSubId(), mPhone.getServiceState().getDataRoaming()) &&
-                apnContext.hasNoRestrictedRequests(true /*exclude DUN */);
-
         DataAllowFailReason failureReason = new DataAllowFailReason();
 
-        // allow data if currently in roaming service, roaming setting disabled
-        // and requested apn type is non-metered for roaming.
-        boolean isDataAllowed = isDataAllowed(failureReason) ||
-                (failureReason.isFailForSingleReason(DataAllowFailReasonType.ROAMING_DISABLED) &&
-                !(ApnSetting.isMeteredApnType(apnContext.getApnType(), mPhone.getContext(),
-                mPhone.getSubId(), mPhone.getServiceState().getDataRoaming())));
-
-        if (apnContext.getApnType().equals(PhoneConstants.APN_TYPE_MMS)) {
-            CarrierConfigManager configManager = (CarrierConfigManager)mPhone.getContext().
-                    getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            PersistableBundle pb = configManager.getConfigForSubId(mPhone.getSubId());
-            if (pb != null) {
-                checkUserDataEnabled = checkUserDataEnabled &&
-                        !(pb.getBoolean("config_enable_mms_with_mobile_data_off"));
+        boolean unmeteredUseOnly = false;
+        boolean isDataAllowed = isDataAllowed(failureReason);
+        boolean isMeteredApnType = ApnSetting.isMeteredApnType(apnContext.getApnType(),
+                mPhone.getContext(), mPhone.getSubId(), mPhone.getServiceState().getDataRoaming());
+        if (!isDataAllowed) {
+            // If the data not allowed due to roaming disabled, but the request APN type is not
+            // metered, we should allow data (because the user won't be charged anyway)
+            if (failureReason.isFailForSingleReason(DataAllowFailReasonType.ROAMING_DISABLED)
+                    && !isMeteredApnType) {
+                isDataAllowed = true;
+                unmeteredUseOnly = true;
             }
         }
 
-        if (apnContext.isConnectable() && (isEmergencyApn ||
-                (isDataAllowed && isDataAllowedForApn(apnContext) &&
-                        mDataEnabledSettings.isDataEnabled(checkUserDataEnabled) && !isEmergency()))) {
+        if (isDataAllowed) {
+            if (!mDataEnabledSettings.isDataEnabled()) {
+                // If the data is turned off, we should not allow a data connection.
+                isDataAllowed = false;
+
+                // But there are some exceptions we should allow data even when data is turned off.
+                if (!apnContext.hasNoRestrictedRequests(true /*exclude DUN */)) {
+                    // A restricted request can request data even when data is turned off.
+                    // Note this takes precedence over unmetered request.
+                    isDataAllowed = true;
+                    unmeteredUseOnly = false;
+                } else if (!isMeteredApnType) {
+                    // If the APN is unmetered, we should allow data even if data is turned off.
+                    // This will allow users to make VoLTE calls or send MMS while data is
+                    // turned off.
+                    isDataAllowed = true;
+
+                    // When data is off, if we allow a data call because it's unmetered, we
+                    // should restrict it for unmetered use only. For example, if one
+                    // carrier has both internet (metered) and MMS (unmetered) APNs mixed in one
+                    // APN setting, when we bring up a data call for MMS purpose, we should
+                    // restrict it for unmetered use only. We should not allow it for other
+                    // metered purposes such as internet.
+                    unmeteredUseOnly = true;
+                }
+            }
+        }
+
+        if (apnContext.isConnectable()
+                && (isEmergencyApn
+                || (isDataAllowed && isDataAllowedForApn(apnContext) && !isEmergency()))) {
             if (apnContext.getState() == DctConstants.State.FAILED) {
                 String str = "trySetupData: make a FAILED ApnContext IDLE so its reusable";
                 if (DBG) log(str);
@@ -1622,7 +1651,7 @@ public class DcTracker extends Handler {
                 }
             }
 
-            boolean retValue = setupData(apnContext, radioTech);
+            boolean retValue = setupData(apnContext, radioTech, unmeteredUseOnly);
             notifyOffApnsOfAvailability(apnContext.getReason());
 
             if (DBG) log("trySetupData: X retValue=" + retValue);
@@ -1639,33 +1668,39 @@ public class DcTracker extends Handler {
             str.append("trySetupData failed. apnContext = [type=" + apnContext.getApnType() +
                     ", mState=" + apnContext.getState() + ", mDataEnabled=" +
                     apnContext.isEnabled() + ", mDependencyMet=" +
-                    apnContext.getDependencyMet() + "] ");
+                    apnContext.getDependencyMet() + "].");
 
             if (!apnContext.isConnectable()) {
-                str.append("isConnectable = false. ");
+                str.append(" isConnectable = false.");
             }
             if (!isDataAllowed) {
-                str.append("data not allowed: " + failureReason.getDataAllowFailReason() + ". ");
+                str.append(" data not allowed: " + failureReason.getDataAllowFailReason() + ".");
             }
             if (!isDataAllowedForApn(apnContext)) {
-                str.append("isDataAllowedForApn = false. RAT = " +
-                        mPhone.getServiceState().getRilDataRadioTechnology());
+                str.append(" isDataAllowedForApn = false. RAT = "
+                        + mPhone.getServiceState().getRilDataRadioTechnology() + ".");
             }
-            if (!mDataEnabledSettings.isDataEnabled(checkUserDataEnabled)) {
-                str.append("isDataEnabled(" + checkUserDataEnabled + ") = false. " +
-                        "isInternalDataEnabled = " + mDataEnabledSettings.isInternalDataEnabled() +
-                        ", userDataEnabled = " + mDataEnabledSettings.isUserDataEnabled() +
-                        ", isPolicyDataEnabled = " + mDataEnabledSettings.isPolicyDataEnabled() +
-                        ", isCarrierDataEnabled = " +
-                        mDataEnabledSettings.isCarrierDataEnabled());
+            if (!mDataEnabledSettings.isDataEnabled()) {
+                str.append(" isDataEnabled() = false. "
+                        + "isInternalDataEnabled = " + mDataEnabledSettings.isInternalDataEnabled()
+                        + ", userDataEnabled = " + mDataEnabledSettings.isUserDataEnabled()
+                        + ", isPolicyDataEnabled = " + mDataEnabledSettings.isPolicyDataEnabled()
+                        + ", isCarrierDataEnabled = "
+                        + mDataEnabledSettings.isCarrierDataEnabled() + ".");
             }
             if (isEmergency()) {
-                str.append("emergency = true");
+                str.append(" emergency = true.");
+            }
+
+            // If this is a data retry, we should set the APN state to FAILED so it won't stay
+            // in SCANNING forever.
+            if (apnContext.getState() == DctConstants.State.SCANNING) {
+                apnContext.setState(DctConstants.State.FAILED);
+                str.append(" Stop retrying.");
             }
 
             if (DBG) log(str.toString());
             apnContext.requestLog(str.toString());
-
             return false;
         }
     }
@@ -2089,7 +2124,7 @@ public class DcTracker extends Handler {
         return null;
     }
 
-    private boolean setupData(ApnContext apnContext, int radioTech) {
+    private boolean setupData(ApnContext apnContext, int radioTech, boolean unmeteredUseOnly) {
         if (DBG) log("setupData: apnContext=" + apnContext);
         apnContext.requestLog("setupData");
         ApnSetting apnSetting;
@@ -2174,7 +2209,7 @@ public class DcTracker extends Handler {
         Message msg = obtainMessage();
         msg.what = DctConstants.EVENT_DATA_SETUP_COMPLETE;
         msg.obj = new Pair<ApnContext, Integer>(apnContext, generation);
-        dcac.bringUp(apnContext, profileId, radioTech, msg, generation);
+        dcac.bringUp(apnContext, profileId, radioTech, unmeteredUseOnly, msg, generation);
 
         if (DBG) log("setupData: initing!");
         return true;
@@ -2474,11 +2509,11 @@ public class DcTracker extends Handler {
                     // Tear down all metered apns
                     cleanUpAllConnections(true, Phone.REASON_CARRIER_ACTION_DISABLE_METERED_APN);
                 } else {
-                    // Re-evauluate Otasp state
+                    // Re-evaluate Otasp state
                     int otaspState = mPhone.getServiceStateTracker().getOtasp();
                     mPhone.notifyOtaspChanged(otaspState);
 
-                    teardownRestrictedMeteredConnections();
+                    reevaluateDataConnections();
                     setupDataOnConnectableApns(Phone.REASON_DATA_ENABLED);
                 }
             }
@@ -2529,7 +2564,7 @@ public class DcTracker extends Handler {
                 // handle the rest from there.
                 if (prevEnabled != getAnyDataEnabled()) {
                     if (!prevEnabled) {
-                        teardownRestrictedMeteredConnections();
+                        reevaluateDataConnections();
                         onTrySetupData(Phone.REASON_DATA_ENABLED);
                     } else {
                         onCleanUpAllConnections(Phone.REASON_DATA_SPECIFIC_DISABLED);
@@ -2554,7 +2589,6 @@ public class DcTracker extends Handler {
                 DctConstants.State state = apnContext.getState();
                 switch(state) {
                     case CONNECTING:
-                    case SCANNING:
                     case CONNECTED:
                     case DISCONNECTING:
                         // We're "READY" and active so just return
@@ -2564,6 +2598,7 @@ public class DcTracker extends Handler {
                     case IDLE:
                         // fall through: this is unexpected but if it happens cleanup and try setup
                     case FAILED:
+                    case SCANNING:
                     case RETRYING: {
                         // We're "READY" but not active so disconnect (cleanup = true) and
                         // connect (trySetup = true) to be sure we retry the connection.
@@ -2773,9 +2808,9 @@ public class DcTracker extends Handler {
     /**
      * Modify {@link android.provider.Settings.Global#DATA_ROAMING} value.
      */
-    public void setDataOnRoamingEnabled(boolean enabled) {
+    public void setDataRoamingEnabled(boolean enabled) {
         final int phoneSubId = mPhone.getSubId();
-        if (getDataOnRoamingEnabled() != enabled) {
+        if (getDataRoamingEnabled() != enabled) {
             int roaming = enabled ? 1 : 0;
 
             // For single SIM phones, this is a per phone property.
@@ -2789,12 +2824,12 @@ public class DcTracker extends Handler {
             mSubscriptionManager.setDataRoaming(roaming, phoneSubId);
             // will trigger handleDataOnRoamingChange() through observer
             if (DBG) {
-               log("setDataOnRoamingEnabled: set phoneSubId=" + phoneSubId
-                       + " isRoaming=" + enabled);
+                log("setDataRoamingEnabled: set phoneSubId=" + phoneSubId
+                        + " isRoaming=" + enabled);
             }
         } else {
             if (DBG) {
-                log("setDataOnRoamingEnabled: unchanged phoneSubId=" + phoneSubId
+                log("setDataRoamingEnabled: unchanged phoneSubId=" + phoneSubId
                         + " isRoaming=" + enabled);
              }
         }
@@ -2803,7 +2838,7 @@ public class DcTracker extends Handler {
     /**
      * Return current {@link android.provider.Settings.Global#DATA_ROAMING} value.
      */
-    public boolean getDataOnRoamingEnabled() {
+    public boolean getDataRoamingEnabled() {
         boolean isDataRoamingEnabled = "true".equalsIgnoreCase(SystemProperties.get(
                 "ro.com.android.dataroaming", "false"));
         final int phoneSubId = mPhone.getSubId();
@@ -2818,28 +2853,30 @@ public class DcTracker extends Handler {
                         Settings.Global.DATA_ROAMING, phoneSubId) != 0;
             }
         } catch (SettingNotFoundException snfe) {
-            if (DBG) log("getDataOnRoamingEnabled: SettingNofFoundException snfe=" + snfe);
+            if (DBG) log("getDataRoamingEnabled: SettingNofFoundException snfe=" + snfe);
         }
         if (VDBG) {
-            log("getDataOnRoamingEnabled: phoneSubId=" + phoneSubId +
-                    " isDataRoamingEnabled=" + isDataRoamingEnabled);
+            log("getDataRoamingEnabled: phoneSubId=" + phoneSubId
+                    + " isDataRoamingEnabled=" + isDataRoamingEnabled);
         }
         return isDataRoamingEnabled;
     }
 
-    private void onRoamingOff() {
-        if (DBG) log("onRoamingOff");
+    // When the data roaming status changes from roaming to non-roaming.
+    private void onDataRoamingOff() {
+        if (DBG) log("onDataRoamingOff");
 
-        // TODO: Remove this once all old vendor RILs are gone. We don't need to set initial apn
-        // attach and send the data profile again as the modem should have both roaming and
-        // non-roaming protocol in place. Modem should choose the right protocol based on the
-        // roaming condition.
-        setInitialAttachApn();
-        setDataProfilesAsNeeded();
+        if (!getDataRoamingEnabled()) {
+            // TODO: Remove this once all old vendor RILs are gone. We don't need to set initial apn
+            // attach and send the data profile again as the modem should have both roaming and
+            // non-roaming protocol in place. Modem should choose the right protocol based on the
+            // roaming condition.
+            setInitialAttachApn();
+            setDataProfilesAsNeeded();
 
-        if (!mDataEnabledSettings.isUserDataEnabled()) return;
+            // If the user did not enable data roaming, now when we transit from roaming to
+            // non-roaming, we should try to reestablish the data connection.
 
-        if (getDataOnRoamingEnabled() == false) {
             notifyOffApnsOfAvailability(Phone.REASON_ROAMING_OFF);
             setupDataOnConnectableApns(Phone.REASON_ROAMING_OFF);
         } else {
@@ -2847,20 +2884,11 @@ public class DcTracker extends Handler {
         }
     }
 
-    private void onRoamingOn() {
-        if (DBG) log("onRoamingOn");
-
-        // TODO: Remove this once all old vendor RILs are gone. We don't need to set initial apn
-        // attach and send the data profile again as the modem should have both roaming and
-        // non-roaming protocol in place. Modem should choose the right protocol based on the
-        // roaming condition.
-        setInitialAttachApn();
-        setDataProfilesAsNeeded();
-
-        if (!mDataEnabledSettings.isUserDataEnabled()) {
-            if (DBG) log("data not enabled by user");
-            return;
-        }
+    // This method is called
+    // 1. When the data roaming status changes from non-roaming to roaming.
+    // 2. When allowed data roaming settings is changed by the user.
+    private void onDataRoamingOnOrSettingsChanged() {
+        if (DBG) log("onDataRoamingOnOrSettingsChanged");
 
         // Check if the device is actually data roaming
         if (!mPhone.getServiceState().getDataRoaming()) {
@@ -2868,12 +2896,16 @@ public class DcTracker extends Handler {
             return;
         }
 
-        if (getDataOnRoamingEnabled()) {
-            if (DBG) log("onRoamingOn: setup data on roaming");
+        if (getDataRoamingEnabled()) {
+            if (DBG) log("onDataRoamingOnOrSettingsChanged: setup data on roaming");
+
             setupDataOnConnectableApns(Phone.REASON_ROAMING_ON);
             notifyDataConnection(Phone.REASON_ROAMING_ON);
         } else {
-            if (DBG) log("onRoamingOn: Tear down data connection on roaming.");
+            // If the user does not turn on data roaming, when we transit from non-roaming to
+            // roaming, we need to tear down the data connection otherwise the user might be
+            // charged for data roaming usage.
+            if (DBG) log("onDataRoamingOnOrSettingsChanged: Tear down data connection on roaming.");
             cleanUpAllConnections(true, Phone.REASON_ROAMING_ON);
             notifyOffApnsOfAvailability(Phone.REASON_ROAMING_ON);
         }
@@ -3889,11 +3921,11 @@ public class DcTracker extends Handler {
                 break;
 
             case DctConstants.EVENT_ROAMING_OFF:
-                onRoamingOff();
+                onDataRoamingOff();
                 break;
 
             case DctConstants.EVENT_ROAMING_ON:
-                onRoamingOn();
+                onDataRoamingOnOrSettingsChanged();
                 break;
 
             case DctConstants.EVENT_DEVICE_PROVISIONED_CHANGE:
@@ -4869,7 +4901,7 @@ public class DcTracker extends Handler {
             intent.putExtra(DATA_STALL_ALARM_TAG_EXTRA, mDataStallAlarmTag);
             mDataStallAlarmIntent = PendingIntent.getBroadcast(mPhone.getContext(), 0, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT);
-            mAlarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            mAlarmManager.set(AlarmManager.ELAPSED_REALTIME,
                     SystemClock.elapsedRealtime() + delayInMs, mDataStallAlarmIntent);
         } else {
             if (VDBG_STALL) {

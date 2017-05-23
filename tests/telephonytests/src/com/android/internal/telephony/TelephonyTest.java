@@ -41,6 +41,7 @@ import android.os.IDeviceIdleController;
 import android.os.RegistrantList;
 import android.os.ServiceManager;
 import android.provider.BlockedNumberContract;
+import android.provider.Settings;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -80,6 +81,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public abstract class TelephonyTest {
     protected static String TAG;
@@ -439,6 +442,9 @@ public abstract class TelephonyTest {
         mSST.mSS = mServiceState;
         mServiceManagerMockedServices.put("connectivity_metrics_logger", mConnMetLoggerBinder);
 
+        Settings.Global.putInt(mContext.getContentResolver(),
+                Settings.Global.ENABLE_CELLULAR_ON_BOOT, 1);
+
         setReady(false);
     }
 
@@ -481,5 +487,30 @@ public abstract class TelephonyTest {
         doReturn(mPackageInfo).when(mPackageManager).getPackageInfo(eq(TAG), anyInt());
         doReturn(mPackageInfo).when(mPackageManager).getPackageInfoAsUser(
                 eq(TAG), anyInt(), anyInt());
+    }
+
+
+    protected final void waitForHandlerAction(Handler h, long timeoutMillis) {
+        final CountDownLatch lock = new CountDownLatch(1);
+        h.post(lock::countDown);
+        while (lock.getCount() > 0) {
+            try {
+                lock.await(timeoutMillis, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                // do nothing
+            }
+        }
+    }
+
+    protected final void waitForHandlerActionDelayed(Handler h, long timeoutMillis, long delayMs) {
+        final CountDownLatch lock = new CountDownLatch(1);
+        h.postDelayed(lock::countDown, delayMs);
+        while (lock.getCount() > 0) {
+            try {
+                lock.await(timeoutMillis, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                // do nothing
+            }
+        }
     }
 }

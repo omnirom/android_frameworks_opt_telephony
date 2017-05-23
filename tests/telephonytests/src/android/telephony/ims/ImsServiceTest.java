@@ -16,9 +16,30 @@
 
 package android.telephony.ims;
 
+import static android.Manifest.permission.MODIFY_PHONE_STATE;
+import static android.Manifest.permission.READ_PHONE_STATE;
+
+import static com.android.internal.telephony.ims.ImsResolver.SERVICE_INTERFACE;
+
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertNotNull;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.fail;
+
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Matchers.nullable;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.content.Intent;
 import android.os.RemoteException;
+import android.support.test.filters.FlakyTest;
 import android.support.test.runner.AndroidJUnit4;
 import android.telephony.ims.feature.ImsFeature;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -30,28 +51,12 @@ import com.android.ims.internal.IImsServiceController;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-
-import static android.Manifest.permission.MODIFY_PHONE_STATE;
-import static android.Manifest.permission.READ_PHONE_STATE;
-import static com.android.internal.telephony.ims.ImsResolver.SERVICE_INTERFACE;
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertNotNull;
-import static junit.framework.Assert.assertNull;
-import static junit.framework.Assert.fail;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Matchers.nullable;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for ImsService
@@ -96,7 +101,7 @@ public class ImsServiceTest {
                 mTestImsService.getImsFeatureFromType(features, ImsFeature.MMTEL));
         // Verify that upon creating a feature, we assign the callback and get the set feature state
         // when querying it.
-        verify(mTestImsService.mSpyMMTelFeature).setImsFeatureStatusCallback(eq(mTestCallback));
+        verify(mTestImsService.mSpyMMTelFeature).addImsFeatureStatusCallback(eq(mTestCallback));
         assertEquals(ImsFeature.STATE_READY, mTestImsServiceBinder.getFeatureStatus(TEST_SLOT_0,
                 ImsFeature.MMTEL));
     }
@@ -106,10 +111,10 @@ public class ImsServiceTest {
     public void testRemoveMMTelFeature() throws RemoteException {
         mTestImsServiceBinder.createImsFeature(TEST_SLOT_0, ImsFeature.MMTEL, mTestCallback);
 
-        mTestImsServiceBinder.removeImsFeature(TEST_SLOT_0, ImsFeature.MMTEL);
+        mTestImsServiceBinder.removeImsFeature(TEST_SLOT_0, ImsFeature.MMTEL, mTestCallback);
 
         verify(mTestImsService.mSpyMMTelFeature).notifyFeatureRemoved(eq(0));
-        verify(mTestImsService.mSpyMMTelFeature).setImsFeatureStatusCallback(null);
+        verify(mTestImsService.mSpyMMTelFeature).removeImsFeatureStatusCallback(mTestCallback);
         SparseArray<ImsFeature> features = mTestImsService.getImsFeatureMap(TEST_SLOT_0);
         assertNull(mTestImsService.getImsFeatureFromType(features, ImsFeature.MMTEL));
     }
@@ -150,8 +155,9 @@ public class ImsServiceTest {
         }
     }
 
+    @FlakyTest
+    @Ignore
     @Test
-    @SmallTest
     public void testMethodWithNoPermissions() throws RemoteException {
         doThrow(new SecurityException()).when(mMockContext).enforceCallingOrSelfPermission(
                 eq(READ_PHONE_STATE), nullable(String.class));
@@ -180,14 +186,11 @@ public class ImsServiceTest {
         mTestImsService.mSpyMMTelFeature.sendSetFeatureState(ImsFeature.STATE_READY);
 
         ArgumentCaptor<Intent> intentCaptor = ArgumentCaptor.forClass(Intent.class);
-        verify(mMockContext, times(2)).sendBroadcast(intentCaptor.capture());
+        verify(mMockContext).sendBroadcast(intentCaptor.capture());
         try {
-            // IMS_SERVICE_DOWN is always sent when createImsFeature completes
-            assertNotNull(intentCaptor.getAllValues().get(0));
-            verifyServiceDownSent(intentCaptor.getAllValues().get(0));
             // Verify IMS_SERVICE_UP is sent
-            assertNotNull(intentCaptor.getAllValues().get(1));
-            verifyServiceUpSent(intentCaptor.getAllValues().get(1));
+            assertNotNull(intentCaptor.getValue());
+            verifyServiceUpSent(intentCaptor.getValue());
         } catch (IndexOutOfBoundsException e) {
             fail("Did not receive all intents");
         }
@@ -205,35 +208,14 @@ public class ImsServiceTest {
         mTestImsService.mSpyMMTelFeature.sendSetFeatureState(ImsFeature.STATE_INITIALIZING);
 
         ArgumentCaptor<Intent> intentCaptor = ArgumentCaptor.forClass(Intent.class);
-        verify(mMockContext, times(2)).sendBroadcast(intentCaptor.capture());
+        verify(mMockContext).sendBroadcast(intentCaptor.capture());
         try {
-            // IMS_SERVICE_DOWN is always sent when createImsFeature completes.
-            assertNotNull(intentCaptor.getAllValues().get(0));
-            verifyServiceDownSent(intentCaptor.getAllValues().get(0));
             // IMS_SERVICE_DOWN is sent when the service is STATE_INITIALIZING.
-            assertNotNull(intentCaptor.getAllValues().get(1));
-            verifyServiceDownSent(intentCaptor.getAllValues().get(1));
+            assertNotNull(intentCaptor.getValue());
+            verifyServiceDownSent(intentCaptor.getValue());
         } catch (IndexOutOfBoundsException e) {
             fail("Did not receive all intents");
         }
-    }
-
-    /**
-     * Tests that the new ImsService still sends the IMS_SERVICE_DOWN broadcast when the feature is
-     * set to not available.
-     */
-    @Test
-    @SmallTest
-    public void testImsServiceDownSentCompatNotAvailable() throws RemoteException {
-        mTestImsServiceBinder.createImsFeature(TEST_SLOT_0, ImsFeature.MMTEL, mTestCallback);
-
-        // The ImsService will send the STATE_NOT_AVAILABLE status as soon as the feature is
-        // created.
-
-        ArgumentCaptor<Intent> intentCaptor = ArgumentCaptor.forClass(Intent.class);
-        verify(mMockContext).sendBroadcast(intentCaptor.capture());
-        assertNotNull(intentCaptor.getValue());
-        verifyServiceDownSent(intentCaptor.getValue());
     }
 
     private void verifyServiceDownSent(Intent testIntent) {

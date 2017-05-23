@@ -16,8 +16,6 @@
 
 package com.android.internal.telephony.uicc;
 
-import static android.Manifest.permission.READ_PHONE_STATE;
-
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
@@ -26,7 +24,6 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.Registrant;
 import android.os.RegistrantList;
-import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -37,11 +34,12 @@ import android.text.TextUtils;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.IccCardConstants.State;
 import com.android.internal.telephony.MccTable;
+import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.TelephonyIntents;
-import com.android.internal.telephony.IccCardConstants.State;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
@@ -271,7 +269,7 @@ public class IccCardProxy extends Handler implements IccCard {
                 broadcastIccStateChangedIntent(IccCardConstants.INTENT_VALUE_ICC_IMSI, null);
                 break;
             case EVENT_NETWORK_LOCKED:
-                mNetworkLockedRegistrants.notifyRegistrants();
+                mNetworkLockedRegistrants.notifyRegistrants((AsyncResult)msg.obj);
                 setExternalState(State.NETWORK_LOCKED);
                 break;
             case EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED:
@@ -419,12 +417,10 @@ public class IccCardProxy extends Handler implements IccCard {
                 setExternalState(State.PUK_REQUIRED);
                 break;
             case APPSTATE_SUBSCRIPTION_PERSO:
-                if (mUiccApplication.getPersoSubState() ==
-                        PersoSubState.PERSOSUBSTATE_SIM_NETWORK) {
+                if (mUiccApplication.isPersoLocked()) {
                     setExternalState(State.NETWORK_LOCKED);
-                } else {
-                    setExternalState(State.UNKNOWN);
                 }
+                // Otherwise don't change external SIM state.
                 break;
             case APPSTATE_READY:
                 setExternalState(State.READY);
@@ -676,7 +672,8 @@ public class IccCardProxy extends Handler implements IccCard {
             mNetworkLockedRegistrants.add(r);
 
             if (getState() == State.NETWORK_LOCKED) {
-                r.notifyRegistrant();
+                r.notifyRegistrant(new AsyncResult(null, mUiccApplication.getPersoSubState()
+                        .ordinal(), null));
             }
         }
     }

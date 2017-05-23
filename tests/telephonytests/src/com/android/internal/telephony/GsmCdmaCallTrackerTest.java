@@ -15,7 +15,21 @@
  */
 package com.android.internal.telephony;
 
+import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.isA;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Message;
 import android.support.test.filters.FlakyTest;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
@@ -23,21 +37,13 @@ import android.telephony.ServiceState;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 
-import android.os.Message;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
-import android.os.Handler;
-
-import static org.junit.Assert.assertNotNull;
-import static org.mockito.Mockito.doReturn;
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.*;
-import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
-
+import org.mockito.Mock;
 
 public class GsmCdmaCallTrackerTest extends TelephonyTest {
     private static final int VOICE_CALL_STARTED_EVENT = 0;
@@ -126,6 +132,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
         assertEquals(GsmCdmaCall.State.IDLE, mCTUT.mBackgroundCall.getState());
     }
 
+    @FlakyTest
+    @Ignore
     @Test
     @MediumTest
     public void testMOCallHangup() {
@@ -148,6 +156,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
         assertEquals(PhoneConstants.State.IDLE, mCTUT.getState());
     }
 
+    @FlakyTest
+    @Ignore
     @Test
     @MediumTest
     public void testMOCallDialPickUpHangup() {
@@ -221,6 +231,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    @FlakyTest
+    @Ignore
     public void testMTCallRinging() {
         /* Mock there is a MT call mRinging call and try to accept this MT call */
         /* if we got a active state followed by another MT call-> move to background call */
@@ -237,6 +249,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    @FlakyTest
+    @Ignore
     public void testMTCallAccept() {
         testMTCallRinging();
         assertEquals(mCTUT.mForegroundCall.getConnections().size(),0);
@@ -298,6 +312,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
         assertEquals(GsmCdmaCall.State.HOLDING, mCTUT.mBackgroundCall.getState());
     }
 
+    @FlakyTest
+    @Ignore
     @Test
     @MediumTest
     public void testMOCallPickUpHangUpResumeBackGround() {
@@ -341,6 +357,8 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
 
     }
 
+    @FlakyTest
+    @Ignore
     @Test @SmallTest
     public void testVoiceCallEndedListener(){
         logd("register for voice call ended event");

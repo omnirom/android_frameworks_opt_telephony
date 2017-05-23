@@ -36,6 +36,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
+import android.provider.Settings.SettingNotFoundException;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
@@ -413,30 +414,22 @@ public class SubscriptionInfoUpdater extends Handler {
                 ContentResolver contentResolver = mContext.getContentResolver();
 
                 if (msisdn != null) {
-                    ContentValues number = new ContentValues(1);
-                    number.put(SubscriptionManager.NUMBER, msisdn);
-                    contentResolver.update(SubscriptionManager.CONTENT_URI, number,
-                            SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "="
-                                    + Long.toString(subId), null);
+                       SubscriptionController.getInstance().setDisplayNumber(msisdn, subId);
                 }
 
                 SubscriptionInfo subInfo = mSubscriptionManager.getActiveSubscriptionInfo(subId);
                 String nameToSet;
                 String simCarrierName = tm.getSimOperatorName(subId);
-                ContentValues name = new ContentValues(1);
 
                 if (subInfo != null && subInfo.getNameSource() !=
-                        SubscriptionManager.NAME_SOURCE_USER_INPUT) {
+                         SubscriptionManager.NAME_SOURCE_USER_INPUT) {
                     if (!TextUtils.isEmpty(simCarrierName)) {
                         nameToSet = simCarrierName;
                     } else {
                         nameToSet = "CARD " + Integer.toString(slotId + 1);
                     }
-                    name.put(SubscriptionManager.DISPLAY_NAME, nameToSet);
                     logd("sim name = " + nameToSet);
-                    contentResolver.update(SubscriptionManager.CONTENT_URI, name,
-                            SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID
-                                    + "=" + Long.toString(subId), null);
+                    SubscriptionController.getInstance().setDisplayName(nameToSet, subId);
                 }
 
                 /* Update preferred network type and network selection mode on SIM change.
@@ -448,6 +441,27 @@ public class SubscriptionInfoUpdater extends Handler {
                 if (storedSubId != subId) {
                     int networkType = RILConstants.PREFERRED_NETWORK_MODE;
 
+                    // when known SIM inserted in another slot for which subId already
+                    // assigned, use the N/W mode which assigned to it.
+                    try {
+                        networkType  = android.provider.Settings.Global.getInt(
+                                mContext.getContentResolver(),
+                                Settings.Global.PREFERRED_NETWORK_MODE + subId);
+                    } catch (SettingNotFoundException snfe) {
+                        logd("Settings Exception reading value at subid for "+
+                                " Settings.Global.PREFERRED_NETWORK_MODE");
+                        // Get previous network mode for this slot,
+                        // to be more relevant instead of default mode
+                        try {
+                            networkType  = TelephonyManager.getIntAtIndex(
+                                   mContext.getContentResolver(),
+                                   Settings.Global.PREFERRED_NETWORK_MODE, slotId);
+                        } catch (SettingNotFoundException retrySnfe) {
+                            Rlog.e(LOG_TAG, "Settings Exception Reading Value At Index for"+
+                                   " Settings.Global.PREFERRED_NETWORK_MODE");
+                        }
+                    }
+
                     // Set the modem network mode
                     mPhone[slotId].setPreferredNetworkType(networkType, null);
                     Settings.Global.putInt(mPhone[slotId].getContext().getContentResolver(),
@@ -457,7 +471,7 @@ public class SubscriptionInfoUpdater extends Handler {
                     // Only support automatic selection mode on SIM change.
                     mPhone[slotId].getNetworkSelectionMode(
                             obtainMessage(EVENT_GET_NETWORK_SELECTION_MODE_DONE,
-                                    new Integer(slotId)));
+                            new Integer(slotId)));
 
                     // Update stored subId
                     SharedPreferences.Editor editor = sp.edit();

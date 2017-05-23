@@ -400,8 +400,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             dialString = convertNumberIfNecessary(mPhone, dialString);
         }
 
-        String inEcm=SystemProperties.get(TelephonyProperties.PROPERTY_INECM_MODE, "false");
-        boolean isPhoneInEcmMode = inEcm.equals("true");
+        boolean isPhoneInEcmMode = mPhone.isInEcm();
         boolean isEmergencyCall =
                 PhoneNumberUtils.isLocalEmergencyNumber(mPhone.getContext(), dialString);
 
@@ -799,6 +798,10 @@ public class GsmCdmaCallTracker extends CallTracker {
                     // It's our pending mobile originating call
                     mConnections[i] = mPendingMO;
                     mPendingMO.mIndex = i;
+                    if (mPendingMO.isWaitingCdmaLineControlInfoRec()) {
+                        // Overwrite state with DIALING till getting REC
+                        dc.state = DriverCall.State.DIALING;
+                    }
                     mPendingMO.update(dc);
                     mPendingMO = null;
 
@@ -940,6 +943,20 @@ public class GsmCdmaCallTracker extends CallTracker {
                     }
                 } else {
                     boolean changed;
+                    if (conn.isWaitingCdmaLineControlInfoRec()) {
+                        // Overwrite state with DIALING till getting REC
+                        dc.state = DriverCall.State.DIALING;
+                    }
+                    if (mPendingMO != null) {
+                        conn.clearCdmaLineControlInfoRecRegistration();
+                        if (!mPendingMO.isWaitingCdmaLineControlInfoRec()) {
+                            // For CDMA three way call, the first connection time
+                            // is not unable to reset
+                            // Just start calculating the second call time
+                            mPendingMO.onConnectedInOrOut();
+                            mPendingMO = null;
+                        }
+                    }
                     changed = conn.update(dc);
                     hasNonHangupStateChanged = hasNonHangupStateChanged || changed;
                 }
@@ -1152,11 +1169,14 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (conn == mPendingMO) {
-            // We're hanging up an outgoing call that doesn't have it's
-            // GsmCdma index assigned yet
+            // Re-start Ecm timer when an uncompleted emergency call ends
+            if (mIsEcmTimerCanceled) {
+                handleEcmTimer(GsmCdmaPhone.RESTART_ECM_TIMER);
+            }
 
-            if (Phone.DEBUG_PHONE) log("hangup: set hangupPendingMO to true");
-            mHangupPendingMO = true;
+            // Allow HANGUP to RIL during pending MO is present
+            log("hangup conn with callId '-1' as there is no DIAL response yet ");
+            mCi.hangupConnection(-1, obtainCompleteMessage());
         } else if (!isPhoneTypeGsm()
                 && conn.getCall() == mRingingCall
                 && mRingingCall.getState() == GsmCdmaCall.State.WAITING) {
@@ -1514,9 +1534,9 @@ public class GsmCdmaCallTracker extends CallTracker {
             case EVENT_THREE_WAY_DIAL_L2_RESULT_CDMA:
                 if (!isPhoneTypeGsm()) {
                     ar = (AsyncResult)msg.obj;
-                    if (ar.exception == null) {
-                        // Assume 3 way call is connected
-                        mPendingMO.onConnectedInOrOut();
+                    if (ar.exception != null) {
+                        // Assume 3 way call is disconnected with failure
+                        mPendingMO.onLocalDisconnect();
                         mPendingMO = null;
                     }
                 } else {
@@ -1563,11 +1583,11 @@ public class GsmCdmaCallTracker extends CallTracker {
     private void checkAndEnableDataCallAfterEmergencyCallDropped() {
         if (mIsInEmergencyCall) {
             mIsInEmergencyCall = false;
-            String inEcm=SystemProperties.get(TelephonyProperties.PROPERTY_INECM_MODE, "false");
+            boolean inEcm = mPhone.isInEcm();
             if (Phone.DEBUG_PHONE) {
                 log("checkAndEnableDataCallAfterEmergencyCallDropped,inEcm=" + inEcm);
             }
-            if (inEcm.compareTo("false") == 0) {
+            if (!inEcm) {
                 // Re-initiate data connection
                 mPhone.mDcTracker.setInternalDataEnabled(true);
                 mPhone.notifyEmergencyCallRegistrants(false);

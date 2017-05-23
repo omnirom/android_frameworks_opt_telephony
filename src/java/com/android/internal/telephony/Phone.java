@@ -58,6 +58,7 @@ import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
 import com.android.internal.telephony.dataconnection.DcTracker;
+import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -278,6 +279,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected TelephonyComponentFactory mTelephonyComponentFactory;
 
     //IMS
+    /**
+     * {@link CallStateException} message text used to indicate that an IMS call has failed because
+     * it needs to be retried using GSM or CDMA (e.g. CS fallback).
+     * TODO: Replace this with a proper exception; {@link CallStateException} doesn't make sense.
+     */
     public static final String CS_FALLBACK = "cs_fallback";
     public static final String EXTRA_KEY_ALERT_TITLE = "alertTitle";
     public static final String EXTRA_KEY_ALERT_MESSAGE = "alertMessage";
@@ -537,15 +543,18 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
         synchronized(Phone.lockForRadioTechnologyChange) {
             IntentFilter filter = new IntentFilter();
-            filter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
-            filter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
+            ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
+            // Don't listen to deprecated intents using the new dynamic binding.
+            if (imsManager != null && !imsManager.isDynamicBinding()) {
+                filter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
+                filter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
+            }
             filter.addAction(ImsConfig.ACTION_IMS_CONFIG_CHANGED);
             mContext.registerReceiver(mImsIntentReceiver, filter);
 
             // Monitor IMS service - but first poll to see if already up (could miss
             // intent). Also, when using new ImsResolver APIs, the service will be available soon,
             // so start trying to bind.
-            ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
             if (imsManager != null) {
                 // If it is dynamic binding, kick off ImsPhone creation now instead of waiting for
                 // the service to be available.
@@ -1298,7 +1307,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * automatic selection, all depending upon the value in the shared
      * preferences.
      */
-    private void restoreSavedNetworkSelection(Message response) {
+    protected void restoreSavedNetworkSelection(Message response) {
         // retrieve the operator
         OperatorInfo networkSelection = getSavedNetworkSelection();
 
@@ -2153,6 +2162,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public boolean isInEcm() {
         return mIsPhoneInEcmState;
+    }
+
+    public void setIsInEcm(boolean isInEcm) {
+        setSystemProperty(TelephonyProperties.PROPERTY_INECM_MODE, String.valueOf(isInEcm));
+        mIsPhoneInEcmState = isInEcm;
     }
 
     private static int getVideoState(Call call) {

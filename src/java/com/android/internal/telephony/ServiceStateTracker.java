@@ -16,6 +16,9 @@
 
 package com.android.internal.telephony;
 
+import static android.provider.Telephony.ServiceStateTable.getContentValuesForServiceState;
+import static android.provider.Telephony.ServiceStateTable.getUriForSubscriptionId;
+
 import static com.android.internal.telephony.CarrierActionAgent.CARRIER_ACTION_SET_RADIO_ENABLED;
 
 import android.app.AlarmManager;
@@ -83,6 +86,7 @@ import com.android.internal.telephony.uicc.RuimRecords;
 import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
+import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
@@ -172,7 +176,6 @@ public class ServiceStateTracker extends Handler {
     protected static final int EVENT_POLL_SIGNAL_STRENGTH              = 10;
     protected static final int EVENT_NITZ_TIME                         = 11;
     protected static final int EVENT_SIGNAL_STRENGTH_UPDATE            = 12;
-    protected static final int EVENT_RADIO_AVAILABLE                   = 13;
     protected static final int EVENT_POLL_STATE_NETWORK_SELECTION_MODE = 14;
     protected static final int EVENT_GET_LOC_DONE                      = 15;
     protected static final int EVENT_SIM_RECORDS_LOADED                = 16;
@@ -538,6 +541,7 @@ public class ServiceStateTracker extends Handler {
         mSubscriptionManager = SubscriptionManager.from(phone.getContext());
         mSubscriptionManager
                 .addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
+        mRestrictedState = new RestrictedState();
 
         mCi.registerForImsNetworkStateChanged(this, EVENT_IMS_STATE_CHANGED, null);
 
@@ -583,6 +587,7 @@ public class ServiceStateTracker extends Handler {
 
         mPhone.notifyOtaspChanged(TelephonyManager.OTASP_UNINITIALIZED);
 
+        mCi.setOnRestrictedStateChanged(this, EVENT_RESTRICTED_STATE_CHANGED, null);
         updatePhoneType();
 
         mCSST = new CarrierServiceStateTracker(phone, this);
@@ -604,7 +609,6 @@ public class ServiceStateTracker extends Handler {
         mLastCellInfoListTime = 0;
         mLastCellInfoList = null;
         mSignalStrength = new SignalStrength();
-        mRestrictedState = new RestrictedState();
         mStartedGprsRegCheck = false;
         mReportedGprsNoReg = false;
         mMdn = null;
@@ -629,16 +633,9 @@ public class ServiceStateTracker extends Handler {
 
             mCellLoc = new GsmCellLocation();
             mNewCellLoc = new GsmCellLocation();
-            mCi.registerForAvailable(this, EVENT_RADIO_AVAILABLE, null);
-            mCi.setOnRestrictedStateChanged(this, EVENT_RESTRICTED_STATE_CHANGED, null);
         } else {
-            //clear GSM regsitrations first
-            mCi.unregisterForAvailable(this);
-            mCi.unSetOnRestrictedStateChanged(this);
+            mPhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
 
-            if (mPhone.isPhoneTypeCdmaLte()) {
-                mPhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
-            }
             mCellLoc = new CdmaCellLocation();
             mNewCellLoc = new CdmaCellLocation();
             mCdmaSSM = CdmaSubscriptionSourceManager.getInstance(mPhone.getContext(), mCi, this,
@@ -1102,12 +1099,7 @@ public class ServiceStateTracker extends Handler {
                 }
                 break;
 
-            //GSM
-            case EVENT_RADIO_AVAILABLE:
-                //this is unnecessary
-                //setPowerStateToDesired();
-                break;
-
+            // GSM
             case EVENT_SIM_READY:
                 // Reset the mPreviousSubId so we treat a SIM power bounce
                 // as a first boot.  See b/19194287
@@ -1644,12 +1636,27 @@ public class ServiceStateTracker extends Handler {
                 if (mIsSubscriptionFromRuim) {
                     mNewSS.setVoiceRoaming(isRoamingBetweenOperators(mNewSS.getVoiceRoaming(), mNewSS));
                 }
-                // For CDMA, voice and data should have the same roaming status
-                final boolean isVoiceInService =
-                        (mNewSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE);
-                final int dataRegType = mNewSS.getRilDataRadioTechnology();
-                if (isVoiceInService && ServiceState.isCdma(dataRegType)) {
-                    mNewSS.setDataRoaming(mNewSS.getVoiceRoaming());
+                /**
+                 * For CDMA, voice and data should have the same roaming status.
+                 * If voice is not in service, use TSB58 roaming indicator to set
+                 * data roaming status. If TSB58 roaming indicator is not in the
+                 * carrier-specified list of ERIs for home system then set roaming.
+                 */
+                final int dataRat = mNewSS.getRilDataRadioTechnology();
+                if (ServiceState.isCdma(dataRat)) {
+                    final boolean isVoiceInService =
+                            (mNewSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE);
+                    if (isVoiceInService) {
+                        mNewSS.setDataRoaming(mNewSS.getVoiceRoaming());
+                    } else {
+                        /**
+                         * As per VoiceRegStateResult from radio types.hal the TSB58
+                         * Roaming Indicator shall be sent if device is registered
+                         * on a CDMA or EVDO system.
+                         */
+                        mNewSS.setDataRoaming(
+                                !isRoamIndForHomeSystem(Integer.toString(mRoamingIndicator)));
+                    }
                 }
 
                 // Setting SS CdmaRoamingIndicator and CdmaDefaultRoamingIndicator
@@ -2529,11 +2536,11 @@ public class ServiceStateTracker extends Handler {
                 setSignalStrengthDefaultValues();
                 mGotCountryCode = false;
                 mNitzUpdatedTime = false;
-                // don't poll for state when the radio is off
-                // EXCEPT, if the poll was modemTrigged (they sent us new radio data)
-                // or we're on IWLAN
-                if (!modemTriggered && ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
-                        != mSS.getRilDataRadioTechnology()) {
+                // don't poll when device is shutting down or the poll was not modemTrigged
+                // (they sent us new radio data) and current network is not IWLAN
+                if (mDeviceShuttingDown ||
+                        (!modemTriggered && ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
+                        != mSS.getRilDataRadioTechnology())) {
                     pollStateDone();
                     break;
                 }
@@ -2842,7 +2849,13 @@ public class ServiceStateTracker extends Handler {
 
             setRoamingType(mSS);
             log("Broadcasting ServiceState : " + mSS);
+            // notify using PhoneStateListener and the legacy intent ACTION_SERVICE_STATE_CHANGED
             mPhone.notifyServiceStateChanged(mSS);
+
+            // insert into ServiceStateProvider. This will trigger apps to wake through JobScheduler
+            mPhone.getContext().getContentResolver()
+                    .insert(getUriForSubscriptionId(mPhone.getSubId()),
+                            getContentValuesForServiceState(mSS));
 
             TelephonyMetrics.getInstance().writeServiceStateChanged(mPhone.getPhoneId(), mSS);
         }
@@ -2938,7 +2951,8 @@ public class ServiceStateTracker extends Handler {
             if (!hasBrandOverride && (mCi.getRadioState().isOn()) && (mPhone.isEriFileLoaded()) &&
                     (!ServiceState.isLte(mSS.getRilVoiceRadioTechnology()) ||
                             mPhone.getContext().getResources().getBoolean(com.android.internal.R.
-                                    bool.config_LTE_eri_for_network_name))) {
+                                    bool.config_LTE_eri_for_network_name)) &&
+                                    (!mIsSubscriptionFromRuim)) {
                 // Only when CDMA is in service, ERI will take effect
                 String eriText = mSS.getOperatorAlpha();
                 // Now the Phone sees the new ServiceState so it can get the new ERI text
@@ -3856,6 +3870,7 @@ public class ServiceStateTracker extends Handler {
                         com.android.internal.R.color.system_notification_accent_color))
                 .setContentTitle(title)
                 .setContentText(details)
+                .setChannel(NotificationChannelController.CHANNEL_ID_ALERT)
                 .build();
 
         NotificationManager notificationManager = (NotificationManager)
@@ -4072,7 +4087,8 @@ public class ServiceStateTracker extends Handler {
     public void powerOffRadioSafely(DcTracker dcTracker) {
         synchronized (this) {
             if (!mPendingRadioPowerOffAfterDataOff) {
-                if (mPhone.isPhoneTypeGsm() || mPhone.isPhoneTypeCdmaLte()) {
+                if (mPhone.isPhoneTypeGsm() || mPhone.isPhoneTypeCdma()
+                        || mPhone.isPhoneTypeCdmaLte()) {
                     int dds = SubscriptionManager.getDefaultDataSubscriptionId();
                     // To minimize race conditions we call cleanUpAllConnections on
                     // both if else paths instead of before this isDisconnected test.
@@ -4275,10 +4291,15 @@ public class ServiceStateTracker extends Handler {
      */
     protected boolean onSignalStrengthResult(AsyncResult ar) {
         boolean isGsm = false;
-        //override isGsm for CDMA LTE
-        if (mPhone.isPhoneTypeGsm() ||
-                (mPhone.isPhoneTypeCdmaLte() &&
-                        ServiceState.isLte(mSS.getRilDataRadioTechnology()))) {
+        int dataRat = mSS.getRilDataRadioTechnology();
+        int voiceRat = mSS.getRilVoiceRadioTechnology();
+
+        // Override isGsm based on currently camped data and voice RATs
+        // Set isGsm to true if the RAT belongs to GSM family and not IWLAN
+        if ((dataRat != ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
+                && ServiceState.isGsm(dataRat))
+                || (voiceRat != ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
+                && ServiceState.isGsm(voiceRat))) {
             isGsm = true;
         }
 

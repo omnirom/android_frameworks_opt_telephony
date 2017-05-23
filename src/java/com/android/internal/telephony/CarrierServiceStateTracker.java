@@ -30,6 +30,8 @@ import android.provider.Settings;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 
+import com.android.internal.telephony.util.NotificationChannelController;
+
 /**
  * This contains Carrier specific logic based on the states/events
  * managed in ServiceStateTracker.
@@ -174,6 +176,7 @@ public class CarrierServiceStateTracker extends Handler {
                 .setStyle(new Notification.BigTextStyle().bigText(details))
                 .setContentText(details)
                 .setContentIntent(settingsIntent)
+                .setChannel(NotificationChannelController.CHANNEL_ID_ALERT)
                 .build();
 
         notificationManager.notify(NOTIFICATION_ID, mNotification);

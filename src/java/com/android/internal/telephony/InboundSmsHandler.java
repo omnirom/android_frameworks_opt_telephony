@@ -64,6 +64,7 @@ import android.text.TextUtils;
 
 import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.util.HexDump;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -132,8 +133,6 @@ public abstract class InboundSmsHandler extends StateMachine {
     public static final int DISPLAY_ADDRESS_COLUMN = 9;
 
     public static final String SELECT_BY_ID = "_id=?";
-    public static final String SELECT_BY_REFERENCE = "address=? AND reference_number=? AND " +
-            "count=? AND deleted=0";
 
     /** New SMS received as an AsyncResult. */
     public static final int EVENT_NEW_SMS = 1;
@@ -643,6 +642,9 @@ public abstract class InboundSmsHandler extends StateMachine {
             // broadcast SMS_REJECTED_ACTION intent
             Intent intent = new Intent(Intents.SMS_REJECTED_ACTION);
             intent.putExtra("result", result);
+            // Allow registered broadcast receivers to get this intent even
+            // when they are in the background.
+            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             mContext.sendBroadcast(intent, android.Manifest.permission.RECEIVE_SMS);
         }
         acknowledgeLastIncomingSms(success, result, response);
@@ -751,7 +753,7 @@ public abstract class InboundSmsHandler extends StateMachine {
                 // query for all segments and broadcast message if we have all the parts
                 String[] whereArgs = {address, refNumber, count};
                 cursor = mResolver.query(sRawUri, PDU_SEQUENCE_PORT_PROJECTION,
-                        SELECT_BY_REFERENCE, whereArgs, null);
+                        tracker.getQueryForSegments(), whereArgs, null);
 
                 int cursorCount = cursor.getCount();
                 if (cursorCount < messageCount) {
@@ -916,7 +918,8 @@ public abstract class InboundSmsHandler extends StateMachine {
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setContentTitle(mContext.getString(R.string.new_sms_notification_title))
                 .setContentText(mContext.getString(R.string.new_sms_notification_content))
-                .setContentIntent(intent);
+                .setContentIntent(intent)
+                .setChannelId(NotificationChannelController.CHANNEL_ID_SMS);
         NotificationManager mNotificationManager =
             (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mNotificationManager.notify(
@@ -1148,9 +1151,8 @@ public abstract class InboundSmsHandler extends StateMachine {
         } else {
             // for multi-part messages, deduping should also be done against undeleted
             // segments that can cause ambiguity when contacenating the segments, that is,
-            // segments with same address, reference_number, count and sequence
-            where = "address=? AND reference_number=? AND count=? AND sequence=? AND " +
-                    "((date=? AND message_body=?) OR deleted=0)";
+            // segments with same address, reference_number, count, sequence and message type.
+            where = tracker.getQueryForMultiPartDuplicates();
         }
 
         Cursor cursor = null;
@@ -1227,7 +1229,7 @@ public abstract class InboundSmsHandler extends StateMachine {
             } else {
                 // set the delete selection args for multi-part message
                 String[] deleteWhereArgs = {address, refNumber, count};
-                tracker.setDeleteWhere(SELECT_BY_REFERENCE, deleteWhereArgs);
+                tracker.setDeleteWhere(tracker.getQueryForSegments(), deleteWhereArgs);
             }
             return Intents.RESULT_SMS_HANDLED;
         } catch (Exception e) {
