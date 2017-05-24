@@ -165,9 +165,8 @@ public class GsmCdmaConnection extends Connection {
         mHandler = new MyHandler(mOwner.getLooper());
         mIsWaitingCdmaLineControlInfoRec = true;
 
-        if (isPhoneTypeGsm()) {
-            mDialString = dialString;
-        } else {
+        mDialString = dialString;
+        if (!isPhoneTypeGsm()) {
             Rlog.d(LOG_TAG, "[GsmCdmaConn] GsmCdmaConnection: dialString=" +
                     maskDialString(dialString));
             dialString = formatDialString(dialString);
