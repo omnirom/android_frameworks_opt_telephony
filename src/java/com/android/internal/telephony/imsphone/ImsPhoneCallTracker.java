@@ -68,6 +68,7 @@ import com.android.ims.ImsServiceClass;
 import com.android.ims.ImsSuppServiceNotification;
 import com.android.ims.ImsUtInterface;
 import com.android.ims.internal.IImsVideoCallProvider;
+import com.android.ims.internal.ImsCallSession;
 import com.android.ims.internal.ImsVideoCallProviderWrapper;
 import com.android.ims.internal.VideoPauseTracker;
 import com.android.internal.annotations.VisibleForTesting;
@@ -834,7 +835,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             mPendingMO = new ImsPhoneConnection(mPhone,
                     checkForTestEmergencyNumber(dialString), this, mForegroundCall,
-                    isEmergencyNumber);
+                    isEmergencyNumber, intentExtras);
             mPendingMO.setVideoState(videoState);
         }
         addConnection(mPendingMO);
@@ -852,6 +853,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 mPhone.setOnEcbModeExitResponse(this, EVENT_EXIT_ECM_RESPONSE_CDMA, null);
                 pendingCallClirMode = clirMode;
                 mPendingCallVideoState = videoState;
+                mPendingIntentExtras = intentExtras;
                 pendingCallInEcm = true;
             }
         }
@@ -860,6 +862,25 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mPhone.notifyPreciseCallStateChanged();
 
         return mPendingMO;
+    }
+
+    public void addParticipant(String dialString) throws CallStateException {
+        if (mForegroundCall != null) {
+            ImsCall imsCall = mForegroundCall.getImsCall();
+            if (imsCall == null) {
+                loge("addParticipant : No foreground ims call");
+            } else {
+                ImsCallSession imsCallSession = imsCall.getCallSession();
+                if (imsCallSession != null) {
+                    String[] callees = new String[] { dialString };
+                    imsCallSession.inviteParticipants(callees);
+                } else {
+                    loge("addParticipant : ImsCallSession does not exist");
+                }
+            }
+        } else {
+            loge("addParticipant : Foreground call does not exist");
+        }
     }
 
     /**
@@ -954,8 +975,20 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             return;
         }
 
-        if (conn.getAddress()== null || conn.getAddress().length() == 0
-                || conn.getAddress().indexOf(PhoneNumberUtils.WILD) >= 0) {
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+
+        if (intentExtras != null) {
+            isConferenceUri = intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
+
+
+        if (!isConferenceUri && !isSkipSchemaParsing
+                && (conn.getAddress()== null || conn.getAddress().length() == 0
+                || conn.getAddress().indexOf(PhoneNumberUtils.WILD) >= 0)) {
             // Phone number is invalid
             conn.setDisconnectCause(DisconnectCause.INVALID_NUMBER);
             sendEmptyMessageDelayed(EVENT_HANGUP_PENDINGMO, TIMEOUT_HANGUP_PENDINGMO);
@@ -975,6 +1008,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             ImsCallProfile profile = mImsManager.createCallProfile(mServiceId,
                     serviceType, callType);
             profile.setCallExtraInt(ImsCallProfile.EXTRA_OIR, clirMode);
+            profile.setCallExtraBoolean(TelephonyProperties.EXTRAS_IS_CONFERENCE_URI,
+                    isConferenceUri);
 
             // Translate call subject intent-extra from Telecom-specific extra key to the
             // ImsCallProfile key.
