@@ -20,17 +20,22 @@ import android.app.PendingIntent;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PersistableBundle;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.provider.Settings;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 
 import com.android.internal.telephony.util.NotificationChannelController;
+
+import org.codeaurora.internal.IExtTelephony;
 
 /**
  * This contains Carrier specific logic based on the states/events
@@ -157,6 +162,21 @@ public class CarrierServiceStateTracker extends Handler {
 
 
         Intent notificationIntent = new Intent(Settings.ACTION_DATA_ROAMING_SETTINGS);
+        IExtTelephony extTelephony =
+                IExtTelephony.Stub.asInterface(ServiceManager.getService("extphone"));
+        try {
+            if (extTelephony != null &&
+                    extTelephony.isVendorApkAvailable("com.qualcomm.qti.networksetting")) {
+                notificationIntent.setComponent(new ComponentName("com.qualcomm.qti.networksetting",
+                        "com.qualcomm.qti.networksetting.MobileNetworkSettings"));
+            } else {
+                notificationIntent.setComponent(new ComponentName("com.android.phone",
+                        "com.android.phone.MobileNetworkSettings"));
+            }
+        } catch (RemoteException e) {
+            notificationIntent.setComponent(new ComponentName("com.android.phone",
+                    "com.android.phone.MobileNetworkSettings"));
+        }
         PendingIntent settingsIntent = PendingIntent.getActivity(context, 0, notificationIntent,
                 PendingIntent.FLAG_ONE_SHOT);
 
