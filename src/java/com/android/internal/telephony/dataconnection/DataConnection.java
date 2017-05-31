@@ -1563,17 +1563,19 @@ public class DataConnection extends StateMachine {
 
             boolean createNetworkAgent = true;
             // If a disconnect is already pending, avoid notifying all of connected
-            if (hasMessages(EVENT_DISCONNECT, mConnectionParams.mOnCompletedMsg.obj) ||
-                    hasMessages(EVENT_DISCONNECT_ALL, mConnectionParams.
-                    mOnCompletedMsg.obj) || hasDeferredMessages(EVENT_DISCONNECT,
-                    mConnectionParams.mOnCompletedMsg.obj) ||
-                    hasDeferredMessages(EVENT_DISCONNECT_ALL, mConnectionParams.
-                    mOnCompletedMsg.obj)) {
-                log("DcActiveState: skipping notifyAllOfConnected()");
-                createNetworkAgent = false;
-            } else {
-                // If we were retrying there maybe more than one, otherwise they'll only be one.
-                notifyAllOfConnected(Phone.REASON_CONNECTED);
+            if (mConnectionParams != null && mConnectionParams.mOnCompletedMsg != null) {
+                if (hasMessages(EVENT_DISCONNECT, mConnectionParams.mOnCompletedMsg.obj) ||
+                        hasMessages(EVENT_DISCONNECT_ALL, mConnectionParams.
+                        mOnCompletedMsg.obj) || hasDeferredMessages(EVENT_DISCONNECT,
+                        mConnectionParams.mOnCompletedMsg.obj) ||
+                        hasDeferredMessages(EVENT_DISCONNECT_ALL, mConnectionParams.
+                        mOnCompletedMsg.obj)) {
+                    log("DcActiveState: skipping notifyAllOfConnected()");
+                    createNetworkAgent = false;
+                } else {
+                    // If we were retrying there maybe more than one, otherwise they'll only be one.
+                    notifyAllOfConnected(Phone.REASON_CONNECTED);
+                }
             }
 
             mPhone.getCallTracker().registerForVoiceCallStarted(getHandler(),
