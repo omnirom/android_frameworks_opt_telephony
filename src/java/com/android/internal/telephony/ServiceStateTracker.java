@@ -1775,6 +1775,9 @@ public class ServiceStateTracker extends Handler {
                 VoiceRegStateResult voiceRegStateResult = (VoiceRegStateResult) ar.result;
                 int registrationState = getRegStateFromHalRegState(voiceRegStateResult.regState);
 
+                //init with 0, because it is treated as a boolean
+                int cssIndicator = voiceRegStateResult.cssSupported ? 1 : 0;
+
                 mNewSS.setVoiceRegState(regCodeToServiceState(registrationState));
                 mNewSS.setRilVoiceRadioTechnology(voiceRegStateResult.rat);
 
@@ -1784,6 +1787,7 @@ public class ServiceStateTracker extends Handler {
 
                     mGsmRoaming = regCodeIsRoaming(registrationState);
                     mNewRejectCode = reasonForDenial;
+                    mNewSS.setCssIndicator(cssIndicator);
 
                     boolean isVoiceCapable = mPhone.getContext().getResources()
                             .getBoolean(com.android.internal.R.bool.config_voice_capable);
@@ -1801,8 +1805,6 @@ public class ServiceStateTracker extends Handler {
                         mEmergencyOnly = false;
                     }
                 } else {
-                    //init with 0, because it is treated as a boolean
-                    int cssIndicator = voiceRegStateResult.cssSupported ? 1 : 0;
                     int roamingIndicator = voiceRegStateResult.roamingIndicator;
 
                     //Indicates if current system is in PR
@@ -2466,7 +2468,11 @@ public class ServiceStateTracker extends Handler {
      */
     public boolean isConcurrentVoiceAndDataAllowed() {
         if (mPhone.isPhoneTypeGsm()) {
-            return (mSS.getRilVoiceRadioTechnology() >= ServiceState.RIL_RADIO_TECHNOLOGY_UMTS);
+            if (mSS.getRilDataRadioTechnology() >= ServiceState.RIL_RADIO_TECHNOLOGY_UMTS) {
+                return true;
+            } else {
+                return mSS.getCssIndicator() == 1;
+            }
         } else if (mPhone.isPhoneTypeCdma()) {
             // Note: it needs to be confirmed which CDMA network types
             // can support voice and data calls concurrently.
@@ -2646,6 +2652,8 @@ public class ServiceStateTracker extends Handler {
         boolean hasDataRoamingOff = mSS.getDataRoaming() && !mNewSS.getDataRoaming();
 
         boolean hasRejectCauseChanged = mRejectCode != mNewRejectCode;
+
+        boolean hasCssIndicatorChanged = (mSS.getCssIndicator() != mNewSS.getCssIndicator());
 
         boolean has4gHandoff = false;
         boolean hasMultiApnSupport = false;
@@ -2923,6 +2931,10 @@ public class ServiceStateTracker extends Handler {
             mPhone.notifyLocationChanged();
         }
 
+        if (hasCssIndicatorChanged) {
+            mPhone.notifyDataConnection(Phone.REASON_CSS_INDICATOR_CHANGED);
+        }
+
         if (mPhone.isPhoneTypeGsm()) {
             if (!isGprsConsistent(mSS.getDataRegState(), mSS.getVoiceRegState())) {
                 if (!mStartedGprsRegCheck && !mReportedGprsNoReg) {
@@ -3038,11 +3050,10 @@ public class ServiceStateTracker extends Handler {
         String idd = mHbpcdUtils.getIddByMcc(
                 Integer.parseInt(operatorNumeric.substring(0,3)));
         if (idd != null && !idd.isEmpty()) {
-            mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING,
-                    idd);
+            SystemProperties.set(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING, idd);
         } else {
             // use default "+", since we don't know the current IDP
-            mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING, "+");
+            SystemProperties.set(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING, "+");
         }
     }
 

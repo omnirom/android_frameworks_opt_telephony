@@ -146,7 +146,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @After
     public void tearDown() throws Exception {
         sst = null;
-        mSSTTestHandler.quitSafely();
+        mSSTTestHandler.quit();
         super.tearDown();
     }
 
@@ -326,7 +326,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         assertFalse(sst.isImsRegistered());
     }
 
-    @FlakyTest
     @Test
     @MediumTest
     public void testSignalStrength() {
@@ -360,14 +359,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         sst.mSS.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_LTE);
 
         mSimulatedCommands.notifySignalStrength();
-        waitForMs(200);
+        waitForMs(300);
         assertEquals(sst.getSignalStrength(), ss);
         assertEquals(sst.getSignalStrength().isGsm(), true);
 
         // notify signal strength again, but this time data RAT is not LTE
+        sst.mSS.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT);
         sst.mSS.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_EHRPD);
         mSimulatedCommands.notifySignalStrength();
-        waitForMs(200);
+        waitForMs(300);
         assertEquals(sst.getSignalStrength(), ss);
         assertEquals(sst.getSignalStrength().isGsm(), false);
     }
@@ -1021,6 +1021,11 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         sst.mSS.setRilVoiceRadioTechnology(sst.mSS.RIL_RADIO_TECHNOLOGY_HSPA);
         assertEquals(true, sst.isConcurrentVoiceAndDataAllowed());
+        sst.mSS.setRilVoiceRadioTechnology(sst.mSS.RIL_RADIO_TECHNOLOGY_EDGE);
+        sst.mSS.setCssIndicator(1);
+        assertTrue(sst.isConcurrentVoiceAndDataAllowed());
+        sst.mSS.setCssIndicator(0);
+        assertFalse(sst.isConcurrentVoiceAndDataAllowed());
 
         doReturn(false).when(mPhone).isPhoneTypeGsm();
         doReturn(true).when(mPhone).isPhoneTypeCdma();

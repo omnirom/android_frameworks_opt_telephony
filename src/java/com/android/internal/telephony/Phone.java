@@ -221,6 +221,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     // Key used to read/write "disable DNS server check" pref (used for testing)
     private static final String DNS_SERVER_CHECK_DISABLED_KEY = "dns_server_check_disabled_key";
 
+    // Integer used to let the calling application know that the we are ignoring auto mode switch.
+    private static final int ALREADY_IN_AUTO_SELECTION = 1;
+
     /**
      * Small container class used to hold information relevant to
      * the carrier selection process. operatorNumeric can be ""
@@ -1173,6 +1176,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mCi.setNetworkSelectionModeAutomatic(msg);
         } else {
             Rlog.d(LOG_TAG, "setNetworkSelectionModeAutomatic - already auto, ignoring");
+            // let the calling application know that the we are ignoring automatic mode switch.
+            if (nsm.message != null) {
+                nsm.message.arg1 = ALREADY_IN_AUTO_SELECTION;
+            }
+
             ar.userObj = nsm;
             handleSetSelectNetwork(ar);
         }
@@ -2376,6 +2384,23 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public String getCdmaPrlVersion(){
         return null;
+    }
+
+    /**
+     * Initiate to add a participant in an IMS call.
+     * This happens asynchronously, so you cannot assume the audio path is
+     * connected (or a call index has been assigned) until PhoneStateChanged
+     * notification has occurred.
+     *
+     * @exception CallStateException if a new outgoing call is not currently
+     *                possible because no more call slots exist or a call exists
+     *                that is dialing, alerting, ringing, or waiting. Other
+     *                errors are handled asynchronously.
+     */
+    public void addParticipant(String dialString) throws CallStateException {
+        // To be overridden by GsmCdmaPhone and ImsPhone.
+        throw new CallStateException("addParticipant :: No-Op base implementation. "
+                + this);
     }
 
     /**

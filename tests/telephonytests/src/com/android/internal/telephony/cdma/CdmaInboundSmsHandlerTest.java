@@ -161,7 +161,7 @@ public class CdmaInboundSmsHandlerTest extends TelephonyTest {
         assertFalse(mCdmaInboundSmsHandler.getWakeLock().isHeld());
         mCdmaInboundSmsHandler = null;
         mContentProvider.shutdown();
-        mCdmaInboundSmsHandlerTestHandler.quitSafely();
+        mCdmaInboundSmsHandlerTestHandler.quit();
         super.tearDown();
     }
 

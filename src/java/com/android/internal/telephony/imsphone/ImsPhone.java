@@ -614,8 +614,19 @@ public class ImsPhone extends ImsPhoneBase {
     private Connection dialInternal(String dialString, int videoState,
                                     Bundle intentExtras, ResultReceiver wrappedCallback)
             throws CallStateException {
-        // Need to make sure dialString gets parsed properly
-        String newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+        if (intentExtras != null) {
+            isConferenceUri = intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
+        String newDialString = dialString;
+        // Need to make sure dialString gets parsed properly.
+        if (!isConferenceUri && !isSkipSchemaParsing) {
+            newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        }
 
         // handle in-call MMI first if applicable
         if (handleInCallMmiCommands(newDialString)) {
@@ -663,6 +674,11 @@ public class ImsPhone extends ImsPhoneBase {
 
             return null;
         }
+    }
+
+    @Override
+    public void addParticipant(String dialString) throws CallStateException {
+        mCT.addParticipant(dialString);
     }
 
     @Override
@@ -1131,6 +1147,7 @@ public class ImsPhone extends ImsPhoneBase {
          * The exception is cancellation of an incoming USSD-REQUEST, which is
          * not on the list.
          */
+        Rlog.d(LOG_TAG, "onMMIDone: mmi=" + mmi);
         if (mPendingMMIs.remove(mmi) || mmi.isUssdRequest()) {
             ResultReceiver receiverCallback = mmi.getUssdCallbackReceiver();
             if (receiverCallback != null) {
@@ -1139,6 +1156,7 @@ public class ImsPhone extends ImsPhoneBase {
                 sendUssdResponse(mmi.getDialString(), mmi.getMessage(), returnCode,
                         receiverCallback );
             } else {
+                Rlog.v(LOG_TAG, "onMMIDone: notifyRegistrants");
                 mMmiCompleteRegistrants.notifyRegistrants(
                     new AsyncResult(null, mmi, null));
             }
