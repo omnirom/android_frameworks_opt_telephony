@@ -1033,4 +1033,31 @@ public class CdmaSmsTest extends AndroidTestCase {
             }
         }
     }
+
+    @SmallTest
+    public void testCdmaSmsAddressDigitalMode() throws Exception {
+        String str_test;
+        CdmaSmsAddress sms_addr;
+
+        str_test = "+00123456789";
+        sms_addr = CdmaSmsAddress.parse(str_test);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_8BIT_CHAR, sms_addr.digitMode);
+
+        str_test = "test@test.com";
+        sms_addr = CdmaSmsAddress.parse(str_test);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_8BIT_CHAR, sms_addr.digitMode);
+
+        str_test = "123456789";
+        sms_addr = CdmaSmsAddress.parse(str_test);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_4BIT_DTMF, sms_addr.digitMode);
+
+        str_test = "test_123@test.com";
+        sms_addr = CdmaSmsAddress.parse(str_test);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_8BIT_CHAR, sms_addr.digitMode);
+
+        str_test = " \t";
+        sms_addr = CdmaSmsAddress.parse(str_test);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_8BIT_CHAR, sms_addr.digitMode);
+    }
+
 }
