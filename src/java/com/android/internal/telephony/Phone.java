@@ -195,8 +195,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_CARRIER_CONFIG_CHANGED         = 43;
     // Carrier's CDMA prefer mode setting
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
+    protected static final int EVENT_MODEM_RESET                    = 45;
 
-    protected static final int EVENT_LAST                       = EVENT_SET_ROAMING_PREFERENCE_DONE;
+    protected static final int EVENT_LAST                       = EVENT_MODEM_RESET;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -225,6 +226,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     // Integer used to let the calling application know that the we are ignoring auto mode switch.
     private static final int ALREADY_IN_AUTO_SELECTION = 1;
+
+    /**
+     * This method is invoked when the Phone exits Emergency Callback Mode.
+     */
+    protected void handleExitEmergencyCallbackMode() {
+    }
 
     /**
      * Small container class used to hold information relevant to

@@ -2010,6 +2010,12 @@ public class SimulatedCommands extends BaseCommands
         }
     }
 
+    public void notifyModemReset() {
+        if (mModemResetRegistrants != null) {
+            mModemResetRegistrants.notifyRegistrants(new AsyncResult(null, "Test", null));
+        }
+    }
+
     @Override
     public void registerForExitEmergencyCallbackMode(Handler h, int what, Object obj) {
         SimulatedCommandsVerifier.getInstance().registerForExitEmergencyCallbackMode(h, what, obj);
@@ -2096,6 +2102,12 @@ public class SimulatedCommands extends BaseCommands
 
     @Override
     public void unregisterForPcoData(Handler h) {
+    }
+
+    @Override
+    public void registerForModemReset(Handler h, int what, Object obj) {
+        SimulatedCommandsVerifier.getInstance().registerForModemReset(h, what, obj);
+        super.registerForModemReset(h, what, obj);
     }
 
     @Override
