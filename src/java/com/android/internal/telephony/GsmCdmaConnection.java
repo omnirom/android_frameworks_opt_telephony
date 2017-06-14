@@ -31,7 +31,6 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.text.TextUtils;
 
-import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
@@ -73,9 +72,6 @@ public class GsmCdmaConnection extends Connection {
 
     private boolean mIsEmergencyCall = false;
 
-    private boolean mIsWaitingCdmaLineControlInfoRec = false;
-    private boolean mIsCdmaLineControlInfoRecRegistered = false;
-
     // The cached delay to be used between DTMF tones fetched from carrier config.
     private int mDtmfToneDelay = 0;
 
@@ -85,7 +81,6 @@ public class GsmCdmaConnection extends Connection {
     static final int EVENT_NEXT_POST_DIAL = 3;
     static final int EVENT_WAKE_LOCK_TIMEOUT = 4;
     static final int EVENT_DTMF_DELAY_DONE = 5;
-    static final int EVENT_CDMA_LINE_CONTROL_INFO_REC = 6;
 
     //***** Constants
     static final int PAUSE_DELAY_MILLIS_GSM = 3 * 1000;
@@ -115,12 +110,6 @@ public class GsmCdmaConnection extends Connection {
                     // sent out.
                     mHandler.sendMessageDelayed(mHandler.obtainMessage(EVENT_DTMF_DELAY_DONE),
                             mDtmfToneDelay);
-                    break;
-                case EVENT_CDMA_LINE_CONTROL_INFO_REC:
-                    if (mIsWaitingCdmaLineControlInfoRec) {
-                        mOwner.pollCallsWhenSafe();
-                    }
-                    mIsWaitingCdmaLineControlInfoRec = false;
                     break;
             }
         }
@@ -163,11 +152,9 @@ public class GsmCdmaConnection extends Connection {
 
         mOwner = ct;
         mHandler = new MyHandler(mOwner.getLooper());
-        mIsWaitingCdmaLineControlInfoRec = true;
 
-        if (isPhoneTypeGsm()) {
-            mDialString = dialString;
-        } else {
+        mDialString = dialString;
+        if (!isPhoneTypeGsm()) {
             Rlog.d(LOG_TAG, "[GsmCdmaConn] GsmCdmaConnection: dialString=" +
                     maskDialString(dialString));
             dialString = formatDialString(dialString);
@@ -199,8 +186,7 @@ public class GsmCdmaConnection extends Connection {
                 } else {
                     parent.attachFake(this, GsmCdmaCall.State.DIALING);
                 }
-                mIsCdmaLineControlInfoRecRegistered = true;
-                phone.registerForLineControlInfo(mHandler, EVENT_CDMA_LINE_CONTROL_INFO_REC, null);
+
             }
         }
 
@@ -873,10 +859,6 @@ public class GsmCdmaConnection extends Connection {
         mDisconnectTime = System.currentTimeMillis();
         mDuration = SystemClock.elapsedRealtime() - mConnectTimeReal;
         mDisconnected = true;
-        mIsWaitingCdmaLineControlInfoRec = false;
-        if (!isPhoneTypeGsm()) {
-            clearCdmaLineControlInfoRecRegistration();
-        }
         clearPostDialListeners();
     }
 
@@ -1255,21 +1237,5 @@ public class GsmCdmaConnection extends Connection {
         }
 
         return false;
-    }
-
-    public boolean isWaitingCdmaLineControlInfoRec() {
-        return !isPhoneTypeGsm() ? mIsWaitingCdmaLineControlInfoRec : false;
-    }
-
-    public void clearCdmaLineControlInfoRecRegistration() {
-        if (mIsCdmaLineControlInfoRecRegistered) {
-            mIsCdmaLineControlInfoRecRegistered = false;
-            mOwner.getPhone().unregisterForLineControlInfo(mHandler);
-        }
-    }
-
-    @VisibleForTesting
-    public Handler getHandler() {
-        return mHandler;
     }
 }

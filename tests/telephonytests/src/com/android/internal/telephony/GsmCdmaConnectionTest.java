@@ -71,6 +71,19 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
     }
 
     @Test @SmallTest
+    public void testOriginalDialString(){
+        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
+        connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
+                false /*isEmergencyCall*/);
+        assertEquals("+8610000", connection.getOrigDialString());
+
+        doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
+        connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
+                false /*isEmergencyCall*/);
+        assertEquals("+8610000", connection.getOrigDialString());
+    }
+
+    @Test @SmallTest
     public void testSanityGSM() {
         connection = new GsmCdmaConnection(mPhone, String.format(
                 "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
@@ -189,38 +202,5 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
         assertEquals(GsmCdmaCall.State.DISCONNECTED, connection.getState());
         assertEquals(DisconnectCause.LOCAL, connection.getDisconnectCause());
         assertTrue(connection.getDisconnectTime() <= System.currentTimeMillis());
-    }
-
-    @Test @SmallTest
-    public void testCmdaLineControlInfo() {
-        // Verify for CDMA
-        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
-        connection = new GsmCdmaConnection(mPhone,
-                "10000", mCT, null, false /*isEmergencyCall*/);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), true);
-        connection.getHandler().sendEmptyMessage(GsmCdmaConnection.EVENT_CDMA_LINE_CONTROL_INFO_REC);
-        waitForMs(100);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
-
-        connection = new GsmCdmaConnection(mPhone,
-                "10000", mCT, null, false /*isEmergencyCall*/);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), true);
-        connection.onDisconnect(DisconnectCause.LOCAL);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
-
-        // Verify for GSM
-        doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
-        connection = new GsmCdmaConnection(mPhone,
-                "10000", mCT, null, false /*isEmergencyCall*/);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
-        connection.getHandler().sendEmptyMessage(GsmCdmaConnection.EVENT_CDMA_LINE_CONTROL_INFO_REC);
-        waitForMs(100);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
-
-        connection = new GsmCdmaConnection(mPhone,
-                "10000", mCT, null, false /*isEmergencyCall*/);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
-        connection.onDisconnect(DisconnectCause.LOCAL);
-        assertEquals(connection.isWaitingCdmaLineControlInfoRec(), false);
     }
 }

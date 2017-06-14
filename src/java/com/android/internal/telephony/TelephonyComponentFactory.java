@@ -251,4 +251,11 @@ public class TelephonyComponentFactory {
                 context, subscriptionController, looper, tr, cis,
                 phones);
     }
+
+    public RIL makeRIL(Context context, int preferredNetworkType,
+            int cdmaSubscription, Integer instanceId) {
+        Rlog.d(LOG_TAG, "makeRIL");
+        return new RIL(context, preferredNetworkType, cdmaSubscription, instanceId);
+    }
+
 }

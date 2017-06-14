@@ -798,10 +798,6 @@ public class GsmCdmaCallTracker extends CallTracker {
                     // It's our pending mobile originating call
                     mConnections[i] = mPendingMO;
                     mPendingMO.mIndex = i;
-                    if (mPendingMO.isWaitingCdmaLineControlInfoRec()) {
-                        // Overwrite state with DIALING till getting REC
-                        dc.state = DriverCall.State.DIALING;
-                    }
                     mPendingMO.update(dc);
                     mPendingMO = null;
 
@@ -943,20 +939,6 @@ public class GsmCdmaCallTracker extends CallTracker {
                     }
                 } else {
                     boolean changed;
-                    if (conn.isWaitingCdmaLineControlInfoRec()) {
-                        // Overwrite state with DIALING till getting REC
-                        dc.state = DriverCall.State.DIALING;
-                    }
-                    if (mPendingMO != null) {
-                        conn.clearCdmaLineControlInfoRecRegistration();
-                        if (!mPendingMO.isWaitingCdmaLineControlInfoRec()) {
-                            // For CDMA three way call, the first connection time
-                            // is not unable to reset
-                            // Just start calculating the second call time
-                            mPendingMO.onConnectedInOrOut();
-                            mPendingMO = null;
-                        }
-                    }
                     changed = conn.update(dc);
                     hasNonHangupStateChanged = hasNonHangupStateChanged || changed;
                 }
@@ -1534,9 +1516,9 @@ public class GsmCdmaCallTracker extends CallTracker {
             case EVENT_THREE_WAY_DIAL_L2_RESULT_CDMA:
                 if (!isPhoneTypeGsm()) {
                     ar = (AsyncResult)msg.obj;
-                    if (ar.exception != null) {
-                        // Assume 3 way call is disconnected with failure
-                        mPendingMO.onLocalDisconnect();
+                    if (ar.exception == null) {
+                        // Assume 3 way call is connected
+                        mPendingMO.onConnectedInOrOut();
                         mPendingMO = null;
                     }
                 } else {

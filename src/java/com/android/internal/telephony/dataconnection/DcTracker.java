@@ -944,7 +944,8 @@ public class DcTracker extends Handler {
     private void reevaluateDataConnections() {
         if (mDataEnabledSettings.isDataEnabled()) {
             for (ApnContext apnContext : mApnContexts.values()) {
-                if (apnContext.isConnectedOrConnecting()) {
+                if (apnContext.isConnectedOrConnecting() &&
+                        (!apnContext.getApnType().equals(PhoneConstants.APN_TYPE_IMS))) {
                     final DcAsyncChannel dcac = apnContext.getDcAc();
                     if (dcac != null) {
                         final NetworkCapabilities netCaps = dcac.getNetworkCapabilitiesSync();
