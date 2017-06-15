@@ -2457,6 +2457,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             }
         }
 
+        @Override
+        public void onCallSessionMayHandover(ImsCall imsCall, int srcAccessTech,
+            int targetAccessTech) {
+            if (DBG) {
+                log("callSessionMayHandover ::  srcAccessTech="
+                        + srcAccessTech + ", targetAccessTech=" + targetAccessTech );
+            }
+        }
+
         /**
          * Handles a change to the multiparty state for an {@code ImsCall}.  Notifies the associated
          * {@link ImsPhoneConnection} of the change.
