@@ -27,6 +27,7 @@ import android.os.PersistableBundle;
 import android.os.PowerManager;
 import android.os.Registrant;
 import android.os.SystemClock;
+import android.telecom.Call;
 import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
 import android.telephony.DisconnectCause;
@@ -670,6 +671,7 @@ public class ImsPhoneConnection extends Connection implements
      *     changed, and {@code false} otherwise.
      */
     public boolean update(ImsCall imsCall, ImsPhoneCall.State state) {
+        updateCallStateToVideoCallProvider(state);
         if (state == ImsPhoneCall.State.ACTIVE) {
             // If the state of the call is active, but there is a pending request to the RIL to hold
             // the call, we will skip this update.  This is really a signalling delay or failure
@@ -1139,5 +1141,27 @@ public class ImsPhoneConnection extends Connection implements
         }
 
         return mImsVideoCallProviderWrapper.wasVideoPausedFromSource(source);
+    }
+
+    private void updateCallStateToVideoCallProvider(ImsPhoneCall.State state) {
+        if (mImsVideoCallProviderWrapper == null) {
+            return;
+        }
+        mImsVideoCallProviderWrapper.onCallStateChanged(toTelecomCallState(state));
+    }
+
+    private static int toTelecomCallState(ImsPhoneCall.State state) {
+        switch(state) {
+            case IDLE:            return Call.STATE_NEW;
+            case ACTIVE:          return Call.STATE_ACTIVE;
+            case HOLDING:         return Call.STATE_HOLDING;
+            case DIALING:         return Call.STATE_DIALING;
+            case ALERTING:        return Call.STATE_DIALING;
+            case INCOMING:        return Call.STATE_RINGING;
+            case WAITING:         return Call.STATE_RINGING;
+            case DISCONNECTING:   return Call.STATE_DISCONNECTING;
+            case DISCONNECTED:    return Call.STATE_DISCONNECTED;
+            default:              return Call.STATE_NEW;
+        }
     }
 }

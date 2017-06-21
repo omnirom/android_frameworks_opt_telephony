@@ -3283,7 +3283,8 @@ public class ServiceStateTracker extends Handler {
      */
     private boolean isOperatorConsideredNonRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = mPhone.getContext().getResources().getStringArray(
+        String[] numericArray = SubscriptionManager.getResourcesForSubId(
+                mPhone.getContext(), mPhone.getSubId()).getStringArray(
                 com.android.internal.R.array.config_operatorConsideredNonRoaming);
 
         if (numericArray.length == 0 || operatorNumeric == null) {
@@ -3300,7 +3301,8 @@ public class ServiceStateTracker extends Handler {
 
     private boolean isOperatorConsideredRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = mPhone.getContext().getResources().getStringArray(
+        String[] numericArray = SubscriptionManager.getResourcesForSubId(
+                mPhone.getContext(), mPhone.getSubId()).getStringArray(
                 com.android.internal.R.array.config_sameNamedOperatorConsideredRoaming);
 
         if (numericArray.length == 0 || operatorNumeric == null) {
@@ -3839,7 +3841,7 @@ public class ServiceStateTracker extends Handler {
                 }
                 notificationId = PS_NOTIFICATION;
                 title = context.getText(com.android.internal.R.string.RestrictedOnDataTitle);
-                details = context.getText(com.android.internal.R.string.RestrictedOnDataContent);
+                details = context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case PS_DISABLED:
                 notificationId = PS_NOTIFICATION;
@@ -3847,16 +3849,16 @@ public class ServiceStateTracker extends Handler {
             case CS_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnAllVoiceTitle);
                 details = context.getText(
-                        com.android.internal.R.string.RestrictedOnAllVoiceContent);
+                        com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_NORMAL_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnNormalTitle);
-                details = context.getText(com.android.internal.R.string.RestrictedOnNormalContent);
+                details = context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_EMERGENCY_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnEmergencyTitle);
                 details = context.getText(
-                        com.android.internal.R.string.RestrictedOnEmergencyContent);
+                        com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_DISABLED:
                 // do nothing and cancel the notification later

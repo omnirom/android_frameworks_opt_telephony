@@ -16,13 +16,18 @@
 
 package com.android.internal.telephony.uicc;
 
+import static com.android.internal.telephony.uicc.IccConstants.EF_DOMAIN;
+import static com.android.internal.telephony.uicc.IccConstants.EF_IMPI;
+import static com.android.internal.telephony.uicc.IccConstants.EF_IMPU;
+import static com.android.internal.telephony.uicc.IccConstants.EF_IST;
+import static com.android.internal.telephony.uicc.IccConstants.EF_PCSCF;
+
 import android.content.Context;
+import android.content.Intent;
 import android.os.AsyncResult;
-import android.os.Handler;
 import android.os.Message;
 import android.telephony.Rlog;
-import android.content.Intent;
-
+import android.text.TextUtils;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.gsm.SimTlv;
@@ -33,12 +38,6 @@ import java.io.PrintWriter;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
-
-import static com.android.internal.telephony.uicc.IccConstants.EF_DOMAIN;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IMPI;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IMPU;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IST;
-import static com.android.internal.telephony.uicc.IccConstants.EF_PCSCF;
 
 /**
  * {@hide}
