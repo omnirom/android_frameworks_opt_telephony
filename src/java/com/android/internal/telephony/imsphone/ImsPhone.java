@@ -1912,6 +1912,10 @@ public class ImsPhone extends ImsPhoneBase {
                 // Rtt Upgrade means enable Rtt
                 packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_FULL);
                 break;
+            case QtiCallConstants.RTT_DOWNGRADE_INITIATE:
+                // Rtt downrade means disable Rtt
+                packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_DISABLED);
+                break;
             case QtiCallConstants.RTT_UPGRADE_CONFIRM:
             case QtiCallConstants.RTT_UPGRADE_REJECT:
                 sendRttModifyResponse(data);
