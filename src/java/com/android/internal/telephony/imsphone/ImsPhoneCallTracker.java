@@ -65,6 +65,7 @@ import com.android.ims.ImsManager;
 import com.android.ims.ImsMultiEndpoint;
 import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsServiceClass;
+import com.android.ims.ImsStreamMediaProfile;
 import com.android.ims.ImsSuppServiceNotification;
 import com.android.ims.ImsUtInterface;
 import com.android.ims.internal.IImsVideoCallProvider;
@@ -96,6 +97,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+
+import org.codeaurora.ims.QtiCallConstants;
+import org.codeaurora.ims.utils.QtiImsExtUtils;
 
 /**
  * {@hide}
@@ -946,7 +950,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mSupportDowngradeVtToAudio = carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_SUPPORT_DOWNGRADE_VT_TO_AUDIO_BOOL);
         mNotifyHandoverVideoFromWifiToLTE = carrierConfig.getBoolean(
-                CarrierConfigManager.KEY_NOTIFY_VT_HANDOVER_TO_WIFI_FAILURE_BOOL);
+                CarrierConfigManager.KEY_NOTIFY_HANDOVER_VIDEO_FROM_WIFI_TO_LTE_BOOL);
         mIgnoreDataEnabledChangedForVideoCalls = carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_IGNORE_DATA_ENABLED_CHANGED_FOR_VIDEO_CALLS);
         mSupportPauseVideo = carrierConfig.getBoolean(
@@ -1067,6 +1071,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // being sent to the lower layers/to the network.
             }
 
+            profile = setRttModeBasedOnOperator(profile);
             ImsCall imsCall = mImsManager.makeCall(mServiceId, profile,
                     callees, mImsCallListener);
             conn.setImsCall(imsCall);
@@ -1100,6 +1105,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             throw new CallStateException("cannot accept call");
         }
 
+        ImsStreamMediaProfile mediaProfile = new ImsStreamMediaProfile();
         if ((mRingingCall.getState() == ImsPhoneCall.State.WAITING)
                 && mForegroundCall.getState().isAlive()) {
             setMute(false);
@@ -1119,7 +1125,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // We need to disconnect the foreground call before answering the background call.
                 mForegroundCall.hangup();
                 try {
-                    ringingCall.accept(ImsCallProfile.getCallTypeFromVideoState(videoState));
+                    mediaProfile = addRttAttributeIfRequired(ringingCall, mediaProfile);
+                    ringingCall.accept(ImsCallProfile.getCallTypeFromVideoState(videoState),
+                            mediaProfile);
                 } catch (ImsException e) {
                     throw new CallStateException("cannot accept call");
                 }
@@ -1133,7 +1141,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             try {
                 ImsCall imsCall = mRingingCall.getImsCall();
                 if (imsCall != null) {
-                    imsCall.accept(ImsCallProfile.getCallTypeFromVideoState(videoState));
+                    mediaProfile = addRttAttributeIfRequired(imsCall, mediaProfile);
+                    imsCall.accept(ImsCallProfile.getCallTypeFromVideoState(videoState),
+                            mediaProfile);
                     mMetrics.writeOnImsCommand(mPhone.getPhoneId(), imsCall.getSession(),
                             ImsCommand.IMS_CMD_ACCEPT);
                 } else {
@@ -1563,8 +1573,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 //accept waiting call after holding background call
                 ImsCall imsCall = mRingingCall.getImsCall();
                 if (imsCall != null) {
+                    ImsStreamMediaProfile mediaProfile = new ImsStreamMediaProfile();
+
+                    if (mPhone.canProcessRttReqest()) {
+                        mediaProfile.setRttMode(QtiImsExtUtils.getRttMode(mPhone.getContext()));
+                    }
+
                     imsCall.accept(
-                        ImsCallProfile.getCallTypeFromVideoState(mPendingCallVideoState));
+                            ImsCallProfile.getCallTypeFromVideoState(mPendingCallVideoState),
+                            mediaProfile);
                     mMetrics.writeOnImsCommand(mPhone.getPhoneId(), imsCall.getSession(),
                             ImsCommand.IMS_CMD_ACCEPT);
                 }
@@ -2507,6 +2524,21 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 mAddPartResp = null;
             }
         }
+
+        @Override
+        public void onCallSessionRttMessageReceived(String rttMessage) {
+            if (DBG) log("onCallSessionRttMessageReceived");
+        }
+
+        @Override
+        public void onCallSessionRttModifyReceived(ImsCall call, ImsCallProfile profile) {
+            if (DBG) log("onCallSessionRttModifyReceived");
+        }
+
+        @Override
+        public void onCallSessionRttModifyResponseReceived(int status) {
+            if (DBG) log("onCallSessionRttModifyResponseReceived");
+        }
     };
 
     /**
@@ -3387,5 +3419,46 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mMetrics.writeOnImsCapabilities(
                     mPhone.getPhoneId(), mImsFeatureEnabled);
         }
+    }
+
+    // Update the Rtt attribute
+    private ImsCallProfile setRttModeBasedOnOperator(ImsCallProfile profile) {
+        if (!mPhone.canProcessRttReqest()) {
+            return profile;
+        }
+
+        int mode = QtiImsExtUtils.getRttOperatingMode(mPhone.getContext());
+
+        if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
+
+        if (!QtiImsExtUtils.isRttSupportedOnVtCalls(mPhone.getPhoneId(), mPhone.getContext())
+                && profile.isVideoCall()) {
+            return profile;
+        }
+
+        if (QtiImsExtUtils.isRttSupported(mPhone.getPhoneId(), mPhone.getContext())) {
+            profile.mMediaProfile.setRttMode(mode);
+        }
+        return profile;
+    }
+
+    // Accept the call as RTT if incoming call as RTT attribute set
+    private ImsStreamMediaProfile addRttAttributeIfRequired(ImsCall call,
+            ImsStreamMediaProfile mediaProfile) {
+
+        if (!mPhone.canProcessRttReqest()) {
+            return mediaProfile;
+        }
+
+        ImsCallProfile profile = call.getCallProfile();
+        if (profile.mMediaProfile != null && profile.mMediaProfile.isRttCall() &&
+                (mPhone.isRttVtCallAllowed(call))) {
+            if (DBG) log("RTT: addRttAttributeIfRequired = " +
+                    profile.mMediaProfile.isRttCall());
+            // If RTT UI option is on, then incoming RTT call should always be accepted
+            // as RTT, irrespective of Modes
+            mediaProfile.setRttMode(ImsStreamMediaProfile.RTT_MODE_FULL);
+        }
+        return mediaProfile;
     }
 }

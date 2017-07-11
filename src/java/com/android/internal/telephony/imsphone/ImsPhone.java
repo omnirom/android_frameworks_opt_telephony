@@ -24,6 +24,7 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Bundle;
@@ -48,6 +49,7 @@ import android.telephony.TelephonyManager;
 import android.telephony.UssdResponse;
 import android.text.TextUtils;
 
+import com.android.ims.ImsCall;
 import com.android.ims.ImsCallForwardInfo;
 import com.android.ims.ImsCallProfile;
 import com.android.ims.ImsEcbm;
@@ -56,6 +58,7 @@ import com.android.ims.ImsException;
 import com.android.ims.ImsManager;
 import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsSsInfo;
+import com.android.ims.ImsStreamMediaProfile;
 import com.android.ims.ImsUtInterface;
 
 import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAOC;
@@ -109,6 +112,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+
+import org.codeaurora.ims.QtiCallConstants;
+import org.codeaurora.ims.utils.QtiImsExtUtils;
 
 /**
  * {@hide}
@@ -186,11 +192,13 @@ public class ImsPhone extends ImsPhoneBase {
         final String mSetCfNumber;
         final Message mOnComplete;
         final boolean mIsCfu;
+        final int mServiceClass;
 
-        Cf(String cfNumber, boolean isCfu, Message onComplete) {
+        Cf(String cfNumber, boolean isCfu, Message onComplete, int serviceClass) {
             mSetCfNumber = cfNumber;
             mIsCfu = isCfu;
             mOnComplete = onComplete;
+            mServiceClass = serviceClass;
         }
     }
 
@@ -233,6 +241,14 @@ public class ImsPhone extends ImsPhoneBase {
         mDefaultPhone.registerForServiceStateChanged(this, EVENT_SERVICE_STATE_CHANGED, null);
         // Force initial roaming state update later, on EVENT_CARRIER_CONFIG_CHANGED.
         // Settings provider or CarrierConfig may not be loaded now.
+
+        // Register receiver for sending RTT text message and
+        // for receving RTT Operation
+        // .i.e.Upgrade Initiate, Upgrade accept, Upgrade reject
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(QtiCallConstants.ACTION_SEND_RTT_TEXT);
+        filter.addAction(QtiCallConstants.ACTION_RTT_OPERATION);
+        mDefaultPhone.getContext().registerReceiver(mRttReceiver, filter);
     }
 
     //todo: get rid of this function. It is not needed since parentPhone obj never changes
@@ -252,6 +268,7 @@ public class ImsPhone extends ImsPhoneBase {
             mDefaultPhone.getServiceStateTracker().
                     unregisterForDataRegStateOrRatChanged(this);
             mDefaultPhone.unregisterForServiceStateChanged(this);
+            mDefaultPhone.getContext().unregisterReceiver(mRttReceiver);
         }
     }
 
@@ -899,7 +916,7 @@ public class ImsPhone extends ImsPhoneBase {
             Message resp;
             Cf cf = new Cf(dialingNumber,
                     (commandInterfaceCFReason == CF_REASON_UNCONDITIONAL ? true : false),
-                    onComplete);
+                    onComplete, serviceClass);
             resp = obtainMessage(EVENT_SET_CALL_FORWARD_DONE,
                     isCfEnable(commandInterfaceCFAction) ? 1 : 0, 0, cf);
 
@@ -1072,6 +1089,9 @@ public class ImsPhone extends ImsPhoneBase {
                 break;
             case ImsReasonInfo.CODE_UT_SERVICE_UNAVAILABLE:
                 error = CommandException.Error.RADIO_NOT_AVAILABLE;
+                break;
+            case ImsReasonInfo.CODE_FDN_BLOCKED:
+                error = CommandException.Error.FDN_CHECK_FAILURE;
             default:
                 break;
         }
@@ -1336,7 +1356,8 @@ public class ImsPhone extends ImsPhoneBase {
             case EVENT_SET_CALL_FORWARD_DONE:
                 IccRecords r = mDefaultPhone.getIccRecords();
                 Cf cf = (Cf) ar.userObj;
-                if (cf.mIsCfu && ar.exception == null && r != null) {
+                if (cf.mIsCfu && ar.exception == null && r != null
+                        && cf.mServiceClass == SERVICE_CLASS_VOICE) {
                     setVoiceCallForwardingFlag(r, 1, msg.arg1 == 1, cf.mSetCfNumber);
                 }
                 sendResponse(cf.mOnComplete, null, ar.exception);
@@ -1781,6 +1802,206 @@ public class ImsPhone extends ImsPhoneBase {
         TelephonyManager tm = (TelephonyManager) mContext
                 .getSystemService(Context.TELEPHONY_SERVICE);
         return tm.isNetworkRoaming();
+    }
+
+    private BroadcastReceiver mRttReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (QtiCallConstants.ACTION_SEND_RTT_TEXT.equals(intent.getAction())) {
+                Rlog.d(LOG_TAG, "RTT: Received ACTION_SEND_RTT_TEXT");
+                String data = intent.getStringExtra(QtiCallConstants.RTT_TEXT_VALUE);
+                sendRttMessage(data);
+            } else if (QtiCallConstants.ACTION_RTT_OPERATION.equals(intent.getAction())) {
+                Rlog.d(LOG_TAG, "RTT: Received ACTION_RTT_OPERATION");
+                int data = intent.getIntExtra(QtiCallConstants.RTT_OPERATION_TYPE, 0);
+                checkIfModifyRequestOrResponse(data);
+            } else {
+                Rlog.d(LOG_TAG, "RTT: unknown intent");
+            }
+        }
+    };
+
+    /**
+     * Sends Rtt message
+     * Rtt Message can be sent only when -
+     * operating mode is RTT_FULL and for non-VT calls only based on config
+     *
+     * @param data The Rtt text to be sent
+     */
+    public void sendRttMessage(String data) {
+        if (!canProcessRttReqest() || !isFgCallActive()) {
+            return;
+        }
+
+        // Check for empty message
+        if (TextUtils.isEmpty(data)) {
+            Rlog.d(LOG_TAG, "RTT: Text null");
+            return;
+        }
+
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        if (!isRttVtCallAllowed(imsCall)) {
+            Rlog.d(LOG_TAG, "RTT: InCorrect mode");
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: sendRttMessage");
+        try {
+            imsCall.sendRttMessage(data);
+        } catch (ImsException e) {
+            Rlog.e(LOG_TAG, "RTT: sendRttMessage exception = " + e);
+        }
+    }
+
+    /**
+     * Sends RTT Upgrade request
+     *
+     * @param to: expected profile
+     */
+    public void sendRttModifyRequest(ImsCallProfile to) {
+        Rlog.d(LOG_TAG, "RTT: sendRttModifyRequest");
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        try {
+            imsCall.sendRttModifyRequest(to);
+        } catch (ImsException e) {
+            Rlog.e(LOG_TAG, "RTT: sendRttModifyRequest exception = " + e);
+        }
+    }
+
+    /**
+     * Sends RTT Upgrade response
+     *
+     * @param data : response for upgrade
+     */
+    public void sendRttModifyResponse(int response) {
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        if (!isRttVtCallAllowed(imsCall)) {
+            Rlog.d(LOG_TAG, "RTT: Not allowed for VT");
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: sendRttModifyResponse");
+        try {
+            imsCall.sendRttModifyResponse(mapRequestToResponse(response));
+        } catch (ImsException e) {
+            Rlog.e(LOG_TAG, "RTT: sendRttModifyResponse exception = " + e);
+        }
+    }
+
+    // Utility to check if the value coming in intent is for upgrade initiate or upgrade response
+    private void checkIfModifyRequestOrResponse(int data) {
+        if (!canProcessRttReqest() || !isFgCallActive()) {
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: checkIfModifyRequestOrResponse data =  " + data);
+        switch (data) {
+            case QtiCallConstants.RTT_UPGRADE_INITIATE:
+                // Rtt Upgrade means enable Rtt
+                packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_FULL);
+                break;
+            case QtiCallConstants.RTT_UPGRADE_CONFIRM:
+            case QtiCallConstants.RTT_UPGRADE_REJECT:
+                sendRttModifyResponse(data);
+                break;
+        }
+    }
+
+    private void packRttModifyRequestToProfile(int data) {
+        if (!canSendRttModifyRequest()) {
+            Rlog.d(LOG_TAG, "RTT: cannot send rtt modify request");
+            return;
+        }
+
+        ImsCallProfile fromProfile = getForegroundCall().getImsCall().getCallProfile();
+        ImsCallProfile toProfile = fromProfile;
+        toProfile.mMediaProfile = new ImsStreamMediaProfile(data);
+
+        Rlog.d(LOG_TAG, "RTT: packRttModifyRequestToProfile");
+        sendRttModifyRequest(toProfile);
+    }
+
+    private boolean canSendRttModifyRequest() {
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean mapRequestToResponse(int response) {
+        switch (response) {
+            case QtiCallConstants.RTT_UPGRADE_CONFIRM:
+                return true;
+            case QtiCallConstants.RTT_UPGRADE_REJECT:
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /*
+     * Returns true if Mode is RTT_FULL, false otherwise
+     */
+    private boolean isInFullRttMode() {
+        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
+        Rlog.d(LOG_TAG, "RTT: isInFullRttMode mode = " + mode);
+        return (mode == QtiCallConstants.RTT_MODE_FULL);
+    }
+
+    /*
+     * Rtt for VT calls is not supported for certain operators
+     * Check the config and process the request
+     */
+    public boolean isRttVtCallAllowed(ImsCall call) {
+        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
+        Rlog.d(LOG_TAG, "RTT: isRttVtCallAllowed mode = " + mode);
+
+        if (call.getCallProfile().isVideoCall() &&
+                !QtiImsExtUtils.isRttSupportedOnVtCalls(mPhoneId, mContext)) {
+            return false;
+        }
+        return true;
+    }
+
+    public boolean canProcessRttReqest() {
+        // Process only if Carrier supports RTT and RTT is on
+        if (!(QtiImsExtUtils.isRttSupported(mPhoneId, mContext) &&
+                    QtiImsExtUtils.isRttOn(mContext))) {
+            Rlog.d(LOG_TAG, "RTT: canProcessRttReqest RTT is not supported/off");
+            return false;
+        }
+        Rlog.d(LOG_TAG, "RTT: canProcessRttReqest rtt supported = " +
+                QtiImsExtUtils.isRttSupported(mPhoneId, mContext) + ", is Rtt on = " +
+                QtiImsExtUtils.isRttOn(mContext) + ", Rtt mode = " +
+                QtiImsExtUtils.getRttMode(mContext));
+        return true;
+    }
+
+    public boolean isFgCallActive() {
+        // process the request only if foreground is active
+        if (ImsPhoneCall.State.ACTIVE != getForegroundCall().getState()) {
+            Rlog.d(LOG_TAG, "RTT: isFgCallActive fg call not active");
+            return false;
+        }
+        return true;
     }
 
     @Override

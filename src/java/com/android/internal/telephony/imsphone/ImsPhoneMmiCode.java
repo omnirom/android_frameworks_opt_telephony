@@ -1157,6 +1157,12 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     }
 
     private CharSequence getErrorMessage(AsyncResult ar) {
+        if (ar.exception instanceof CommandException) {
+            CommandException err = (CommandException) ar.exception;
+            if (err.getCommandError() == CommandException.Error.FDN_CHECK_FAILURE) {
+                return mContext.getText(com.android.internal.R.string.mmiFdnError);
+            }
+        }
         return mContext.getText(com.android.internal.R.string.mmiError);
     }
 
@@ -1201,6 +1207,8 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 if (err.getCommandError() == CommandException.Error.PASSWORD_INCORRECT) {
                     sb.append(mContext.getText(
                             com.android.internal.R.string.passwordIncorrect));
+                } else if (err.getCommandError() == CommandException.Error.FDN_CHECK_FAILURE) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
                 } else if (err.getMessage() != null) {
                     sb.append(err.getMessage());
                 } else {
@@ -1208,7 +1216,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 }
             } else {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1346,7 +1356,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1411,7 +1423,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1472,7 +1486,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1510,10 +1526,11 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         mState = State.FAILED;
 
         if (ar.exception != null) {
-
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1609,7 +1626,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if (error.getCode() == ImsReasonInfo.CODE_FDN_BLOCKED) {
+                    sb.append(mContext.getText(com.android.internal.R.string.mmiFdnError));
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
