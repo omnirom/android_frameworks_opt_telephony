@@ -42,6 +42,7 @@ public class CarrierActionAgentTest extends TelephonyTest {
     private FakeContentResolver mFakeContentResolver;
     private static int DATA_CARRIER_ACTION_EVENT = 0;
     private static int RADIO_CARRIER_ACTION_EVENT = 1;
+    private CarrierActionAgentHandler mCarrierActionAgentHandler;
     @Mock
     private Handler mDataActionHandler;
     @Mock
@@ -85,7 +86,8 @@ public class CarrierActionAgentTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
         mFakeContentResolver = new FakeContentResolver();
         doReturn(mFakeContentResolver).when(mContext).getContentResolver();
-        new CarrierActionAgentHandler(getClass().getSimpleName()).start();
+        mCarrierActionAgentHandler = new CarrierActionAgentHandler(getClass().getSimpleName());
+        mCarrierActionAgentHandler.start();
         waitUntilReady();
         logd("CarrierActionAgentTest -Setup!");
     }
@@ -109,6 +111,7 @@ public class CarrierActionAgentTest extends TelephonyTest {
     @After
     public void tearDown() throws Exception {
         Settings.Global.putInt(mFakeContentResolver, Settings.Global.AIRPLANE_MODE_ON, 0);
+        mCarrierActionAgentHandler.quit();
         super.tearDown();
     }
 }

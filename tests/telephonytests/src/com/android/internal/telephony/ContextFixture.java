@@ -59,9 +59,11 @@ import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Telephony.ServiceStateTable;
+import android.telecom.TelecomManager;
 import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.euicc.EuiccManager;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
 import android.test.mock.MockContext;
@@ -234,6 +236,10 @@ public class ContextFixture implements TestFixture<Context> {
                     return mUsageStatManager;
                 case Context.BATTERY_SERVICE:
                     return mBatteryManager;
+                case Context.EUICC_SERVICE:
+                    return mEuiccManager;
+                case Context.TELECOM_SERVICE:
+                    return mTelecomManager;
                 case Context.DISPLAY_SERVICE:
                 case Context.POWER_SERVICE:
                     // PowerManager and DisplayManager are final classes so cannot be mocked,
@@ -458,6 +464,7 @@ public class ContextFixture implements TestFixture<Context> {
             new HashMap<String, IInterface>();
     private final Map<ComponentName, ServiceInfo> mServiceInfoByComponentName =
             new HashMap<ComponentName, ServiceInfo>();
+    private final Map<ComponentName, IntentFilter> mIntentFilterByComponentName = new HashMap<>();
     private final Map<IInterface, ComponentName> mComponentNameByService =
             new HashMap<IInterface, ComponentName>();
     private final Map<ServiceConnection, IInterface> mServiceByServiceConnection =
@@ -492,6 +499,8 @@ public class ContextFixture implements TestFixture<Context> {
     private final UsageStatsManager mUsageStatManager = null;
     private final WifiManager mWifiManager = mock(WifiManager.class);
     private final BatteryManager mBatteryManager = mock(BatteryManager.class);
+    private final EuiccManager mEuiccManager = mock(EuiccManager.class);
+    private final TelecomManager mTelecomManager = mock(TelecomManager.class);
 
     private final ContentProvider mContentProvider = spy(new FakeContentProvider());
 
@@ -572,8 +581,15 @@ public class ContextFixture implements TestFixture<Context> {
 
     public void addService(String action, ComponentName name, String packageName,
                            IInterface service, ServiceInfo serviceInfo) {
+        addService(action, name, packageName, service, serviceInfo, null /* filter */);
+    }
+
+    public void addService(String action, ComponentName name, String packageName,
+            IInterface service, ServiceInfo serviceInfo, IntentFilter filter) {
         mComponentNamesByAction.put(action, name);
         mServiceInfoByComponentName.put(name, serviceInfo);
+        mIntentFilterByComponentName.put(name, filter);
+        mServiceByComponentName.put(name, service);
         mServiceByPackageName.put(packageName, service);
         mComponentNameByService.put(service, name);
     }
@@ -583,6 +599,7 @@ public class ContextFixture implements TestFixture<Context> {
         for (ComponentName componentName : mComponentNamesByAction.get(intent.getAction())) {
             ResolveInfo resolveInfo = new ResolveInfo();
             resolveInfo.serviceInfo = mServiceInfoByComponentName.get(componentName);
+            resolveInfo.filter = mIntentFilterByComponentName.get(componentName);
             result.add(resolveInfo);
         }
         return result;

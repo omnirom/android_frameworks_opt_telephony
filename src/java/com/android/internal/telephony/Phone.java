@@ -23,6 +23,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.LinkProperties;
 import android.net.NetworkCapabilities;
+import android.net.NetworkStats;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.AsyncResult;
@@ -44,6 +45,7 @@ import android.telephony.CellInfo;
 import android.telephony.CellInfoCdma;
 import android.telephony.CellLocation;
 import android.telephony.ClientRequestStats;
+import android.telephony.ImsiEncryptionInfo;
 import android.telephony.PhoneStateListener;
 import android.telephony.RadioAccessFamily;
 import android.telephony.Rlog;
@@ -58,7 +60,6 @@ import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
 import com.android.internal.telephony.dataconnection.DcTracker;
-import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -193,8 +194,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_CARRIER_CONFIG_CHANGED         = 43;
     // Carrier's CDMA prefer mode setting
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
+    protected static final int EVENT_MODEM_RESET                    = 45;
 
-    protected static final int EVENT_LAST                       = EVENT_SET_ROAMING_PREFERENCE_DONE;
+    protected static final int EVENT_LAST                       = EVENT_MODEM_RESET;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -223,6 +225,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     // Integer used to let the calling application know that the we are ignoring auto mode switch.
     private static final int ALREADY_IN_AUTO_SELECTION = 1;
+
+    /**
+     * This method is invoked when the Phone exits Emergency Callback Mode.
+     */
+    protected void handleExitEmergencyCallbackMode() {
+    }
 
     /**
      * Small container class used to hold information relevant to
@@ -567,7 +575,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 if (imsManager.isDynamicBinding() || imsManager.isServiceAvailable()) {
                     mImsServiceReady = true;
                     updateImsPhone();
-                    ImsManager.updateImsServiceConfig(mContext, mPhoneId, false);
                 }
             }
         }
@@ -2191,8 +2198,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @return {@code true} if we are in emergency call back mode. This is a period where the phone
      * should be using as little power as possible and be ready to receive an incoming call from the
      * emergency operator.
-     *
-     * This method is overridden for GSM phones to return false always
      */
     public boolean isInEcm() {
         return mIsPhoneInEcmState;
@@ -2819,18 +2824,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Report on whether data connectivity is allowed.
      */
-    public boolean isDataConnectivityPossible() {
-        return isDataConnectivityPossible(PhoneConstants.APN_TYPE_DEFAULT);
+    public boolean isDataAllowed() {
+        return ((mDcTracker != null) && (mDcTracker.isDataAllowed(null)));
     }
-
-    /**
-     * Report on whether data connectivity is allowed for an APN.
-     */
-    public boolean isDataConnectivityPossible(String apnType) {
-        return ((mDcTracker != null) &&
-                (mDcTracker.isDataPossible(apnType)));
-    }
-
 
     /**
      * Action set from carrier signalling broadcast receivers to enable/disable metered apns.
@@ -3018,6 +3014,28 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public Phone getImsPhone() {
         return mImsPhone;
+    }
+
+    /**
+     * Returns Carrier specific information that will be used to encrypt the IMSI and IMPI.
+     * @param keyType whether the key is being used for WLAN or ePDG.
+     * @return ImsiEncryptionInfo which includes the Key Type, the Public Key
+     *        {@link java.security.PublicKey} and the Key Identifier.
+     *        The keyIdentifier This is used by the server to help it locate the private key to
+     *        decrypt the permanent identity.
+     */
+    public ImsiEncryptionInfo getCarrierInfoForImsiEncryption(int keyType) {
+        return null;
+    }
+
+    /**
+     * Sets the carrier information needed to encrypt the IMSI and IMPI.
+     * @param imsiEncryptionInfo Carrier specific information that will be used to encrypt the
+     *        IMSI and IMPI. This includes the Key type, the Public key
+     *        {@link java.security.PublicKey} and the Key identifier.
+     */
+    public void setCarrierInfoForImsiEncryption(ImsiEncryptionInfo imsiEncryptionInfo) {
+        return;
     }
 
     /**
@@ -3359,6 +3377,18 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Determines if the connection to IMS services are available yet.
+     * @return {@code true} if the connection to IMS services are available.
+     */
+    public boolean isImsAvailable() {
+        if (mImsPhone == null) {
+            return false;
+        }
+
+        return mImsPhone.isImsAvailable();
+    }
+
+    /**
      * Determines if video calling is enabled for the phone.
      *
      * @return {@code true} if video calling is enabled, {@code false} otherwise.
@@ -3472,7 +3502,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                             ImsConfig.WfcModeFeatureValueConstants.WIFI_ONLY));
             if (wfcWiFiOnly) {
                 throw new CallStateException(
-                        CallStateException.ERROR_DISCONNECTED,
+                        CallStateException.ERROR_OUT_OF_SERVICE,
                         "WFC Wi-Fi Only Mode: IMS not registered");
             }
         }
@@ -3511,9 +3541,16 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return this;
     }
 
-    public long getVtDataUsage() {
-        if (mImsPhone == null) return 0;
-        return mImsPhone.getVtDataUsage();
+    /**
+     * Get aggregated video call data usage since boot.
+     * Permissions android.Manifest.permission.READ_NETWORK_USAGE_HISTORY is required.
+     *
+     * @param perUidStats True if requesting data usage per uid, otherwise overall usage.
+     * @return Snapshot of video call data usage
+     */
+    public NetworkStats getVtDataUsage(boolean perUidStats) {
+        if (mImsPhone == null) return null;
+        return mImsPhone.getVtDataUsage(perUidStats);
     }
 
     /**
@@ -3538,11 +3575,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Set SIM card power state. Request is equivalent to inserting or removing the card.
-     * @param powerUp True if powering up the SIM, otherwise powering down
+     * Set SIM card power state.
+     * @param state State of SIM (power down, power up, pass through)
+     * - {@link android.telephony.TelephonyManager#CARD_POWER_DOWN}
+     * - {@link android.telephony.TelephonyManager#CARD_POWER_UP}
+     * - {@link android.telephony.TelephonyManager#CARD_POWER_UP_PASS_THROUGH}
      **/
-    public void setSimPowerState(boolean powerUp) {
-        mCi.setSimCardPower(powerUp, null);
+    public void setSimPowerState(int state) {
+        mCi.setSimCardPower(state, null);
     }
 
     @Override
@@ -3590,7 +3630,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         pw.println(" getPhoneType()=" + getPhoneType());
         pw.println(" getVoiceMessageCount()=" + getVoiceMessageCount());
         pw.println(" getActiveApnTypes()=" + getActiveApnTypes());
-        pw.println(" isDataConnectivityPossible()=" + isDataConnectivityPossible());
         pw.println(" needsOtaServiceProvisioning=" + needsOtaServiceProvisioning());
         pw.flush();
         pw.println("++++++++++++++++++++++++++++++++");

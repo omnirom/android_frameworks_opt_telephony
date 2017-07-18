@@ -294,6 +294,7 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
 
     }
 
+    @FlakyTest
     @Test
     @MediumTest
     public void testMOCallSwitchHangupForeGround() {

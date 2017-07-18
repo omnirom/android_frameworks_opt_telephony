@@ -342,6 +342,8 @@ public class UiccController extends Handler {
                 com.android.internal.R.bool.config_requireRadioPowerOffOnSimRefreshReset);
             if (requirePowerOffOnSimRefreshReset) {
                 mCis[index].setRadioPower(false, null);
+            } else {
+                mCis[index].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE, index));
             }
         }
 

@@ -101,6 +101,8 @@ public abstract class Connection {
         public void onCallPullFailed(Connection externalConnection);
         public void onHandoverToWifiFailed();
         public void onConnectionEvent(String event, Bundle extras);
+        public void onRttModifyRequestReceived();
+        public void onRttModifyResponseReceived(int status);
     }
 
     /**
@@ -136,6 +138,10 @@ public abstract class Connection {
         public void onHandoverToWifiFailed() {}
         @Override
         public void onConnectionEvent(String event, Bundle extras) {}
+        @Override
+        public void onRttModifyRequestReceived() {}
+        @Override
+        public void onRttModifyResponseReceived(int status) {}
     }
 
     public static final int AUDIO_QUALITY_STANDARD = 1;
@@ -627,6 +633,7 @@ public abstract class Connection {
         mOrigConnection = c.getOrigConnection();
         mPostDialString = c.mPostDialString;
         mNextPostDialChar = c.mNextPostDialChar;
+        mPostDialState = c.mPostDialState;
     }
 
     /**
@@ -1004,6 +1011,18 @@ public abstract class Connection {
      * to the local device.
      */
     public void pullExternalCall() {
+    }
+
+    public void onRttModifyRequestReceived() {
+        for (Listener l : mListeners) {
+            l.onRttModifyRequestReceived();
+        }
+    }
+
+    public void onRttModifyResponseReceived(int status) {
+        for (Listener l : mListeners) {
+            l.onRttModifyResponseReceived(status);
+        }
     }
 
     /**

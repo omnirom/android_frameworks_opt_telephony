@@ -87,6 +87,7 @@ import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.util.NotificationChannelController;
+import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
@@ -605,6 +606,23 @@ public class ServiceStateTracker extends Handler {
 
     @VisibleForTesting
     public void updatePhoneType() {
+        // If we are previously voice roaming, we need to notify that roaming status changed before
+        // we change back to non-roaming.
+        if (mSS != null && mSS.getVoiceRoaming()) {
+            mVoiceRoamingOffRegistrants.notifyRegistrants();
+        }
+
+        // If we are previously data roaming, we need to notify that roaming status changed before
+        // we change back to non-roaming.
+        if (mSS != null && mSS.getDataRoaming()) {
+            mDataRoamingOffRegistrants.notifyRegistrants();
+        }
+
+        // If we are previously in service, we need to notify that we are out of service now.
+        if (mSS != null && mSS.getDataRegState() == ServiceState.STATE_IN_SERVICE) {
+            mDetachedRegistrants.notifyRegistrants();
+        }
+
         mSS = new ServiceState();
         mNewSS = new ServiceState();
         mLastCellInfoListTime = 0;
@@ -668,11 +686,7 @@ public class ServiceStateTracker extends Handler {
 
         logPhoneTypeChange();
 
-        // Tell everybody that we've thrown away state and are starting over with
-        // empty, detached ServiceStates.
-        mVoiceRoamingOffRegistrants.notifyRegistrants();
-        mDataRoamingOffRegistrants.notifyRegistrants();
-        mDetachedRegistrants.notifyRegistrants();
+        // Tell everybody that the registration state and RAT have changed.
         notifyDataRegStateRilRadioTechnologyChanged();
     }
 
@@ -2000,7 +2014,9 @@ public class ServiceStateTracker extends Handler {
      */
     private boolean isRoamIndForHomeSystem(String roamInd) {
         // retrieve the carrier-specified list of ERIs for home system
-        String[] homeRoamIndicators = mPhone.getContext().getResources()
+        log("isRoamIndForHomeSystem: " + Resources.getSystem()
+                .getConfiguration().toString());
+        String[] homeRoamIndicators = Resources.getSystem()
                 .getStringArray(com.android.internal.R.array.config_cdma_home_system);
 
         if (homeRoamIndicators != null) {
@@ -2012,10 +2028,12 @@ public class ServiceStateTracker extends Handler {
                 }
             }
             // no matches found against the list!
+            log("isRoamIndForHomeSystem: No match found against list for roamInd=" + roamInd);
             return false;
         }
 
         // no system property found for the roaming indicators for home system
+        log("isRoamIndForHomeSystem: No list found");
         return false;
     }
 
@@ -2039,13 +2057,15 @@ public class ServiceStateTracker extends Handler {
              * agreements and MVNO's.
              */
             boolean roaming = (mGsmRoaming || mDataRoaming);
+
+            // Save the data roaming state reported by modem registration before resource overlay or
+            // carrier config possibly overrides it.
+            mNewSS.setDataRoamingFromRegistration(roaming);
+
             if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS) &&
                     (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
                 roaming = false;
             }
-
-            // Save the roaming state before carrier config possibly overrides it.
-            mNewSS.setDataRoamingFromRegistration(roaming);
 
             CarrierConfigManager configLoader = (CarrierConfigManager)
                     mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
@@ -2810,7 +2830,13 @@ public class ServiceStateTracker extends Handler {
                 tm.setNetworkCountryIsoForPhone(mPhone.getPhoneId(), "");
                 mGotCountryCode = false;
                 mNitzUpdatedTime = false;
-            } else {
+            } else if (mSS.getRilDataRadioTechnology() != ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN) {
+                // Update time zone, ISO, and IDD.
+                //
+                // If the device is on IWLAN, modems manufacture a ServiceState with the MCC/MNC of
+                // the SIM as if we were talking to towers. Telephony code then uses that with
+                // mccTable to suggest a timezone. We shouldn't do that if the MCC/MNC is from IWLAN
+
                 String iso = "";
                 String mcc = "";
                 try {
@@ -2831,20 +2857,20 @@ public class ServiceStateTracker extends Handler {
                             TelephonyProperties.PROPERTY_IGNORE_NITZ, false)
                             && ((SystemClock.uptimeMillis() & 1) == 0);
 
-                    ArrayList<TimeZone> uniqueZones = TimeUtils.getTimeZonesWithUniqueOffsets(iso);
-                    if ((uniqueZones.size() == 1) || testOneUniqueOffsetPath) {
-                        TimeZone zone = uniqueZones.get(0);
+                    List<String> uniqueZoneIds = TimeUtils.getTimeZoneIdsWithUniqueOffsets(iso);
+                    if ((uniqueZoneIds.size() == 1) || testOneUniqueOffsetPath) {
+                        String zoneId = uniqueZoneIds.get(0);
                         if (DBG) {
                             log("pollStateDone: no nitz but one TZ for iso-cc=" + iso
-                                    + " with zone.getID=" + zone.getID()
+                                    + " with zone.getID=" + zoneId
                                     + " testOneUniqueOffsetPath=" + testOneUniqueOffsetPath);
                         }
-                        mTimeZoneLog.log("pollStateDone: set time zone=" + zone.getID()
+                        mTimeZoneLog.log("pollStateDone: set time zone=" + zoneId
                                 + " mcc=" + mcc + " iso=" + iso);
-                        setAndBroadcastNetworkSetTimeZone(zone.getID());
+                        setAndBroadcastNetworkSetTimeZone(zoneId);
                     } else {
                         if (DBG) {
-                            log("pollStateDone: there are " + uniqueZones.size()
+                            log("pollStateDone: there are " + uniqueZoneIds.size()
                                     + " unique offsets for iso-cc='" + iso
                                     + " testOneUniqueOffsetPath=" + testOneUniqueOffsetPath
                                     + "', do nothing");
@@ -3143,8 +3169,6 @@ public class ServiceStateTracker extends Handler {
                 + mNeedFixZoneAfterNitz + " zone=" + (zone != null ? zone.getID() : "NULL");
         mTimeZoneLog.log(tmpLog);
 
-        mNeedFixZoneAfterNitz = false;
-
         if (zone != null) {
             log("fixTimeZone: zone != null zone.getID=" + zone.getID());
             if (getAutoTimeZone()) {
@@ -3152,10 +3176,13 @@ public class ServiceStateTracker extends Handler {
             } else {
                 log("fixTimeZone: skip changing zone as getAutoTimeZone was false");
             }
-            saveNitzTimeZone(zone.getID());
+            if (mNeedFixZoneAfterNitz) {
+                saveNitzTimeZone(zone.getID());
+            }
         } else {
             log("fixTimeZone: zone == null, do nothing for zone");
         }
+        mNeedFixZoneAfterNitz = false;
     }
 
     /**
@@ -3274,7 +3301,8 @@ public class ServiceStateTracker extends Handler {
     /**
      * Do not set roaming state in case of oprators considered non-roaming.
      *
-     * Can use mcc or mcc+mnc as item of config_operatorConsideredNonRoaming.
+     * Can use mcc or mcc+mnc as item of
+     * {@link CarrierConfigManager#KEY_NON_ROAMING_OPERATOR_STRING_ARRAY}.
      * For example, 302 or 21407. If mcc or mcc+mnc match with operator,
      * don't set roaming state.
      *
@@ -3283,11 +3311,17 @@ public class ServiceStateTracker extends Handler {
      */
     private boolean isOperatorConsideredNonRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = SubscriptionManager.getResourcesForSubId(
-                mPhone.getContext(), mPhone.getSubId()).getStringArray(
-                com.android.internal.R.array.config_operatorConsideredNonRoaming);
-
-        if (numericArray.length == 0 || operatorNumeric == null) {
+        final CarrierConfigManager configManager = (CarrierConfigManager) mPhone.getContext()
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        String[] numericArray = null;
+        if (configManager != null) {
+            PersistableBundle config = configManager.getConfigForSubId(mPhone.getSubId());
+            if (config != null) {
+                numericArray = config.getStringArray(
+                        CarrierConfigManager.KEY_NON_ROAMING_OPERATOR_STRING_ARRAY);
+            }
+        }
+        if (ArrayUtils.isEmpty(numericArray) || operatorNumeric == null) {
             return false;
         }
 
@@ -3301,11 +3335,17 @@ public class ServiceStateTracker extends Handler {
 
     private boolean isOperatorConsideredRoaming(ServiceState s) {
         String operatorNumeric = s.getOperatorNumeric();
-        String[] numericArray = SubscriptionManager.getResourcesForSubId(
-                mPhone.getContext(), mPhone.getSubId()).getStringArray(
-                com.android.internal.R.array.config_sameNamedOperatorConsideredRoaming);
-
-        if (numericArray.length == 0 || operatorNumeric == null) {
+        final CarrierConfigManager configManager = (CarrierConfigManager) mPhone.getContext()
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        String[] numericArray = null;
+        if (configManager != null) {
+            PersistableBundle config = configManager.getConfigForSubId(mPhone.getSubId());
+            if (config != null) {
+                numericArray = config.getStringArray(
+                        CarrierConfigManager.KEY_ROAMING_OPERATOR_STRING_ARRAY);
+            }
+        }
+        if (ArrayUtils.isEmpty(numericArray) || operatorNumeric == null) {
             return false;
         }
 

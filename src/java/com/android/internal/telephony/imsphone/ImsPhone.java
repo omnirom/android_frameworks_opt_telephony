@@ -16,6 +16,27 @@
 
 package com.android.internal.telephony.imsphone;
 
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAIC;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAICr;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAOC;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAOIC;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BAOICxH;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BA_ALL;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BA_MO;
+import static com.android.internal.telephony.CommandsInterface.CB_FACILITY_BA_MT;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_DISABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ENABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ERASURE;
+import static com.android.internal.telephony.CommandsInterface.CF_ACTION_REGISTRATION;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_ALL_CONDITIONAL;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_BUSY;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_NOT_REACHABLE;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_NO_REPLY;
+import static com.android.internal.telephony.CommandsInterface.CF_REASON_UNCONDITIONAL;
+import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
+import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
+
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Notification;
@@ -25,6 +46,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.NetworkStats;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Bundle;
@@ -32,13 +54,12 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.PowerManager;
+import android.os.PowerManager.WakeLock;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.ResultReceiver;
-import android.os.PowerManager.WakeLock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
-
 import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
 import android.telephony.PhoneNumberUtils;
@@ -108,9 +129,7 @@ import com.android.internal.telephony.util.NotificationChannelController;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 
 import org.codeaurora.ims.QtiCallConstants;
@@ -236,7 +255,10 @@ public class ImsPhone extends ImsPhoneBase {
                     .registerForDataRegStateOrRatChanged(this,
                             EVENT_DEFAULT_PHONE_DATA_STATE_CHANGED, null);
         }
-        updateDataServiceState();
+        // Sets the Voice reg state to STATE_OUT_OF_SERVICE and also queries the data service
+        // state. We don't ever need the voice reg state to be anything other than in or out of
+        // service.
+        setServiceState(ServiceState.STATE_OUT_OF_SERVICE);
 
         mDefaultPhone.registerForServiceStateChanged(this, EVENT_SERVICE_STATE_CHANGED, null);
         // Force initial roaming state update later, on EVENT_CARRIER_CONFIG_CHANGED.
@@ -368,6 +390,11 @@ public class ImsPhone extends ImsPhoneBase {
     public ImsPhoneCall
     getRingingCall() {
         return mCT.mRingingCall;
+    }
+
+    @Override
+    public boolean isImsAvailable() {
+        return mCT.isImsServiceReady();
     }
 
     private boolean handleCallDeflectionIncallSupplementaryService(
@@ -1472,7 +1499,7 @@ public class ImsPhone extends ImsPhoneBase {
         intent.putExtra(PhoneConstants.PHONE_IN_ECM_STATE, isInEcm());
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, getPhoneId());
         ActivityManager.broadcastStickyIntent(intent, UserHandle.USER_ALL);
-        if (DBG) Rlog.d(LOG_TAG, "sendEmergencyCallbackModeChange");
+        if (DBG) Rlog.d(LOG_TAG, "sendEmergencyCallbackModeChange: isInEcm=" + isInEcm());
     }
 
     @Override
@@ -1513,7 +1540,8 @@ public class ImsPhone extends ImsPhoneBase {
         }
     }
 
-    private void handleExitEmergencyCallbackMode() {
+    @Override
+    protected void handleExitEmergencyCallbackMode() {
         if (DBG) {
             Rlog.d(LOG_TAG, "handleExitEmergencyCallbackMode: mIsPhoneInEcmState = "
                     + isInEcm());
@@ -1727,10 +1755,12 @@ public class ImsPhone extends ImsPhoneBase {
                     Rlog.e(LOG_TAG, "Invalid index: " + wfcOperatorErrorCodes[i]);
                     continue;
                 }
-                CharSequence messageAlert = imsReasonInfo.mExtraMessage;
+                String messageAlert = imsReasonInfo.mExtraMessage;
                 CharSequence messageNotification = imsReasonInfo.mExtraMessage;
                 if (!wfcOperatorErrorAlertMessages[idx].isEmpty()) {
-                    messageAlert = wfcOperatorErrorAlertMessages[idx];
+                    messageAlert = String.format(
+                        wfcOperatorErrorAlertMessages[idx],
+                        imsReasonInfo.mExtraMessage); // Fill IMS error code into alert message
                 }
                 if (!wfcOperatorErrorNotificationMessages[idx].isEmpty()) {
                     messageNotification = wfcOperatorErrorNotificationMessages[idx];
@@ -1781,8 +1811,8 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
-    public long getVtDataUsage() {
-        return mCT.getVtDataUsage();
+    public NetworkStats getVtDataUsage(boolean perUidStats) {
+        return mCT.getVtDataUsage(perUidStats);
     }
 
     private void updateRoamingState(boolean newRoaming) {
@@ -1851,11 +1881,7 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         Rlog.d(LOG_TAG, "RTT: sendRttMessage");
-        try {
             imsCall.sendRttMessage(data);
-        } catch (ImsException e) {
-            Rlog.e(LOG_TAG, "RTT: sendRttMessage exception = " + e);
-        }
     }
 
     /**
@@ -1896,11 +1922,7 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         Rlog.d(LOG_TAG, "RTT: sendRttModifyResponse");
-        try {
             imsCall.sendRttModifyResponse(mapRequestToResponse(response));
-        } catch (ImsException e) {
-            Rlog.e(LOG_TAG, "RTT: sendRttModifyResponse exception = " + e);
-        }
     }
 
     // Utility to check if the value coming in intent is for upgrade initiate or upgrade response
