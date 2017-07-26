@@ -3558,4 +3558,16 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.println("++++++++++++++++++++++++++++++++");
         }
     }
+
+    // Oneplus5 QTI crash fix
+    private RegistrantList mPhoneObejectSwitchRegistrants = new RegistrantList();
+    private final Object mLock = new Object();
+    /*@hide*/
+    public void registerForPhoneObjectSwitch(Handler h, int what, Object obj) {
+        synchronized (mLock) {
+            Registrant r = new Registrant (h, what, obj);
+
+            mPhoneObejectSwitchRegistrants.add(r);
+        }
+    }
 }
