@@ -2128,6 +2128,13 @@ public class GsmCdmaPhone extends Phone {
         // If this is on APM off, SIM may already be loaded. Send setPreferredNetworkType
         // request to RIL to preserve user setting across APM toggling
         setPreferredNetworkTypeIfSimLoaded();
+
+        // IMS phone is put in POWER_OFF mode on RADIO off event
+        // Put it to Out of Service for Radio on event
+        // Subsequent IMS Registration events will set the right servicestate
+        if (mImsPhone != null) {
+            mImsPhone.getServiceState().setState(ServiceState.STATE_OUT_OF_SERVICE);
+        }
     }
 
     private void handleRadioOffOrNotAvailable() {
