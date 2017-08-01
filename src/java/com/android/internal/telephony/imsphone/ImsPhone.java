@@ -1231,11 +1231,17 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public void registerForSuppServiceNotification(Handler h, int what, Object obj) {
         mSsnRegistrants.addUnique(h, what, obj);
+        if (mSsnRegistrants.size() == 1) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(true, null);
+        }
     }
 
     @Override
     public void unregisterForSuppServiceNotification(Handler h) {
         mSsnRegistrants.remove(h);
+        if (mSsnRegistrants.size() == 0) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(false, null);
+        }
     }
 
     @Override
@@ -1914,6 +1920,10 @@ public class ImsPhone extends ImsPhoneBase {
             case QtiCallConstants.RTT_UPGRADE_INITIATE:
                 // Rtt Upgrade means enable Rtt
                 packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_FULL);
+                break;
+            case QtiCallConstants.RTT_DOWNGRADE_INITIATE:
+                // Rtt downrade means disable Rtt
+                packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_DISABLED);
                 break;
             case QtiCallConstants.RTT_UPGRADE_CONFIRM:
             case QtiCallConstants.RTT_UPGRADE_REJECT:
