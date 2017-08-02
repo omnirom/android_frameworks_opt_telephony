@@ -341,7 +341,10 @@ public class PhoneSwitcher extends Handler {
         state.active = false;
         log("deactivate " + phoneId);
         state.lastRequested = System.currentTimeMillis();
-        mCommandsInterfaces[phoneId].setDataAllowed(false, null);
+        // Skip ALLOW_DATA for single SIM device
+        if (mNumPhones > 1) {
+            mCommandsInterfaces[phoneId].setDataAllowed(false, null);
+        }
         mActivePhoneRegistrants[phoneId].notifyRegistrants();
     }
 
@@ -351,7 +354,10 @@ public class PhoneSwitcher extends Handler {
         state.active = true;
         log("activate " + phoneId);
         state.lastRequested = System.currentTimeMillis();
-        mCommandsInterfaces[phoneId].setDataAllowed(true, null);
+        // Skip ALLOW_DATA for single SIM device
+        if (mNumPhones > 1) {
+            mCommandsInterfaces[phoneId].setDataAllowed(true, null);
+        }
         mActivePhoneRegistrants[phoneId].notifyRegistrants();
     }
 
@@ -366,7 +372,10 @@ public class PhoneSwitcher extends Handler {
 
     protected void onResendDataAllowed(Message msg) {
         final int phoneId = msg.arg1;
-        mCommandsInterfaces[phoneId].setDataAllowed(mPhoneStates[phoneId].active, null);
+        // Skip ALLOW_DATA for single SIM device
+        if (mNumPhones > 1) {
+            mCommandsInterfaces[phoneId].setDataAllowed(mPhoneStates[phoneId].active, null);
+        }
     }
 
     private int phoneIdForRequest(NetworkRequest netRequest) {

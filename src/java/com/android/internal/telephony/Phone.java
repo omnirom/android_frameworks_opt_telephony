@@ -32,6 +32,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.PersistableBundle;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.SystemProperties;
@@ -40,6 +41,7 @@ import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.service.carrier.CarrierIdentifier;
 import android.telecom.VideoProfile;
+import android.telephony.CarrierConfigManager;
 import android.telephony.CellIdentityCdma;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoCdma;
@@ -59,6 +61,7 @@ import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
+import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -140,6 +143,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     // Key used to read/write "disable data connection on boot" pref (used for testing)
     public static final String DATA_DISABLED_ON_BOOT_KEY = "disabled_on_boot_key";
+
+    // Key used to read/write data_roaming_is_user_setting pref
+    public static final String DATA_ROAMING_IS_USER_SETTING_KEY = "data_roaming_is_user_setting_key";
 
     /* Event Constants */
     protected static final int EVENT_RADIO_AVAILABLE             = 1;
@@ -577,6 +583,30 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                     updateImsPhone();
                 }
             }
+        }
+    }
+
+    /**
+     * Checks if device should convert CDMA Caller ID restriction related MMI codes to
+     * equivalent 3GPP MMI Codes that provide same functionality when device is roaming.
+     * This method should only return true on multi-mode devices when carrier requires this
+     * conversion to be done on the device.
+     *
+     * @return true when carrier config
+     * "KEY_CONVERT_CDMA_CALLER_ID_MMI_CODES_WHILE_ROAMING_ON_3GPP_BOOL" is set to true
+     */
+    public boolean supportsConversionOfCdmaCallerIdMmiCodesWhileRoaming() {
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        PersistableBundle b = configManager.getConfig();
+        if (b != null) {
+            return b.getBoolean(
+                    CarrierConfigManager
+                            .KEY_CONVERT_CDMA_CALLER_ID_MMI_CODES_WHILE_ROAMING_ON_3GPP_BOOL,
+                    false);
+        } else {
+            // Default value set in CarrierConfigManager
+            return false;
         }
     }
 
@@ -2823,10 +2853,23 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     /**
      * Report on whether data connectivity is allowed.
+     *
+     * @return True if data is allowed to be established.
      */
     public boolean isDataAllowed() {
         return ((mDcTracker != null) && (mDcTracker.isDataAllowed(null)));
     }
+
+    /**
+     * Report on whether data connectivity is allowed.
+     *
+     * @param reasons The reasons that data can/can't be established. This is an output param.
+     * @return True if data is allowed to be established
+     */
+    public boolean isDataAllowed(DataConnectionReasons reasons) {
+        return ((mDcTracker != null) && (mDcTracker.isDataAllowed(reasons)));
+    }
+
 
     /**
      * Action set from carrier signalling broadcast receivers to enable/disable metered apns.

@@ -411,9 +411,6 @@ public class DataConnection extends StateMachine {
                 networkType, NETWORK_TYPE, TelephonyManager.getNetworkTypeName(networkType));
         mNetworkInfo.setRoaming(ss.getDataRoaming());
         mNetworkInfo.setIsAvailable(true);
-        // The network should be by default metered until we find it has NET_CAPABILITY_NOT_METERED
-        // capability.
-        mNetworkInfo.setMetered(true);
 
         addState(mDefaultState);
             addState(mInactiveState, mDefaultState);
@@ -942,10 +939,8 @@ public class DataConnection extends StateMachine {
                     && !mRestrictedNetworkOverride)
                     || !mApnSetting.isMetered(mPhone)) {
                 result.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
-                mNetworkInfo.setMetered(false);
             } else {
                 result.removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
-                mNetworkInfo.setMetered(true);
             }
 
             result.maybeMarkCapabilitiesRestricted();
@@ -1058,7 +1053,7 @@ public class DataConnection extends StateMachine {
             mPhone.getServiceStateTracker().registerForDataRoamingOn(getHandler(),
                     DataConnection.EVENT_DATA_CONNECTION_ROAM_ON, null);
             mPhone.getServiceStateTracker().registerForDataRoamingOff(getHandler(),
-                    DataConnection.EVENT_DATA_CONNECTION_ROAM_OFF, null);
+                    DataConnection.EVENT_DATA_CONNECTION_ROAM_OFF, null, true);
 
             // Add ourselves to the list of data connections
             mDcController.addDc(DataConnection.this);

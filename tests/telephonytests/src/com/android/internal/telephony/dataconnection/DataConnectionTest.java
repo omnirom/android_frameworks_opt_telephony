@@ -284,34 +284,32 @@ public class DataConnectionTest extends TelephonyTest {
         return (NetworkCapabilities) method.invoke(mDc);
     }
 
-//    @Test
-//    @SmallTest
-//    public void testMeteredCapability() throws Exception {
-//
-//        mContextFixture.getCarrierConfigBundle().
-//                putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
-//                new String[] {"default"});
-//
-//        testConnectEvent();
-//
-//        assertFalse(getNetworkCapabilities()
-//                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED));
-//        assertTrue(getNetworkInfo().isMetered());
-//    }
-//
-//    @Test
-//    @SmallTest
-//    public void testNonMeteredCapability() throws Exception {
-//
-//        doReturn(2819).when(mPhone).getSubId();
-//        mContextFixture.getCarrierConfigBundle().
-//                putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
-//                        new String[] {"mms"});
-//
-//        testConnectEvent();
-//
-//        assertTrue(getNetworkCapabilities()
-//                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED));
-//        assertFalse(getNetworkInfo().isMetered());
-//    }
+    @Test
+    @SmallTest
+    public void testMeteredCapability() throws Exception {
+
+        mContextFixture.getCarrierConfigBundle().
+                putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
+                new String[] {"default"});
+
+        testConnectEvent();
+
+        assertFalse(getNetworkCapabilities()
+                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED));
+    }
+
+    @Test
+    @SmallTest
+    public void testNonMeteredCapability() throws Exception {
+
+        doReturn(2819).when(mPhone).getSubId();
+        mContextFixture.getCarrierConfigBundle().
+                putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
+                        new String[] {"mms"});
+
+        testConnectEvent();
+
+        assertTrue(getNetworkCapabilities()
+                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED));
+    }
 }

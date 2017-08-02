@@ -843,12 +843,13 @@ public class ServiceStateTracker extends Handler {
      * @param h handler to notify
      * @param what what code of message when delivered
      * @param obj placed in Message.obj
+     * @param notifyNow notify upon registration if data roaming is off
      */
-    public void registerForDataRoamingOff(Handler h, int what, Object obj) {
+    public void registerForDataRoamingOff(Handler h, int what, Object obj, boolean notifyNow) {
         Registrant r = new Registrant(h, what, obj);
         mDataRoamingOffRegistrants.add(r);
 
-        if (!mSS.getDataRoaming()) {
+        if (notifyNow && !mSS.getDataRoaming()) {
             r.notifyRegistrant();
         }
     }
@@ -2062,8 +2063,11 @@ public class ServiceStateTracker extends Handler {
             // carrier config possibly overrides it.
             mNewSS.setDataRoamingFromRegistration(roaming);
 
-            if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS) &&
-                    (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
+            if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS)
+                    && (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
+                log("updateRoamingState: resource override set non roaming.isSameNamedOperators="
+                        + isSameNamedOperators(mNewSS) + ",isOperatorConsideredNonRoaming="
+                        + isOperatorConsideredNonRoaming(mNewSS));
                 roaming = false;
             }
 
@@ -3326,7 +3330,7 @@ public class ServiceStateTracker extends Handler {
         }
 
         for (String numeric : numericArray) {
-            if (operatorNumeric.startsWith(numeric)) {
+            if (!TextUtils.isEmpty(numeric) && operatorNumeric.startsWith(numeric)) {
                 return true;
             }
         }
@@ -3350,7 +3354,7 @@ public class ServiceStateTracker extends Handler {
         }
 
         for (String numeric : numericArray) {
-            if (operatorNumeric.startsWith(numeric)) {
+            if (!TextUtils.isEmpty(numeric) && operatorNumeric.startsWith(numeric)) {
                 return true;
             }
         }

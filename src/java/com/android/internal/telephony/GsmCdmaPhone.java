@@ -1968,7 +1968,7 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public void setDataRoamingEnabled(boolean enable) {
-        mDcTracker.setDataRoamingEnabled(enable);
+        mDcTracker.setDataRoamingEnabledByUser(enable);
     }
 
     @Override

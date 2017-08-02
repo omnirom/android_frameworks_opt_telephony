@@ -34,8 +34,6 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.os.UserHandle;
-import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
@@ -62,10 +60,7 @@ import com.android.internal.telephony.uicc.IccUtils;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  *@hide
@@ -77,7 +72,7 @@ public class SubscriptionInfoUpdater extends Handler {
     protected static final int EVENT_SIM_LOCKED_QUERY_ICCID_DONE = 1;
     private static final int EVENT_GET_NETWORK_SELECTION_MODE_DONE = 2;
     private static final int EVENT_SIM_LOADED = 3;
-    private static final int EVENT_SIM_ABSENT_OR_NOT_READY = 4;
+    private static final int EVENT_SIM_ABSENT = 4;
     private static final int EVENT_SIM_LOCKED = 5;
     private static final int EVENT_SIM_IO_ERROR = 6;
     private static final int EVENT_SIM_UNKNOWN = 7;
@@ -118,8 +113,6 @@ public class SubscriptionInfoUpdater extends Handler {
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
     private IPackageManager mPackageManager;
-    private UserManager mUserManager;
-    private Map<Integer, Intent> rebroadcastIntentsOnUnlock = new HashMap<>();
 
     // The current foreground user ID.
     private int mCurrentlyActiveUserId;
@@ -135,11 +128,9 @@ public class SubscriptionInfoUpdater extends Handler {
         mSubscriptionManager = SubscriptionManager.from(mContext);
         mEuiccManager = (EuiccManager) mContext.getSystemService(Context.EUICC_SERVICE);
         mPackageManager = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
-        mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
 
         IntentFilter intentFilter = new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
         intentFilter.addAction(IccCardProxy.ACTION_INTERNAL_SIM_STATE_CHANGED);
-        intentFilter.addAction(Intent.ACTION_USER_UNLOCKED);
         mContext.registerReceiver(sReceiver, intentFilter);
 
         mCarrierServiceBindHelper = new CarrierServiceBindHelper(mContext);
@@ -186,22 +177,6 @@ public class SubscriptionInfoUpdater extends Handler {
             String action = intent.getAction();
             logd("Action: " + action);
 
-            if (action.equals(Intent.ACTION_USER_UNLOCKED)) {
-                // broadcast pending intents
-                Iterator iterator = rebroadcastIntentsOnUnlock.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry pair = (Map.Entry) iterator.next();
-                    Intent i = (Intent)pair.getValue();
-                    i.putExtra(TelephonyIntents.EXTRA_REBROADCAST_ON_UNLOCK, true);
-                    iterator.remove();
-                    logd("Broadcasting intent ACTION_SIM_STATE_CHANGED for mCardIndex: " +
-                            pair.getKey());
-                    ActivityManager.broadcastStickyIntent(i, UserHandle.USER_ALL);
-                }
-                logd("[Receiver]-");
-                return;
-            }
-
             if (!action.equals(TelephonyIntents.ACTION_SIM_STATE_CHANGED) &&
                     !action.equals(IccCardProxy.ACTION_INTERNAL_SIM_STATE_CHANGED)) {
                 return;
@@ -221,11 +196,8 @@ public class SubscriptionInfoUpdater extends Handler {
             // TODO: All of the below should be converted to ACTION_INTERNAL_SIM_STATE_CHANGED to
             // ensure that the SubscriptionInfo is updated before the broadcasts are sent out.
             if (action.equals(TelephonyIntents.ACTION_SIM_STATE_CHANGED)) {
-                rebroadcastIntentsOnUnlock.put(slotIndex, intent);
-                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)
-                        || IccCardConstants.INTENT_VALUE_ICC_NOT_READY.equals(simStatus)) {
-                    sendMessage(obtainMessage(EVENT_SIM_ABSENT_OR_NOT_READY, slotIndex, -1,
-                            simStatus));
+                if (IccCardConstants.INTENT_VALUE_ICC_ABSENT.equals(simStatus)) {
+                    sendMessage(obtainMessage(EVENT_SIM_ABSENT, slotIndex, -1));
                 } else if (IccCardConstants.INTENT_VALUE_ICC_UNKNOWN.equals(simStatus)) {
                     sendMessage(obtainMessage(EVENT_SIM_UNKNOWN, slotIndex, -1));
                 } else if (IccCardConstants.INTENT_VALUE_ICC_CARD_IO_ERROR.equals(simStatus)) {
@@ -334,8 +306,8 @@ public class SubscriptionInfoUpdater extends Handler {
                 handleSimLoaded(msg.arg1);
                 break;
 
-            case EVENT_SIM_ABSENT_OR_NOT_READY:
-                handleSimAbsentOrNotReady(msg.arg1, (String) msg.obj);
+            case EVENT_SIM_ABSENT:
+                handleSimAbsentOrError(msg.arg1, IccCardConstants.INTENT_VALUE_ICC_ABSENT);
                 break;
 
             case EVENT_SIM_LOCKED:
@@ -543,7 +515,7 @@ public class SubscriptionInfoUpdater extends Handler {
         updateCarrierServices(slotId, simState);
     }
 
-    protected void handleSimAbsentOrNotReady(int slotId, String simState) {
+    private void handleSimAbsent(int slotId) {
         if (mIccId[slotId] != null && !mIccId[slotId].equals(ICCID_STRING_FOR_NO_SIM)) {
             logd("SIM" + (slotId + 1) + " hot plug out or error.");
         }
@@ -551,7 +523,7 @@ public class SubscriptionInfoUpdater extends Handler {
         if (isAllIccIdQueryDone()) {
             updateSubscriptionInfoByIccId();
         }
-        updateCarrierServices(slotId, simState);
+        updateCarrierServices(slotId, IccCardConstants.INTENT_VALUE_ICC_ABSENT);
     }
 
     private void handleSimError(int slotId) {
@@ -830,8 +802,7 @@ public class SubscriptionInfoUpdater extends Handler {
         SubscriptionManager.putPhoneIdAndSubIdExtra(i, slotId);
         logd("Broadcasting intent ACTION_SIM_STATE_CHANGED " + state + " reason " + reason +
              " for mCardIndex: " + slotId);
-        ActivityManager.broadcastStickyIntent(i, UserHandle.USER_ALL);
-        rebroadcastIntentsOnUnlock.put(slotId, i);
+        IntentBroadcaster.getInstance().broadcastStickyIntent(i, slotId);
     }
 
     public void dispose() {
