@@ -627,15 +627,6 @@ public class GsmCdmaPhone extends Phone {
         }
     }
 
-    @Override
-    public boolean isInEcm() {
-        if (isPhoneTypeGsm()) {
-            return false;
-        } else {
-            return mIsPhoneInEcmState;
-        }
-    }
-
     //CDMA
     private void sendEmergencyCallbackModeChange(){
         //Send an Intent
