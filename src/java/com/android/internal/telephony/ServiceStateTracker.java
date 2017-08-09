@@ -2639,7 +2639,8 @@ public class ServiceStateTracker extends Handler {
                 mSS.getRilVoiceRadioTechnology() != mNewSS.getRilVoiceRadioTechnology();
 
         boolean hasRilDataRadioTechnologyChanged =
-                mSS.getRilDataRadioTechnology() != mNewSS.getRilDataRadioTechnology();
+                mSS.getRilDataRadioTechnology() != mNewSS.getRilDataRadioTechnology()
+                        || mSS.isUsingCarrierAggregation() != mNewSS.isUsingCarrierAggregation();
 
         boolean hasChanged = !mNewSS.equals(mSS);
 
