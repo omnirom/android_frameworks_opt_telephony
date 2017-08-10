@@ -57,6 +57,7 @@ import android.provider.Telephony;
 import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellLocation;
+import android.telephony.ims.feature.ImsFeature;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -68,6 +69,7 @@ import android.telephony.cdma.CdmaCellLocation;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.android.ims.ImsException;
 import com.android.ims.ImsManager;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaMmiCode;
@@ -1090,7 +1092,18 @@ public class GsmCdmaPhone extends Phone {
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
                  && !shallDialOnCircuitSwitch(intentExtras);
 
+        int imsFeatureState = ImsFeature.STATE_NOT_AVAILABLE;
+        try {
+            if (imsPhone != null) {
+                imsFeatureState = ImsManager.getInstance(imsPhone.getContext(),
+                        imsPhone.getPhoneId()).getImsServiceStatus();
+            }
+        } catch (ImsException e) {
+            Log.e(LOG_TAG, "Got ImsException for phoneId " + imsPhone.getPhoneId());
+        }
+
         boolean useImsForEmergency = imsPhone != null
+                && (imsFeatureState == ImsFeature.STATE_READY)
                 && isEmergency
                 && alwaysTryImsForEmergencyCarrierConfig
                 && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
@@ -1116,7 +1129,8 @@ public class GsmCdmaPhone extends Phone {
                     + ", imsPhone.isVideoEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVideoEnabled() : "N/A")
                     + ", imsPhone.getServiceState().getState()="
-                    + ((imsPhone != null) ? imsPhone.getServiceState().getState() : "N/A"));
+                    + ((imsPhone != null) ? imsPhone.getServiceState().getState() : "N/A")
+                    + ", imsphone feature state = " + imsFeatureState);
         }
 
         Phone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mContext);
@@ -1831,7 +1845,7 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public void getCallWaiting(Message onComplete) {
-        if (isPhoneTypeGsm()) {
+        if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
                     && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
@@ -1850,7 +1864,7 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public void setCallWaiting(boolean enable, Message onComplete) {
-        if (isPhoneTypeGsm()) {
+        if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
                     && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
@@ -1861,7 +1875,7 @@ public class GsmCdmaPhone extends Phone {
 
             mCi.setCallWaiting(enable, CommandsInterface.SERVICE_CLASS_VOICE, onComplete);
         } else {
-            loge("method setCallWaiting is NOT supported in CDMA!");
+            loge("method setCallWaiting is NOT supported in CDMA without IMS!");
         }
     }
 
@@ -2128,6 +2142,13 @@ public class GsmCdmaPhone extends Phone {
         // If this is on APM off, SIM may already be loaded. Send setPreferredNetworkType
         // request to RIL to preserve user setting across APM toggling
         setPreferredNetworkTypeIfSimLoaded();
+
+        // IMS phone is put in POWER_OFF mode on RADIO off event
+        // Put it to Out of Service for Radio on event
+        // Subsequent IMS Registration events will set the right servicestate
+        if (mImsPhone != null) {
+            mImsPhone.getServiceState().setState(ServiceState.STATE_OUT_OF_SERVICE);
+        }
     }
 
     private void handleRadioOffOrNotAvailable() {
