@@ -1126,7 +1126,7 @@ public class GsmCdmaPhone extends Phone {
 
         checkWfcWifiOnlyModeBeforeDial();
 
-        if ((imsUseEnabled && (!isUt || useImsForUt)) || useImsForEmergency) {
+        if ((imsUseEnabled && !isUt) || (isUt && useImsForUt) || useImsForEmergency) {
             try {
                 if (DBG) logd("Trying IMS PS call");
                 return imsPhone.dial(dialString, uusInfo, videoState, intentExtras);
