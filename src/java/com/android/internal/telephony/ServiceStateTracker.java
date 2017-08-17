@@ -1660,7 +1660,13 @@ public class ServiceStateTracker extends Handler {
 
                 // Setting SS Roaming (general)
                 if (mIsSubscriptionFromRuim) {
-                    mNewSS.setVoiceRoaming(isRoamingBetweenOperators(mNewSS.getVoiceRoaming(), mNewSS));
+                    boolean isRoamingBetweenOperators = isRoamingBetweenOperators(
+                            mNewSS.getVoiceRoaming(), mNewSS);
+                    if (isRoamingBetweenOperators != mNewSS.getVoiceRoaming()) {
+                        log("isRoamingBetweenOperators=" + isRoamingBetweenOperators
+                                + ". Override CDMA voice roaming to " + isRoamingBetweenOperators);
+                        mNewSS.setVoiceRoaming(isRoamingBetweenOperators);
+                    }
                 }
                 /**
                  * For CDMA, voice and data should have the same roaming status.
@@ -1673,15 +1679,25 @@ public class ServiceStateTracker extends Handler {
                     final boolean isVoiceInService =
                             (mNewSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE);
                     if (isVoiceInService) {
-                        mNewSS.setDataRoaming(mNewSS.getVoiceRoaming());
+                        boolean isVoiceRoaming = mNewSS.getVoiceRoaming();
+                        if (mNewSS.getDataRoaming() != isVoiceRoaming) {
+                            log("Data roaming != Voice roaming. Override data roaming to "
+                                    + isVoiceRoaming);
+                            mNewSS.setDataRoaming(isVoiceRoaming);
+                        }
                     } else {
                         /**
                          * As per VoiceRegStateResult from radio types.hal the TSB58
                          * Roaming Indicator shall be sent if device is registered
                          * on a CDMA or EVDO system.
                          */
-                        mNewSS.setDataRoaming(
-                                !isRoamIndForHomeSystem(Integer.toString(mRoamingIndicator)));
+                        boolean isRoamIndForHomeSystem = isRoamIndForHomeSystem(
+                                Integer.toString(mRoamingIndicator));
+                        if (mNewSS.getDataRoaming() == isRoamIndForHomeSystem) {
+                            log("isRoamIndForHomeSystem=" + isRoamIndForHomeSystem
+                                    + ", override data roaming to " + !isRoamIndForHomeSystem);
+                            mNewSS.setDataRoaming(!isRoamIndForHomeSystem);
+                        }
                     }
                 }
 
@@ -1888,6 +1904,9 @@ public class ServiceStateTracker extends Handler {
                     mNewReasonDataDenied = dataRegStateResult.reasonDataDenied;
                     mNewMaxDataCalls = dataRegStateResult.maxDataCalls;
                     mDataRoaming = regCodeIsRoaming(regState);
+                    // Save the data roaming state reported by modem registration before resource
+                    // overlay or carrier config possibly overrides it.
+                    mNewSS.setDataRoamingFromRegistration(mDataRoaming);
 
                     if (DBG) {
                         log("handlPollStateResultMessage: GsmSST setDataRegState=" + dataRegState
@@ -1896,7 +1915,11 @@ public class ServiceStateTracker extends Handler {
                     }
                 } else if (mPhone.isPhoneTypeCdma()) {
 
-                    mNewSS.setDataRoaming(regCodeIsRoaming(regState));
+                    boolean isDataRoaming = regCodeIsRoaming(regState);
+                    mNewSS.setDataRoaming(isDataRoaming);
+                    // Save the data roaming state reported by modem registration before resource
+                    // overlay or carrier config possibly overrides it.
+                    mNewSS.setDataRoamingFromRegistration(isDataRoaming);
 
                     if (DBG) {
                         log("handlPollStateResultMessage: cdma setDataRegState=" + dataRegState
@@ -1921,11 +1944,15 @@ public class ServiceStateTracker extends Handler {
                     }
 
                     // voice roaming state in done while handling EVENT_POLL_STATE_REGISTRATION_CDMA
-                    mNewSS.setDataRoaming(regCodeIsRoaming(regState));
+                    boolean isDataRoaming = regCodeIsRoaming(regState);
+                    mNewSS.setDataRoaming(isDataRoaming);
+                    // Save the data roaming state reported by modem registration before resource
+                    // overlay or carrier config possibly overrides it.
+                    mNewSS.setDataRoamingFromRegistration(isDataRoaming);
                     if (DBG) {
-                        log("handlPollStateResultMessage: CdmaLteSST setDataRegState=" + dataRegState
-                                + " regState=" + regState
-                                + " dataRadioTechnology=" + newDataRat);
+                        log("handlPollStateResultMessage: CdmaLteSST setDataRegState="
+                                + dataRegState + " regState=" + regState + " dataRadioTechnology="
+                                + newDataRat);
                     }
                 }
 
@@ -1988,7 +2015,7 @@ public class ServiceStateTracker extends Handler {
             case EVENT_POLL_STATE_NETWORK_SELECTION_MODE: {
                 ints = (int[])ar.result;
                 mNewSS.setIsManualSelection(ints[0] == 1);
-                if ((ints[0] == 1) && (!mPhone.isManualNetSelAllowed())) {
+                if ((ints[0] == 1) && (mPhone.shouldForceAutoNetworkSelect())) {
                         /*
                          * modem is currently in manual selection but manual
                          * selection is not allowed in the current mode so
@@ -2015,10 +2042,9 @@ public class ServiceStateTracker extends Handler {
      */
     private boolean isRoamIndForHomeSystem(String roamInd) {
         // retrieve the carrier-specified list of ERIs for home system
-        log("isRoamIndForHomeSystem: " + Resources.getSystem()
-                .getConfiguration().toString());
         String[] homeRoamIndicators = Resources.getSystem()
                 .getStringArray(com.android.internal.R.array.config_cdma_home_system);
+        log("isRoamIndForHomeSystem: homeRoamIndicators=" + Arrays.toString(homeRoamIndicators));
 
         if (homeRoamIndicators != null) {
             // searches through the comma-separated list for a match,
@@ -2059,10 +2085,6 @@ public class ServiceStateTracker extends Handler {
              */
             boolean roaming = (mGsmRoaming || mDataRoaming);
 
-            // Save the data roaming state reported by modem registration before resource overlay or
-            // carrier config possibly overrides it.
-            mNewSS.setDataRoamingFromRegistration(roaming);
-
             if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS)
                     && (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
                 log("updateRoamingState: resource override set non roaming.isSameNamedOperators="
@@ -2100,9 +2122,6 @@ public class ServiceStateTracker extends Handler {
             mNewSS.setVoiceRoaming(roaming);
             mNewSS.setDataRoaming(roaming);
         } else {
-            // Save the roaming state before carrier config possibly overrides it.
-            mNewSS.setDataRoamingFromRegistration(mNewSS.getDataRoaming());
-
             CarrierConfigManager configLoader = (CarrierConfigManager)
                     mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
             if (configLoader != null) {
@@ -2156,8 +2175,15 @@ public class ServiceStateTracker extends Handler {
 
         String wfcVoiceSpnFormat = null;
         String wfcDataSpnFormat = null;
-        if (mPhone.getImsPhone() != null && mPhone.getImsPhone().isWifiCallingEnabled()) {
-            // In Wi-Fi Calling mode show SPN+WiFi
+        int combinedRegState = getCombinedRegState();
+        if (mPhone.getImsPhone() != null && mPhone.getImsPhone().isWifiCallingEnabled()
+                && (combinedRegState == ServiceState.STATE_IN_SERVICE)) {
+            // In Wi-Fi Calling mode show SPN or PLMN + WiFi Calling
+            //
+            // 1) Show SPN + Wi-Fi Calling If SIM has SPN and SPN display condition
+            //    is satisfied or SPN override is enabled for this carrier
+            //
+            // 2) Show PLMN + Wi-Fi Calling if there is no valid SPN in case 1
 
             String[] wfcSpnFormats = mPhone.getContext().getResources().getStringArray(
                     com.android.internal.R.array.wfcSpnFormats);
@@ -2182,7 +2208,6 @@ public class ServiceStateTracker extends Handler {
             wfcDataSpnFormat = wfcSpnFormats[dataIdx];
         }
 
-        int combinedRegState = getCombinedRegState();
         if (mPhone.isPhoneTypeGsm()) {
             // The values of plmn/showPlmn change in different scenarios.
             // 1) No service but emergency call allowed -> expected
@@ -2247,13 +2272,19 @@ public class ServiceStateTracker extends Handler {
 
             if (!TextUtils.isEmpty(spn) && !TextUtils.isEmpty(wfcVoiceSpnFormat) &&
                     !TextUtils.isEmpty(wfcDataSpnFormat)) {
-                // In Wi-Fi Calling mode show SPN+WiFi
+                // Show SPN + Wi-Fi Calling If SIM has SPN and SPN display condition
+                // is satisfied or SPN override is enabled for this carrier.
 
                 String originalSpn = spn.trim();
                 spn = String.format(wfcVoiceSpnFormat, originalSpn);
                 dataSpn = String.format(wfcDataSpnFormat, originalSpn);
                 showSpn = true;
                 showPlmn = false;
+            } else if (!TextUtils.isEmpty(plmn) && !TextUtils.isEmpty(wfcVoiceSpnFormat)) {
+                // Show PLMN + Wi-Fi Calling if there is no valid SPN in the above case
+
+                String originalPlmn = plmn.trim();
+                plmn = String.format(wfcVoiceSpnFormat, originalPlmn);
             } else if (mSS.getVoiceRegState() == ServiceState.STATE_POWER_OFF
                     || (showPlmn && TextUtils.equals(spn, plmn))) {
                 // airplane mode or spn equals plmn, do not show spn
