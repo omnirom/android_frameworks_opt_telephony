@@ -119,6 +119,7 @@ public class ImsPhoneTest extends TelephonyTest {
         doReturn(Call.State.IDLE).when(mBackgroundCall).getState();
         doReturn(Call.State.IDLE).when(mRingingCall).getState();
 
+        mImsManagerInstances.put(mPhone.getPhoneId(), mImsManager);
         mContextFixture.putBooleanResource(com.android.internal.R.bool.config_voice_capable, true);
 
         mImsPhoneTestHandler = new ImsPhoneTestHandler(TAG);
