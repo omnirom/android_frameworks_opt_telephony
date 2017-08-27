@@ -84,6 +84,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
+import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
@@ -581,7 +582,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
     /**
      * TODO: Remove this code; it is a workaround.
-     * When {@code true}, forces {@link ImsManager#updateImsServiceConfig(Context, int, boolean)} to
+     * When {@code true}, forces {@link ImsManager#updateImsServiceConfigForSlot(boolean)} to
      * be called when an ongoing video call is disconnected.  In some cases, where video pause is
      * supported by the carrier, when {@link #onDataEnabledChanged(boolean, int)} reports that data
      * has been disabled we will pause the video rather than disconnecting the call.  When this
@@ -706,7 +707,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mPhone.getExternalCallTracker().getExternalCallStateListener());
         }
 
-        ImsManager.updateImsServiceConfig(mPhone.getContext(), mPhone.getPhoneId(), true);
+        mImsManager.updateImsServiceConfigForSlot(true);
     }
 
     private void stopListeningForCalls() {
@@ -926,8 +927,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private void cacheCarrierConfiguration(int subId) {
         CarrierConfigManager carrierConfigManager = (CarrierConfigManager)
                 mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        if (carrierConfigManager == null) {
-            loge("cacheCarrierConfiguration: No carrier config service found.");
+        if (carrierConfigManager == null ||
+                !SubscriptionController.getInstance().isActiveSubId(subId)) {
+            loge("cacheCarrierConfiguration: No carrier config service found" + " " +
+                    "or not active subId = " + subId);
             return;
         }
 
@@ -2130,7 +2133,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (mShouldUpdateImsConfigOnDisconnect) {
                 // Ensure we update the IMS config when the call is disconnected; we delayed this
                 // because a video call was paused.
-                ImsManager.updateImsServiceConfig(mPhone.getContext(), mPhone.getPhoneId(), true);
+                mImsManager.updateImsServiceConfigForSlot(true);
                 mShouldUpdateImsConfigOnDisconnect = false;
             }
         }
@@ -3316,10 +3319,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mShouldUpdateImsConfigOnDisconnect = false;
         }
 
-        if (!mShouldUpdateImsConfigOnDisconnect) {
+        if (!mShouldUpdateImsConfigOnDisconnect && mImsManager != null) {
             // This will call into updateVideoCallFeatureValue and eventually all clients will be
             // asynchronously notified that the availability of VT over LTE has changed.
-            ImsManager.updateImsServiceConfig(mPhone.getContext(), mPhone.getPhoneId(), true);
+            mImsManager.updateImsServiceConfigForSlot(true);
         }
     }
 

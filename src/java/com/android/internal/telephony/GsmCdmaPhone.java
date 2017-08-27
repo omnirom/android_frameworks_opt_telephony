@@ -265,6 +265,7 @@ public class GsmCdmaPhone extends Phone {
         mCi.setEmergencyCallbackMode(this, EVENT_EMERGENCY_CALLBACK_MODE_ENTER, null);
         mCi.registerForExitEmergencyCallbackMode(this, EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE,
                 null);
+        mCi.registerForModemReset(this, EVENT_MODEM_RESET, null);
         // get the string that specifies the carrier OTA Sp number
         mCarrierOtaSpNumSchema = TelephonyManager.from(mContext).getOtaSpNumberSchemaForPhone(
                 getPhoneId(), "");
@@ -626,15 +627,6 @@ public class GsmCdmaPhone extends Phone {
     protected void setIsInEmergencyCall() {
         if (!isPhoneTypeGsm()) {
             mCT.setIsInEmergencyCall();
-        }
-    }
-
-    @Override
-    public boolean isInEcm() {
-        if (isPhoneTypeGsm()) {
-            return false;
-        } else {
-            return mIsPhoneInEcmState;
         }
     }
 
@@ -1106,7 +1098,7 @@ public class GsmCdmaPhone extends Phone {
                 && (imsFeatureState == ImsFeature.STATE_READY)
                 && isEmergency
                 && alwaysTryImsForEmergencyCarrierConfig
-                && ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext)
+                && ImsManager.getInstance(mContext, mPhoneId).isNonTtyOrTtyOnVolteEnabledForSlot()
                 && (imsPhone.getServiceState().getState() != ServiceState.STATE_POWER_OFF);
 
         String dialPart = PhoneNumberUtils.extractNetworkPortionAlt(PhoneNumberUtils.
@@ -1133,7 +1125,7 @@ public class GsmCdmaPhone extends Phone {
                     + ", imsphone feature state = " + imsFeatureState);
         }
 
-        Phone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mContext);
+        checkWfcWifiOnlyModeBeforeDial();
 
         if ((imsUseEnabled && (!isUt || useImsForUt)) || useImsForEmergency) {
             try {
@@ -2206,6 +2198,21 @@ public class GsmCdmaPhone extends Phone {
             }
             break;
 
+            case EVENT_MODEM_RESET: {
+                logd("Event EVENT_MODEM_RESET Received" + " isInEcm = " + isInEcm()
+                        + " isPhoneTypeGsm = " + isPhoneTypeGsm() + " mImsPhone = " + mImsPhone);
+                if (isInEcm()) {
+                    if (isPhoneTypeGsm()) {
+                        if (mImsPhone != null) {
+                            mImsPhone.handleExitEmergencyCallbackMode();
+                        }
+                    } else {
+                        handleExitEmergencyCallbackMode(msg);
+                    }
+                }
+            }
+            break;
+
             case EVENT_RUIM_RECORDS_LOADED:
                 logd("Event EVENT_RUIM_RECORDS_LOADED Received");
                 updateDataConnectionTracker();
@@ -2256,7 +2263,7 @@ public class GsmCdmaPhone extends Phone {
                     mCi.getVoiceRadioTechnology(obtainMessage(EVENT_REQUEST_VOICE_RADIO_TECH_DONE));
                 }
                 // Force update IMS service
-                ImsManager.updateImsServiceConfig(mContext, mPhoneId, true);
+                ImsManager.getInstance(mContext, mPhoneId).updateImsServiceConfigForSlot(true);
 
                 // Update broadcastEmergencyCallStateChanges
                 CarrierConfigManager configMgr = (CarrierConfigManager)

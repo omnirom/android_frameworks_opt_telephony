@@ -116,7 +116,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_UP)) {
                     mImsServiceReady = true;
                     updateImsPhone();
-                    ImsManager.updateImsServiceConfig(mContext, mPhoneId, false);
+                    if (mImsMgr != null) {
+                        mImsMgr.updateImsServiceConfigForSlot(false);
+                    }
                 } else if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_DOWN)) {
                     mImsServiceReady = false;
                     updateImsPhone();
@@ -193,8 +195,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_CARRIER_CONFIG_CHANGED         = 43;
     // Carrier's CDMA prefer mode setting
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
+    protected static final int EVENT_MODEM_RESET                    = 45;
 
-    protected static final int EVENT_LAST                       = EVENT_SET_ROAMING_PREFERENCE_DONE;
+    protected static final int EVENT_LAST                       = EVENT_MODEM_RESET;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -223,6 +226,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     // Integer used to let the calling application know that the we are ignoring auto mode switch.
     private static final int ALREADY_IN_AUTO_SELECTION = 1;
+
+    /**
+     * This method is invoked when the Phone exits Emergency Callback Mode.
+     */
+    protected void handleExitEmergencyCallbackMode() {
+    }
 
     /**
      * Small container class used to hold information relevant to
@@ -354,6 +363,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected SimulatedRadioControl mSimulatedRadioControl;
 
     private boolean mUnitTestMode;
+
+    private ImsManager mImsMgr = null;
 
     public IccRecords getIccRecords() {
         return mIccRecords.get();
@@ -549,9 +560,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
         synchronized(Phone.lockForRadioTechnologyChange) {
             IntentFilter filter = new IntentFilter();
-            ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
+            mImsMgr = ImsManager.getInstance(mContext, getPhoneId());
             // Don't listen to deprecated intents using the new dynamic binding.
-            if (imsManager != null && !imsManager.isDynamicBinding()) {
+            if (mImsMgr != null && !mImsMgr.isDynamicBinding()) {
                 filter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
                 filter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
             }
@@ -561,13 +572,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             // Monitor IMS service - but first poll to see if already up (could miss
             // intent). Also, when using new ImsResolver APIs, the service will be available soon,
             // so start trying to bind.
-            if (imsManager != null) {
+            if (mImsMgr != null) {
                 // If it is dynamic binding, kick off ImsPhone creation now instead of waiting for
                 // the service to be available.
-                if (imsManager.isDynamicBinding() || imsManager.isServiceAvailable()) {
+                if (mImsMgr.isDynamicBinding() || mImsMgr.isServiceAvailable()) {
                     mImsServiceReady = true;
                     updateImsPhone();
-                    ImsManager.updateImsServiceConfig(mContext, mPhoneId, false);
+                    mImsMgr.updateImsServiceConfigForSlot(false);
                 }
             }
         }
@@ -3349,12 +3360,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @return {@code true} if IMS calling is enabled.
      */
     public boolean isImsUseEnabled() {
+
+        if (mImsMgr == null) {
+            return false;
+        }
+
         boolean imsUseEnabled =
-                ((ImsManager.isVolteEnabledByPlatform(mContext) &&
-                ImsManager.isEnhanced4gLteModeSettingEnabledByUser(mContext)) ||
-                (ImsManager.isWfcEnabledByPlatform(mContext) &&
-                ImsManager.isWfcEnabledByUser(mContext)) &&
-                ImsManager.isNonTtyOrTtyOnVolteEnabled(mContext));
+                ((mImsMgr.isVolteEnabledByPlatformForSlot() &&
+                mImsMgr.isEnhanced4gLteModeSettingEnabledByUserForSlot()) ||
+                (mImsMgr.isWfcEnabledByPlatformForSlot() &&
+                mImsMgr.isWfcEnabledByUserForSlot()) &&
+                mImsMgr.isNonTtyOrTtyOnVolteEnabledForSlot());
         return imsUseEnabled;
     }
 
@@ -3463,12 +3479,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return false;
     }
 
-    public static void checkWfcWifiOnlyModeBeforeDial(Phone imsPhone, Context context)
+    public void checkWfcWifiOnlyModeBeforeDial()
             throws CallStateException {
-        if (imsPhone == null || !imsPhone.isWifiCallingEnabled()) {
-            boolean wfcWiFiOnly = (ImsManager.isWfcEnabledByPlatform(context) &&
-                    ImsManager.isWfcEnabledByUser(context) &&
-                    (ImsManager.getWfcMode(context) ==
+        if (mImsPhone == null || !isWifiCallingEnabled() && mImsMgr != null) {
+            boolean wfcWiFiOnly = (mImsMgr.isWfcEnabledByPlatformForSlot() &&
+                    mImsMgr.isWfcEnabledByUserForSlot() &&
+                    (mImsMgr.getWfcModeForSlot() ==
                             ImsConfig.WfcModeFeatureValueConstants.WIFI_ONLY));
             if (wfcWiFiOnly) {
                 throw new CallStateException(
