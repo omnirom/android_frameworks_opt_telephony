@@ -317,6 +317,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private boolean mAllowEmergencyVideoCalls = false;
     private boolean mIgnoreDataEnabledChangedForVideoCalls = false;
     private boolean mIsViLteDataMetered = false;
+    private boolean mIgnoreResetUtCapability = false;
 
     /**
      * Listeners to changes in the phone state.  Intended for use by other interested IMS components
@@ -1105,6 +1106,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 CarrierConfigManager.KEY_VILTE_DATA_IS_METERED_BOOL);
         mSupportPauseVideo = carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_SUPPORT_PAUSE_IMS_VIDEO_CALLS_BOOL);
+        mIgnoreResetUtCapability =  carrierConfig.getBoolean(
+                CarrierConfigManager.KEY_IGNORE_RESET_UT_CAPABILITY_BOOL);
 
         String[] mappings = carrierConfig
                 .getStringArray(CarrierConfigManager.KEY_IMS_REASONINFO_MAPPING_STRING_ARRAY);
@@ -3789,6 +3792,13 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         log("Resetting Capabilities...");
         boolean tmpIsVideoCallEnabled = isVideoCallEnabled();
         for (int i = 0; i < mImsFeatureEnabled.length; i++) {
+            //UT capability should not be reset (for IMS deregistration and for IMS feature state
+            //not ready) and it should always depend on the modem indication for UT capability
+            if (mIgnoreResetUtCapability
+                    && (i == ImsConfig.FeatureConstants.FEATURE_TYPE_UT_OVER_LTE
+                        || i == ImsConfig.FeatureConstants.FEATURE_TYPE_UT_OVER_WIFI)) {
+                continue;
+            }
             mImsFeatureEnabled[i] = false;
         }
 
