@@ -1585,9 +1585,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (imsCall != null) {
                     ImsStreamMediaProfile mediaProfile = new ImsStreamMediaProfile();
 
-                    if (mPhone.canProcessRttReqest()) {
-                        mediaProfile.setRttMode(QtiImsExtUtils.getRttMode(mPhone.getContext()));
-                    }
+                    mediaProfile = addRttAttributeIfRequired(imsCall, mediaProfile);
 
                     imsCall.accept(
                             ImsCallProfile.getCallTypeFromVideoState(mPendingCallVideoState),
