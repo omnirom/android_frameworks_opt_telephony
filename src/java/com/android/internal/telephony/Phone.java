@@ -578,7 +578,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 if (mImsMgr.isDynamicBinding() || mImsMgr.isServiceAvailable()) {
                     mImsServiceReady = true;
                     updateImsPhone();
-                    mImsMgr.updateImsServiceConfigForSlot(false);
                 }
             }
         }

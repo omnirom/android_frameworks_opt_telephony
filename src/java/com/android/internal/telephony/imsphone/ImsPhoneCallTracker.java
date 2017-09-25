@@ -128,6 +128,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             "UTLTE", "UTWiFi"};
 
     private TelephonyMetrics mMetrics;
+    private boolean mCarrierConfigLoaded = false;
 
     private BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
@@ -212,6 +213,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     log("onReceive : Updating mAllowEmergencyVideoCalls = " +
                             mAllowEmergencyVideoCalls);
                 }
+                mCarrierConfigLoaded  = true;
             }
         }
     };
@@ -707,7 +709,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mPhone.getExternalCallTracker().getExternalCallStateListener());
         }
 
-        mImsManager.updateImsServiceConfigForSlot(true);
+        if (mCarrierConfigLoaded) {
+            mImsManager.updateImsServiceConfigForSlot(true);
+        }
     }
 
     private void stopListeningForCalls() {
@@ -1581,9 +1585,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (imsCall != null) {
                     ImsStreamMediaProfile mediaProfile = new ImsStreamMediaProfile();
 
-                    if (mPhone.canProcessRttReqest()) {
-                        mediaProfile.setRttMode(QtiImsExtUtils.getRttMode(mPhone.getContext()));
-                    }
+                    mediaProfile = addRttAttributeIfRequired(imsCall, mediaProfile);
 
                     imsCall.accept(
                             ImsCallProfile.getCallTypeFromVideoState(mPendingCallVideoState),
