@@ -213,7 +213,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     log("onReceive : Updating mAllowEmergencyVideoCalls = " +
                             mAllowEmergencyVideoCalls);
                 }
-                mCarrierConfigLoaded  = true;
             }
         }
     };
@@ -935,14 +934,17 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 !SubscriptionController.getInstance().isActiveSubId(subId)) {
             loge("cacheCarrierConfiguration: No carrier config service found" + " " +
                     "or not active subId = " + subId);
+            mCarrierConfigLoaded = false;
             return;
         }
 
         PersistableBundle carrierConfig = carrierConfigManager.getConfigForSubId(subId);
         if (carrierConfig == null) {
             loge("cacheCarrierConfiguration: Empty carrier config.");
+            mCarrierConfigLoaded = false;
             return;
         }
+        mCarrierConfigLoaded = true;
 
         mAllowEmergencyVideoCalls =
                 carrierConfig.getBoolean(CarrierConfigManager.KEY_ALLOW_EMERGENCY_VIDEO_CALLS_BOOL);
@@ -3321,7 +3323,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mShouldUpdateImsConfigOnDisconnect = false;
         }
 
-        if (!mShouldUpdateImsConfigOnDisconnect && mImsManager != null) {
+        if (!mShouldUpdateImsConfigOnDisconnect && mImsManager != null && mCarrierConfigLoaded) {
             // This will call into updateVideoCallFeatureValue and eventually all clients will be
             // asynchronously notified that the availability of VT over LTE has changed.
             mImsManager.updateImsServiceConfigForSlot(true);
