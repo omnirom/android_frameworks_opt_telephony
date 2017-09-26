@@ -380,7 +380,8 @@ public class IccSmsInterfaceManager {
             return;
         }
         destAddr = filterDestAddress(destAddr);
-        mDispatcher.sendData(destAddr, scAddr, destPort, data, sentIntent, deliveryIntent);
+        mDispatcher.sendData(destAddr, scAddr, destPort, data, sentIntent, deliveryIntent,
+                callingPackage);
     }
 
     /**

@@ -528,6 +528,8 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testHandleInitialMessages() {
+        doReturn(true).when(mSubscriptionManager).isActiveSubId(anyInt());
+
         // EVENT_RADIO_AVAILABLE
         verify(mSimulatedCommandsVerifier).getBasebandVersion(nullable(Message.class));
         verify(mSimulatedCommandsVerifier).getDeviceIdentity(nullable(Message.class));
@@ -764,6 +766,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                 getSubIdUsingPhoneId(anyInt());
         assertEquals(false, mPhoneUT.getCallForwardingIndicator());
 
+        doReturn(true).when(mSubscriptionController).isActiveSubId(anyInt());
         // valid subId, sharedPreference not present
         int subId1 = 0;
         int subId2 = 1;

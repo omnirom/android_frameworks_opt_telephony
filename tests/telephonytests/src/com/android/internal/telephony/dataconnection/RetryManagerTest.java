@@ -258,7 +258,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -268,7 +268,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -296,7 +296,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -306,7 +306,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -316,7 +316,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -344,7 +344,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -354,7 +354,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -364,7 +364,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -427,7 +427,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -437,7 +437,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         rm.markApnPermanentFailed(myApn1);
 
@@ -486,12 +486,12 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         rm.markApnPermanentFailed(myApn2);
 
@@ -503,7 +503,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn3));
@@ -513,7 +513,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn3));
@@ -543,7 +543,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -553,7 +553,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         rm.markApnPermanentFailed(myApn1);
 
@@ -633,7 +633,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -643,7 +643,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -653,7 +653,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -663,7 +663,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -691,7 +691,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -701,7 +701,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -711,7 +711,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -721,7 +721,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -731,7 +731,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -771,7 +771,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -811,7 +811,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -821,7 +821,7 @@ public class RetryManagerTest extends TelephonyTest {
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         rm.markApnPermanentFailed(myApn1);
 
@@ -892,7 +892,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -910,7 +910,7 @@ public class RetryManagerTest extends TelephonyTest {
         assertTrue(nextApn.equals(mApn1));
         rm.setModemSuggestedDelay(RetryManager.NO_SUGGESTED_RETRY_DELAY);
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -948,7 +948,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -991,7 +991,7 @@ public class RetryManagerTest extends TelephonyTest {
         ApnSetting nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn1));
         long delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
@@ -1020,7 +1020,7 @@ public class RetryManagerTest extends TelephonyTest {
         assertTrue(nextApn.equals(mApn1));
         rm.setModemSuggestedDelay(2500);
         delay = rm.getDelayForNextApn(false);
-        assertEquals(20000, delay);
+        assertEquals(3000, delay);
 
         nextApn = rm.getNextApnSetting();
         assertTrue(nextApn.equals(mApn2));
