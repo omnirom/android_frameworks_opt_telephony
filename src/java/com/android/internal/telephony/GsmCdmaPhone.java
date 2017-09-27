@@ -2627,6 +2627,7 @@ public class GsmCdmaPhone extends Phone {
     private void processIccRecordEvents(int eventCode) {
         switch (eventCode) {
             case IccRecords.EVENT_CFI:
+                logi("processIccRecordEvents: EVENT_CFI");
                 notifyCallForwardingIndicator();
                 break;
         }
