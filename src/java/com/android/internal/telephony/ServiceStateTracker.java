@@ -3046,6 +3046,10 @@ public class ServiceStateTracker extends Handler {
     }
 
     protected void setOperatorIdd(String operatorNumeric) {
+        if (mPhone.getUnitTestMode()) {
+            return;
+        }
+
         // Retrieve the current country information
         // with the MCC got from opeatorNumeric.
         String idd = mHbpcdUtils.getIddByMcc(

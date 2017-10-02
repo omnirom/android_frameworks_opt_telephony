@@ -142,106 +142,106 @@ public class UiccCardApplicationTest extends TelephonyTest {
                 mUiccCardApplication.getState());
     }
 
-//    @Test
-//    @SmallTest
-//    public void testGetSetIccFdnEnabled() {
-//        assertFalse(mUiccCardApplication.getIccFdnEnabled());
-//        //enable FDN
-//        Message mFDNenabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_FDN_EVENT);
-//        //wrong PIN2Code
-//        setReady(false);
-//        mUiccCardApplication.setIccFdnEnabled(true, "XXXX", mFDNenabled);
-//        waitUntilReady();
-//        assertFalse(mUiccCardApplication.getIccFdnEnabled());
-//
-//        setReady(false);
-//        mFDNenabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_FDN_EVENT);
-//        mUiccCardApplication.setIccFdnEnabled(true, mSimulatedCommands.DEFAULT_SIM_PIN2_CODE,
-//                mFDNenabled);
-//        waitUntilReady();
-//        assertTrue(mUiccCardApplication.getIccFdnEnabled());
-//    }
+    @Test
+    @SmallTest
+    public void testGetSetIccFdnEnabled() {
+        assertFalse(mUiccCardApplication.getIccFdnEnabled());
+        //enable FDN
+        Message mFDNenabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_FDN_EVENT);
+        //wrong PIN2Code
+        setReady(false);
+        mUiccCardApplication.setIccFdnEnabled(true, "XXXX", mFDNenabled);
+        waitUntilReady();
+        assertFalse(mUiccCardApplication.getIccFdnEnabled());
 
-//    @Test
-//    @SmallTest
-//    public void testCheckIsPersoLocked() {
-//        mUiccCardAppStatus.app_state = IccCardApplicationStatus.AppState
-//               .APPSTATE_SUBSCRIPTION_PERSO;
-//        mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
-//                .PERSOSUBSTATE_SIM_NETWORK;
-//        Message mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
-//        setReady(false);
-//        mCardAppUpdate.sendToTarget();
-//        waitUntilReady();
-//        assertTrue(mUiccCardApplication.isPersoLocked());
-//
-//        mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
-//                .PERSOSUBSTATE_READY;
-//        setReady(false);
-//        mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
-//        mCardAppUpdate.sendToTarget();
-//        waitUntilReady();
-//        assertFalse(mUiccCardApplication.isPersoLocked());
-//    }
+        setReady(false);
+        mFDNenabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_FDN_EVENT);
+        mUiccCardApplication.setIccFdnEnabled(true, mSimulatedCommands.DEFAULT_SIM_PIN2_CODE,
+                mFDNenabled);
+        waitUntilReady();
+        assertTrue(mUiccCardApplication.getIccFdnEnabled());
+    }
 
-//    @Test
-//    @SmallTest
-//    public void testGetSetIccLockedEnabled() {
-//        assertFalse(mUiccCardApplication.getIccLockEnabled());
-//        Message mLockEnabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_LOCK_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.setIccLockEnabled(true, "XXXX", mLockEnabled);
-//        waitUntilReady();
-//        assertFalse(mUiccCardApplication.getIccLockEnabled());
-//
-//        mLockEnabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_LOCK_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.setIccLockEnabled(true, mSimulatedCommands.DEFAULT_SIM_PIN_CODE,
-//                mLockEnabled);
-//        waitUntilReady();
-//        assertTrue(mUiccCardApplication.getIccLockEnabled());
-//    }
-//
-//    @Test
-//    @SmallTest
-//    public void testChangeIccLockPassword() {
-//        Message mChangePsw = mHandler.obtainMessage(UICCCARDAPP_CHANGE_PSW_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.changeIccLockPassword(mSimulatedCommands.DEFAULT_SIM_PIN_CODE,
-//                "1111", mChangePsw);
-//        waitUntilReady();
-//        verify(mSimulatedCommandsVerifier).changeIccPinForApp(
-//                eq(mSimulatedCommands.DEFAULT_SIM_PIN_CODE), eq("1111"), eq(TAG), (Message) any());
-//        assertNull(mException);
-//    }
-//
-//    @Test
-//    @SmallTest
-//    public void testSupplyPin() {
-//        //Supply with default PIN1
-//        Message mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.supplyPin(mSimulatedCommands.DEFAULT_SIM_PIN_CODE, mSupplyPin);
-//        waitUntilReady();
-//        assertEquals(-1, mAttemptsRemaining);
-//        verify(mSimulatedCommandsVerifier).supplyIccPinForApp(
-//                eq(SimulatedCommands.DEFAULT_SIM_PIN_CODE), eq(TAG), (Message) any());
-//
-//        //Supply with wrong PIN1
-//        mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.supplyPin("1111", mSupplyPin);
-//        waitUntilReady();
-//        assertEquals(mSimulatedCommands.DEFAULT_PIN1_ATTEMPT - 1, mAttemptsRemaining);
-//        assertNotNull(mException);
-//        assertEquals(CommandException.Error.PASSWORD_INCORRECT, mException.getCommandError());
-//
-//        testChangeIccLockPassword();
-//        //Supply with the updated PIN1
-//        mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
-//        setReady(false);
-//        mUiccCardApplication.supplyPin("1111", mSupplyPin);
-//        waitUntilReady();
-//        assertEquals(-1, mAttemptsRemaining);
-//    }
+    @Test
+    @SmallTest
+    public void testCheckIsPersoLocked() {
+        mUiccCardAppStatus.app_state = IccCardApplicationStatus.AppState
+               .APPSTATE_SUBSCRIPTION_PERSO;
+        mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
+                .PERSOSUBSTATE_SIM_NETWORK;
+        Message mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
+        setReady(false);
+        mCardAppUpdate.sendToTarget();
+        waitUntilReady();
+        assertTrue(mUiccCardApplication.isPersoLocked());
+
+        mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
+                .PERSOSUBSTATE_READY;
+        setReady(false);
+        mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
+        mCardAppUpdate.sendToTarget();
+        waitUntilReady();
+        assertFalse(mUiccCardApplication.isPersoLocked());
+    }
+
+    @Test
+    @SmallTest
+    public void testGetSetIccLockedEnabled() {
+        assertFalse(mUiccCardApplication.getIccLockEnabled());
+        Message mLockEnabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_LOCK_EVENT);
+        setReady(false);
+        mUiccCardApplication.setIccLockEnabled(true, "XXXX", mLockEnabled);
+        waitUntilReady();
+        assertFalse(mUiccCardApplication.getIccLockEnabled());
+
+        mLockEnabled = mHandler.obtainMessage(UICCCARDAPP_ENABLE_LOCK_EVENT);
+        setReady(false);
+        mUiccCardApplication.setIccLockEnabled(true, mSimulatedCommands.DEFAULT_SIM_PIN_CODE,
+                mLockEnabled);
+        waitUntilReady();
+        assertTrue(mUiccCardApplication.getIccLockEnabled());
+    }
+
+    @Test
+    @SmallTest
+    public void testChangeIccLockPassword() {
+        Message mChangePsw = mHandler.obtainMessage(UICCCARDAPP_CHANGE_PSW_EVENT);
+        setReady(false);
+        mUiccCardApplication.changeIccLockPassword(mSimulatedCommands.DEFAULT_SIM_PIN_CODE,
+                "1111", mChangePsw);
+        waitUntilReady();
+        verify(mSimulatedCommandsVerifier).changeIccPinForApp(
+                eq(mSimulatedCommands.DEFAULT_SIM_PIN_CODE), eq("1111"), eq(TAG), (Message) any());
+        assertNull(mException);
+    }
+
+    @Test
+    @SmallTest
+    public void testSupplyPin() {
+        //Supply with default PIN1
+        Message mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
+        setReady(false);
+        mUiccCardApplication.supplyPin(mSimulatedCommands.DEFAULT_SIM_PIN_CODE, mSupplyPin);
+        waitUntilReady();
+        assertEquals(-1, mAttemptsRemaining);
+        verify(mSimulatedCommandsVerifier).supplyIccPinForApp(
+                eq(SimulatedCommands.DEFAULT_SIM_PIN_CODE), eq(TAG), (Message) any());
+
+        //Supply with wrong PIN1
+        mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
+        setReady(false);
+        mUiccCardApplication.supplyPin("1111", mSupplyPin);
+        waitUntilReady();
+        assertEquals(mSimulatedCommands.DEFAULT_PIN1_ATTEMPT - 1, mAttemptsRemaining);
+        assertNotNull(mException);
+        assertEquals(CommandException.Error.PASSWORD_INCORRECT, mException.getCommandError());
+
+        testChangeIccLockPassword();
+        //Supply with the updated PIN1
+        mSupplyPin = mHandler.obtainMessage(UICCCARDAPP_SUPPLY_PIN_EVENT);
+        setReady(false);
+        mUiccCardApplication.supplyPin("1111", mSupplyPin);
+        waitUntilReady();
+        assertEquals(-1, mAttemptsRemaining);
+    }
 }
