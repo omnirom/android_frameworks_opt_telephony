@@ -721,7 +721,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         //Set UT interface listener to receive UT indications.
         mUtInterface = getUtInterface();
-        mUtInterface.setSuppServiceIndication(this, EVENT_SUPP_SERVICE_INDICATION, null);
+        if (mUtInterface != null) {
+            mUtInterface.setSuppServiceIndication(this, EVENT_SUPP_SERVICE_INDICATION, null);
+        }
 
         if (mCarrierConfigLoaded) {
             mImsManager.updateImsServiceConfigForSlot(true);
