@@ -119,35 +119,35 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
         assertEquals(mAdnList, adnListResult);
     }
 
-//    @Test
-//    @SmallTest
-//    public void testUpdateAdnRecord() {
-//        doAnswer(new Answer<Void>() {
-//            @Override
-//            public Void answer(InvocationOnMock invocation) throws Throwable {
-//                Message response = (Message) invocation.getArguments()[4];
-//                //set result for update ADN EF
-//                AsyncResult.forMessage(response).exception = null;
-//                response.sendToTarget();
-//                return null;
-//            }
-//        }).when(mAdnRecordCache).updateAdnBySearch(
-//            anyInt(), (AdnRecord) anyObject(), (AdnRecord) anyObject(),
-//            anyString(), (Message) anyObject());
-//
-//        ContentValues values = new ContentValues();
-//        values.put("tag", "");
-//        values.put("number", "");
-//        values.put("emails", "");
-//        values.put("anrs", "");
-//        values.put("newTag", "test");
-//        values.put("newNumber", "123456");
-//        values.put("newEmails", "");
-//        values.put("newAnrs", "");
-//
-//        boolean result = mIccPhoneBookInterfaceMgr.updateAdnRecordsWithContentValuesInEfBySearch(
-//                IccConstants.EF_ADN, values , null);
-//
-//        assertTrue(result);
-//    }
+    @Test
+    @SmallTest
+    public void testUpdateAdnRecord() {
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                Message response = (Message) invocation.getArguments()[4];
+                //set result for update ADN EF
+                AsyncResult.forMessage(response).exception = null;
+                response.sendToTarget();
+                return null;
+            }
+        }).when(mAdnRecordCache).updateAdnBySearch(
+            anyInt(), (AdnRecord) anyObject(), (AdnRecord) anyObject(),
+            anyString(), (Message) anyObject());
+
+        ContentValues values = new ContentValues();
+        values.put("tag", "");
+        values.put("number", "");
+        values.put("emails", "");
+        values.put("anrs", "");
+        values.put("newTag", "test");
+        values.put("newNumber", "123456");
+        values.put("newEmails", "");
+        values.put("newAnrs", "");
+
+        boolean result = mIccPhoneBookInterfaceMgr.updateAdnRecordsWithContentValuesInEfBySearch(
+                IccConstants.EF_ADN, values , "1234");
+
+        assertTrue(result);
+    }
 }
