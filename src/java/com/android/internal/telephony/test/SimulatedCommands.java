@@ -1010,6 +1010,7 @@ public class SimulatedCommands extends BaseCommands
      */
     @Override
     public void startDtmf(char c, Message result) {
+        SimulatedCommandsVerifier.getInstance().startDtmf(c, result);
         resultSuccess(result, null);
     }
 

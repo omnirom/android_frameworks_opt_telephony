@@ -1131,7 +1131,7 @@ public class GsmCdmaPhone extends Phone {
 
         checkWfcWifiOnlyModeBeforeDial();
 
-        if ((imsUseEnabled && (!isUt || useImsForUt)) || useImsForEmergency) {
+        if ((imsUseEnabled && !isUt) || (isUt && useImsForUt) || useImsForEmergency) {
             try {
                 if (DBG) logd("Trying IMS PS call");
                 return imsPhone.dial(dialString, uusInfo, videoState, intentExtras);
@@ -2187,9 +2187,13 @@ public class GsmCdmaPhone extends Phone {
         setPreferredNetworkTypeIfSimLoaded();
 
         // IMS phone is put in POWER_OFF mode on RADIO off event
-        // Put it to Out of Service for Radio on event
-        // Subsequent IMS Registration events will set the right servicestate
-        if (mImsPhone != null) {
+        // Put it to Out of Service for Radio on event, only if current service state
+        // is in POWER_OFF state.
+        // If service state is changed to Out of service then Subsequent IMS Registration
+        // events will set the right servicestate
+        if (mImsPhone != null && mImsPhone.getServiceState().getState() ==
+                ServiceState.STATE_POWER_OFF) {
+            Log.i(LOG_TAG, "setting radio state out of service from power off ");
             mImsPhone.getServiceState().setState(ServiceState.STATE_OUT_OF_SERVICE);
         }
     }

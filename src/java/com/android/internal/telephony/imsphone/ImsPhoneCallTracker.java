@@ -142,6 +142,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             "UTLTE", "UTWiFi"};
 
     private TelephonyMetrics mMetrics;
+    private boolean mCarrierConfigLoaded = false;
 
     private BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
@@ -226,6 +227,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     log("onReceive : Updating mAllowEmergencyVideoCalls = " +
                             mAllowEmergencyVideoCalls);
                 }
+                mCarrierConfigLoaded  = true;
             } else if (TelecomManager.ACTION_CHANGE_DEFAULT_DIALER.equals(intent.getAction())) {
                 mDefaultDialerUid.set(getPackageUid(context, intent.getStringExtra(
                         TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME)));
@@ -790,7 +792,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mPhone.getExternalCallTracker().getExternalCallStateListener());
         }
 
-        mImsManager.updateImsServiceConfigForSlot(true);
+        if (mCarrierConfigLoaded) {
+            mImsManager.updateImsServiceConfigForSlot(true);
+        }
     }
 
     private void stopListeningForCalls() {
@@ -1713,9 +1717,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (imsCall != null) {
                     ImsStreamMediaProfile mediaProfile = new ImsStreamMediaProfile();
 
-                    if (mPhone.canProcessRttReqest()) {
-                        mediaProfile.setRttMode(QtiImsExtUtils.getRttMode(mPhone.getContext()));
-                    }
+                    mediaProfile = addRttAttributeIfRequired(imsCall, mediaProfile);
 
                     imsCall.accept(
                             ImsCallProfile.getCallTypeFromVideoState(mPendingCallVideoState),
@@ -3449,8 +3451,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         boolean isActiveCallVideo = activeCall.isVideoCall() ||
                 (mTreatDowngradedVideoCallsAsVideoCalls && activeCall.wasVideoCall());
         boolean isActiveCallOnWifi = activeCall.isWifiCall();
-        boolean isVoWifiEnabled = mImsManager.isWfcEnabledByPlatform(mPhone.getContext()) &&
-                mImsManager.isWfcEnabledByUser(mPhone.getContext());
+        boolean isVoWifiEnabled = mImsManager.isWfcEnabledByPlatformForSlot() &&
+                mImsManager.isWfcEnabledByUserForSlot();
         boolean isIncomingCallAudio = !incomingCall.isVideoCall();
         log("shouldDisconnectActiveCallOnAnswer : isActiveCallVideo=" + isActiveCallVideo +
                 " isActiveCallOnWifi=" + isActiveCallOnWifi + " isIncomingCallAudio=" +
