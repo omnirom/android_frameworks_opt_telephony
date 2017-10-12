@@ -600,4 +600,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         assertEquals(DisconnectCause.DIAL_LOW_BATTERY, mCTUT.getDisconnectCauseFromReasonInfo(
                 new ImsReasonInfo(ImsReasonInfo.CODE_LOW_BATTERY, 0), Call.State.DIALING));
     }
+
+    @Test
+    @SmallTest
+    public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
+        mCTUT.setSwitchingFgAndBgCallsValue(true);
+        if (mImsCallListener != null) {
+            mImsCallListener.onCallHoldFailed(mImsCall, new ImsReasonInfo(0, -1));
+        }
+        assertTrue(mCTUT.getSwitchingFgAndBgCallsValue());
+    }
 }
