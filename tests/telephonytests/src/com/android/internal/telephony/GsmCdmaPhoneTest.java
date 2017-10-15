@@ -117,6 +117,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
 
         doReturn(false).when(mSST).isDeviceShuttingDown();
+        mImsManagerInstances.put(mPhone.getPhoneId(), mImsManager);
 
         mGsmCdmaPhoneTestHandler = new GsmCdmaPhoneTestHandler(TAG);
         mGsmCdmaPhoneTestHandler.start();
