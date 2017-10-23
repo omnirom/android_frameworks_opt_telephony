@@ -1240,7 +1240,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             // Swap the ImsCalls pointed to by the foreground and background ImsPhoneCalls.
             // If hold or resume later fails, we will swap them back.
-            boolean switchingWithWaitingCall = mBackgroundCall.getImsCall() == null &&
+            boolean switchingWithWaitingCall = !mBackgroundCall.getState().isAlive() &&
                     mRingingCall != null &&
                     mRingingCall.getState() == ImsPhoneCall.State.WAITING;
 
@@ -2291,8 +2291,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         mPendingMO.setDisconnectCause(DisconnectCause.ERROR_UNSPECIFIED);
                         sendEmptyMessageDelayed(EVENT_HANGUP_PENDINGMO, TIMEOUT_HANGUP_PENDINGMO);
                     }
-                    if (imsCall != mCallExpectedToResume && mSwitchingFgAndBgCalls) {
-                        mSwitchingFgAndBgCalls = false;
+                    if (imsCall != mCallExpectedToResume) {
                         mCallExpectedToResume = null;
                     }
                 }
