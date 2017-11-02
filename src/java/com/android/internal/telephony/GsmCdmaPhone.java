@@ -1837,7 +1837,8 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                    || imsPhone.isUtEnabled())) {
                 imsPhone.getOutgoingCallerIdDisplay(onComplete);
                 return;
             }
@@ -1852,7 +1853,8 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                    || imsPhone.isUtEnabled())) {
                 imsPhone.setOutgoingCallerIdDisplay(commandInterfaceCLIRMode, onComplete);
                 return;
             }
