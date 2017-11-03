@@ -132,6 +132,7 @@ public class SimulatedCommands extends BaseCommands
 
     private boolean mDcSuccess = true;
     private DataCallResponse mDcResponse;
+    private String smscAddress;
 
     //***** Constructor
     public
@@ -1156,12 +1157,15 @@ public class SimulatedCommands extends BaseCommands
 
     @Override
     public void getSmscAddress(Message result) {
-        unimplemented(result);
+        resultSuccess(result, smscAddress);
+        SimulatedCommandsVerifier.getInstance().getSmscAddress(result);
     }
 
     @Override
     public void setSmscAddress(String address, Message result) {
-        unimplemented(result);
+        smscAddress = address;
+        resultSuccess(result, null);
+        SimulatedCommandsVerifier.getInstance().setSmscAddress(address, result);
     }
 
     @Override
@@ -1775,8 +1779,8 @@ public class SimulatedCommands extends BaseCommands
         Rlog.i(LOG_TAG, "[SimCmd] supplyIccPinForApp: pin failed!");
         CommandException ex = new CommandException(
                 CommandException.Error.PASSWORD_INCORRECT);
-        resultFail(response, new int[]{
-                (--mPin1attemptsRemaining < 0) ? 0 : mPin1attemptsRemaining}, ex);
+        resultFail(response, new Integer(
+                (--mPin1attemptsRemaining < 0) ? 0 : mPin1attemptsRemaining), ex);
     }
 
     @Override
