@@ -1857,6 +1857,16 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         return code;
     }
 
+    @VisibleForTesting
+    public boolean getSwitchingFgAndBgCallsValue() {
+        return mSwitchingFgAndBgCalls;
+    }
+
+    @VisibleForTesting
+    public void setSwitchingFgAndBgCallsValue(boolean value) {
+        mSwitchingFgAndBgCalls = value;
+    }
+
     private int getDisconnectCauseFromReasonInfo(ImsReasonInfo reasonInfo) {
         int cause = DisconnectCause.ERROR_UNSPECIFIED;
 
