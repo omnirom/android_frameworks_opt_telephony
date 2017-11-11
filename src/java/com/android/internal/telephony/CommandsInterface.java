@@ -2046,6 +2046,22 @@ public interface CommandsInterface {
     public void unregisterForPcoData(Handler h);
 
     /**
+     * Register for modem reset indication.
+     *
+     * @param h  Handler for the notification message
+     * @param what User-defined message code
+     * @param obj User object
+     */
+    void registerForModemReset(Handler h, int what, Object obj);
+
+    /**
+     * Unregister for modem reset
+     *
+     * @param h handler to be removed
+     */
+    void unregisterForModemReset(Handler h);
+
+    /**
      * Send the updated device state
      *
      * @param stateType Device state type
@@ -2073,4 +2089,11 @@ public interface CommandsInterface {
     default public List<ClientRequestStats> getClientRequestStats() {
         return null;
     }
+
+    /**
+     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
+     *
+     * @param result Callback message
+     */
+    public void getAtr(Message result);
 }

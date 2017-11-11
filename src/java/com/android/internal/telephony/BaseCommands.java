@@ -71,6 +71,7 @@ public abstract class BaseCommands implements CommandsInterface {
     protected RegistrantList mPhoneRadioCapabilityChangedRegistrants =
             new RegistrantList();
     protected RegistrantList mPcoDataRegistrants = new RegistrantList();
+    protected RegistrantList mModemResetRegistrants = new RegistrantList();
 
 
     protected Registrant mGsmSmsRegistrant;
@@ -800,6 +801,9 @@ public abstract class BaseCommands implements CommandsInterface {
         }
     }
 
+    public void sendSMSExpectMore (String smscPDU, String pdu, Message result) {
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -897,6 +901,16 @@ public abstract class BaseCommands implements CommandsInterface {
     }
 
     @Override
+    public void registerForModemReset(Handler h, int what, Object obj) {
+        mModemResetRegistrants.add(new Registrant(h, what, obj));
+    }
+
+    @Override
+    public void unregisterForModemReset(Handler h) {
+        mModemResetRegistrants.remove(h);
+    }
+
+    @Override
     public void registerForPcoData(Handler h, int what, Object obj) {
         mPcoDataRegistrants.add(new Registrant(h, what, obj));
     }
@@ -904,5 +918,28 @@ public abstract class BaseCommands implements CommandsInterface {
     @Override
     public void unregisterForPcoData(Handler h) {
         mPcoDataRegistrants.remove(h);
+    }
+
+    @Override
+    public void iccOpenLogicalChannel(String AID, int p2, Message response) {
+    }
+
+    @Override
+    public void iccCloseLogicalChannel(int channel, Message response) {
+    }
+
+    @Override
+    public void iccTransmitApduLogicalChannel(int channel, int cla, int instruction,
+                                              int p1, int p2, int p3, String data,
+                                              Message response) {
+    }
+
+    @Override
+    public void iccTransmitApduBasicChannel(int cla, int instruction, int p1, int p2,
+                                            int p3, String data, Message response) {
+    }
+
+    @Override
+    public void getAtr(Message response) {
     }
 }

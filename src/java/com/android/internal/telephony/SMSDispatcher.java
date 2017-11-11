@@ -75,6 +75,7 @@ import android.widget.TextView;
 
 import com.android.internal.R;
 import com.android.internal.telephony.GsmAlphabet.TextEncodingDetails;
+import com.android.internal.telephony.SmsUsageMonitor.SmsAuthorizationCallback;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
 
@@ -748,7 +749,8 @@ public abstract class SMSDispatcher extends Handler {
      *  raw pdu of the status report is in the extended data ("pdu").
      */
     protected abstract void sendData(String destAddr, String scAddr, int destPort,
-            byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent);
+            byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent,
+            String callingPackage);
 
     /**
      * Send a text based SMS.
@@ -776,10 +778,29 @@ public abstract class SMSDispatcher extends Handler {
      * @param callingPkg the calling package name
      * @param persistMessage whether to save the sent message into SMS DB for a
      *   non-default SMS app.
+     *
+     * @param priority Priority level of the message
+     *  Refer specification See 3GPP2 C.S0015-B, v2.0, table 4.5.9-1
+     *  ---------------------------------
+     *  PRIORITY      | Level of Priority
+     *  ---------------------------------
+     *      '00'      |     Normal
+     *      '01'      |     Interactive
+     *      '10'      |     Urgent
+     *      '11'      |     Emergency
+     *  ----------------------------------
+     *  Any Other values included Negative considered as Invalid Priority Indicator of the message.
+     * @param isExpectMore is a boolean to indicate the sending message is multi segmented or not.
+     * @param validityPeriod Validity Period of the message in mins.
+     *  Refer specification 3GPP TS 23.040 V6.8.1 section 9.2.3.12.1.
+     *  Validity Period(Minimum) -> 5 mins
+     *  Validity Period(Maximum) -> 635040 mins(i.e.63 weeks).
+     *  Any Other values included Negative considered as Invalid Validity Period of the message.
      */
     protected abstract void sendText(String destAddr, String scAddr, String text,
             PendingIntent sentIntent, PendingIntent deliveryIntent, Uri messageUri,
-            String callingPkg, boolean persistMessage);
+            String callingPkg, boolean persistMessage, int priority, boolean isExpectMore,
+            int validityPeriod);
 
     /**
      * Inject an SMS PDU into the android platform.
@@ -831,11 +852,28 @@ public abstract class SMSDispatcher extends Handler {
      * @param callingPkg the calling package name
      * @param persistMessage whether to save the sent message into SMS DB for a
      *   non-default SMS app.
+     * @param priority Priority level of the message
+     *  Refer specification See 3GPP2 C.S0015-B, v2.0, table 4.5.9-1
+     *  ---------------------------------
+     *  PRIORITY      | Level of Priority
+     *  ---------------------------------
+     *      '00'      |     Normal
+     *      '01'      |     Interactive
+     *      '10'      |     Urgent
+     *      '11'      |     Emergency
+     *  ----------------------------------
+     *  Any Other values included Negative considered as Invalid Priority Indicator of the message.
+     * @param isExpectMore is a boolean to indicate the sending message is multi segmented or not.
+     * @param validityPeriod Validity Period of the message in mins.
+     *  Refer specification 3GPP TS 23.040 V6.8.1 section 9.2.3.12.1.
+     *  Validity Period(Minimum) -> 5 mins
+     *  Validity Period(Maximum) -> 635040 mins(i.e.63 weeks).
+     *  Any Other values included Negative considered as Invalid Validity Period of the message.
      */
     protected void sendMultipartText(String destAddr, String scAddr,
             ArrayList<String> parts, ArrayList<PendingIntent> sentIntents,
             ArrayList<PendingIntent> deliveryIntents, Uri messageUri, String callingPkg,
-            boolean persistMessage) {
+            boolean persistMessage, int priority, boolean isExpectMore, int validityPeriod) {
         final String fullMessageText = getMultipartMessageText(parts);
         int refNumber = getNextConcatenatedRef() & 0x00FF;
         int msgCount = parts.size();
@@ -892,7 +930,8 @@ public abstract class SMSDispatcher extends Handler {
             trackers[i] =
                 getNewSubmitPduTracker(destAddr, scAddr, parts.get(i), smsHeader, encoding,
                         sentIntent, deliveryIntent, (i == (msgCount - 1)),
-                        unsentPartCount, anyPartFailed, messageUri, fullMessageText);
+                        unsentPartCount, anyPartFailed, messageUri,
+                        fullMessageText, priority, isExpectMore, validityPeriod, callingPkg);
             trackers[i].mPersistMessage = persistMessage;
         }
 
@@ -922,11 +961,12 @@ public abstract class SMSDispatcher extends Handler {
     /**
      * Create a new SubmitPdu and return the SMS tracker.
      */
-    protected abstract SmsTracker getNewSubmitPduTracker(String destinationAddress, String scAddress,
-            String message, SmsHeader smsHeader, int encoding,
+    protected abstract SmsTracker getNewSubmitPduTracker(String destinationAddress,
+            String scAddress, String message, SmsHeader smsHeader, int encoding,
             PendingIntent sentIntent, PendingIntent deliveryIntent, boolean lastPart,
-            AtomicInteger unsentPartCount, AtomicBoolean anyPartFailed, Uri messageUri,
-            String fullMessageText);
+            AtomicInteger unsentPartCount, AtomicBoolean anyPartFailed,
+            Uri messageUri, String fullMessageText,
+            int priority, boolean isExpectMore, int validityPeriod, String callingPackage);
 
     /**
      * Send an SMS
@@ -999,7 +1039,23 @@ public abstract class SMSDispatcher extends Handler {
                 return;
             }
 
-            sendSms(tracker);
+            if (mUsageMonitor.isSmsAuthorizationEnabled()) {
+                final SmsAuthorizationCallback callback = new SmsAuthorizationCallback() {
+                    @Override
+                    public void onAuthorizationResult(final boolean accepted) {
+                        if (accepted) {
+                            sendSms(tracker);
+                        } else {
+                            tracker.onFailed(mContext, RESULT_ERROR_GENERIC_FAILURE,
+                                    SmsUsageMonitor.ERROR_CODE_BLOCKED);
+                        }
+                    }
+                };
+                mUsageMonitor.authorizeOutgoingSms(tracker.mAppInfo, tracker.mDestAddress,
+                        tracker.mFullMessageText, callback, this);
+            } else {
+                sendSms(tracker);
+            }
         }
 
         if (PhoneNumberUtils.isLocalEmergencyNumber(mContext, tracker.mDestAddress)) {
@@ -1291,7 +1347,8 @@ public abstract class SMSDispatcher extends Handler {
         }
 
         sendMultipartText(destinationAddress, scAddress, parts, sentIntents, deliveryIntents,
-                null/*messageUri*/, null/*callingPkg*/, tracker.mPersistMessage);
+                null/*messageUri*/, null/*callingPkg*/, tracker.mPersistMessage, -1,
+                tracker.mExpectMore, tracker.mvalidityPeriod);
     }
 
     /**
@@ -1305,6 +1362,7 @@ public abstract class SMSDispatcher extends Handler {
         public int mImsRetry; // nonzero indicates initial message was sent over Ims
         public int mMessageRef;
         public boolean mExpectMore;
+        public int mvalidityPeriod;
         String mFormat;
 
         public final PendingIntent mSentIntent;
@@ -1339,7 +1397,7 @@ public abstract class SMSDispatcher extends Handler {
                 PendingIntent deliveryIntent, PackageInfo appInfo, String destAddr, String format,
                 AtomicInteger unsentPartCount, AtomicBoolean anyPartFailed, Uri messageUri,
                 SmsHeader smsHeader, boolean isExpectMore, String fullMessageText, int subId,
-                boolean isText, boolean persistMessage, int userId) {
+                boolean isText, boolean persistMessage, int userId, int validityPeriod) {
             mData = data;
             mSentIntent = sentIntent;
             mDeliveryIntent = deliveryIntent;
@@ -1359,6 +1417,7 @@ public abstract class SMSDispatcher extends Handler {
             mIsText = isText;
             mPersistMessage = persistMessage;
             mUserId = userId;
+            mvalidityPeriod = validityPeriod;
         }
 
         /**
@@ -1566,19 +1625,24 @@ public abstract class SMSDispatcher extends Handler {
     protected SmsTracker getSmsTracker(HashMap<String, Object> data, PendingIntent sentIntent,
             PendingIntent deliveryIntent, String format, AtomicInteger unsentPartCount,
             AtomicBoolean anyPartFailed, Uri messageUri, SmsHeader smsHeader,
-            boolean isExpectMore, String fullMessageText, boolean isText, boolean persistMessage) {
+            boolean isExpectMore, String fullMessageText, boolean isText, boolean persistMessage,
+            int validityPeriod, String callingPackage) {
         // Get calling app package name via UID from Binder call
         PackageManager pm = mContext.getPackageManager();
-        String[] packageNames = pm.getPackagesForUid(Binder.getCallingUid());
+        String callerPackageName = callingPackage;
+        if(callerPackageName == null) {
+            String[] packageNames = pm.getPackagesForUid(Binder.getCallingUid());
+            callerPackageName = packageNames[0];
+        }
 
         // Get package info via packagemanager
         final int userId = UserHandle.getCallingUserId();
         PackageInfo appInfo = null;
-        if (packageNames != null && packageNames.length > 0) {
+        if (callerPackageName != null) {
             try {
                 // XXX this is lossy- apps can share a UID
                 appInfo = pm.getPackageInfoAsUser(
-                        packageNames[0], PackageManager.GET_SIGNATURES, userId);
+                        callerPackageName, PackageManager.GET_SIGNATURES, userId);
             } catch (PackageManager.NameNotFoundException e) {
                 // error will be logged in sendRawPdu
             }
@@ -1588,15 +1652,24 @@ public abstract class SMSDispatcher extends Handler {
         String destAddr = PhoneNumberUtils.extractNetworkPortion((String) data.get("destAddr"));
         return new SmsTracker(data, sentIntent, deliveryIntent, appInfo, destAddr, format,
                 unsentPartCount, anyPartFailed, messageUri, smsHeader, isExpectMore,
-                fullMessageText, getSubId(), isText, persistMessage, userId);
+                fullMessageText, getSubId(), isText, persistMessage, userId, validityPeriod);
     }
 
     protected SmsTracker getSmsTracker(HashMap<String, Object> data, PendingIntent sentIntent,
             PendingIntent deliveryIntent, String format, Uri messageUri, boolean isExpectMore,
-            String fullMessageText, boolean isText, boolean persistMessage) {
+            String fullMessageText, boolean isText, boolean persistMessage, String callingPackage) {
         return getSmsTracker(data, sentIntent, deliveryIntent, format, null/*unsentPartCount*/,
                 null/*anyPartFailed*/, messageUri, null/*smsHeader*/, isExpectMore,
-                fullMessageText, isText, persistMessage);
+                fullMessageText, isText, persistMessage, -1, callingPackage);
+    }
+
+    protected SmsTracker getSmsTracker(HashMap<String, Object> data, PendingIntent sentIntent,
+            PendingIntent deliveryIntent, String format, Uri messageUri, boolean isExpectMore,
+            String fullMessageText, boolean isText, boolean persistMessage, int validityPeriod,
+            String callingPackage) {
+        return getSmsTracker(data, sentIntent, deliveryIntent, format, null/*unsentPartCount*/,
+                null/*anyPartFailed*/, messageUri, null/*smsHeader*/, isExpectMore, fullMessageText,
+                isText,  persistMessage, validityPeriod, callingPackage);
     }
 
     protected HashMap<String, Object> getSmsTrackerMap(String destAddr, String scAddr,

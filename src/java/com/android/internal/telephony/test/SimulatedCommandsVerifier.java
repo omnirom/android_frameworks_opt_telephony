@@ -1356,6 +1356,14 @@ public class SimulatedCommandsVerifier implements CommandsInterface {
     }
 
     @Override
+    public void registerForModemReset(Handler h, int what, Object obj) {
+    }
+
+    @Override
+    public void unregisterForModemReset(Handler h) {
+    }
+
+    @Override
     public void sendDeviceState(int stateType, boolean state, Message result) {
     }
 
@@ -1365,5 +1373,9 @@ public class SimulatedCommandsVerifier implements CommandsInterface {
 
     @Override
     public void setSimCardPower(boolean powerUp, Message result) {
+    }
+
+    @Override
+    public void getAtr(Message response) {
     }
 }

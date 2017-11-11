@@ -35,6 +35,7 @@ import static org.mockito.Mockito.verify;
 import android.app.IAlarmManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.hardware.radio.V1_0.CellIdentityGsm;
 import android.hardware.radio.V1_0.CellInfoType;
 import android.hardware.radio.V1_0.VoiceRegStateResult;
@@ -54,9 +55,11 @@ import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.gsm.GsmCellLocation;
+import android.test.mock.MockResources;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
+import android.util.DisplayMetrics;
 
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.dataconnection.DcTracker;
@@ -86,6 +89,10 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     private ServiceStateTracker sst;
     private ServiceStateTrackerTestHandler mSSTTestHandler;
 
+    private final Configuration mConfiguration = new Configuration();
+    private final DisplayMetrics mMetrics = new DisplayMetrics();
+    private final MockResources mMockResources = new MockResources();
+
     private static final int EVENT_REGISTERED_TO_NETWORK = 1;
     private static final int EVENT_SUBSCRIPTION_INFO_READY = 2;
     private static final int EVENT_ROAMING_ON = 3;
@@ -114,6 +121,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         logd("ServiceStateTrackerTest +Setup!");
         super.setUp("ServiceStateTrackerTest");
+
 
         doReturn(true).when(mDct).isDisconnected();
         mPhone.mDcTracker = mDct;
@@ -439,6 +447,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForVoiceRoamingOn() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         sst.registerForVoiceRoamingOn(mTestHandler, EVENT_ROAMING_ON, null);
 
         // Enable roaming and trigger events to notify handler registered
@@ -478,6 +487,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForVoiceRoamingOff() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
+
         // Enable roaming
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(ServiceState.RIL_REG_STATE_ROAMING);
@@ -525,6 +536,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForDataRoamingOn() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         sst.registerForDataRoamingOn(mTestHandler, EVENT_ROAMING_ON, null);
 
         // Enable roaming and trigger events to notify handler registered
@@ -564,6 +576,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForDataRoamingOff() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         // Enable roaming
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(ServiceState.RIL_REG_STATE_ROAMING);
@@ -611,6 +624,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndInvalidregForDataConnAttach() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
+
         // Initially set service state out of service
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(23);
@@ -657,6 +672,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForDataConnAttach() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         // Initially set service state out of service
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(ServiceState.RIL_REG_STATE_UNKNOWN);
@@ -703,6 +719,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForDataConnDetach() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         // Initially set service state in service
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(ServiceState.RIL_REG_STATE_ROAMING);
@@ -766,6 +783,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndUnregForNetworkAttached() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         // Initially set service state out of service
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(ServiceState.RIL_REG_STATE_UNKNOWN);
@@ -812,6 +830,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @MediumTest
     public void testRegAndInvalidRegForNetworkAttached() throws Exception {
+        doReturn(mMockResources).when(mContext).getResources();
         // Initially set service state out of service
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         mSimulatedCommands.setVoiceRegState(23);
@@ -1021,6 +1040,11 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         sst.mSS.setRilVoiceRadioTechnology(sst.mSS.RIL_RADIO_TECHNOLOGY_HSPA);
         assertEquals(true, sst.isConcurrentVoiceAndDataAllowed());
+        sst.mSS.setRilDataRadioTechnology(sst.mSS.RIL_RADIO_TECHNOLOGY_EDGE);
+        sst.mSS.setCssIndicator(1);
+        assertTrue(sst.isConcurrentVoiceAndDataAllowed());
+        sst.mSS.setCssIndicator(0);
+        assertFalse(sst.isConcurrentVoiceAndDataAllowed());
 
         doReturn(false).when(mPhone).isPhoneTypeGsm();
         doReturn(true).when(mPhone).isPhoneTypeCdma();
@@ -1067,5 +1091,38 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         mSimulatedCommands.triggerNITZupdate("15/06/20,00:00:00+0");
         waitForMs(200);
         verify(mAlarmManager, times(1)).setTime(anyLong());
+    }
+
+
+    public class MockResources extends android.test.mock.MockResources {
+
+        @Override
+        public DisplayMetrics getDisplayMetrics() {
+            return mMetrics;
+        }
+
+        @Override
+        public String[] getStringArray(int id) {
+            switch(id) {
+                case com.android.internal.R.array.config_sameNamedOperatorConsideredRoaming:
+                    return new String[]{"123456"};
+
+                case com.android.internal.R.array.config_operatorConsideredNonRoaming:
+                    return new String[]{"123456"};
+
+                default:
+                    return null;
+            }
+        }
+
+        @Override
+        public CharSequence getText(int id) {
+            return "";
+        }
+
+        @Override
+        public Configuration getConfiguration() {
+            return mConfiguration;
+        }
     }
 }

@@ -1008,6 +1008,7 @@ public class SimulatedCommands extends BaseCommands
      */
     @Override
     public void startDtmf(char c, Message result) {
+        SimulatedCommandsVerifier.getInstance().startDtmf(c, result);
         resultSuccess(result, null);
     }
 
@@ -1744,8 +1745,8 @@ public class SimulatedCommands extends BaseCommands
         Rlog.i(LOG_TAG, "[SimCmd] supplyIccPinForApp: pin failed!");
         CommandException ex = new CommandException(
                 CommandException.Error.PASSWORD_INCORRECT);
-        resultFail(response, new int[]{
-                (--mPin1attemptsRemaining < 0) ? 0 : mPin1attemptsRemaining}, ex);
+        resultFail(response, new Integer(
+                (--mPin1attemptsRemaining < 0) ? 0 : mPin1attemptsRemaining), ex);
     }
 
     @Override
@@ -2010,6 +2011,12 @@ public class SimulatedCommands extends BaseCommands
         }
     }
 
+    public void notifyModemReset() {
+        if (mModemResetRegistrants != null) {
+            mModemResetRegistrants.notifyRegistrants(new AsyncResult(null, "Test", null));
+        }
+    }
+
     @Override
     public void registerForExitEmergencyCallbackMode(Handler h, int what, Object obj) {
         SimulatedCommandsVerifier.getInstance().registerForExitEmergencyCallbackMode(h, what, obj);
@@ -2099,6 +2106,12 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
+    public void registerForModemReset(Handler h, int what, Object obj) {
+        SimulatedCommandsVerifier.getInstance().registerForModemReset(h, what, obj);
+        super.registerForModemReset(h, what, obj);
+    }
+
+    @Override
     public void sendDeviceState(int stateType, boolean state, Message result) {
         SimulatedCommandsVerifier.getInstance().sendDeviceState(stateType, state, result);
         resultSuccess(result, null);
@@ -2126,5 +2139,10 @@ public class SimulatedCommands extends BaseCommands
     public void setOnRestrictedStateChanged(Handler h, int what, Object obj) {
         super.setOnRestrictedStateChanged(h, what, obj);
         SimulatedCommandsVerifier.getInstance().setOnRestrictedStateChanged(h, what, obj);
+    }
+
+   @Override
+    public void getAtr(Message response) {
+        unimplemented(response);
     }
 }

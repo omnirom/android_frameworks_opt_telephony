@@ -117,6 +117,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
 
         doReturn(false).when(mSST).isDeviceShuttingDown();
+        mImsManagerInstances.put(mPhone.getPhoneId(), mImsManager);
 
         mGsmCdmaPhoneTestHandler = new GsmCdmaPhoneTestHandler(TAG);
         mGsmCdmaPhoneTestHandler.start();
@@ -508,6 +509,17 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         verify(mSimRecords).setVoiceCallForwardingFlag(anyInt(), anyBoolean(), eq(cfNumber));
     }
 
+    @Test
+    public void testSetVideoCallForwardingPreference() {
+        mPhoneUT.setVideoCallForwardingPreference(false);
+        boolean cfPref = mPhoneUT.getVideoCallForwardingPreference();
+        assertFalse(cfPref);
+
+        mPhoneUT.setVideoCallForwardingPreference(true);
+        cfPref = mPhoneUT.getVideoCallForwardingPreference();
+        assertTrue(cfPref);
+    }
+
     /**
      * GsmCdmaPhone handles a lot of messages. This function verifies behavior for messages that are
      * received when obj is created and that are received on phone type switch
@@ -516,6 +528,8 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testHandleInitialMessages() {
+        doReturn(true).when(mSubscriptionManager).isActiveSubId(anyInt());
+
         // EVENT_RADIO_AVAILABLE
         verify(mSimulatedCommandsVerifier).getBasebandVersion(nullable(Message.class));
         verify(mSimulatedCommandsVerifier).getDeviceIdentity(nullable(Message.class));
@@ -581,16 +595,16 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
         ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
         try {
-            verify(mIActivityManager, atLeast(1)).broadcastIntent(eq((IApplicationThread)null),
+            verify(mIActivityManager, atLeast(1)).broadcastIntent(eq((IApplicationThread) null),
                     intentArgumentCaptor.capture(),
-                    eq((String)null),
-                    eq((IIntentReceiver)null),
+                    eq((String) null),
+                    eq((IIntentReceiver) null),
                     eq(Activity.RESULT_OK),
-                    eq((String)null),
-                    eq((Bundle)null),
-                    eq((String[])null),
+                    eq((String) null),
+                    eq((Bundle) null),
+                    eq((String[]) null),
                     anyInt(),
-                    eq((Bundle)null),
+                    eq((Bundle) null),
                     eq(false),
                     eq(true),
                     anyInt());
@@ -601,6 +615,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         Intent intent = intentArgumentCaptor.getValue();
         assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
         assertEquals(true, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, false));
+        assertEquals(true, mPhoneUT.isInEcm());
 
         // verify that wakeLock is acquired in ECM
         assertEquals(true, mPhoneUT.getWakeLock().isHeld());
@@ -614,16 +629,16 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
         // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
         try {
-            verify(mIActivityManager, atLeast(2)).broadcastIntent(eq((IApplicationThread)null),
+            verify(mIActivityManager, atLeast(2)).broadcastIntent(eq((IApplicationThread) null),
                     intentArgumentCaptor.capture(),
-                    eq((String)null),
-                    eq((IIntentReceiver)null),
+                    eq((String) null),
+                    eq((IIntentReceiver) null),
                     eq(Activity.RESULT_OK),
-                    eq((String)null),
-                    eq((Bundle)null),
-                    eq((String[])null),
+                    eq((String) null),
+                    eq((Bundle) null),
+                    eq((String[]) null),
                     anyInt(),
-                    eq((Bundle)null),
+                    eq((Bundle) null),
                     eq(false),
                     eq(true),
                     anyInt());
@@ -634,6 +649,95 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         intent = intentArgumentCaptor.getValue();
         assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
         assertEquals(false, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, true));
+        assertEquals(false, mPhoneUT.isInEcm());
+
+        ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
+
+        // verify EcmExitRespRegistrant and mEmergencyCallToggledRegistrants are notified
+        verify(mTestHandler, times(2)).sendMessageAtTime(messageArgumentCaptor.capture(),
+                anyLong());
+        List<Message> msgList = messageArgumentCaptor.getAllValues();
+        assertEquals(EVENT_EMERGENCY_CALLBACK_MODE_EXIT, msgList.get(0).what);
+        assertEquals(EVENT_EMERGENCY_CALL_TOGGLE, msgList.get(1).what);
+
+        // verify setInternalDataEnabled
+        verify(mDcTracker).setInternalDataEnabled(true);
+
+        // verify wakeLock released
+        assertEquals(false, mPhoneUT.getWakeLock().isHeld());
+    }
+
+    @Test
+    @SmallTest
+    public void testModemResetInEmergencyCallbackMessages() {
+        verify(mSimulatedCommandsVerifier).setEmergencyCallbackMode(eq(mPhoneUT), anyInt(),
+                nullable(Object.class));
+        verify(mSimulatedCommandsVerifier).registerForModemReset(eq(mPhoneUT),
+                anyInt(), nullable(Object.class));
+
+        switchToCdma();
+        // verify handling of emergency callback mode
+        mSimulatedCommands.notifyEmergencyCallbackMode();
+        waitForMs(50);
+
+        // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
+        ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
+        try {
+            verify(mIActivityManager, atLeast(1)).broadcastIntent(eq((IApplicationThread) null),
+                    intentArgumentCaptor.capture(),
+                    eq((String) null),
+                    eq((IIntentReceiver) null),
+                    eq(Activity.RESULT_OK),
+                    eq((String) null),
+                    eq((Bundle) null),
+                    eq((String[]) null),
+                    anyInt(),
+                    eq((Bundle) null),
+                    eq(false),
+                    eq(true),
+                    anyInt());
+        } catch (Exception e) {
+            fail("Unexpected exception: " + e.getStackTrace());
+        }
+
+        Intent intent = intentArgumentCaptor.getValue();
+        assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
+        assertEquals(true, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, false));
+        assertEquals(true, mPhoneUT.isInEcm());
+
+        // verify that wakeLock is acquired in ECM
+        assertEquals(true, mPhoneUT.getWakeLock().isHeld());
+
+        mPhoneUT.setOnEcbModeExitResponse(mTestHandler, EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
+        mPhoneUT.registerForEmergencyCallToggle(mTestHandler, EVENT_EMERGENCY_CALL_TOGGLE, null);
+
+        // verify handling of emergency callback mode exit when modem resets
+        mSimulatedCommands.notifyModemReset();
+        waitForMs(50);
+
+        // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
+        try {
+            verify(mIActivityManager, atLeast(2)).broadcastIntent(eq((IApplicationThread) null),
+                    intentArgumentCaptor.capture(),
+                    eq((String) null),
+                    eq((IIntentReceiver) null),
+                    eq(Activity.RESULT_OK),
+                    eq((String) null),
+                    eq((Bundle) null),
+                    eq((String[]) null),
+                    anyInt(),
+                    eq((Bundle) null),
+                    eq(false),
+                    eq(true),
+                    anyInt());
+        } catch (Exception e) {
+            fail("Unexpected exception: " + e.getStackTrace());
+        }
+
+        intent = intentArgumentCaptor.getValue();
+        assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
+        assertEquals(false, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, true));
+        assertEquals(false, mPhoneUT.isInEcm());
 
         ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
 
@@ -662,6 +766,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                 getSubIdUsingPhoneId(anyInt());
         assertEquals(false, mPhoneUT.getCallForwardingIndicator());
 
+        doReturn(true).when(mSubscriptionController).isActiveSubId(anyInt());
         // valid subId, sharedPreference not present
         int subId1 = 0;
         int subId2 = 1;
