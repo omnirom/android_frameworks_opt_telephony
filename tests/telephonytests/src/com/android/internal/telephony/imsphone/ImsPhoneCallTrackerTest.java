@@ -509,4 +509,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         verify(mImsManager, times(2)).open(anyInt(), nullable(PendingIntent.class),
                 nullable(ImsConnectionStateListener.class));
     }
+
+    @Test
+    @SmallTest
+    public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
+        mCTUT.setSwitchingFgAndBgCallsValue(true);
+        if (mImsCallListener != null) {
+            mImsCallListener.onCallHoldFailed(mImsCall, new ImsReasonInfo(0, -1));
+        }
+        assertTrue(mCTUT.getSwitchingFgAndBgCallsValue());
+    }
 }

@@ -130,6 +130,7 @@ public class SimulatedCommands extends BaseCommands
 
     private boolean mDcSuccess = true;
     private DataCallResponse mDcResponse;
+    private String smscAddress;
 
     //***** Constructor
     public
@@ -1154,12 +1155,15 @@ public class SimulatedCommands extends BaseCommands
 
     @Override
     public void getSmscAddress(Message result) {
-        unimplemented(result);
+        resultSuccess(result, smscAddress);
+        SimulatedCommandsVerifier.getInstance().getSmscAddress(result);
     }
 
     @Override
     public void setSmscAddress(String address, Message result) {
-        unimplemented(result);
+        smscAddress = address;
+        resultSuccess(result, null);
+        SimulatedCommandsVerifier.getInstance().setSmscAddress(address, result);
     }
 
     @Override
