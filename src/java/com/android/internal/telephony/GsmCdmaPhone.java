@@ -1837,7 +1837,8 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                    || imsPhone.isUtEnabled())) {
                 imsPhone.getOutgoingCallerIdDisplay(onComplete);
                 return;
             }
@@ -1852,7 +1853,8 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)) {
+                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                    || imsPhone.isUtEnabled())) {
                 imsPhone.setOutgoingCallerIdDisplay(commandInterfaceCLIRMode, onComplete);
                 return;
             }
@@ -2313,8 +2315,12 @@ public class GsmCdmaPhone extends Phone {
                         config_switch_phone_on_voice_reg_state_change)) {
                     mCi.getVoiceRadioTechnology(obtainMessage(EVENT_REQUEST_VOICE_RADIO_TECH_DONE));
                 }
-                // Force update IMS service
-                ImsManager.getInstance(mContext, mPhoneId).updateImsServiceConfigForSlot(true);
+                if (getIccRecordsLoaded()) {
+                    // Force update IMS service
+                    ImsManager.getInstance(mContext, mPhoneId).updateImsServiceConfigForSlot(true);
+                } else {
+                    logw("received EVENT_CARRIER_CONFIG_CHANGED but IccRecords are not loaded");
+                }
 
                 // Update broadcastEmergencyCallStateChanges
                 CarrierConfigManager configMgr = (CarrierConfigManager)
@@ -3593,6 +3599,10 @@ public class GsmCdmaPhone extends Phone {
 
     private void loge(String s) {
         Rlog.e(LOG_TAG, "[GsmCdmaPhone] " + s);
+    }
+
+    private void logw(String s) {
+        Rlog.w(LOG_TAG, "[GsmCdmaPhone] " + s);
     }
 
     @Override

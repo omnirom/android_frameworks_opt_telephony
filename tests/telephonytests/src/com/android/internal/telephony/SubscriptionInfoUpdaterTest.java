@@ -420,7 +420,7 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         doReturn(null).when(mSubscriptionController)
                 .getSubInfoUsingSlotIndexWithCheck(anyInt(), anyBoolean(), anyString());
         verify(mSubscriptionController, times(0)).clearSubInfo();
-        doReturn("89012604200000000000").when(mIccRecord).geFullIccId();
+        doReturn("89012604200000000000").when(mIccRecord).getFullIccId();
 
         // Mock sending a sim loaded for SIM 1
         Intent mIntent = new Intent(IccCardProxy.ACTION_INTERNAL_SIM_STATE_CHANGED);

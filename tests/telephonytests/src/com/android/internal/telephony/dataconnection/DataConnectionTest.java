@@ -188,43 +188,43 @@ public class DataConnectionTest extends TelephonyTest {
         assertEquals("DcInactiveState", getCurrentState().getName());
     }
 
-//    @Test
-//    @SmallTest
-//    public void testConnectEvent() throws Exception {
-//        testSanity();
-//
-//        mDc.sendMessage(DataConnection.EVENT_CONNECT, mCp);
-//        waitForMs(200);
-//
-//        verify(mCT, times(1)).registerForVoiceCallStarted(any(Handler.class),
-//                eq(DataConnection.EVENT_DATA_CONNECTION_VOICE_CALL_STARTED), eq(null));
-//        verify(mCT, times(1)).registerForVoiceCallEnded(any(Handler.class),
-//                eq(DataConnection.EVENT_DATA_CONNECTION_VOICE_CALL_ENDED), eq(null));
-//
-//        ArgumentCaptor<DataProfile> dpCaptor = ArgumentCaptor.forClass(DataProfile.class);
-//        verify(mSimulatedCommandsVerifier, times(1)).setupDataCall(
-//                eq(ServiceState.RIL_RADIO_TECHNOLOGY_UMTS), dpCaptor.capture(),
-//                eq(false), eq(false), any(Message.class));
-//
-//        assertEquals("spmode.ne.jp", dpCaptor.getValue().apn);
-//
-//        assertEquals("DcActiveState", getCurrentState().getName());
-//    }
-//
-//    @Test
-//    @SmallTest
-//    public void testDisconnectEvent() throws Exception {
-//        testConnectEvent();
-//
-//        mDc.sendMessage(DataConnection.EVENT_DISCONNECT, mDcp);
-//        waitForMs(100);
-//
-//        verify(mSimulatedCommandsVerifier, times(1)).deactivateDataCall(eq(1),
-//                eq(RILConstants.DEACTIVATE_REASON_NONE), any(Message.class));
-//
-//        assertEquals("DcInactiveState", getCurrentState().getName());
-//    }
-//
+    @Test
+    @SmallTest
+    public void testConnectEvent() throws Exception {
+        testSanity();
+
+        mDc.sendMessage(DataConnection.EVENT_CONNECT, mCp);
+        waitForMs(200);
+
+        verify(mCT, times(1)).registerForVoiceCallStarted(any(Handler.class),
+                eq(DataConnection.EVENT_DATA_CONNECTION_VOICE_CALL_STARTED), eq(null));
+        verify(mCT, times(1)).registerForVoiceCallEnded(any(Handler.class),
+                eq(DataConnection.EVENT_DATA_CONNECTION_VOICE_CALL_ENDED), eq(null));
+
+        ArgumentCaptor<DataProfile> dpCaptor = ArgumentCaptor.forClass(DataProfile.class);
+        verify(mSimulatedCommandsVerifier, times(1)).setupDataCall(
+                eq(ServiceState.RIL_RADIO_TECHNOLOGY_UMTS), dpCaptor.capture(),
+                eq(false), eq(false), any(Message.class));
+
+        assertEquals("spmode.ne.jp", dpCaptor.getValue().apn);
+
+        assertEquals("DcActiveState", getCurrentState().getName());
+    }
+
+    @Test
+    @SmallTest
+    public void testDisconnectEvent() throws Exception {
+        testConnectEvent();
+
+        mDc.sendMessage(DataConnection.EVENT_DISCONNECT, mDcp);
+        waitForMs(100);
+
+        verify(mSimulatedCommandsVerifier, times(1)).deactivateDataCall(eq(1),
+                eq(RILConstants.DEACTIVATE_REASON_NONE), any(Message.class));
+
+        assertEquals("DcInactiveState", getCurrentState().getName());
+    }
+
     @Test
     @SmallTest
     public void testModemSuggestRetry() throws Exception {
