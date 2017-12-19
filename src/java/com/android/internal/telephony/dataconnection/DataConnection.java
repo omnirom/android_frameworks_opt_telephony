@@ -733,13 +733,15 @@ public class DataConnection extends StateMachine {
     private static final String TCP_BUFFER_SIZES_LTE  =
             "524288,1048576,2097152,262144,524288,1048576";
     private static final String TCP_BUFFER_SIZES_HSPAP= "122334,734003,2202010,32040,192239,576717";
+    private static final String TCP_BUFFER_SIZES_LTE_CA =
+            "2097152,4194304,8388608,4096,1048576,2097152";
 
     private void updateTcpBufferSizes(int rilRat) {
         String sizes = null;
-        if (rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA) {
-            // for now treat CA as LTE.  Plan to surface the extra bandwith in a more
-            // precise manner which should affect buffer sizes
-            rilRat = ServiceState.RIL_RADIO_TECHNOLOGY_LTE;
+        ServiceState ss = mPhone.getServiceState();
+        if (rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE &&
+                ss.isUsingCarrierAggregation()) {
+            rilRat = ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA;
         }
         String ratName = ServiceState.rilRadioTechnologyToString(rilRat).toLowerCase(Locale.ROOT);
         // ServiceState gives slightly different names for EVDO tech ("evdo-rev.0" for ex)
@@ -794,8 +796,9 @@ public class DataConnection extends StateMachine {
                     sizes = TCP_BUFFER_SIZES_HSPA;
                     break;
                 case ServiceState.RIL_RADIO_TECHNOLOGY_LTE:
-                case ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA:
                     sizes = TCP_BUFFER_SIZES_LTE;
+                case ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA:
+                    sizes = TCP_BUFFER_SIZES_LTE_CA;
                     break;
                 case ServiceState.RIL_RADIO_TECHNOLOGY_HSPAP:
                     sizes = TCP_BUFFER_SIZES_HSPAP;
@@ -1527,6 +1530,10 @@ public class DataConnection extends StateMachine {
         }
     }
     private DcActivatingState mActivatingState = new DcActivatingState();
+
+    public final boolean hasMessages(int what, Object object) {
+        return DataConnection.this.getHandler().hasMessages(what, object);
+    }
 
     /**
      * The state machine is connected, expecting an EVENT_DISCONNECT.

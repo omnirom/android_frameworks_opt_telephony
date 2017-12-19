@@ -40,6 +40,8 @@ import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 
 import com.android.ims.ImsException;
+import com.android.ims.ImsReasonInfo;
+import com.android.ims.ImsSsData;
 import com.android.ims.ImsSsInfo;
 import com.android.ims.ImsUtInterface;
 import com.android.internal.telephony.CallForwardInfo;
@@ -48,6 +50,7 @@ import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.MmiCode;
 import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.uicc.IccRecords;
 
 import java.util.regex.Matcher;
@@ -184,6 +187,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     private boolean mIsCallFwdReg;
     private State mState = State.PENDING;
     private CharSequence mMessage;
+    private boolean mIsSsInfo = false;
     //resgister/erasure of ICB (Specific DN)
     static final String IcbDnMmi = "Specific Incoming Call Barring";
     //ICB (Anonymous)
@@ -495,7 +499,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
     //***** Constructor
 
-    ImsPhoneMmiCode(ImsPhone phone) {
+    public ImsPhoneMmiCode(ImsPhone phone) {
         // The telephony unit-test cases may create ImsPhoneMmiCode's
         // in secondary threads
         super(phone.getHandler().getLooper());
@@ -735,7 +739,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
             try {
                 int serviceClass = siToServiceClass(mSib);
                 if (serviceClass != SERVICE_CLASS_NONE
-                        && serviceClass != SERVICE_CLASS_VOICE) {
+                        && serviceClass != SERVICE_CLASS_VOICE
+                        && serviceClass != (SERVICE_CLASS_PACKET
+                            + SERVICE_CLASS_DATA_SYNC)) {
                     return false;
                 }
                 return true;
@@ -795,7 +801,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 int time = siToTime(mSic);
 
                 if (isInterrogate()) {
-                    mPhone.getCallForwardingOption(reason,
+                    mPhone.getCallForwardingOption(reason, serviceClass,
                             obtainMessage(EVENT_QUERY_CF_COMPLETE, this));
                 } else {
                     int cfAction;
@@ -844,12 +850,13 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
                 String password = mSia;
                 String facility = scToBarringFacility(mSc);
+                int serviceClass = siToServiceClass(mSib);
 
                 if (isInterrogate()) {
-                    mPhone.getCallBarring(facility,
+                    mPhone.getCallBarring(facility, serviceClass,
                             obtainMessage(EVENT_SUPP_SVC_QUERY_COMPLETE, this));
                 } else if (isActivate() || isDeactivate()) {
-                    mPhone.setCallBarring(facility, isActivate(), password,
+                    mPhone.setCallBarring(facility, isActivate(), serviceClass, password,
                             obtainMessage(EVENT_SET_COMPLETE, this));
                 } else {
                     throw new RuntimeException ("Invalid or Unsupported MMI Code");
@@ -1090,7 +1097,13 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 if ((ar.exception == null) && (msg.arg1 == 1)) {
                     boolean cffEnabled = (msg.arg2 == 1);
                     if (mIccRecords != null) {
-                        mPhone.setVoiceCallForwardingFlag(1, cffEnabled, mDialingNumber);
+                        if(siToServiceClass(mSib) == (SERVICE_CLASS_PACKET
+                                    + SERVICE_CLASS_DATA_SYNC)) {
+                            mPhone.setVideoCallForwardingPreference(cffEnabled);
+                            mPhone.notifyCallForwardingIndicator();
+                        } else {
+                            mPhone.setVoiceCallForwardingFlag(1, cffEnabled, mDialingNumber);
+                        }
                     }
                 }
 
@@ -1172,7 +1185,42 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     }
 
     private CharSequence getErrorMessage(AsyncResult ar) {
-        return mContext.getText(com.android.internal.R.string.mmiError);
+        CharSequence errorMessage;
+        return ((errorMessage = getMmiErrorMessage(ar)) != null) ? errorMessage :
+                mContext.getText(com.android.internal.R.string.mmiError);
+    }
+
+    private CharSequence getMmiErrorMessage(AsyncResult ar) {
+        if (ar.exception instanceof ImsException) {
+            switch (((ImsException) ar.exception).getCode()) {
+                case ImsReasonInfo.CODE_FDN_BLOCKED:
+                    return mContext.getText(com.android.internal.R.string.mmiFdnError);
+                case ImsReasonInfo.CODE_UT_SS_MODIFIED_TO_DIAL:
+                    return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_dial);
+                case ImsReasonInfo.CODE_UT_SS_MODIFIED_TO_USSD:
+                    return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_ussd);
+                case ImsReasonInfo.CODE_UT_SS_MODIFIED_TO_SS:
+                    return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_ss);
+                case ImsReasonInfo.CODE_UT_SS_MODIFIED_TO_DIAL_VIDEO:
+                    return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_dial_video);
+                default:
+                    return null;
+            }
+        } else if (ar.exception instanceof CommandException) {
+            CommandException err = (CommandException) ar.exception;
+            if (err.getCommandError() == CommandException.Error.FDN_CHECK_FAILURE) {
+                return mContext.getText(com.android.internal.R.string.mmiFdnError);
+            } else if (err.getCommandError() == CommandException.Error.SS_MODIFIED_TO_DIAL) {
+                return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_dial);
+            } else if (err.getCommandError() == CommandException.Error.SS_MODIFIED_TO_USSD) {
+                return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_ussd);
+            } else if (err.getCommandError() == CommandException.Error.SS_MODIFIED_TO_SS) {
+                return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_ss);
+            } else if (err.getCommandError() == CommandException.Error.SS_MODIFIED_TO_DIAL_VIDEO) {
+                return mContext.getText(com.android.internal.R.string.stk_cc_ss_to_dial_video);
+            }
+        }
+        return null;
     }
 
     private CharSequence getScString() {
@@ -1211,11 +1259,14 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         if (ar.exception != null) {
             mState = State.FAILED;
 
+            CharSequence errorMessage;
             if (ar.exception instanceof CommandException) {
                 CommandException err = (CommandException) ar.exception;
                 if (err.getCommandError() == CommandException.Error.PASSWORD_INCORRECT) {
                     sb.append(mContext.getText(
                             com.android.internal.R.string.passwordIncorrect));
+                } else if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
                 } else if (err.getMessage() != null) {
                     sb.append(err.getMessage());
                 } else {
@@ -1223,7 +1274,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 }
             } else {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1361,7 +1414,10 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                CharSequence errorMessage;
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1426,7 +1482,10 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                CharSequence errorMessage;
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1487,7 +1546,10 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                CharSequence errorMessage;
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1525,10 +1587,12 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         mState = State.FAILED;
 
         if (ar.exception != null) {
-
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                CharSequence errorMessage;
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1624,7 +1688,10 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
             if (ar.exception instanceof ImsException) {
                 ImsException error = (ImsException) ar.exception;
-                if (error.getMessage() != null) {
+                CharSequence errorMessage;
+                if ((errorMessage = getMmiErrorMessage(ar)) != null) {
+                    sb.append(errorMessage);
+                } else if (error.getMessage() != null) {
                     sb.append(error.getMessage());
                 } else {
                     sb.append(getErrorMessage(ar));
@@ -1679,6 +1746,165 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     @Override
     public ResultReceiver getUssdCallbackReceiver() {
         return this.mCallbackReceiver;
+    }
+
+    public void processImsSsData(AsyncResult data) {
+        mIsSsInfo = true;
+        try {
+            ImsSsData ssData = (ImsSsData)data.result;
+            parseSsData(ssData);
+        } catch (ClassCastException ex) {
+            Rlog.e(LOG_TAG, "Class Cast Exception in parsing SS Data : " + ex);
+        } catch (NullPointerException ex) {
+            Rlog.e(LOG_TAG, "Null Pointer Exception in parsing SS Data : " + ex);
+        }
+    }
+
+    void parseSsData(ImsSsData ssData) {
+        ImsException ex = (ssData.mResult != RILConstants.SUCCESS) ?
+                new ImsException(null, ssData.mResult) : null;
+        mSc = getScStringFromScType(ssData.mServiceType);
+        mAction = getActionStringFromReqType(ssData.mRequestType);
+        Rlog.d(LOG_TAG, "parseSsData msc = " + mSc + ", action = " + mAction + ", ex = " + ex);
+
+        switch (ssData.mRequestType) {
+            case ImsSsData.SS_ACTIVATION:
+            case ImsSsData.SS_DEACTIVATION:
+            case ImsSsData.SS_REGISTRATION:
+            case ImsSsData.SS_ERASURE:
+                if ((ssData.mResult == RILConstants.SUCCESS) &&
+                      ssData.isTypeUnConditional()) {
+                    /*
+                     * When ServiceType is SS_CFU/SS_CF_ALL and RequestType is activate/register and
+                     * ServiceClass is Voice/Video/None, set IccRecords.setVoiceCallForwardingFlag.
+                     * Only CF status can be set here since number is not available.
+                     */
+                    boolean cffEnabled = ((ssData.mRequestType == ImsSsData.SS_ACTIVATION ||
+                            ssData.mRequestType == ImsSsData.SS_REGISTRATION) &&
+                            isServiceClassVoiceVideoOrNone(ssData.mServiceClass));
+
+                    Rlog.d(LOG_TAG, "setCallForwardingFlag cffEnabled: " + cffEnabled);
+                    if (mIccRecords != null) {
+                        if (ssData.mServiceClass == (SERVICE_CLASS_PACKET
+                                    + SERVICE_CLASS_DATA_SYNC)) {
+                            Rlog.d(LOG_TAG, "setVideoCallForwardingFlag done from SS Info.");
+                            mPhone.setVideoCallForwardingPreference(cffEnabled);
+                            mPhone.notifyCallForwardingIndicator();
+                        } else {
+                            Rlog.d(LOG_TAG, "setVoiceCallForwardingFlag done from SS Info.");
+                            mPhone.setVoiceCallForwardingFlag(1, cffEnabled, null);
+                        }
+                    } else {
+                        Rlog.e(LOG_TAG, "setCallForwardingFlag aborted. sim records is null.");
+                    }
+                }
+                onSetComplete(null, new AsyncResult(null, ssData.mCfInfo, ex));
+                break;
+            case ImsSsData.SS_INTERROGATION:
+                if (ssData.isTypeClir()) {
+                    Rlog.d(LOG_TAG, "CLIR INTERROGATION");
+                    Bundle clirInfo = new Bundle();
+                    clirInfo.putIntArray(UT_BUNDLE_KEY_CLIR, ssData.mSsInfo);
+                    onQueryClirComplete(new AsyncResult(null, clirInfo, ex));
+                } else if (ssData.isTypeCF()) {
+                    Rlog.d(LOG_TAG, "CALL FORWARD INTERROGATION");
+                    onQueryCfComplete(new AsyncResult(null, mPhone.
+                            handleCfQueryResult(ssData.mCfInfo), ex));
+                } else if (ssData.isTypeBarring()) {
+                    onSuppSvcQueryComplete(new AsyncResult(null, ssData.mSsInfo, ex));
+                } else if (ssData.isTypeColr() || ssData.isTypeClip() || ssData.isTypeColp()) {
+                    ImsSsInfo ssInfo = new ImsSsInfo();
+                    ssInfo.mStatus = ssData.mSsInfo[0];
+                    Bundle clInfo = new Bundle();
+                    clInfo.putParcelable(UT_BUNDLE_KEY_SSINFO, ssInfo);
+                    onSuppSvcQueryComplete(new AsyncResult(null, clInfo, ex));
+                } else if (ssData.isTypeIcb()) {
+                    onIcbQueryComplete(new AsyncResult(null, ssData.mImsSsInfo, ex));
+                } else {
+                    onQueryComplete(new AsyncResult(null, ssData.mSsInfo, ex));
+                }
+                break;
+            default:
+                Rlog.e(LOG_TAG, "Invaid requestType in SSData : " + ssData.mRequestType);
+                break;
+        }
+    }
+
+    private String getScStringFromScType(int serviceType) {
+        switch (serviceType) {
+            case ImsSsData.SS_CFU:
+                return SC_CFU;
+            case ImsSsData.SS_CF_BUSY:
+                return SC_CFB;
+            case ImsSsData.SS_CF_NO_REPLY:
+                return SC_CFNRy;
+            case ImsSsData.SS_CF_NOT_REACHABLE:
+                return SC_CFNR;
+            case ImsSsData.SS_CF_ALL:
+                return SC_CF_All;
+            case ImsSsData.SS_CF_ALL_CONDITIONAL:
+                return SC_CF_All_Conditional;
+            case ImsSsData.SS_CLIP:
+                return SC_CLIP;
+            case ImsSsData.SS_CLIR:
+                return SC_CLIR;
+            case ImsSsData.SS_COLP:
+                return SC_COLP;
+            case ImsSsData.SS_COLR:
+                return SC_COLR;
+            case ImsSsData.SS_CNAP:
+                return SC_CNAP;
+            case ImsSsData.SS_WAIT:
+                return SC_WAIT;
+            case ImsSsData.SS_BAOC:
+                return SC_BAOC;
+            case ImsSsData.SS_BAOIC:
+                return SC_BAOIC;
+            case ImsSsData.SS_BAOIC_EXC_HOME:
+                return SC_BAOICxH;
+            case ImsSsData.SS_BAIC:
+                return SC_BAIC;
+            case ImsSsData.SS_BAIC_ROAMING:
+                return SC_BAICr;
+            case ImsSsData.SS_ALL_BARRING:
+                return SC_BA_ALL;
+            case ImsSsData.SS_OUTGOING_BARRING:
+                return SC_BA_MO;
+            case ImsSsData.SS_INCOMING_BARRING:
+                return SC_BA_MT;
+            case ImsSsData.SS_INCOMING_BARRING_DN:
+                return SC_BS_MT;
+            case ImsSsData.SS_INCOMING_BARRING_ANONYMOUS:
+                return SC_BAICa;
+            default:
+                return null;
+        }
+    }
+
+    private String getActionStringFromReqType(int requestType) {
+        switch (requestType) {
+            case ImsSsData.SS_ACTIVATION:
+                return ACTION_ACTIVATE;
+            case ImsSsData.SS_DEACTIVATION:
+                return ACTION_DEACTIVATE;
+            case ImsSsData.SS_INTERROGATION:
+                return ACTION_INTERROGATE;
+            case ImsSsData.SS_REGISTRATION:
+                return ACTION_REGISTER;
+            case ImsSsData.SS_ERASURE:
+                return ACTION_ERASURE;
+            default:
+                return null;
+        }
+    }
+
+    private boolean isServiceClassVoiceVideoOrNone(int serviceClass) {
+        return ((serviceClass == SERVICE_CLASS_NONE) || (serviceClass == SERVICE_CLASS_VOICE) ||
+                (serviceClass == (SERVICE_CLASS_PACKET + SERVICE_CLASS_DATA_SYNC)));
+    }
+
+    public boolean isSsInfo() {
+        return mIsSsInfo;
     }
 
     /***

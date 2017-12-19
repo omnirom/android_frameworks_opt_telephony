@@ -117,6 +117,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
 
         doReturn(false).when(mSST).isDeviceShuttingDown();
+        mImsManagerInstances.put(mPhone.getPhoneId(), mImsManager);
 
         mGsmCdmaPhoneTestHandler = new GsmCdmaPhoneTestHandler(TAG);
         mGsmCdmaPhoneTestHandler.start();
@@ -508,6 +509,17 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         verify(mSimRecords).setVoiceCallForwardingFlag(anyInt(), anyBoolean(), eq(cfNumber));
     }
 
+    @Test
+    public void testSetVideoCallForwardingPreference() {
+        mPhoneUT.setVideoCallForwardingPreference(false);
+        boolean cfPref = mPhoneUT.getVideoCallForwardingPreference();
+        assertFalse(cfPref);
+
+        mPhoneUT.setVideoCallForwardingPreference(true);
+        cfPref = mPhoneUT.getVideoCallForwardingPreference();
+        assertTrue(cfPref);
+    }
+
     /**
      * GsmCdmaPhone handles a lot of messages. This function verifies behavior for messages that are
      * received when obj is created and that are received on phone type switch
@@ -517,6 +529,8 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testHandleInitialMessages() {
+        doReturn(true).when(mSubscriptionManager).isActiveSubId(anyInt());
+
         // EVENT_RADIO_AVAILABLE
         verify(mSimulatedCommandsVerifier).getBasebandVersion(nullable(Message.class));
         verify(mSimulatedCommandsVerifier).getDeviceIdentity(nullable(Message.class));
@@ -753,6 +767,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                 getSubIdUsingPhoneId(anyInt());
         assertEquals(false, mPhoneUT.getCallForwardingIndicator());
 
+        doReturn(true).when(mSubscriptionController).isActiveSubId(anyInt());
         // valid subId, sharedPreference not present
         int subId1 = 0;
         int subId2 = 1;

@@ -23,6 +23,7 @@ import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.Phone;
@@ -48,6 +49,7 @@ public class ApnSetting {
 
     static final String V2_FORMAT_REGEX = "^\\[ApnSettingV2\\]\\s*";
     static final String V3_FORMAT_REGEX = "^\\[ApnSettingV3\\]\\s*";
+    static final String TAG = "ApnSetting";
 
     public final String carrier;
     public final String apn;
@@ -59,7 +61,7 @@ public class ApnSetting {
     public final String user;
     public final String password;
     public final int authType;
-    public final String[] types;
+    public String[] types;
     public final int typesBitmap;
     public final int id;
     public final String numeric;
@@ -404,7 +406,20 @@ public class ApnSetting {
                     gid1.substring(0, mvno_match_data_length).equalsIgnoreCase(mvnoMatchData)) {
                 return true;
             }
+        } else if (mvnoType.equalsIgnoreCase("iccid")) {
+            String iccId = r.getIccId();
+            if (iccId != null) {
+                String[] mvnoIccidList = mvnoMatchData.split(",");
+                for (String mvnoIccid : mvnoIccidList) {
+                    Log.d(TAG, "mvnoIccid: " + mvnoIccid);
+                    if (iccId.startsWith(mvnoIccid)) {
+                        Log.d(TAG, "mvno icc id match found");
+                        return true;
+                    }
+                }
+            }
         }
+
         return false;
     }
 

@@ -174,15 +174,13 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     // apply or revoke requests if our active-ness changes
     private void onActivePhoneSwitch() {
         final boolean newIsActive = mPhoneSwitcher.isPhoneActive(mPhoneId);
-        if (mIsActive != newIsActive) {
-            mIsActive = newIsActive;
-            String logString = "onActivePhoneSwitch(" + mIsActive + ", " + mIsDefault + ")";
-            if (DBG) log(logString);
-            if (mIsDefault) {
-                applyRequests(mDefaultRequests, (mIsActive ? REQUEST : RELEASE), logString);
-            }
-            applyRequests(mSpecificRequests, (mIsActive ? REQUEST : RELEASE), logString);
+        mIsActive = newIsActive;
+        String logString = "onActivePhoneSwitch(" + mIsActive + ", " + mIsDefault + ")";
+        if (DBG) log(logString);
+        if (mIsDefault) {
+            applyRequests(mDefaultRequests, (mIsActive ? REQUEST : RELEASE), logString);
         }
+        applyRequests(mSpecificRequests, (mIsActive ? REQUEST : RELEASE), logString);
     }
 
     // watch for phone->subId changes, reapply new filter and let
@@ -207,7 +205,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
             String logString = "onDefaultChange(" + mIsActive + "," + mIsDefault + ")";
             if (DBG) log(logString);
             if (mIsActive == false) return;
-            applyRequests(mDefaultRequests, (mIsDefault ? REQUEST : RELEASE), logString);
+            if (!mIsDefault) {
+                applyRequests(mDefaultRequests, RELEASE, logString);
+            }
         }
     }
 

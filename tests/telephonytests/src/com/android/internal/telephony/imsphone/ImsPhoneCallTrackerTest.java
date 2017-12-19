@@ -57,6 +57,7 @@ import com.android.ims.ImsException;
 import com.android.ims.ImsManager;
 import com.android.ims.ImsReasonInfo;
 import com.android.ims.ImsServiceClass;
+import com.android.ims.ImsStreamMediaProfile;
 import com.android.ims.internal.ImsCallSession;
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.CallStateException;
@@ -120,6 +121,17 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                 return null;
             }
         }).when(mImsCall).accept(anyInt());
+
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                // trigger the listener on accept call
+                if (mImsCallListener != null) {
+                    mImsCallListener.onCallStarted(mImsCall);
+                }
+                return null;
+            }
+        }).when(mImsCall).accept(anyInt(), (ImsStreamMediaProfile) any());
 
         doAnswer(new Answer<Void>() {
             @Override
@@ -272,7 +284,8 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         try {
             mCTUT.acceptCall(ImsCallProfile.CALL_TYPE_VOICE);
             verify(mImsCall, times(1)).accept(eq(ImsCallProfile
-                    .getCallTypeFromVideoState(ImsCallProfile.CALL_TYPE_VOICE)));
+                    .getCallTypeFromVideoState(ImsCallProfile.CALL_TYPE_VOICE)),
+                    (ImsStreamMediaProfile) any());
         } catch (Exception ex) {
             ex.printStackTrace();
             Assert.fail("unexpected exception thrown" + ex.getMessage());
@@ -586,5 +599,15 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                 new ImsReasonInfo(ImsReasonInfo.CODE_LOCAL_LOW_BATTERY, 0), Call.State.DIALING));
         assertEquals(DisconnectCause.DIAL_LOW_BATTERY, mCTUT.getDisconnectCauseFromReasonInfo(
                 new ImsReasonInfo(ImsReasonInfo.CODE_LOW_BATTERY, 0), Call.State.DIALING));
+    }
+
+    @Test
+    @SmallTest
+    public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
+        mCTUT.setSwitchingFgAndBgCallsValue(true);
+        if (mImsCallListener != null) {
+            mImsCallListener.onCallHoldFailed(mImsCall, new ImsReasonInfo(0, -1));
+        }
+        assertTrue(mCTUT.getSwitchingFgAndBgCallsValue());
     }
 }

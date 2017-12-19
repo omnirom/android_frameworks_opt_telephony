@@ -122,6 +122,7 @@ public class ImsPhoneTest extends TelephonyTest {
         doReturn(Call.State.IDLE).when(mBackgroundCall).getState();
         doReturn(Call.State.IDLE).when(mRingingCall).getState();
 
+        mImsManagerInstances.put(mPhone.getPhoneId(), mImsManager);
         mContextFixture.putBooleanResource(com.android.internal.R.bool.config_voice_capable, true);
 
         mImsPhoneTestHandler = new ImsPhoneTestHandler(TAG);
@@ -395,6 +396,15 @@ public class ImsPhoneTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testAddParticipant() throws Exception {
+        String dialString = "1234567890";
+
+        mImsPhoneUT.addParticipant(dialString, null);
+        verify(mImsCT).addParticipant(dialString, null);
+    }
+
+    @Test
+    @SmallTest
     public void testDtmf() {
         // case 1
         doReturn(PhoneConstants.State.IDLE).when(mImsCT).getState();
@@ -515,18 +525,21 @@ public class ImsPhoneTest extends TelephonyTest {
 
         ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
         verify(mImsUtInterface).queryCallBarring(eq(ImsUtInterface.CB_BAOC),
+                eq(CommandsInterface.SERVICE_CLASS_NONE),
                 messageArgumentCaptor.capture());
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
 
         mImsPhoneUT.setCallBarring(CommandsInterface.CB_FACILITY_BAOIC, true, "abc", msg);
         verify(mImsUtInterface).updateCallBarring(eq(ImsUtInterface.CB_BOIC),
-                eq(CommandsInterface.CF_ACTION_ENABLE), messageArgumentCaptor.capture(),
+                eq(CommandsInterface.CF_ACTION_ENABLE),
+                eq(CommandsInterface.SERVICE_CLASS_NONE), messageArgumentCaptor.capture(),
                 (String[]) eq(null));
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
 
         mImsPhoneUT.setCallBarring(CommandsInterface.CB_FACILITY_BAOICxH, false, "abc", msg);
         verify(mImsUtInterface).updateCallBarring(eq(ImsUtInterface.CB_BOIC_EXHC),
-                eq(CommandsInterface.CF_ACTION_DISABLE), messageArgumentCaptor.capture(),
+                eq(CommandsInterface.CF_ACTION_DISABLE),
+                eq(CommandsInterface.SERVICE_CLASS_NONE), messageArgumentCaptor.capture(),
                 (String[])eq(null));
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
     }

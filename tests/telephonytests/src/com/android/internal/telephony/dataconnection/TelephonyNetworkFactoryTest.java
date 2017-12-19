@@ -309,11 +309,16 @@ public class TelephonyNetworkFactoryTest extends AndroidTestCase {
         if (ts.dcTrackerMock.getNumberOfLiveRequests() != 2) {
             fail("test 9,  LiveRequests != 2");
         }
+        ts.phoneSwitcherMock.setPhoneActive(phoneId, false);
+        waitABit();
 
         ts.subscriptionControllerMock.setDefaultDataSubId(subId);
         ts.subscriptionMonitorMock.notifyDefaultSubscriptionChanged(phoneId);
         ts.subscriptionMonitorMock.notifyDefaultSubscriptionChanged(altPhoneId);
         ts.subscriptionMonitorMock.notifyDefaultSubscriptionChanged(phoneId);
+        waitABit();
+
+        ts.phoneSwitcherMock.setPhoneActive(phoneId, true);
         waitABit();
         if (ts.dcTrackerMock.getNumberOfLiveRequests() != 3) {
             fail("test 10, LiveRequests != 3");
