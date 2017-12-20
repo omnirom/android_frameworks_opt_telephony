@@ -219,7 +219,7 @@ public class PhoneFactory {
 
                 Rlog.i(LOG_TAG, "Creating SubInfoRecordUpdater ");
                 sSubInfoRecordUpdater = telephonyComponentFactory.makeSubscriptionInfoUpdater(
-                        BackgroundThread.get().getLooper(), context, sPhones, sCommandsInterfaces);
+                        context, sPhones, sCommandsInterfaces);
                 SubscriptionController.getInstance().updatePhonesAvailability(sPhones);
 
                 // Start monitoring after defaults have been made.
