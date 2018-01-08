@@ -96,25 +96,33 @@ public class CellIdentityWcdmaTest extends AndroidTestCase {
 
         assertEquals(Integer.MAX_VALUE, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
-        assertEquals(null, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
 
         ci = new CellIdentityWcdma(LAC, CID, PSC, UARFCN, MCC_STR, null, ALPHA_LONG, ALPHA_SHORT);
 
         assertEquals(MCC, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
         assertEquals(MCC_STR, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
+
+        ci = new CellIdentityWcdma(LAC, CID, PSC, UARFCN, null, MNC_STR, ALPHA_LONG, ALPHA_SHORT);
+
+        assertEquals(MNC, ci.getMnc());
+        assertEquals(Integer.MAX_VALUE, ci.getMcc());
+        assertEquals(MNC_STR, ci.getMncStr());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMobileNetworkOperator());
 
         ci = new CellIdentityWcdma(LAC, CID, PSC, UARFCN, "", "", ALPHA_LONG, ALPHA_SHORT);
 
         assertEquals(Integer.MAX_VALUE, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
-        assertEquals(null, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
     }
 
     @SmallTest
@@ -162,6 +170,42 @@ public class CellIdentityWcdmaTest extends AndroidTestCase {
 
         Parcel p = Parcel.obtain();
         ci.writeToParcel(p, 0);
+        p.setDataPosition(0);
+
+        CellIdentityWcdma newCi = CellIdentityWcdma.CREATOR.createFromParcel(p);
+        assertEquals(ci, newCi);
+    }
+
+    @SmallTest
+    public void testParcelWithUnknowMccMnc() {
+        CellIdentityWcdma ci = new CellIdentityWcdma(LAC, CID, PSC, UARFCN, null, null, null, null);
+
+        Parcel p = Parcel.obtain();
+        p.writeInt(LAC);
+        p.writeInt(CID);
+        p.writeInt(PSC);
+        p.writeInt(UARFCN);
+        p.writeString(String.valueOf(Integer.MAX_VALUE));
+        p.writeString(String.valueOf(Integer.MAX_VALUE));
+        p.setDataPosition(0);
+
+        CellIdentityWcdma newCi = CellIdentityWcdma.CREATOR.createFromParcel(p);
+        assertEquals(ci, newCi);
+    }
+
+    @SmallTest
+    public void testParcelWithInvalidMccMnc() {
+        final String invalidMcc = "randomStuff";
+        final String invalidMnc = "randomStuff";
+        CellIdentityWcdma ci = new CellIdentityWcdma(LAC, CID, PSC, UARFCN, null, null, null, null);
+
+        Parcel p = Parcel.obtain();
+        p.writeInt(LAC);
+        p.writeInt(CID);
+        p.writeInt(PSC);
+        p.writeInt(UARFCN);
+        p.writeString(invalidMcc);
+        p.writeString(invalidMnc);
         p.setDataPosition(0);
 
         CellIdentityWcdma newCi = CellIdentityWcdma.CREATOR.createFromParcel(p);

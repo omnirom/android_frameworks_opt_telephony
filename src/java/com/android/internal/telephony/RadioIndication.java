@@ -88,11 +88,11 @@ import android.telephony.CellInfo;
 import android.telephony.PcoData;
 import android.telephony.SignalStrength;
 import android.telephony.SmsMessage;
+import android.telephony.data.DataCallResponse;
 
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
 import com.android.internal.telephony.cdma.SmsMessageConverter;
-import com.android.internal.telephony.dataconnection.DataCallResponse;
 import com.android.internal.telephony.gsm.SsData;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
@@ -640,7 +640,7 @@ public class RadioIndication extends IRadioIndication.Stub {
         responseCellInfos(indicationType, result);
     }
 
-    /** Incremental network scan results */
+    /** Incremental network scan results with HAL V1_2 */
     public void networkScanResult_1_2(int indicationType,
                                       android.hardware.radio.V1_2.NetworkScanResult result) {
         responseCellInfos_1_2(indicationType, result);

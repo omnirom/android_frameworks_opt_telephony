@@ -46,9 +46,9 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.data.DataCallResponse;
 import android.text.TextUtils;
 
-import com.android.internal.telephony.dataconnection.DataCallResponse;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus;
 import com.android.internal.telephony.uicc.IccCardStatus;
@@ -576,9 +576,6 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseDataCallList(responseInfo, dataCallResultList);
     }
 
-    public void sendOemRilRequestRawResponse(RadioResponseInfo responseInfo,
-                                             ArrayList<Byte> var2) {}
-
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
      */
@@ -948,7 +945,6 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     /**
-     *
      * @param responseInfo Response info struct containing response type, serial no. and error
      * @param cellInfo List of current cell information known to radio
      */

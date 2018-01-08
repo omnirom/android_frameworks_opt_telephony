@@ -45,6 +45,7 @@ import android.database.MatrixCursor;
 import android.net.LinkProperties;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.NetworkUtils;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.HandlerThread;
@@ -58,6 +59,9 @@ import android.telephony.CarrierConfigManager;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.data.DataCallResponse;
+import android.telephony.data.DataProfile;
+import android.telephony.data.InterfaceAddress;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
 import android.test.suitebuilder.annotation.MediumTest;
@@ -422,32 +426,36 @@ public class DcTrackerTest extends TelephonyTest {
     }
 
     // Create a successful data response
-    public static DataCallResponse createDataCallResponse() {
+    private static DataCallResponse createDataCallResponse() throws Exception {
 
         return new DataCallResponse(0, -1, 1, 2, "IP", FAKE_IFNAME,
-                FAKE_ADDRESS, FAKE_DNS, FAKE_GATEWAY, FAKE_PCSCF_ADDRESS, 1440);
+                Arrays.asList(new InterfaceAddress(FAKE_ADDRESS, 0)),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
+                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                1440);
     }
 
     private void verifyDataProfile(DataProfile dp, String apn, int profileId,
                                    int supportedApnTypesBitmap, int type, int bearerBitmask) {
-        assertEquals(profileId, dp.profileId);
-        assertEquals(apn, dp.apn);
-        assertEquals("IP", dp.protocol);
-        assertEquals(0, dp.authType);
-        assertEquals("", dp.user);
-        assertEquals("", dp.password);
-        assertEquals(type, dp.type);
-        assertEquals(0, dp.maxConnsTime);
-        assertEquals(0, dp.maxConns);
-        assertEquals(0, dp.waitTime);
-        assertTrue(dp.enabled);
-        assertEquals(supportedApnTypesBitmap, dp.supportedApnTypesBitmap);
-        assertEquals("IP", dp.roamingProtocol);
-        assertEquals(bearerBitmask, dp.bearerBitmap);
-        assertEquals(0, dp.mtu);
-        assertEquals("", dp.mvnoType);
-        assertEquals("", dp.mvnoMatchData);
-        assertFalse(dp.modemCognitive);
+        assertEquals(profileId, dp.getProfileId());
+        assertEquals(apn, dp.getApn());
+        assertEquals("IP", dp.getProtocol());
+        assertEquals(0, dp.getAuthType());
+        assertEquals("", dp.getUserName());
+        assertEquals("", dp.getPassword());
+        assertEquals(type, dp.getType());
+        assertEquals(0, dp.getMaxConnsTime());
+        assertEquals(0, dp.getMaxConns());
+        assertEquals(0, dp.getWaitTime());
+        assertTrue(dp.isEnabled());
+        assertEquals(supportedApnTypesBitmap, dp.getSupportedApnTypesBitmap());
+        assertEquals("IP", dp.getRoamingProtocol());
+        assertEquals(bearerBitmask, dp.getBearerBitmap());
+        assertEquals(0, dp.getMtu());
+        assertEquals("", dp.getMvnoType());
+        assertEquals("", dp.getMvnoMatchData());
+        assertFalse(dp.isModemCognitive());
     }
 
     private void verifyDataConnected(final String apnSetting) {
@@ -487,9 +495,9 @@ public class DcTrackerTest extends TelephonyTest {
     // Test the normal data call setup scenario.
     @Test
     @MediumTest
-    public void testDataSetup() {
+    public void testDataSetup() throws Exception {
 
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         mSimulatedCommands.setDataCallResponse(true, createDataCallResponse());
 
@@ -548,13 +556,18 @@ public class DcTrackerTest extends TelephonyTest {
     // Test the scenario where the first data call setup is failed, and then retry the setup later.
     @Test
     @MediumTest
-    public void testDataRetry() {
+    public void testDataRetry() throws Exception {
 
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         // LOST_CONNECTION(0x10004) is a non-permanent failure, so we'll retry data setup later.
         DataCallResponse dcResponse = new DataCallResponse(0x10004, -1, 1, 2, "IP", FAKE_IFNAME,
-                FAKE_ADDRESS, FAKE_DNS, FAKE_GATEWAY, FAKE_PCSCF_ADDRESS, 1440);
+                Arrays.asList(new InterfaceAddress(FAKE_ADDRESS, 0)),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
+                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                1440);
+
         // Simulate RIL fails the data call setup
         mSimulatedCommands.setDataCallResponse(false, dcResponse);
 
@@ -645,7 +658,7 @@ public class DcTrackerTest extends TelephonyTest {
     public void testUserDisableData() throws Exception {
         //step 1: setup two DataCalls one for Metered: default, another one for Non-metered: IMS
         //set Default and MMS to be metered in the CarrierConfigManager
-        boolean dataEnabled = mDct.getDataEnabled();
+        boolean dataEnabled = mDct.isUserDataEnabled();
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
         mDct.setEnabled(5, true);
@@ -660,7 +673,7 @@ public class DcTrackerTest extends TelephonyTest {
         waitForMs(200);
 
         logd("Sending DATA_ENABLED_CMD");
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         waitForMs(200);
         ArgumentCaptor<DataProfile> dpCaptor = ArgumentCaptor.forClass(DataProfile.class);
@@ -670,7 +683,7 @@ public class DcTrackerTest extends TelephonyTest {
         verifyDataProfile(dpCaptor.getValue(), FAKE_APN1, 0, 5, 1, LTE_BEARER_BITMASK);
 
         logd("Sending DATA_DISABLED_CMD");
-        mDct.setDataEnabled(false);
+        mDct.setUserDataEnabled(false);
         waitForMs(200);
 
         // expected tear down all metered DataConnections
@@ -681,7 +694,7 @@ public class DcTrackerTest extends TelephonyTest {
         assertEquals(DctConstants.State.CONNECTED, mDct.getState(PhoneConstants.APN_TYPE_IMS));
 
         // reset the setting at the end of this test
-        mDct.setDataEnabled(dataEnabled);
+        mDct.setUserDataEnabled(dataEnabled);
         waitForMs(200);
     }
 
@@ -695,7 +708,7 @@ public class DcTrackerTest extends TelephonyTest {
 
         //set Default and MMS to be metered in the CarrierConfigManager
         boolean roamingEnabled = mDct.getDataRoamingEnabled();
-        boolean dataEnabled = mDct.getDataEnabled();
+        boolean dataEnabled = mDct.isUserDataEnabled();
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_ROAMING_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
@@ -711,7 +724,7 @@ public class DcTrackerTest extends TelephonyTest {
         waitForMs(200);
 
         logd("Sending DATA_ENABLED_CMD");
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         waitForMs(300);
         ArgumentCaptor<DataProfile> dpCaptor = ArgumentCaptor.forClass(DataProfile.class);
@@ -736,7 +749,7 @@ public class DcTrackerTest extends TelephonyTest {
 
         // reset roaming settings / data enabled settings at end of this test
         mDct.setDataRoamingEnabledByUser(roamingEnabled);
-        mDct.setDataEnabled(dataEnabled);
+        mDct.setUserDataEnabled(dataEnabled);
         waitForMs(200);
     }
 
@@ -748,7 +761,7 @@ public class DcTrackerTest extends TelephonyTest {
         //step 3: only non-metered data call is established
 
         boolean roamingEnabled = mDct.getDataRoamingEnabled();
-        boolean dataEnabled = mDct.getDataEnabled();
+        boolean dataEnabled = mDct.isUserDataEnabled();
         doReturn(true).when(mServiceState).getDataRoaming();
 
         //set Default and MMS to be metered in the CarrierConfigManager
@@ -758,7 +771,7 @@ public class DcTrackerTest extends TelephonyTest {
         mDct.setEnabled(0, true);
 
         logd("Sending DATA_ENABLED_CMD");
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         logd("Sending DISABLE_ROAMING_CMD");
         mDct.setDataRoamingEnabledByUser(false);
@@ -784,7 +797,7 @@ public class DcTrackerTest extends TelephonyTest {
 
         // reset roaming settings / data enabled settings at end of this test
         mDct.setDataRoamingEnabledByUser(roamingEnabled);
-        mDct.setDataEnabled(dataEnabled);
+        mDct.setUserDataEnabled(dataEnabled);
         waitForMs(200);
     }
 
@@ -796,7 +809,7 @@ public class DcTrackerTest extends TelephonyTest {
         ContentResolver resolver = mContext.getContentResolver();
         Settings.Global.putInt(resolver, Settings.Global.DEVICE_PROVISIONED, 1);
 
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         mContextFixture.putBooleanResource(
                 com.android.internal.R.bool.config_auto_attach_data_on_creation, true);
@@ -864,8 +877,8 @@ public class DcTrackerTest extends TelephonyTest {
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
 
-        boolean dataEnabled = mDct.getDataEnabled();
-        mDct.setDataEnabled(true);
+        boolean dataEnabled = mDct.isUserDataEnabled();
+        mDct.setUserDataEnabled(true);
 
         mDct.setEnabled(5, true);
         mDct.setEnabled(0, true);
@@ -898,7 +911,7 @@ public class DcTrackerTest extends TelephonyTest {
         assertEquals(DctConstants.State.IDLE, mDct.getState(PhoneConstants.APN_TYPE_DEFAULT));
 
         // Reset settings at the end of test
-        mDct.setDataEnabled(dataEnabled);
+        mDct.setUserDataEnabled(dataEnabled);
         waitForMs(200);
     }
 
@@ -933,7 +946,7 @@ public class DcTrackerTest extends TelephonyTest {
     @SmallTest
     public void testTrySetupDataUnmeteredDataDisabled() throws Exception {
         initApns(PhoneConstants.APN_TYPE_FOTA, new String[]{PhoneConstants.APN_TYPE_ALL});
-        mDct.setDataEnabled(false);
+        mDct.setUserDataEnabled(false);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -959,7 +972,7 @@ public class DcTrackerTest extends TelephonyTest {
     @SmallTest
     public void testTrySetupMeteredDataDisabled() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
-        mDct.setDataEnabled(false);
+        mDct.setUserDataEnabled(false);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -986,7 +999,7 @@ public class DcTrackerTest extends TelephonyTest {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
         doReturn(false).when(mApnContext).hasNoRestrictedRequests(eq(true));
 
-        mDct.setDataEnabled(false);
+        mDct.setUserDataEnabled(false);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -1012,7 +1025,7 @@ public class DcTrackerTest extends TelephonyTest {
     public void testTrySetupNotConnectable() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
         doReturn(false).when(mApnContext).isConnectable();
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -1039,7 +1052,7 @@ public class DcTrackerTest extends TelephonyTest {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN).when(mServiceState)
                 .getRilDataRadioTechnology();
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -1065,7 +1078,7 @@ public class DcTrackerTest extends TelephonyTest {
     public void testTrySetupDefaultInECBM() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
         doReturn(true).when(mPhone).isInEcm();
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -1094,7 +1107,7 @@ public class DcTrackerTest extends TelephonyTest {
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
         mDct.setEnabled(0, true);
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
 
         logd("Sending EVENT_RECORDS_LOADED");
@@ -1176,7 +1189,7 @@ public class DcTrackerTest extends TelephonyTest {
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
         mDct.setEnabled(0, true);
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
 
         logd("Sending EVENT_RECORDS_LOADED");
@@ -1230,33 +1243,30 @@ public class DcTrackerTest extends TelephonyTest {
 
         assertEquals(1, Settings.Global.getInt(resolver, Settings.Global.MOBILE_DATA));
         assertTrue(mDct.isDataEnabled());
-        // The api should rename to getUserDataEnabled();
-        assertTrue(mDct.getDataEnabled());
+        assertTrue(mDct.isUserDataEnabled());
 
 
-        mDct.setDataEnabled(false);
+        mDct.setUserDataEnabled(false);
         waitForMs(200);
 
         assertEquals(0, Settings.Global.getInt(resolver, Settings.Global.MOBILE_DATA));
         assertFalse(mDct.isDataEnabled());
-        // The api should rename to getUserDataEnabled();
-        assertFalse(mDct.getDataEnabled());
+        assertFalse(mDct.isUserDataEnabled());
 
         // Changing provisioned to 0.
         Settings.Global.putInt(resolver, Settings.Global.DEVICE_PROVISIONED, 0);
 
         assertTrue(mDct.isDataEnabled());
-        // The api should rename to getUserDataEnabled();
-        assertTrue(mDct.getDataEnabled());
+        assertTrue(mDct.isUserDataEnabled());
 
         // Enable user data during provisioning. It should write to
         // Settings.Global.MOBILE_DATA and keep data enabled when provisioned.
-        mDct.setDataEnabled(true);
+        mDct.setUserDataEnabled(true);
         Settings.Global.putInt(resolver, Settings.Global.DEVICE_PROVISIONED, 1);
         waitForMs(200);
 
         assertTrue(mDct.isDataEnabled());
-        assertTrue(mDct.getDataEnabled());
+        assertTrue(mDct.isUserDataEnabled());
         assertEquals(1, Settings.Global.getInt(resolver, Settings.Global.MOBILE_DATA));
     }
 }

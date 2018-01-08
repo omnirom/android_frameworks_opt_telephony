@@ -52,9 +52,10 @@ import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.SimApdu;
 import android.hardware.radio.V1_0.SmsWriteArgs;
 import android.hardware.radio.V1_0.UusInfo;
-import android.hardware.radio.deprecated.V1_0.IOemHook;
 import android.net.ConnectivityManager;
+import android.net.NetworkUtils;
 import android.os.AsyncResult;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HwBinder;
 import android.os.Message;
@@ -81,15 +82,18 @@ import android.telephony.SignalStrength;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyHistogram;
 import android.telephony.TelephonyManager;
+import android.telephony.data.DataCallResponse;
+import android.telephony.data.DataProfile;
+import android.telephony.data.InterfaceAddress;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.cat.ComprehensionTlv;
+import com.android.internal.telephony.cat.ComprehensionTlvTag;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
-import com.android.internal.telephony.dataconnection.DataCallResponse;
-import com.android.internal.telephony.dataconnection.DataProfile;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
@@ -100,6 +104,8 @@ import java.io.DataInputStream;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -113,6 +119,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class RIL extends BaseCommands implements CommandsInterface {
     static final String RILJ_LOG_TAG = "RILJ";
+    static final String RILJ_WAKELOCK_TAG = "*telephony-radio*";
     // Have a separate wakelock instance for Ack
     static final String RILJ_ACK_WAKELOCK_NAME = "RILJ_ACK_WL";
     static final boolean RILJ_LOGD = true;
@@ -174,9 +181,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
     RadioResponse mRadioResponse;
     RadioIndication mRadioIndication;
     volatile IRadio mRadioProxy = null;
-    OemHookResponse mOemHookResponse;
-    OemHookIndication mOemHookIndication;
-    volatile IOemHook mOemHookProxy = null;
     final AtomicLong mRadioProxyCookie = new AtomicLong(0);
     final RadioProxyDeathRecipient mRadioProxyDeathRecipient;
     final RilHandler mRilHandler;
@@ -283,7 +287,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                         // todo: rild should be back up since message was sent with a delay. this is
                         // a hack.
                         getRadioProxy(null);
-                        getOemHookProxy(null);
                     }
                     break;
             }
@@ -328,7 +331,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     private void resetProxyAndRequestList() {
         mRadioProxy = null;
-        mOemHookProxy = null;
 
         // increment the cookie so that death notification can be ignored
         mRadioProxyCookie.incrementAndGet();
@@ -392,55 +394,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return mRadioProxy;
     }
 
-    /** Returns an {@link IOemHook} instance or null if the service is not available. */
-    @VisibleForTesting
-    public IOemHook getOemHookProxy(Message result) {
-        if (!mIsMobileNetworkSupported) {
-            if (RILJ_LOGV) riljLog("getOemHookProxy: Not calling getService(): wifi-only");
-            if (result != null) {
-                AsyncResult.forMessage(result, null,
-                        CommandException.fromRilErrno(RADIO_NOT_AVAILABLE));
-                result.sendToTarget();
-            }
-            return null;
-        }
-
-        if (mOemHookProxy != null) {
-            return mOemHookProxy;
-        }
-
-        try {
-            mOemHookProxy = IOemHook.getService(
-                    HIDL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId]);
-            if (mOemHookProxy != null) {
-                // not calling linkToDeath() as ril service runs in the same process and death
-                // notification for that should be sufficient
-                mOemHookProxy.setResponseFunctions(mOemHookResponse, mOemHookIndication);
-            } else {
-                riljLoge("getOemHookProxy: mOemHookProxy == null");
-            }
-        } catch (RemoteException | RuntimeException e) {
-            mOemHookProxy = null;
-            riljLoge("OemHookProxy getService/setResponseFunctions: " + e);
-        }
-
-        if (mOemHookProxy == null) {
-            if (result != null) {
-                AsyncResult.forMessage(result, null,
-                        CommandException.fromRilErrno(RADIO_NOT_AVAILABLE));
-                result.sendToTarget();
-            }
-
-            // if service is not up, treat it like death notification to try to get service again
-            mRilHandler.sendMessageDelayed(
-                    mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD,
-                            mRadioProxyCookie.incrementAndGet()),
-                    IRADIO_GET_SERVICE_DELAY_MILLIS);
-        }
-
-        return mOemHookProxy;
-    }
-
     //***** Constructors
 
     public RIL(Context context, int preferredNetworkType, int cdmaSubscription) {
@@ -467,13 +420,11 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         mRadioResponse = new RadioResponse(this);
         mRadioIndication = new RadioIndication(this);
-        mOemHookResponse = new OemHookResponse(this);
-        mOemHookIndication = new OemHookIndication(this);
         mRilHandler = new RilHandler();
         mRadioProxyDeathRecipient = new RadioProxyDeathRecipient();
 
         PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
-        mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, RILJ_LOG_TAG);
+        mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, RILJ_WAKELOCK_TAG);
         mWakeLock.setReferenceCounted(false);
         mAckWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, RILJ_ACK_WAKELOCK_NAME);
         mAckWakeLock.setReferenceCounted(false);
@@ -491,7 +442,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
         // set radio callback; needed to set RadioIndication callback (should be done after
         // wakelock stuff is initialized above as callbacks are received on separate binder threads)
         getRadioProxy(null);
-        getOemHookProxy(null);
     }
 
     @Override
@@ -1122,23 +1072,23 @@ public class RIL extends BaseCommands implements CommandsInterface {
     private static DataProfileInfo convertToHalDataProfile(DataProfile dp) {
         DataProfileInfo dpi = new DataProfileInfo();
 
-        dpi.profileId = dp.profileId;
-        dpi.apn = dp.apn;
-        dpi.protocol = dp.protocol;
-        dpi.roamingProtocol = dp.roamingProtocol;
-        dpi.authType = dp.authType;
-        dpi.user = dp.user;
-        dpi.password = dp.password;
-        dpi.type = dp.type;
-        dpi.maxConnsTime = dp.maxConnsTime;
-        dpi.maxConns = dp.maxConns;
-        dpi.waitTime = dp.waitTime;
-        dpi.enabled = dp.enabled;
-        dpi.supportedApnTypesBitmap = dp.supportedApnTypesBitmap;
-        dpi.bearerBitmap = dp.bearerBitmap;
-        dpi.mtu = dp.mtu;
-        dpi.mvnoType = convertToHalMvnoType(dp.mvnoType);
-        dpi.mvnoMatchData = dp.mvnoMatchData;
+        dpi.profileId = dp.getProfileId();
+        dpi.apn = dp.getApn();
+        dpi.protocol = dp.getProtocol();
+        dpi.roamingProtocol = dp.getRoamingProtocol();
+        dpi.authType = dp.getAuthType();
+        dpi.user = dp.getUserName();
+        dpi.password = dp.getPassword();
+        dpi.type = dp.getType();
+        dpi.maxConnsTime = dp.getMaxConnsTime();
+        dpi.maxConns = dp.getMaxConns();
+        dpi.waitTime = dp.getWaitTime();
+        dpi.enabled = dp.isEnabled();
+        dpi.supportedApnTypesBitmap = dp.getSupportedApnTypesBitmap();
+        dpi.bearerBitmap = dp.getBearerBitmap();
+        dpi.mtu = dp.getMtu();
+        dpi.mvnoType = convertToHalMvnoType(dp.getMvnoType());
+        dpi.mvnoMatchData = dp.getMvnoMatchData();
 
         return dpi;
     }
@@ -1169,16 +1119,84 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * @return converted DataCallResponse object
      */
     static DataCallResponse convertDataCallResult(SetupDataCallResult dcResult) {
+
+        // Process address
+        String[] addresses = null;
+        if (!TextUtils.isEmpty(dcResult.addresses)) {
+            addresses = dcResult.addresses.split(" ");
+        }
+
+        List<InterfaceAddress> iaList = new ArrayList<>();
+        if (addresses != null) {
+            for (String address : addresses) {
+                address = address.trim();
+                if (address.isEmpty()) continue;
+
+                String[] ap = address.split("/");
+                int addrPrefixLen = 0;
+                if (ap.length == 2) {
+                    addrPrefixLen = Integer.parseInt(ap[1]);
+                }
+
+                try {
+                    InterfaceAddress ia = new InterfaceAddress(ap[0], addrPrefixLen);
+                    iaList.add(ia);
+                } catch (UnknownHostException e) {
+                    Rlog.e(RILJ_LOG_TAG, "Unknown host exception: " + e);
+                }
+            }
+        }
+
+        // Process dns
+        String[] dnses = null;
+        if (!TextUtils.isEmpty(dcResult.dnses)) {
+            dnses = dcResult.dnses.split(" ");
+        }
+
+        List<InetAddress> dnsList = new ArrayList<>();
+        if (dnses != null) {
+            for (String dns : dnses) {
+                dns = dns.trim();
+                InetAddress ia;
+                try {
+                    ia = NetworkUtils.numericToInetAddress(dns);
+                    dnsList.add(ia);
+                } catch (IllegalArgumentException e) {
+                    Rlog.e(RILJ_LOG_TAG, "Unknown dns: " + dns + ", exception = " + e);
+                }
+            }
+        }
+
+        // Process gateway
+        String[] gateways = null;
+        if (!TextUtils.isEmpty(dcResult.gateways)) {
+            gateways = dcResult.gateways.split(" ");
+        }
+
+        List<InetAddress> gatewayList = new ArrayList<>();
+        if (gateways != null) {
+            for (String gateway : gateways) {
+                gateway = gateway.trim();
+                InetAddress ia;
+                try {
+                    ia = NetworkUtils.numericToInetAddress(gateway);
+                    gatewayList.add(ia);
+                } catch (IllegalArgumentException e) {
+                    Rlog.e(RILJ_LOG_TAG, "Unknown gateway: " + gateway + ", exception = " + e);
+                }
+            }
+        }
+
         return new DataCallResponse(dcResult.status,
                 dcResult.suggestedRetryTime,
                 dcResult.cid,
                 dcResult.active,
                 dcResult.type,
                 dcResult.ifname,
-                dcResult.addresses,
-                dcResult.dnses,
-                dcResult.gateways,
-                dcResult.pcscf,
+                iaList,
+                dnsList,
+                gatewayList,
+                new ArrayList<>(Arrays.asList(dcResult.pcscf.trim().split("\\s*,\\s*"))),
                 dcResult.mtu
         );
     }
@@ -1204,7 +1222,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             try {
                 radioProxy.setupDataCall(rr.mSerial, radioTechnology, dpi,
-                        dataProfile.modemCognitive, allowRoaming, isRoaming);
+                        dataProfile.isModemCognitive(), allowRoaming, isRoaming);
                 mMetrics.writeRilSetupDataCall(mPhoneId, rr.mSerial, radioTechnology, dpi.profileId,
                         dpi.apn, dpi.authType, dpi.protocol);
             } catch (RemoteException | RuntimeException e) {
@@ -1228,12 +1246,16 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> iccIO: "
-                        + requestToString(rr.mRequest) + " command = 0x"
-                        + Integer.toHexString(command) + " fileId = 0x"
-                        + Integer.toHexString(fileId) + " path = " + path + " p1 = "
-                        + p1 + " p2 = " + p2 + " p3 = " + " data = " + data
-                        + " aid = " + aid);
+                if (Build.IS_DEBUGGABLE) {
+                    riljLog(rr.serialString() + "> iccIO: "
+                            + requestToString(rr.mRequest) + " command = 0x"
+                            + Integer.toHexString(command) + " fileId = 0x"
+                            + Integer.toHexString(fileId) + " path = " + path + " p1 = "
+                            + p1 + " p2 = " + p2 + " p3 = " + " data = " + data
+                            + " aid = " + aid);
+                } else {
+                    riljLog(rr.serialString() + "> iccIO: " + requestToString(rr.mRequest));
+                }
             }
 
             IccIo iccIo = new IccIo();
@@ -1662,9 +1684,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
             RadioAccessSpecifier ras) {
         android.hardware.radio.V1_1.RadioAccessSpecifier rasInHalFormat =
                 new android.hardware.radio.V1_1.RadioAccessSpecifier();
-        rasInHalFormat.radioAccessNetwork = ras.radioAccessNetwork;
+        rasInHalFormat.radioAccessNetwork = ras.getRadioAccessNetwork();
         List<Integer> bands = null;
-        switch (ras.radioAccessNetwork) {
+        switch (ras.getRadioAccessNetwork()) {
             case RadioAccessNetworks.GERAN:
                 bands = rasInHalFormat.geranBands;
                 break;
@@ -1675,18 +1697,18 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 bands = rasInHalFormat.eutranBands;
                 break;
             default:
-                Log.wtf(RILJ_LOG_TAG, "radioAccessNetwork " + ras.radioAccessNetwork
+                Log.wtf(RILJ_LOG_TAG, "radioAccessNetwork " + ras.getRadioAccessNetwork()
                         + " not supported!");
                 return null;
         }
 
-        if (ras.bands != null) {
-            for (int band : ras.bands) {
+        if (ras.getBands() != null) {
+            for (int band : ras.getBands()) {
                 bands.add(band);
             }
         }
-        if (ras.channels != null) {
-            for (int channel : ras.channels) {
+        if (ras.getChannels() != null) {
+            for (int channel : ras.getChannels()) {
                 rasInHalFormat.channels.add(channel);
             }
         }
@@ -1703,13 +1725,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
             if (radioProxy12 != null) {
                 android.hardware.radio.V1_2.NetworkScanRequest request =
                         new android.hardware.radio.V1_2.NetworkScanRequest();
-                request.type = nsr.scanType;
-                request.interval = nsr.searchPeriodicity;
-                request.maxSearchTime = nsr.maxSearchTime;
-                request.incrementalResultsPeriodicity = nsr.incrementalResultsPeriodicity;
-                request.incrementalResults = nsr.incrementalResults;
+                request.type = nsr.getScanType();
+                request.interval = nsr.getSearchPeriodicity();
+                request.maxSearchTime = nsr.getMaxSearchTime();
+                request.incrementalResultsPeriodicity = nsr.getIncrementalResultsPeriodicity();
+                request.incrementalResults = nsr.getIncrementalResults();
 
-                for (RadioAccessSpecifier ras : nsr.specifiers) {
+                for (RadioAccessSpecifier ras : nsr.getSpecifiers()) {
 
                     android.hardware.radio.V1_1.RadioAccessSpecifier rasInHalFormat =
                             convertRadioAccessSpecifierToRadioHAL(ras);
@@ -1720,7 +1742,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     request.specifiers.add(rasInHalFormat);
                 }
 
-                request.mccMncs.addAll(nsr.mccMncs);
+                request.mccMncs.addAll(nsr.getPlmns());
                 RILRequest rr = obtainRequest(RIL_REQUEST_START_NETWORK_SCAN, result,
                         mRILDefaultWorkSource);
 
@@ -1745,9 +1767,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 } else {
                     android.hardware.radio.V1_1.NetworkScanRequest request =
                             new android.hardware.radio.V1_1.NetworkScanRequest();
-                    request.type = nsr.scanType;
-                    request.interval = nsr.searchPeriodicity;
-                    for (RadioAccessSpecifier ras : nsr.specifiers) {
+                    request.type = nsr.getScanType();
+                    request.interval = nsr.getSearchPeriodicity();
+                    for (RadioAccessSpecifier ras : nsr.getSpecifiers()) {
                         android.hardware.radio.V1_1.RadioAccessSpecifier rasInHalFormat =
                                 convertRadioAccessSpecifierToRadioHAL(ras);
                         if (rasInHalFormat == null) {
@@ -1956,51 +1978,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void invokeOemRilRequestRaw(byte[] data, Message response) {
-        IOemHook oemHookProxy = getOemHookProxy(response);
-        if (oemHookProxy != null) {
-            RILRequest rr = obtainRequest(RIL_REQUEST_OEM_HOOK_RAW, response,
-                    mRILDefaultWorkSource);
-
-            if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                        + "[" + IccUtils.bytesToHexString(data) + "]");
-            }
-
-            try {
-                oemHookProxy.sendRequestRaw(rr.mSerial, primitiveArrayToArrayList(data));
-            } catch (RemoteException | RuntimeException e) {
-                handleRadioProxyExceptionForRR(rr, "invokeOemRilRequestRaw", e);
-            }
-        }
-    }
-
-    @Override
-    public void invokeOemRilRequestStrings(String[] strings, Message result) {
-        IOemHook oemHookProxy = getOemHookProxy(result);
-        if (oemHookProxy != null) {
-            RILRequest rr = obtainRequest(RIL_REQUEST_OEM_HOOK_STRINGS, result,
-                    mRILDefaultWorkSource);
-
-            String logStr = "";
-            for (int i = 0; i < strings.length; i++) {
-                logStr = logStr + strings[i] + " ";
-            }
-            if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " strings = "
-                        + logStr);
-            }
-
-            try {
-                oemHookProxy.sendRequestStrings(rr.mSerial,
-                        new ArrayList<String>(Arrays.asList(strings)));
-            } catch (RemoteException | RuntimeException e) {
-                handleRadioProxyExceptionForRR(rr, "invokeOemRilRequestStrings", e);
-            }
-        }
-    }
-
-    @Override
     public void setSuppServiceNotifications(boolean enable, Message result) {
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
@@ -2133,7 +2110,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " contents = "
-                        + contents);
+                        + (Build.IS_DEBUGGABLE ? contents : censoredTerminalResponse(contents)));
             }
 
             try {
@@ -2143,6 +2120,33 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 handleRadioProxyExceptionForRR(rr, "sendTerminalResponse", e);
             }
         }
+    }
+
+    private String censoredTerminalResponse(String terminalResponse) {
+        try {
+            byte[] bytes = IccUtils.hexStringToBytes(terminalResponse);
+            if (bytes != null) {
+                List<ComprehensionTlv> ctlvs = ComprehensionTlv.decodeMany(bytes, 0);
+                int from = 0;
+                for (ComprehensionTlv ctlv : ctlvs) {
+                    // Find text strings which might be personal information input by user,
+                    // then replace it with "********".
+                    if (ComprehensionTlvTag.TEXT_STRING.value() == ctlv.getTag()) {
+                        byte[] target = Arrays.copyOfRange(ctlv.getRawValue(), from,
+                                ctlv.getValueIndex() + ctlv.getLength());
+                        terminalResponse = terminalResponse.toLowerCase().replace(
+                                IccUtils.bytesToHexString(target), "********");
+                    }
+                    // The text string tag and the length field should also be hidden.
+                    from = ctlv.getValueIndex() + ctlv.getLength();
+                }
+            }
+        } catch (Exception e) {
+            Rlog.e(RILJ_LOG_TAG, "Could not censor the terminal response: " + e);
+            terminalResponse = null;
+        }
+
+        return terminalResponse;
     }
 
     @Override
@@ -2970,7 +2974,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             try {
                 radioProxy.setInitialAttachApn(rr.mSerial, convertToHalDataProfile(dataProfile),
-                        dataProfile.modemCognitive, isRoaming);
+                        dataProfile.isModemCognitive(), isRoaming);
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "setInitialAttachApn", e);
             }
@@ -3075,9 +3079,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                        + " cla = " + cla + " instruction = " + instruction
-                        + " p1 = " + p1 + " p2 = " + " p3 = " + p3 + " data = " + data);
+                if (Build.IS_DEBUGGABLE) {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                            + " cla = " + cla + " instruction = " + instruction
+                            + " p1 = " + p1 + " p2 = " + " p3 = " + p3 + " data = " + data);
+                } else {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+                }
             }
 
             SimApdu msg = createSimApdu(0, cla, instruction, p1, p2, p3, data);
@@ -3097,8 +3105,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " aid = " + aid
-                        + " p2 = " + p2);
+                if (Build.IS_DEBUGGABLE) {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " aid = " + aid
+                            + " p2 = " + p2);
+                } else {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+                }
             }
 
             try {
@@ -3144,9 +3156,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " channel = "
-                        + channel + " cla = " + cla + " instruction = " + instruction
-                        + " p1 = " + p1 + " p2 = " + " p3 = " + p3 + " data = " + data);
+                if (Build.IS_DEBUGGABLE) {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " channel = "
+                            + channel + " cla = " + cla + " instruction = " + instruction
+                            + " p1 = " + p1 + " p2 = " + " p3 = " + p3 + " data = " + data);
+                } else {
+                    riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+                }
             }
 
             SimApdu msg = createSimApdu(channel, cla, instruction, p1, p2, p3, data);
@@ -4483,10 +4499,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "DATA_CALL_LIST";
             case RIL_REQUEST_RESET_RADIO:
                 return "RESET_RADIO";
-            case RIL_REQUEST_OEM_HOOK_RAW:
-                return "OEM_HOOK_RAW";
-            case RIL_REQUEST_OEM_HOOK_STRINGS:
-                return "OEM_HOOK_STRINGS";
             case RIL_REQUEST_SCREEN_STATE:
                 return "SCREEN_STATE";
             case RIL_REQUEST_SET_SUPP_SVC_NOTIFICATION:
@@ -4712,8 +4724,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "UNSOL_CDMA_OTA_PROVISION_STATUS";
             case RIL_UNSOL_CDMA_INFO_REC:
                 return "UNSOL_CDMA_INFO_REC";
-            case RIL_UNSOL_OEM_HOOK_RAW:
-                return "UNSOL_OEM_HOOK_RAW";
             case RIL_UNSOL_RINGBACK_TONE:
                 return "UNSOL_RINGBACK_TONE";
             case RIL_UNSOL_RESEND_INCALL_MUTE:
@@ -4925,11 +4935,79 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return capacityResponse;
     }
 
+    private static void writeToParcelForGsm(
+            Parcel p, int lac, int cid, int arfcn, int bsic, String mcc, String mnc,
+            String al, String as, int ss, int ber, int ta) {
+        p.writeInt(lac);
+        p.writeInt(cid);
+        p.writeInt(arfcn);
+        p.writeInt(bsic);
+        p.writeString(mcc);
+        p.writeString(mnc);
+        p.writeString(al);
+        p.writeString(as);
+        p.writeInt(ss);
+        p.writeInt(ber);
+        p.writeInt(ta);
+    }
+
+    private static void writeToParcelForCdma(
+            Parcel p, int ni, int si, int bsi, int lon, int lat, String al, String as,
+            int dbm, int ecio, int eDbm, int eEcio, int eSnr) {
+        p.writeInt(ni);
+        p.writeInt(si);
+        p.writeInt(bsi);
+        p.writeInt(lon);
+        p.writeInt(lat);
+        p.writeString(al);
+        p.writeString(as);
+        p.writeInt(dbm);
+        p.writeInt(ecio);
+        p.writeInt(eDbm);
+        p.writeInt(eEcio);
+        p.writeInt(eSnr);
+    }
+
+    private static void writeToParcelForLte(
+            Parcel p, int ci, int pci, int tac, int earfcn, String mcc, String mnc, String al,
+            String as, int ss, int rsrp, int rsrq, int rssnr, int cqi, int ta) {
+        p.writeInt(ci);
+        p.writeInt(pci);
+        p.writeInt(tac);
+        p.writeInt(earfcn);
+        p.writeString(mcc);
+        p.writeString(mnc);
+        p.writeString(al);
+        p.writeString(as);
+        p.writeInt(ss);
+        p.writeInt(rsrp);
+        p.writeInt(rsrq);
+        p.writeInt(rssnr);
+        p.writeInt(cqi);
+        p.writeInt(ta);
+    }
+
+    private static void writeToParcelForWcdma(
+            Parcel p, int lac, int cid, int psc, int uarfcn, String mcc, String mnc,
+            String al, String as, int ss, int ber) {
+        p.writeInt(lac);
+        p.writeInt(cid);
+        p.writeInt(psc);
+        p.writeInt(uarfcn);
+        p.writeString(mcc);
+        p.writeString(mnc);
+        p.writeString(al);
+        p.writeString(as);
+        p.writeInt(ss);
+        p.writeInt(ber);
+    }
+
     /**
      * Convert CellInfo defined in 1.0/types.hal to CellInfo type.
      * @param records List of CellInfo defined in 1.0/types.hal
      * @return List of converted CellInfo object
      */
+    @VisibleForTesting
     public static ArrayList<CellInfo> convertHalCellInfoList(
             ArrayList<android.hardware.radio.V1_0.CellInfo> records) {
         ArrayList<CellInfo> response = new ArrayList<CellInfo>(records.size());
@@ -4944,68 +5022,76 @@ public class RIL extends BaseCommands implements CommandsInterface {
             switch (record.cellInfoType) {
                 case CellInfoType.GSM: {
                     CellInfoGsm cellInfoGsm = record.gsm.get(0);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.lac);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.cid);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.arfcn);
-                    p.writeInt(Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.bsic));
-                    p.writeString(cellInfoGsm.cellIdentityGsm.mcc);
-                    p.writeString(cellInfoGsm.cellIdentityGsm.mnc);
-                    p.writeString(EMPTY_ALPHA_LONG);
-                    p.writeString(EMPTY_ALPHA_SHORT);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.signalStrength);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.bitErrorRate);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.timingAdvance);
+                    writeToParcelForGsm(
+                            p,
+                            cellInfoGsm.cellIdentityGsm.lac,
+                            cellInfoGsm.cellIdentityGsm.cid,
+                            cellInfoGsm.cellIdentityGsm.arfcn,
+                            Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.bsic),
+                            cellInfoGsm.cellIdentityGsm.mcc,
+                            cellInfoGsm.cellIdentityGsm.mnc,
+                            EMPTY_ALPHA_LONG,
+                            EMPTY_ALPHA_SHORT,
+                            cellInfoGsm.signalStrengthGsm.signalStrength,
+                            cellInfoGsm.signalStrengthGsm.bitErrorRate,
+                            cellInfoGsm.signalStrengthGsm.timingAdvance);
                     break;
                 }
 
                 case CellInfoType.CDMA: {
                     CellInfoCdma cellInfoCdma = record.cdma.get(0);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.networkId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.systemId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.baseStationId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.longitude);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.latitude);
-                    p.writeString(EMPTY_ALPHA_LONG);
-                    p.writeString(EMPTY_ALPHA_SHORT);
-                    p.writeInt(cellInfoCdma.signalStrengthCdma.dbm);
-                    p.writeInt(cellInfoCdma.signalStrengthCdma.ecio);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.dbm);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.ecio);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
+                    writeToParcelForCdma(
+                            p,
+                            cellInfoCdma.cellIdentityCdma.networkId,
+                            cellInfoCdma.cellIdentityCdma.systemId,
+                            cellInfoCdma.cellIdentityCdma.baseStationId,
+                            cellInfoCdma.cellIdentityCdma.longitude,
+                            cellInfoCdma.cellIdentityCdma.latitude,
+                            EMPTY_ALPHA_LONG,
+                            EMPTY_ALPHA_SHORT,
+                            cellInfoCdma.signalStrengthCdma.dbm,
+                            cellInfoCdma.signalStrengthCdma.ecio,
+                            cellInfoCdma.signalStrengthEvdo.dbm,
+                            cellInfoCdma.signalStrengthEvdo.ecio,
+                            cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
                     break;
                 }
 
                 case CellInfoType.LTE: {
                     CellInfoLte cellInfoLte = record.lte.get(0);
-                    p.writeInt(cellInfoLte.cellIdentityLte.ci);
-                    p.writeInt(cellInfoLte.cellIdentityLte.pci);
-                    p.writeInt(cellInfoLte.cellIdentityLte.tac);
-                    p.writeInt(cellInfoLte.cellIdentityLte.earfcn);
-                    p.writeString(cellInfoLte.cellIdentityLte.mcc);
-                    p.writeString(cellInfoLte.cellIdentityLte.mnc);
-                    p.writeString(EMPTY_ALPHA_LONG);
-                    p.writeString(EMPTY_ALPHA_SHORT);
-                    p.writeInt(cellInfoLte.signalStrengthLte.signalStrength);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rsrp);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rsrq);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rssnr);
-                    p.writeInt(cellInfoLte.signalStrengthLte.cqi);
-                    p.writeInt(cellInfoLte.signalStrengthLte.timingAdvance);
+                    writeToParcelForLte(
+                            p,
+                            cellInfoLte.cellIdentityLte.ci,
+                            cellInfoLte.cellIdentityLte.pci,
+                            cellInfoLte.cellIdentityLte.tac,
+                            cellInfoLte.cellIdentityLte.earfcn,
+                            cellInfoLte.cellIdentityLte.mcc,
+                            cellInfoLte.cellIdentityLte.mnc,
+                            EMPTY_ALPHA_LONG,
+                            EMPTY_ALPHA_SHORT,
+                            cellInfoLte.signalStrengthLte.signalStrength,
+                            cellInfoLte.signalStrengthLte.rsrp,
+                            cellInfoLte.signalStrengthLte.rsrq,
+                            cellInfoLte.signalStrengthLte.rssnr,
+                            cellInfoLte.signalStrengthLte.cqi,
+                            cellInfoLte.signalStrengthLte.timingAdvance);
                     break;
                 }
 
                 case CellInfoType.WCDMA: {
                     CellInfoWcdma cellInfoWcdma = record.wcdma.get(0);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.lac);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.cid);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.psc);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.uarfcn);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.mcc);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.mnc);
-                    p.writeString(EMPTY_ALPHA_LONG);
-                    p.writeString(EMPTY_ALPHA_SHORT);
-                    p.writeInt(cellInfoWcdma.signalStrengthWcdma.signalStrength);
-                    p.writeInt(cellInfoWcdma.signalStrengthWcdma.bitErrorRate);
+                    writeToParcelForWcdma(
+                            p,
+                            cellInfoWcdma.cellIdentityWcdma.lac,
+                            cellInfoWcdma.cellIdentityWcdma.cid,
+                            cellInfoWcdma.cellIdentityWcdma.psc,
+                            cellInfoWcdma.cellIdentityWcdma.uarfcn,
+                            cellInfoWcdma.cellIdentityWcdma.mcc,
+                            cellInfoWcdma.cellIdentityWcdma.mnc,
+                            EMPTY_ALPHA_LONG,
+                            EMPTY_ALPHA_SHORT,
+                            cellInfoWcdma.signalStrengthWcdma.signalStrength,
+                            cellInfoWcdma.signalStrengthWcdma.bitErrorRate);
                     break;
                 }
 
@@ -5027,6 +5113,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * @param records List of CellInfo defined in 1.2/types.hal
      * @return List of converted CellInfo object
      */
+    @VisibleForTesting
     public static ArrayList<CellInfo> convertHalCellInfoList_1_2(
             ArrayList<android.hardware.radio.V1_2.CellInfo> records) {
         ArrayList<CellInfo> response = new ArrayList<CellInfo>(records.size());
@@ -5041,68 +5128,76 @@ public class RIL extends BaseCommands implements CommandsInterface {
             switch (record.cellInfoType) {
                 case CellInfoType.GSM: {
                     android.hardware.radio.V1_2.CellInfoGsm cellInfoGsm = record.gsm.get(0);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.base.lac);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.base.cid);
-                    p.writeInt(cellInfoGsm.cellIdentityGsm.base.arfcn);
-                    p.writeInt(Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.base.bsic));
-                    p.writeString(cellInfoGsm.cellIdentityGsm.base.mcc);
-                    p.writeString(cellInfoGsm.cellIdentityGsm.base.mnc);
-                    p.writeString(cellInfoGsm.cellIdentityGsm.operatorNames.alphaLong);
-                    p.writeString(cellInfoGsm.cellIdentityGsm.operatorNames.alphaShort);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.signalStrength);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.bitErrorRate);
-                    p.writeInt(cellInfoGsm.signalStrengthGsm.timingAdvance);
+                    writeToParcelForGsm(
+                            p,
+                            cellInfoGsm.cellIdentityGsm.base.lac,
+                            cellInfoGsm.cellIdentityGsm.base.cid,
+                            cellInfoGsm.cellIdentityGsm.base.arfcn,
+                            Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.base.bsic),
+                            cellInfoGsm.cellIdentityGsm.base.mcc,
+                            cellInfoGsm.cellIdentityGsm.base.mnc,
+                            cellInfoGsm.cellIdentityGsm.operatorNames.alphaLong,
+                            cellInfoGsm.cellIdentityGsm.operatorNames.alphaShort,
+                            cellInfoGsm.signalStrengthGsm.signalStrength,
+                            cellInfoGsm.signalStrengthGsm.bitErrorRate,
+                            cellInfoGsm.signalStrengthGsm.timingAdvance);
                     break;
                 }
 
                 case CellInfoType.CDMA: {
                     android.hardware.radio.V1_2.CellInfoCdma cellInfoCdma = record.cdma.get(0);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.base.networkId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.base.systemId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.base.baseStationId);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.base.longitude);
-                    p.writeInt(cellInfoCdma.cellIdentityCdma.base.latitude);
-                    p.writeString(cellInfoCdma.cellIdentityCdma.operatorNames.alphaLong);
-                    p.writeString(cellInfoCdma.cellIdentityCdma.operatorNames.alphaShort);
-                    p.writeInt(cellInfoCdma.signalStrengthCdma.dbm);
-                    p.writeInt(cellInfoCdma.signalStrengthCdma.ecio);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.dbm);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.ecio);
-                    p.writeInt(cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
+                    writeToParcelForCdma(
+                            p,
+                            cellInfoCdma.cellIdentityCdma.base.networkId,
+                            cellInfoCdma.cellIdentityCdma.base.systemId,
+                            cellInfoCdma.cellIdentityCdma.base.baseStationId,
+                            cellInfoCdma.cellIdentityCdma.base.longitude,
+                            cellInfoCdma.cellIdentityCdma.base.latitude,
+                            cellInfoCdma.cellIdentityCdma.operatorNames.alphaLong,
+                            cellInfoCdma.cellIdentityCdma.operatorNames.alphaShort,
+                            cellInfoCdma.signalStrengthCdma.dbm,
+                            cellInfoCdma.signalStrengthCdma.ecio,
+                            cellInfoCdma.signalStrengthEvdo.dbm,
+                            cellInfoCdma.signalStrengthEvdo.ecio,
+                            cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
                     break;
                 }
 
                 case CellInfoType.LTE: {
                     android.hardware.radio.V1_2.CellInfoLte cellInfoLte = record.lte.get(0);
-                    p.writeInt(cellInfoLte.cellIdentityLte.base.ci);
-                    p.writeInt(cellInfoLte.cellIdentityLte.base.pci);
-                    p.writeInt(cellInfoLte.cellIdentityLte.base.tac);
-                    p.writeInt(cellInfoLte.cellIdentityLte.base.earfcn);
-                    p.writeString(cellInfoLte.cellIdentityLte.base.mcc);
-                    p.writeString(cellInfoLte.cellIdentityLte.base.mnc);
-                    p.writeString(cellInfoLte.cellIdentityLte.operatorNames.alphaLong);
-                    p.writeString(cellInfoLte.cellIdentityLte.operatorNames.alphaShort);
-                    p.writeInt(cellInfoLte.signalStrengthLte.signalStrength);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rsrp);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rsrq);
-                    p.writeInt(cellInfoLte.signalStrengthLte.rssnr);
-                    p.writeInt(cellInfoLte.signalStrengthLte.cqi);
-                    p.writeInt(cellInfoLte.signalStrengthLte.timingAdvance);
+                    writeToParcelForLte(
+                            p,
+                            cellInfoLte.cellIdentityLte.base.ci,
+                            cellInfoLte.cellIdentityLte.base.pci,
+                            cellInfoLte.cellIdentityLte.base.tac,
+                            cellInfoLte.cellIdentityLte.base.earfcn,
+                            cellInfoLte.cellIdentityLte.base.mcc,
+                            cellInfoLte.cellIdentityLte.base.mnc,
+                            cellInfoLte.cellIdentityLte.operatorNames.alphaLong,
+                            cellInfoLte.cellIdentityLte.operatorNames.alphaShort,
+                            cellInfoLte.signalStrengthLte.signalStrength,
+                            cellInfoLte.signalStrengthLte.rsrp,
+                            cellInfoLte.signalStrengthLte.rsrq,
+                            cellInfoLte.signalStrengthLte.rssnr,
+                            cellInfoLte.signalStrengthLte.cqi,
+                            cellInfoLte.signalStrengthLte.timingAdvance);
                     break;
                 }
 
                 case CellInfoType.WCDMA: {
                     android.hardware.radio.V1_2.CellInfoWcdma cellInfoWcdma = record.wcdma.get(0);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.base.lac);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.base.cid);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.base.psc);
-                    p.writeInt(cellInfoWcdma.cellIdentityWcdma.base.uarfcn);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.base.mcc);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.base.mnc);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaLong);
-                    p.writeString(cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaShort);
-                    p.writeInt(cellInfoWcdma.signalStrengthWcdma.signalStrength);
-                    p.writeInt(cellInfoWcdma.signalStrengthWcdma.bitErrorRate);
+                    writeToParcelForWcdma(
+                            p,
+                            cellInfoWcdma.cellIdentityWcdma.base.lac,
+                            cellInfoWcdma.cellIdentityWcdma.base.cid,
+                            cellInfoWcdma.cellIdentityWcdma.base.psc,
+                            cellInfoWcdma.cellIdentityWcdma.base.uarfcn,
+                            cellInfoWcdma.cellIdentityWcdma.base.mcc,
+                            cellInfoWcdma.cellIdentityWcdma.base.mnc,
+                            cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaLong,
+                            cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaShort,
+                            cellInfoWcdma.signalStrengthWcdma.signalStrength,
+                            cellInfoWcdma.signalStrengthWcdma.bitErrorRate);
                     break;
                 }
 

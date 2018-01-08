@@ -525,14 +525,6 @@ public class PhoneMock extends Phone {
         throw new RuntimeException("not implemented");
     }
 
-    public void invokeOemRilRequestRaw(byte[] data, Message response) {
-        throw new RuntimeException("not implemented");
-    }
-
-    public void invokeOemRilRequestStrings(String[] strings, Message response) {
-        throw new RuntimeException("not implemented");
-    }
-
     public void nvReadItem(int itemID, Message response) {
         throw new RuntimeException("not implemented");
     }
@@ -1284,11 +1276,15 @@ public class PhoneMock extends Phone {
         throw new RuntimeException("not implemented");
     }
 
-    public boolean getDataEnabled() {
+    public boolean isUserDataEnabled() {
         throw new RuntimeException("not implemented");
     }
 
-    public void setDataEnabled(boolean enable) {
+    public boolean isDataEnabled() {
+        throw new RuntimeException("not implemented");
+    }
+
+    public void setUserDataEnabled(boolean enable) {
         throw new RuntimeException("not implemented");
     }
 

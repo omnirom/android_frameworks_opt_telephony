@@ -28,16 +28,16 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 
-import static com.android.internal.telephony.cat.CatCmdMessage.
-                   SetupEventListConstants.USER_ACTIVITY_EVENT;
-import static com.android.internal.telephony.cat.CatCmdMessage.
-                   SetupEventListConstants.IDLE_SCREEN_AVAILABLE_EVENT;
-import static com.android.internal.telephony.cat.CatCmdMessage.
-                   SetupEventListConstants.LANGUAGE_SELECTION_EVENT;
-import static com.android.internal.telephony.cat.CatCmdMessage.
-                   SetupEventListConstants.BROWSER_TERMINATION_EVENT;
-import static com.android.internal.telephony.cat.CatCmdMessage.
-                   SetupEventListConstants.BROWSING_STATUS_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage
+                   .SetupEventListConstants.BROWSER_TERMINATION_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage
+                   .SetupEventListConstants.BROWSING_STATUS_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage
+                   .SetupEventListConstants.IDLE_SCREEN_AVAILABLE_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage
+                   .SetupEventListConstants.LANGUAGE_SELECTION_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage
+                   .SetupEventListConstants.USER_ACTIVITY_EVENT;
 /**
  * Factory class, used for decoding raw byte arrays, received from baseband,
  * into a CommandParams object.
@@ -549,6 +549,11 @@ class CommandParamsFactory extends Handler {
             input.iconSelfExplanatory = iconId.selfExplanatory;
         }
 
+        ctlv = searchForTag(ComprehensionTlvTag.DURATION, ctlvs);
+        if (ctlv != null) {
+            input.duration = ValueParser.retrieveDuration(ctlv);
+        }
+
         input.digitOnly = (cmdDet.commandQualifier & 0x01) == 0;
         input.ucs2 = (cmdDet.commandQualifier & 0x02) != 0;
         input.echo = (cmdDet.commandQualifier & 0x04) == 0;
@@ -917,6 +922,10 @@ class CommandParamsFactory extends Handler {
         ctlv = searchForTag(ComprehensionTlvTag.ALPHA_ID, ctlvs);
         if (ctlv != null) {
             textMsg.text = ValueParser.retrieveAlphaId(ctlv);
+            // Assign the tone message text to empty string, if alpha identifier
+            // data is null. If no alpha identifier tlv is present, then tone
+            // message text will be null.
+            if (textMsg.text == null) textMsg.text = "";
         }
         // parse tone duration
         ctlv = searchForTag(ComprehensionTlvTag.DURATION, ctlvs);

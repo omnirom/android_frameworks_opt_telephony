@@ -129,7 +129,7 @@ public class EuiccControllerTest extends TelephonyTest {
         @Override
         public void addResolutionIntent(
                 Intent extrasIntent, String resolutionAction, String callingPackage,
-                EuiccOperation op) {
+                boolean retried, EuiccOperation op) {
             mResolutionAction = resolutionAction;
             mOp = op;
         }
@@ -347,6 +347,17 @@ public class EuiccControllerTest extends TelephonyTest {
                 0 /* detailedCode */);
         verifyResolutionIntent(EuiccService.ACTION_RESOLVE_DEACTIVATE_SIM,
                 EuiccOperation.ACTION_DOWNLOAD_DEACTIVATE_SIM);
+    }
+
+    @Test
+    public void testDownloadSubscription_needConfirmationCode() throws Exception {
+        setHasWriteEmbeddedPermission(true);
+        callDownloadSubscription(SUBSCRIPTION, false /* switchAfterDownload */, true /* complete */,
+                EuiccService.RESULT_NEED_CONFIRMATION_CODE, "whatever" /* callingPackage */);
+        verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_RESOLVABLE_ERROR,
+                0 /* detailedCode */);
+        verifyResolutionIntent(EuiccService.ACTION_RESOLVE_CONFIRMATION_CODE,
+                EuiccOperation.ACTION_DOWNLOAD_CONFIRMATION_CODE);
     }
 
     @Test

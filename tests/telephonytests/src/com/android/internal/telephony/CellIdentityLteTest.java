@@ -96,25 +96,33 @@ public class CellIdentityLteTest extends AndroidTestCase {
 
         assertEquals(Integer.MAX_VALUE, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
-        assertEquals(null, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
 
         ci = new CellIdentityLte(CI, PCI, TAC, EARFCN, MCC_STR, null, ALPHA_LONG, ALPHA_SHORT);
 
         assertEquals(MCC, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
         assertEquals(MCC_STR, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
+
+        ci = new CellIdentityLte(CI, PCI, TAC, EARFCN, null, MNC_STR, ALPHA_LONG, ALPHA_SHORT);
+
+        assertEquals(MNC, ci.getMnc());
+        assertEquals(Integer.MAX_VALUE, ci.getMcc());
+        assertEquals(MNC_STR, ci.getMncStr());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMobileNetworkOperator());
 
         ci = new CellIdentityLte(CI, PCI, TAC, EARFCN, "", "", ALPHA_LONG, ALPHA_SHORT);
 
         assertEquals(Integer.MAX_VALUE, ci.getMcc());
         assertEquals(Integer.MAX_VALUE, ci.getMnc());
-        assertEquals(null, ci.getMccStr());
-        assertEquals(null, ci.getMncStr());
-        assertEquals(null, ci.getMobileNetworkOperator());
+        assertNull(ci.getMccStr());
+        assertNull(ci.getMncStr());
+        assertNull(ci.getMobileNetworkOperator());
     }
 
     @SmallTest
@@ -163,6 +171,42 @@ public class CellIdentityLteTest extends AndroidTestCase {
 
         Parcel p = Parcel.obtain();
         ci.writeToParcel(p, 0);
+        p.setDataPosition(0);
+
+        CellIdentityLte newCi = CellIdentityLte.CREATOR.createFromParcel(p);
+        assertEquals(ci, newCi);
+    }
+
+    @SmallTest
+    public void testParcelWithUnknowMccMnc() {
+        CellIdentityLte ci = new CellIdentityLte(CI, PCI, TAC, EARFCN, null, null, null, null);
+
+        Parcel p = Parcel.obtain();
+        p.writeInt(CI);
+        p.writeInt(PCI);
+        p.writeInt(TAC);
+        p.writeInt(EARFCN);
+        p.writeString(String.valueOf(Integer.MAX_VALUE));
+        p.writeString(String.valueOf(Integer.MAX_VALUE));
+        p.setDataPosition(0);
+
+        CellIdentityLte newCi = CellIdentityLte.CREATOR.createFromParcel(p);
+        assertEquals(ci, newCi);
+    }
+
+    @SmallTest
+    public void testParcelWithInvalidMccMnc() {
+        final String invalidMcc = "randomStuff";
+        final String invalidMnc = "randomStuff";
+        CellIdentityLte ci = new CellIdentityLte(CI, PCI, TAC, EARFCN, null, null, null, null);
+
+        Parcel p = Parcel.obtain();
+        p.writeInt(CI);
+        p.writeInt(PCI);
+        p.writeInt(TAC);
+        p.writeInt(EARFCN);
+        p.writeString(invalidMcc);
+        p.writeString(invalidMnc);
         p.setDataPosition(0);
 
         CellIdentityLte newCi = CellIdentityLte.CREATOR.createFromParcel(p);

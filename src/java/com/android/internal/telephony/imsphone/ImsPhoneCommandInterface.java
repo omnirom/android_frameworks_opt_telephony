@@ -22,13 +22,13 @@ import android.os.Message;
 import android.service.carrier.CarrierIdentifier;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.NetworkScanRequest;
+import android.telephony.data.DataProfile;
 
 import com.android.internal.telephony.BaseCommands;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.RadioCapability;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
-import com.android.internal.telephony.dataconnection.DataProfile;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 
 import java.util.List;
@@ -390,14 +390,6 @@ class ImsPhoneCommandInterface extends BaseCommands implements CommandsInterface
 
     @Override
     public void resetRadio(Message result) {
-    }
-
-    @Override
-    public void invokeOemRilRequestRaw(byte[] data, Message response) {
-    }
-
-    @Override
-    public void invokeOemRilRequestStrings(String[] strings, Message response) {
     }
 
     @Override

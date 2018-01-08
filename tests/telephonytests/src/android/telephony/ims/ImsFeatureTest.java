@@ -16,6 +16,12 @@
 
 package android.telephony.ims;
 
+import static junit.framework.Assert.assertEquals;
+
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.verify;
+
+import android.os.IInterface;
 import android.support.test.runner.AndroidJUnit4;
 import android.telephony.ims.feature.ImsFeature;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -29,12 +35,6 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertTrue;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-
 @RunWith(AndroidJUnit4.class)
 public class ImsFeatureTest {
 
@@ -44,20 +44,26 @@ public class ImsFeatureTest {
     private IImsFeatureStatusCallback mTestStatusCallback;
     @Mock
     private IImsFeatureStatusCallback mTestStatusCallback2;
-    @Mock
-    private ImsFeature.INotifyFeatureRemoved mTestRemovedCallback;
 
     private class TestImsFeature extends ImsFeature {
 
-        public boolean featureRemovedCalled = false;
+        public void testSetFeatureState(int featureState) {
+            setFeatureState(featureState);
+        }
+
+        @Override
+        public void onFeatureReady() {
+
+        }
 
         @Override
         public void onFeatureRemoved() {
-            featureRemovedCalled = true;
+
         }
 
-        public void testSetFeatureState(int featureState) {
-            setFeatureState(featureState);
+        @Override
+        public IInterface getBinder() {
+            return null;
         }
     }
 
@@ -93,28 +99,5 @@ public class ImsFeatureTest {
         verify(mTestStatusCallback).notifyImsFeatureStatus(eq(ImsFeature.STATE_READY));
         verify(mTestStatusCallback2).notifyImsFeatureStatus(eq(ImsFeature.STATE_READY));
         assertEquals(ImsFeature.STATE_READY, mTestImsService.getFeatureState());
-    }
-
-    @Test
-    @SmallTest
-    public void testRegisterAndNotifyRemoveFeature() {
-        mTestImsService.addFeatureRemovedListener(mTestRemovedCallback);
-
-        mTestImsService.notifyFeatureRemoved(0);
-
-        verify(mTestRemovedCallback).onFeatureRemoved(eq(0));
-        assertTrue(mTestImsService.featureRemovedCalled);
-    }
-
-    @Test
-    @SmallTest
-    public void testRegisterAndUnregisterNotify() {
-        mTestImsService.addFeatureRemovedListener(mTestRemovedCallback);
-        mTestImsService.removeFeatureRemovedListener(mTestRemovedCallback);
-
-        mTestImsService.notifyFeatureRemoved(0);
-
-        verify(mTestRemovedCallback, never()).onFeatureRemoved(eq(0));
-        assertTrue(mTestImsService.featureRemovedCalled);
     }
 }

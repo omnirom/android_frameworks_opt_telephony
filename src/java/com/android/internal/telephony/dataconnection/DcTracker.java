@@ -65,6 +65,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.telephony.TelephonyManager;
 import android.telephony.cdma.CdmaCellLocation;
+import android.telephony.data.DataProfile;
 import android.telephony.gsm.GsmCellLocation;
 import android.text.TextUtils;
 import android.util.EventLog;
@@ -792,7 +793,7 @@ public class DcTracker extends Handler {
     /**
      * Modify {@link android.provider.Settings.Global#MOBILE_DATA} value.
      */
-    public void setDataEnabled(boolean enable) {
+    public void setUserDataEnabled(boolean enable) {
         Message msg = obtainMessage(DctConstants.CMD_SET_USER_DATA_ENABLE);
         msg.arg1 = enable ? 1 : 0;
         if (DBG) log("setDataEnabled: sendMessage: enable=" + enable);
@@ -1176,6 +1177,10 @@ public class DcTracker extends Handler {
         }
     }
 
+    /**
+     * Whether data is enabled. This does not only check isUserDataEnabled(), but also
+     * others like CarrierDataEnabled and internalDataEnabled.
+     */
     @VisibleForTesting
     public boolean isDataEnabled() {
         return mDataEnabledSettings.isDataEnabled();
@@ -2093,7 +2098,7 @@ public class DcTracker extends Handler {
         } else {
             if (DBG) log("setInitialAttachApn: X selected Apn=" + initialAttachApnSetting);
 
-            mPhone.mCi.setInitialAttachApn(new DataProfile(initialAttachApnSetting),
+            mPhone.mCi.setInitialAttachApn(createDataProfile(initialAttachApnSetting),
                     mPhone.getServiceState().getDataRoamingFromRegistration(), null);
         }
     }
@@ -2573,9 +2578,11 @@ public class DcTracker extends Handler {
     }
 
     /**
-     * Return current {@link android.provider.Settings.Global#MOBILE_DATA} value.
+     * Whether data is enabled by user. Unlike isDataEnabled, this only
+     * checks user setting stored in {@link android.provider.Settings.Global#MOBILE_DATA}
+     * if not provisioning, or isProvisioningDataEnabled if provisioning.
      */
-    public boolean getDataEnabled() {
+    public boolean isUserDataEnabled() {
         if (mDataEnabledSettings.isProvisioning()) {
             return mDataEnabledSettings.isProvisioningDataEnabled();
         } else {
@@ -3281,7 +3288,7 @@ public class DcTracker extends Handler {
             ArrayList<DataProfile> dps = new ArrayList<DataProfile>();
             for (ApnSetting apn : mAllApnSettings) {
                 if (apn.modemCognitive) {
-                    DataProfile dp = new DataProfile(apn);
+                    DataProfile dp = createDataProfile(apn);
                     if (!dps.contains(dp)) {
                         dps.add(dp);
                     }
@@ -4253,8 +4260,10 @@ public class DcTracker extends Handler {
         if (dcac != null) {
             result = dcac.getPcscfAddr();
 
-            for (int i = 0; i < result.length; i++) {
-                log("Pcscf[" + i + "]: " + result[i]);
+            if (result != null) {
+                for (int i = 0; i < result.length; i++) {
+                    log("Pcscf[" + i + "]: " + result[i]);
+                }
             }
             return result;
         }
@@ -4800,4 +4809,25 @@ public class DcTracker extends Handler {
         }
     }
 
+    private static DataProfile createDataProfile(ApnSetting apn) {
+        return createDataProfile(apn, apn.profileId);
+    }
+
+    @VisibleForTesting
+    public static DataProfile createDataProfile(ApnSetting apn, int profileId) {
+        int profileType;
+        if (apn.bearerBitmask == 0) {
+            profileType = DataProfile.TYPE_COMMON;
+        } else if (ServiceState.bearerBitmapHasCdma(apn.bearerBitmask)) {
+            profileType = DataProfile.TYPE_3GPP2;
+        } else {
+            profileType = DataProfile.TYPE_3GPP;
+        }
+
+        return new DataProfile(profileId, apn.apn, apn.protocol,
+                apn.authType, apn.user, apn.password, profileType,
+                apn.maxConnsTime, apn.maxConns, apn.waitTime, apn.carrierEnabled, apn.typesBitmap,
+                apn.roamingProtocol, apn.bearerBitmask, apn.mtu, apn.mvnoType, apn.mvnoMatchData,
+                apn.modemCognitive);
+    }
 }

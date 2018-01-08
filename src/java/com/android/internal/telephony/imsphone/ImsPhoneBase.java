@@ -32,6 +32,7 @@ import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.util.Pair;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.IccCard;
@@ -104,7 +105,8 @@ abstract class ImsPhoneBase extends Phone {
      *
      * @param cn The connection.
      */
-    protected void startOnHoldTone(Connection cn) {
+    @VisibleForTesting
+    public void startOnHoldTone(Connection cn) {
         Pair<Connection, Boolean> result = new Pair<Connection, Boolean>(cn, Boolean.TRUE);
         mOnHoldRegistrants.notifyRegistrants(new AsyncResult(null, result, null));
     }
@@ -474,12 +476,17 @@ abstract class ImsPhoneBase extends Phone {
     }
 
     @Override
-    public boolean getDataEnabled() {
+    public boolean isUserDataEnabled() {
         return false;
     }
 
     @Override
-    public void setDataEnabled(boolean enable) {
+    public boolean isDataEnabled() {
+        return false;
+    }
+
+    @Override
+    public void setUserDataEnabled(boolean enable) {
     }
 
 

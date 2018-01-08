@@ -19,12 +19,15 @@ package com.android.internal.telephony.dataconnection;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.NetworkAgent;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkMisc;
+import android.net.NetworkUtils;
 import android.net.ProxyInfo;
+import android.net.RouteInfo;
 import android.net.StringNetworkSpecifier;
 import android.os.AsyncResult;
 import android.os.Looper;
@@ -34,6 +37,9 @@ import android.os.SystemProperties;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
+import android.telephony.data.DataCallResponse;
+import android.telephony.data.DataProfile;
+import android.telephony.data.InterfaceAddress;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Pair;
@@ -59,7 +65,9 @@ import com.android.internal.util.StateMachine;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -283,12 +291,35 @@ public class DataConnection extends StateMachine {
     }
 
     public static class UpdateLinkPropertyResult {
-        public DataCallResponse.SetupResult setupResult = DataCallResponse.SetupResult.SUCCESS;
+        public SetupResult setupResult = SetupResult.SUCCESS;
         public LinkProperties oldLp;
         public LinkProperties newLp;
         public UpdateLinkPropertyResult(LinkProperties curLp) {
             oldLp = curLp;
             newLp = curLp;
+        }
+    }
+
+    /**
+     * Class returned by onSetupConnectionCompleted.
+     */
+    public enum SetupResult {
+        SUCCESS,
+        ERR_BadCommand,
+        ERR_UnacceptableParameter,
+        ERR_GetLastErrorFromRil,
+        ERR_Stale,
+        ERR_RilError;
+
+        public DcFailCause mFailCause;
+
+        SetupResult() {
+            mFailCause = DcFailCause.fromInt(0);
+        }
+
+        @Override
+        public String toString() {
+            return name() + "  SetupResult.mFailCause=" + mFailCause;
         }
     }
 
@@ -331,12 +362,12 @@ public class DataConnection extends StateMachine {
 
         if (newState == null) return result;
 
-        DataCallResponse.SetupResult setupResult;
+        SetupResult setupResult;
         result.newLp = new LinkProperties();
 
         // set link properties based on data call response
         result.setupResult = setLinkProperties(newState, result.newLp);
-        if (result.setupResult != DataCallResponse.SetupResult.SUCCESS) {
+        if (result.setupResult != SetupResult.SUCCESS) {
             if (DBG) log("updateLinkProperty failed : " + result.setupResult);
             return result;
         }
@@ -423,13 +454,13 @@ public class DataConnection extends StateMachine {
             addState(mDisconnectingErrorCreatingConnection, mDefaultState);
         setInitialState(mInactiveState);
 
-        mApnContexts = new HashMap<ApnContext, ConnectionParams>();
+        mApnContexts = new HashMap<>();
     }
 
     /**
      * Begin setting up a data connection, calls setupDataCall
      * and the ConnectionParams will be returned with the
-     * EVENT_SETUP_DATA_CONNECTION_DONE AsyncResul.userObj.
+     * EVENT_SETUP_DATA_CONNECTION_DONE AsyncResult.userObj.
      *
      * @param cp is the connection parameters
      */
@@ -444,7 +475,7 @@ public class DataConnection extends StateMachine {
             DataCallResponse response = new DataCallResponse(
                     mDcTesterFailBringUpAll.getDcFailBringUp().mFailCause.getErrorCode(),
                     mDcTesterFailBringUpAll.getDcFailBringUp().mSuggestedRetryTime, 0, 0, "", "",
-                    "", "", "", "", PhoneConstants.UNSET_MTU);
+                    null, null, null, null, PhoneConstants.UNSET_MTU);
 
             Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
             AsyncResult.forMessage(msg, response, null);
@@ -465,7 +496,7 @@ public class DataConnection extends StateMachine {
         Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
         msg.obj = cp;
 
-        DataProfile dp = new DataProfile(mApnSetting, cp.mProfileId);
+        DataProfile dp = DcTracker.createDataProfile(mApnSetting, cp.mProfileId);
 
         // We need to use the actual modem roaming state instead of the framework roaming state
         // here. This flag is only passed down to ril_service for picking the correct protocol (for
@@ -665,16 +696,16 @@ public class DataConnection extends StateMachine {
      * @param ar is the result
      * @return SetupResult.
      */
-    private DataCallResponse.SetupResult onSetupConnectionCompleted(AsyncResult ar) {
+    private SetupResult onSetupConnectionCompleted(AsyncResult ar) {
         DataCallResponse response = (DataCallResponse) ar.result;
         ConnectionParams cp = (ConnectionParams) ar.userObj;
-        DataCallResponse.SetupResult result;
+        SetupResult result;
 
         if (cp.mTag != mTag) {
             if (DBG) {
                 log("onSetupConnectionCompleted stale cp.tag=" + cp.mTag + ", mtag=" + mTag);
             }
-            result = DataCallResponse.SetupResult.ERR_Stale;
+            result = SetupResult.ERR_Stale;
         } else if (ar.exception != null) {
             if (DBG) {
                 log("onSetupConnectionCompleted failed, ar.exception=" + ar.exception +
@@ -684,20 +715,20 @@ public class DataConnection extends StateMachine {
             if (ar.exception instanceof CommandException
                     && ((CommandException) (ar.exception)).getCommandError()
                     == CommandException.Error.RADIO_NOT_AVAILABLE) {
-                result = DataCallResponse.SetupResult.ERR_BadCommand;
+                result = SetupResult.ERR_BadCommand;
                 result.mFailCause = DcFailCause.RADIO_NOT_AVAILABLE;
             } else {
-                result = DataCallResponse.SetupResult.ERR_RilError;
-                result.mFailCause = DcFailCause.fromInt(response.status);
+                result = SetupResult.ERR_RilError;
+                result.mFailCause = DcFailCause.fromInt(response.getStatus());
             }
-        } else if (response.status != 0) {
-            result = DataCallResponse.SetupResult.ERR_RilError;
-            result.mFailCause = DcFailCause.fromInt(response.status);
+        } else if (response.getStatus() != 0) {
+            result = SetupResult.ERR_RilError;
+            result.mFailCause = DcFailCause.fromInt(response.getStatus());
         } else {
             if (DBG) log("onSetupConnectionCompleted received successful DataCallResponse");
-            mCid = response.cid;
+            mCid = response.getCallId();
 
-            mPcscfAddr = response.pcscf;
+            mPcscfAddr = response.getPcscfs().toArray(new String[response.getPcscfs().size()]);
 
             result = updateLinkProperty(response).setupResult;
         }
@@ -995,18 +1026,106 @@ public class DataConnection extends StateMachine {
         return InetAddress.isNumeric(address);
     }
 
-    private DataCallResponse.SetupResult setLinkProperties(DataCallResponse response,
-            LinkProperties lp) {
+    private SetupResult setLinkProperties(DataCallResponse response,
+            LinkProperties linkProperties) {
         // Check if system property dns usable
-        boolean okToUseSystemPropertyDns = false;
-        String propertyPrefix = "net." + response.ifname + ".";
+        String propertyPrefix = "net." + response.getIfname() + ".";
         String dnsServers[] = new String[2];
         dnsServers[0] = SystemProperties.get(propertyPrefix + "dns1");
         dnsServers[1] = SystemProperties.get(propertyPrefix + "dns2");
-        okToUseSystemPropertyDns = isDnsOk(dnsServers);
+        boolean okToUseSystemPropertyDns = isDnsOk(dnsServers);
 
-        // set link properties based on data call response
-        return response.setLinkProperties(lp, okToUseSystemPropertyDns);
+        SetupResult result;
+
+        // Start with clean network properties and if we have
+        // a failure we'll clear again at the bottom of this code.
+        linkProperties.clear();
+
+        if (response.getStatus() == DcFailCause.NONE.getErrorCode()) {
+            try {
+                // set interface name
+                linkProperties.setInterfaceName(response.getIfname());
+
+                // set link addresses
+                if (response.getAddresses().size() > 0) {
+                    for (InterfaceAddress ia : response.getAddresses()) {
+                        if (!ia.getAddress().isAnyLocalAddress()) {
+                            int addrPrefixLen = ia.getNetworkPrefixLength();
+                            if (addrPrefixLen == 0) {
+                                // Assume point to point
+                                addrPrefixLen =
+                                        (ia.getAddress() instanceof Inet4Address) ? 32 : 128;
+                            }
+                            if (DBG) log("addr/pl=" + ia.getAddress() + "/" + addrPrefixLen);
+                            LinkAddress la;
+                            try {
+                                la = new LinkAddress(ia.getAddress(), addrPrefixLen);
+                            } catch (IllegalArgumentException e) {
+                                throw new UnknownHostException("Bad parameter for LinkAddress, ia="
+                                        + ia.getAddress().getHostAddress() + "/" + addrPrefixLen);
+                            }
+
+                            linkProperties.addLinkAddress(la);
+                        }
+                    }
+                } else {
+                    throw new UnknownHostException("no address for ifname=" + response.getIfname());
+                }
+
+                // set dns servers
+                if (response.getDnses().size() > 0) {
+                    for (InetAddress dns : response.getDnses()) {
+                        if (!dns.isAnyLocalAddress()) {
+                            linkProperties.addDnsServer(dns);
+                        }
+                    }
+                } else if (okToUseSystemPropertyDns) {
+                    for (String dnsAddr : dnsServers) {
+                        dnsAddr = dnsAddr.trim();
+                        if (dnsAddr.isEmpty()) continue;
+                        InetAddress ia;
+                        try {
+                            ia = NetworkUtils.numericToInetAddress(dnsAddr);
+                        } catch (IllegalArgumentException e) {
+                            throw new UnknownHostException("Non-numeric dns addr=" + dnsAddr);
+                        }
+                        if (!ia.isAnyLocalAddress()) {
+                            linkProperties.addDnsServer(ia);
+                        }
+                    }
+                } else {
+                    throw new UnknownHostException("Empty dns response and no system default dns");
+                }
+
+                for (InetAddress gateway : response.getGateways()) {
+                    // Allow 0.0.0.0 or :: as a gateway;
+                    // this indicates a point-to-point interface.
+                    linkProperties.addRoute(new RouteInfo(gateway));
+                }
+
+                // set interface MTU
+                // this may clobber the setting read from the APN db, but that's ok
+                linkProperties.setMtu(response.getMtu());
+
+                result = SetupResult.SUCCESS;
+            } catch (UnknownHostException e) {
+                log("setLinkProperties: UnknownHostException " + e);
+                result = SetupResult.ERR_UnacceptableParameter;
+            }
+        } else {
+            result = SetupResult.ERR_RilError;
+        }
+
+        // An error occurred so clear properties
+        if (result != SetupResult.SUCCESS) {
+            if (DBG) {
+                log("setLinkProperties: error clearing LinkProperties status="
+                        + response.getStatus() + " result=" + result);
+            }
+            linkProperties.clear();
+        }
+
+        return result;
     }
 
     /**
@@ -1421,8 +1540,8 @@ public class DataConnection extends StateMachine {
                     ar = (AsyncResult) msg.obj;
                     cp = (ConnectionParams) ar.userObj;
 
-                    DataCallResponse.SetupResult result = onSetupConnectionCompleted(ar);
-                    if (result != DataCallResponse.SetupResult.ERR_Stale) {
+                    SetupResult result = onSetupConnectionCompleted(ar);
+                    if (result != SetupResult.ERR_Stale) {
                         if (mConnectionParams != cp) {
                             loge("DcActivatingState: WEIRD mConnectionsParams:"+ mConnectionParams
                                     + " != cp:" + cp);
@@ -1920,19 +2039,19 @@ public class DataConnection extends StateMachine {
          */
 
         // The value < 0 means no value is suggested
-        if (response.suggestedRetryTime < 0) {
+        if (response.getSuggestedRetryTime() < 0) {
             if (DBG) log("No suggested retry delay.");
             return RetryManager.NO_SUGGESTED_RETRY_DELAY;
         }
         // The value of Integer.MAX_VALUE(0x7fffffff) means no retry.
-        else if (response.suggestedRetryTime == Integer.MAX_VALUE) {
+        else if (response.getSuggestedRetryTime() == Integer.MAX_VALUE) {
             if (DBG) log("Modem suggested not retrying.");
             return RetryManager.NO_RETRY;
         }
 
         // We need to cast it to long because the value returned from RIL is a 32-bit integer,
         // but the time values used in AlarmManager are all 64-bit long.
-        return (long) response.suggestedRetryTime;
+        return (long) response.getSuggestedRetryTime();
     }
 
     /**
