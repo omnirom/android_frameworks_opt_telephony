@@ -2735,12 +2735,20 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             ImsPhoneConnection conn = findConnection(imsCall);
             if (conn != null) {
+                if (isHandoverToWifi && mIsViLteDataMetered) {
+                    conn.setVideoEnabled(true);
+                }
+
                 // Only consider it a handover from WIFI if the source and target radio tech is known.
                 boolean isHandoverFromWifi =
                         srcAccessTech == ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
                                 && targetAccessTech != ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN
                                 && targetAccessTech != ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN;
                 if (isHandoverFromWifi && imsCall.isVideoCall()) {
+                    if (mIsViLteDataMetered) {
+                        conn.setVideoEnabled(mIsDataEnabled);
+                    }
+
                     if (mNotifyHandoverVideoFromWifiToLTE && mIsDataEnabled) {
                         log("onCallHandover :: notifying of WIFI to LTE handover.");
                         conn.onConnectionEvent(
@@ -3660,7 +3668,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         // Inform connections that data has been disabled to ensure we turn off video capability
         // if this is an LTE call.
         for (ImsPhoneConnection conn : mConnections) {
-            conn.handleDataEnabledChange(enabled);
+            ImsCall imsCall = conn.getImsCall();
+            boolean isVideoEnabled = enabled || (imsCall != null && imsCall.isWifiCall());
+            conn.setVideoEnabled(isVideoEnabled);
         }
 
         int reasonCode;

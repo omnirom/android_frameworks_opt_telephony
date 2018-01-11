@@ -1286,9 +1286,9 @@ public class ImsPhoneConnection extends Connection implements
         mShouldIgnoreVideoStateChanges = false;
     }
 
-    public void handleDataEnabledChange(boolean isDataEnabled) {
-        mIsVideoEnabled = isDataEnabled;
-        Rlog.i(LOG_TAG, "handleDataEnabledChange: isDataEnabled=" + isDataEnabled
+    public void setVideoEnabled(boolean isVideoEnabled) {
+        mIsVideoEnabled = isVideoEnabled;
+        Rlog.i(LOG_TAG, "setVideoEnabled: mIsVideoEnabled = " + mIsVideoEnabled
                 + "; updating local video availability.");
         updateMediaCapabilities(getImsCall());
         if (mImsVideoCallProviderWrapper != null) {
