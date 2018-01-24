@@ -28,6 +28,7 @@ import static com.android.internal.telephony.RILConstants.RIL_UNSOL_DATA_CALL_LI
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_ENTER_EMERGENCY_CALLBACK_MODE;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_EXIT_EMERGENCY_CALLBACK_MODE;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_HARDWARE_CONFIG_CHANGED;
+import static com.android.internal.telephony.RILConstants.RIL_UNSOL_ICC_SLOT_STATUS;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_LCEDATA_RECV;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_MODEM_RESTART;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_NETWORK_SCAN_RESULT;
@@ -80,8 +81,8 @@ import android.hardware.radio.V1_0.SimRefreshResult;
 import android.hardware.radio.V1_0.SsInfoData;
 import android.hardware.radio.V1_0.StkCcUnsolSsResult;
 import android.hardware.radio.V1_0.SuppSvcNotification;
-import android.hardware.radio.V1_1.IRadioIndication;
 import android.hardware.radio.V1_1.KeepaliveStatus;
+import android.hardware.radio.V1_2.IRadioIndication;
 import android.os.AsyncResult;
 import android.os.SystemProperties;
 import android.telephony.CellInfo;
@@ -97,6 +98,7 @@ import com.android.internal.telephony.gsm.SsData;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
 import com.android.internal.telephony.uicc.IccRefreshResponse;
+import com.android.internal.telephony.uicc.IccSlotStatus;
 import com.android.internal.telephony.uicc.IccUtils;
 
 import java.util.ArrayList;
@@ -623,6 +625,7 @@ public class RadioIndication extends IRadioIndication.Stub {
                 new AsyncResult (null, response, null));
     }
 
+    /** Get unsolicited message for cellInfoList */
     public void cellInfoList(int indicationType,
                              ArrayList<android.hardware.radio.V1_0.CellInfo> records) {
         mRil.processIndication(indicationType);
@@ -631,7 +634,36 @@ public class RadioIndication extends IRadioIndication.Stub {
 
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_CELL_INFO_LIST, response);
 
-        mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult (null, response, null));
+        mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
+    }
+
+    /** Get unsolicited message for cellInfoList using HAL V1_2 */
+    public void cellInfoList_1_2(int indicationType,
+                             ArrayList<android.hardware.radio.V1_2.CellInfo> records) {
+        mRil.processIndication(indicationType);
+
+        ArrayList<CellInfo> response = RIL.convertHalCellInfoList_1_2(records);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_CELL_INFO_LIST, response);
+
+        mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
+    }
+
+    /**
+     * Indicates a change of the ICC slot status
+     * @param indicationType RadioIndicationType
+     * @param slotsStatus ICC slot status
+     */
+    public void simSlotsStatusChanged(int indicationType,
+            ArrayList<android.hardware.radio.V1_2.SimSlotStatus> slotsStatus) {
+        mRil.processIndication(indicationType);
+
+        ArrayList<IccSlotStatus> iccSlotStatus = RIL.convertHalSlotsStatus(slotsStatus);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_ICC_SLOT_STATUS, iccSlotStatus);
+
+        mRil.mIccSlotStatusChangedRegistrants.notifyRegistrants(
+                new AsyncResult(null, iccSlotStatus, null));
     }
 
     /** Incremental network scan results */

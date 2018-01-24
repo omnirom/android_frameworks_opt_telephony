@@ -15,6 +15,8 @@
  */
 package com.android.internal.telephony.euicc;
 
+import static android.telephony.euicc.EuiccManager.EUICC_OTA_STATUS_UNAVAILABLE;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -56,6 +58,8 @@ import android.telephony.euicc.EuiccInfo;
 import android.telephony.euicc.EuiccManager;
 
 import com.android.internal.telephony.TelephonyTest;
+import com.android.internal.telephony.euicc.EuiccConnector.GetOtaStatusCommandCallback;
+import com.android.internal.telephony.euicc.EuiccConnector.OtaStatusChangedCallback;
 
 import org.junit.After;
 import org.junit.Before;
@@ -122,8 +126,12 @@ public class EuiccControllerTest extends TelephonyTest {
         // Whether refreshSubscriptionsAndSendResult was called.
         private boolean mCalledRefreshSubscriptionsAndSendResult;
 
+        // Number of OTA status changed.
+        private int mNumOtaStatusChanged;
+
         TestEuiccController(Context context, EuiccConnector connector) {
             super(context, connector);
+            mNumOtaStatusChanged = 0;
         }
 
         @Override
@@ -147,6 +155,11 @@ public class EuiccControllerTest extends TelephonyTest {
                 PendingIntent callbackIntent, int resultCode, Intent extrasIntent) {
             mCalledRefreshSubscriptionsAndSendResult = true;
             sendResult(callbackIntent, resultCode, extrasIntent);
+        }
+
+        @Override
+        public void sendOtaStatusChangedBroadcast() {
+            ++mNumOtaStatusChanged;
         }
     }
 
@@ -202,6 +215,52 @@ public class EuiccControllerTest extends TelephonyTest {
         setGetEidPermissions(true /* hasPhoneStatePrivileged */, false /* hasCarrierPrivileges */);
         assertNull(callGetEid(true /* success */, null /* eid */));
     }
+
+    @Test(expected = SecurityException.class)
+    public void testGetOtaStatus_noPrivileges() {
+        setHasWriteEmbeddedPermission(false /* hasPermission */);
+        callGetOtaStatus(true /* success */, 1 /* status */);
+    }
+
+    @Test
+    public void testGetOtaStatus_withWriteEmbeddedPermission() {
+        setHasWriteEmbeddedPermission(true /* hasPermission */);
+        assertEquals(1, callGetOtaStatus(true /* success */, 1 /* status */));
+    }
+
+    @Test
+    public void testGetOtaStatus_failure() {
+        setHasWriteEmbeddedPermission(true /* hasPermission */);
+        assertEquals(
+                EUICC_OTA_STATUS_UNAVAILABLE,
+                callGetOtaStatus(false /* success */, 1 /* status */));
+    }
+
+    @Test
+    public void testStartOtaUpdatingIfNecessary_serviceNotAvailable() {
+        setHasWriteEmbeddedPermission(true /* hasPermission */);
+        callStartOtaUpdatingIfNecessary(
+                false /* serviceAvailable */, EuiccManager.EUICC_OTA_IN_PROGRESS);
+        assertEquals(mController.mNumOtaStatusChanged, 0);
+    }
+
+    @Test
+    public void testStartOtaUpdatingIfNecessary_otaStatusChanged() {
+        setHasWriteEmbeddedPermission(true /* hasPermission */);
+        callStartOtaUpdatingIfNecessary(
+                true /* serviceAvailable */, EuiccManager.EUICC_OTA_IN_PROGRESS);
+        callStartOtaUpdatingIfNecessary(
+                true /* serviceAvailable */, EuiccManager.EUICC_OTA_FAILED);
+        callStartOtaUpdatingIfNecessary(
+                true /* serviceAvailable */, EuiccManager.EUICC_OTA_SUCCEEDED);
+        callStartOtaUpdatingIfNecessary(
+                true /* serviceAvailable */, EuiccManager.EUICC_OTA_NOT_NEEDED);
+        callStartOtaUpdatingIfNecessary(
+                true /* serviceAvailable */, EuiccManager.EUICC_OTA_STATUS_UNAVAILABLE);
+
+        assertEquals(mController.mNumOtaStatusChanged, 5);
+    }
+
 
     @Test
     public void testGetEuiccInfo_success() {
@@ -804,6 +863,40 @@ public class EuiccControllerTest extends TelephonyTest {
             }
         }).when(mMockConnector).getEid(Mockito.<EuiccConnector.GetEidCommandCallback>any());
         return mController.getEid();
+    }
+
+    private int callGetOtaStatus(final boolean success, final int status) {
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Exception {
+                GetOtaStatusCommandCallback cb = invocation.getArgument(0);
+                if (success) {
+                    cb.onGetOtaStatusComplete(status);
+                } else {
+                    cb.onEuiccServiceUnavailable();
+                }
+                return null;
+            }
+        }).when(mMockConnector).getOtaStatus(Mockito.<GetOtaStatusCommandCallback>any());
+        return mController.getOtaStatus();
+    }
+
+    private void callStartOtaUpdatingIfNecessary(
+            final boolean serviceAvailable, int status) {
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Exception {
+                OtaStatusChangedCallback cb = invocation.getArgument(0);
+                if (!serviceAvailable) {
+                    cb.onEuiccServiceUnavailable();
+                } else {
+                    cb.onOtaStatusChanged(status);
+                }
+                return null;
+            }
+        }).when(mMockConnector).startOtaIfNecessary(Mockito.<OtaStatusChangedCallback>any());
+
+        mController.startOtaUpdatingIfNecessary();
     }
 
     private EuiccInfo callGetEuiccInfo(final boolean success, final @Nullable EuiccInfo euiccInfo) {

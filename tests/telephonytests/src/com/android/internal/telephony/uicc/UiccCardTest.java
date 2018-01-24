@@ -35,7 +35,6 @@ import android.os.Message;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.internal.telephony.TelephonyTest;
-import com.android.internal.telephony.cat.CatService;
 
 import org.junit.After;
 import org.junit.Before;
@@ -57,10 +56,7 @@ public class UiccCardTest extends TelephonyTest {
     private static final int UICCCARD_UPDATE_CARD_STATE_EVENT = 1;
     private static final int UICCCARD_UPDATE_CARD_APPLICATION_EVENT = 2;
     private static final int UICCCARD_CARRIER_PRIVILEDGE_LOADED_EVENT = 3;
-    private static final int UICCCARD_ABSENT = 4;
 
-    @Mock
-    private CatService mCAT;
     @Mock
     private IccCardStatus mIccCardStatus;
     @Mock
@@ -132,11 +128,10 @@ public class UiccCardTest extends TelephonyTest {
         mIccIoResult = new IccIoResult(0x90, 0x00, IccUtils.hexStringToBytes("FF40"));
         mSimulatedCommands.setIccIoResultForApduLogicalChannel(mIccIoResult);
         /* starting the Handler Thread */
-        mTestHandlerThread = new UiccCardHandlerThread(TAG);
+        mTestHandlerThread = new UiccCardHandlerThread(getClass().getSimpleName());
         mTestHandlerThread.start();
 
         waitUntilReady();
-        replaceInstance(UiccCard.class, "mCatService", mUicccard, mCAT);
     }
 
     @After
@@ -234,31 +229,5 @@ public class UiccCardTest extends TelephonyTest {
         verify(mMockedHandler, atLeast(1)).sendMessageDelayed(mCaptorMessage.capture(),
                 mCaptorLong.capture());
         assertEquals(UICCCARD_CARRIER_PRIVILEDGE_LOADED_EVENT, mCaptorMessage.getValue().what);
-    }
-
-    @Test @SmallTest
-    public void testCardAbsentListener() {
-        mUicccard.registerForAbsent(mMockedHandler, UICCCARD_ABSENT, null);
-        /* assume hotswap capable, avoid bootup on card removal */
-        mContextFixture.putBooleanResource(com.android.internal.R.bool.config_hotswapCapable, true);
-        mSimulatedCommands.setRadioPower(true, null);
-
-        /* Mock Card State transition from card_present to card_absent */
-        logd("UICC Card Present update");
-        mIccCardStatus.mCardState = IccCardStatus.CardState.CARDSTATE_PRESENT;
-        Message mCardUpdate = mHandler.obtainMessage(UICCCARD_UPDATE_CARD_STATE_EVENT);
-        mCardUpdate.sendToTarget();
-        waitForMs(50);
-
-        logd("UICC Card absent update");
-        mIccCardStatus.mCardState = IccCardStatus.CardState.CARDSTATE_ABSENT;
-        mUicccard.update(mContextFixture.getTestDouble(), mSimulatedCommands, mIccCardStatus);
-        waitForMs(50);
-
-        ArgumentCaptor<Message> mCaptorMessage = ArgumentCaptor.forClass(Message.class);
-        ArgumentCaptor<Long> mCaptorLong = ArgumentCaptor.forClass(Long.class);
-        verify(mMockedHandler, atLeast(1)).sendMessageDelayed(mCaptorMessage.capture(),
-                                                             mCaptorLong.capture());
-        assertEquals(UICCCARD_ABSENT, mCaptorMessage.getValue().what);
     }
 }

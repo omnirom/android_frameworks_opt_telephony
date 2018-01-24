@@ -40,6 +40,7 @@ import android.os.SystemClock;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.TelephonyHistogram;
+import android.telephony.TelephonyManager;
 import android.telephony.data.DataCallResponse;
 import android.text.TextUtils;
 import android.util.Base64;
@@ -65,6 +66,9 @@ import com.android.internal.telephony.nano.TelephonyProto.TelephonyCallSession.E
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyCallSession.Event.RilCall;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyCallSession.Event.RilCall.Type;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
+import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.CarrierIdMatching;
+import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.CarrierIdMatchingResult;
+import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.CarrierKeyChange;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.ModemRestart;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.RilDeactivateDataCall;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.RilSetupDataCall;
@@ -229,6 +233,8 @@ public class TelephonyMetrics {
                 return "DATA_STALL_ACTION";
             case TelephonyEvent.Type.MODEM_RESTART:
                 return "MODEM_RESTART";
+            case TelephonyEvent.Type.CARRIER_ID_MATCHING:
+                return "CARRIER_ID_MATCHING";
             default:
                 return Integer.toString(event);
         }
@@ -507,7 +513,6 @@ public class TelephonyMetrics {
         log.endTime = new TelephonyProto.Time();
         log.endTime.systemTimestampMillis = System.currentTimeMillis();
         log.endTime.elapsedTimestampMillis = SystemClock.elapsedRealtime();
-
         return log;
     }
 
@@ -521,6 +526,23 @@ public class TelephonyMetrics {
         return (int) ((timestamp) / (MINUTE_IN_MILLIS * SESSION_START_PRECISION_MINUTES)
                 * (SESSION_START_PRECISION_MINUTES));
     }
+
+    /**
+     * Write the Carrier Key change event
+     *
+     * @param phoneId Phone id
+     * @param keyType type of key
+     * @param isDownloadSuccessful true if the key was successfully downloaded
+     */
+    public void writeCarrierKeyEvent(int phoneId, int keyType,  boolean isDownloadSuccessful) {
+        final CarrierKeyChange carrierKeyChange = new CarrierKeyChange();
+        carrierKeyChange.keyType = keyType;
+        carrierKeyChange.isDownloadSuccessful = isDownloadSuccessful;
+        TelephonyEvent event = new TelephonyEventBuilder(phoneId).setCarrierKeyChange(
+                carrierKeyChange).build();
+        addTelephonyEvent(event);
+    }
+
 
     /**
      * Get the time interval with reduced prevision
@@ -1747,6 +1769,31 @@ public class TelephonyMetrics {
         if (reason != null) modemRestart.reason = reason;
         TelephonyEvent event = new TelephonyEventBuilder(phoneId).setModemRestart(
                 modemRestart).build();
+        addTelephonyEvent(event);
+    }
+
+    /**
+     * Write carrier identification matching event
+     *
+     * @param phoneId Phone id
+     * @param cid Unique Carrier Id
+     * @param gid1 Group id level 1
+     */
+    public void writeCarrierIdMatchingEvent(int phoneId, int cid, String gid1) {
+        final CarrierIdMatching carrierIdMatching = new CarrierIdMatching();
+        final CarrierIdMatchingResult carrierIdMatchingResult = new CarrierIdMatchingResult();
+
+        if (cid != TelephonyManager.UNKNOWN_CARRIER_ID) {
+            carrierIdMatchingResult.carrierId = cid;
+            if (gid1 != null) {
+                carrierIdMatchingResult.gid1 = gid1;
+            }
+        }
+
+        carrierIdMatching.result = carrierIdMatchingResult;
+
+        TelephonyEvent event = new TelephonyEventBuilder(phoneId).setCarrierIdMatching(
+                carrierIdMatching).build();
         addTelephonyEvent(event);
     }
 

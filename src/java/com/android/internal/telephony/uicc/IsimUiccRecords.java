@@ -16,19 +16,12 @@
 
 package com.android.internal.telephony.uicc;
 
-import static com.android.internal.telephony.uicc.IccConstants.EF_DOMAIN;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IMPI;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IMPU;
-import static com.android.internal.telephony.uicc.IccConstants.EF_IST;
-import static com.android.internal.telephony.uicc.IccConstants.EF_PCSCF;
-
 import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
-import android.text.TextUtils;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.gsm.SimTlv;
@@ -53,7 +46,6 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
     public static final String INTENT_ISIM_REFRESH = "com.android.intent.isim_refresh";
 
     private static final int EVENT_APP_READY = 1;
-    private static final int EVENT_ISIM_REFRESH = 31;
     private static final int EVENT_ISIM_AUTHENTICATE_DONE          = 91;
 
     // ISIM EF records (see 3GPP TS 31.103)
@@ -84,13 +76,12 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         mRecordsRequested = false;  // No load request is made till SIM ready
         //todo: currently locked state for ISIM is not handled well and may cause app state to not
         //be broadcast
-        mLockedRecordsRequested = false;
+        mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
 
         // recordsToLoad is set to 0 because no requests are made yet
         mRecordsToLoad = 0;
         // Start off by setting empty state
         resetRecords();
-        mCi.registerForIccRefresh(this, EVENT_ISIM_REFRESH, null);
 
         mParentApp.registerForReady(this, EVENT_APP_READY, null);
         if (DBG) log("IsimUiccRecords X ctor this=" + this);
@@ -123,15 +114,9 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
                     onReady();
                     break;
 
-                case EVENT_ISIM_REFRESH:
-                    ar = (AsyncResult)msg.obj;
-                    loge("ISim REFRESH(EVENT_ISIM_REFRESH) with exception: " + ar.exception);
-                    if (ar.exception == null) {
-                        Intent intent = new Intent(INTENT_ISIM_REFRESH);
-                        loge("send ISim REFRESH: " + INTENT_ISIM_REFRESH);
-                        mContext.sendBroadcast(intent);
-                        handleIsimRefresh((IccRefreshResponse)ar.result);
-                    }
+                case EVENT_REFRESH:
+                    broadcastRefresh();
+                    super.handleMessage(msg);
                     break;
 
                 case EVENT_ISIM_AUTHENTICATE_DONE:
@@ -199,7 +184,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         auth_rsp = null;
 
         mRecordsRequested = false;
-        mLockedRecordsRequested = false;
+        mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
     }
 
     private class EfIsimImpiLoaded implements IccRecords.IccRecordLoaded {
@@ -297,7 +282,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
 
         if (getRecordsLoaded()) {
             onAllRecordsLoaded();
-        } else if (getLockedRecordsLoaded()) {
+        } else if (getLockedRecordsLoaded() || getNetworkLockedRecordsLoaded()) {
             onLockedAllRecordsLoaded();
         } else if (mRecordsToLoad < 0) {
             loge("recordsToLoad <0, programmer error suspected");
@@ -307,7 +292,15 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
 
     private void onLockedAllRecordsLoaded() {
         if (DBG) log("SIM locked; record load complete");
-        mLockedRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+        if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_LOCKED) {
+            mLockedRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+        } else if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED) {
+            mNetworkLockedRecordsLoadedRegistrants.notifyRegistrants(
+                    new AsyncResult(null, null, null));
+        } else {
+            loge("onLockedAllRecordsLoaded: unexpected mLockedRecordsReqReason "
+                    + mLockedRecordsReqReason);
+        }
     }
 
     @Override
@@ -316,7 +309,8 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         mRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
     }
 
-    private void handleFileUpdate(int efid) {
+    @Override
+    protected void handleFileUpdate(int efid) {
         switch (efid) {
             case EF_IMPI:
                 mFh.loadEFTransparent(EF_IMPI, obtainMessage(
@@ -353,42 +347,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         }
     }
 
-    private void handleIsimRefresh(IccRefreshResponse refreshResponse) {
-        if (refreshResponse == null) {
-            if (DBG) log("handleIsimRefresh received without input");
-            return;
-        }
-
-        if (!TextUtils.isEmpty(refreshResponse.aid)
-                && !refreshResponse.aid.equals(mParentApp.getAid())) {
-            // This is for different app. Ignore.
-            if (DBG) log("handleIsimRefresh received different app");
-            return;
-        }
-
-        switch (refreshResponse.refreshResult) {
-            case IccRefreshResponse.REFRESH_RESULT_FILE_UPDATE:
-                if (DBG) log("handleIsimRefresh with REFRESH_RESULT_FILE_UPDATE");
-                handleFileUpdate(refreshResponse.efId);
-                break;
-
-            case IccRefreshResponse.REFRESH_RESULT_INIT:
-                if (DBG) log("handleIsimRefresh with REFRESH_RESULT_INIT");
-                // need to reload all files (that we care about)
-                // onIccRefreshInit();
-                fetchIsimRecords();
-                break;
-
-            case IccRefreshResponse.REFRESH_RESULT_RESET:
-                // Refresh reset is handled by the UiccCard object.
-                if (DBG) log("handleIsimRefresh with REFRESH_RESULT_RESET");
-                break;
-
-            default:
-                // unknown refresh operation
-                if (DBG) log("handleIsimRefresh with unknown operation");
-                break;
-        }
+    private void broadcastRefresh() {
+        Intent intent = new Intent(INTENT_ISIM_REFRESH);
+        log("send ISim REFRESH: " + INTENT_ISIM_REFRESH);
+        mContext.sendBroadcast(intent);
     }
 
     /**

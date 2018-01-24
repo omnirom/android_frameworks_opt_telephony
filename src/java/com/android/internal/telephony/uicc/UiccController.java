@@ -22,19 +22,22 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.Registrant;
 import android.os.RegistrantList;
-import android.os.SystemProperties;
 import android.os.storage.StorageManager;
-import android.telephony.TelephonyManager;
 import android.telephony.Rlog;
+import android.telephony.TelephonyManager;
 import android.text.format.Time;
 
+import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.PhoneConstants;
-import com.android.internal.telephony.SubscriptionController;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Set;
 
 /**
  * This class is responsible for keeping all knowledge about
@@ -78,19 +81,29 @@ import java.util.LinkedList;
  */
 public class UiccController extends Handler {
     private static final boolean DBG = true;
+    private static final boolean VDBG = false; //STOPSHIP if true
     private static final String LOG_TAG = "UiccController";
+
+    public static final int INVALID_SLOT_ID = -1;
 
     public static final int APP_FAM_3GPP =  1;
     public static final int APP_FAM_3GPP2 = 2;
     public static final int APP_FAM_IMS   = 3;
 
     private static final int EVENT_ICC_STATUS_CHANGED = 1;
-    private static final int EVENT_GET_ICC_STATUS_DONE = 2;
-    private static final int EVENT_RADIO_UNAVAILABLE = 3;
-    private static final int EVENT_SIM_REFRESH = 4;
+    private static final int EVENT_SLOT_STATUS_CHANGED = 2;
+    private static final int EVENT_GET_ICC_STATUS_DONE = 3;
+    private static final int EVENT_GET_SLOT_STATUS_DONE = 4;
+    private static final int EVENT_RADIO_ON = 5;
+    private static final int EVENT_RADIO_AVAILABLE = 6;
+    private static final int EVENT_RADIO_UNAVAILABLE = 7;
+    private static final int EVENT_SIM_REFRESH = 8;
 
+    // this needs to be here, because on bootup we dont know which index maps to which UiccSlot
     private CommandsInterface[] mCis;
-    private UiccCard[] mUiccCards = new UiccCard[TelephonyManager.getDefault().getPhoneCount()];
+    private UiccSlot[] mUiccSlots;
+    private int[] mPhoneIdToSlotId;
+    private boolean mIsSlotStatusSupported = true;
 
     private static final Object mLock = new Object();
     private static UiccController mInstance;
@@ -111,7 +124,7 @@ public class UiccController extends Handler {
                 throw new RuntimeException("MSimUiccController.make() should only be called once");
             }
             mInstance = new UiccController(c, ci);
-            return (UiccController)mInstance;
+            return mInstance;
         }
     }
 
@@ -119,24 +132,41 @@ public class UiccController extends Handler {
         if (DBG) log("Creating UiccController");
         mContext = c;
         mCis = ci;
+        if (VDBG) {
+            log("config_num_physical_slots = " + c.getResources().getInteger(
+                    com.android.internal.R.integer.config_num_physical_slots));
+        }
+        mUiccSlots = new UiccSlot[c.getResources().getInteger(
+                com.android.internal.R.integer.config_num_physical_slots)];
+        mPhoneIdToSlotId = new int[ci.length];
+        Arrays.fill(mPhoneIdToSlotId, INVALID_SLOT_ID);
+        if (VDBG) logPhoneIdToSlotIdMapping();
         for (int i = 0; i < mCis.length; i++) {
-            Integer index = new Integer(i);
-            mCis[i].registerForIccStatusChanged(this, EVENT_ICC_STATUS_CHANGED, index);
+            mCis[i].registerForIccStatusChanged(this, EVENT_ICC_STATUS_CHANGED, i);
+            // slot status should be the same on all RILs; request it only for phoneId 0
+            if (i == 0) {
+                mCis[i].registerForIccSlotStatusChanged(this, EVENT_SLOT_STATUS_CHANGED, i);
+            }
+
             // TODO remove this once modem correctly notifies the unsols
             // If the device is unencrypted or has been decrypted or FBE is supported,
-            // i.e. not in cryptkeeper bounce, read SIM when radio state isavailable.
+            // i.e. not in CryptKeeper bounce, read SIM when radio state is available.
             // Else wait for radio to be on. This is needed for the scenario when SIM is locked --
             // to avoid overlap of CryptKeeper and SIM unlock screen.
             if (!StorageManager.inCryptKeeperBounce()) {
-                mCis[i].registerForAvailable(this, EVENT_ICC_STATUS_CHANGED, index);
+                mCis[i].registerForAvailable(this, EVENT_RADIO_AVAILABLE, i);
             } else {
-                mCis[i].registerForOn(this, EVENT_ICC_STATUS_CHANGED, index);
+                mCis[i].registerForOn(this, EVENT_RADIO_ON, i);
             }
-            mCis[i].registerForNotAvailable(this, EVENT_RADIO_UNAVAILABLE, index);
-            mCis[i].registerForIccRefresh(this, EVENT_SIM_REFRESH, index);
+            mCis[i].registerForNotAvailable(this, EVENT_RADIO_UNAVAILABLE, i);
+            mCis[i].registerForIccRefresh(this, EVENT_SIM_REFRESH, i);
         }
 
         mLauncher = new UiccStateChangedLauncher(c, this);
+    }
+
+    private int getSlotIdFromPhoneId(int phoneId) {
+        return mPhoneIdToSlotId[phoneId];
     }
 
     public static UiccController getInstance() {
@@ -151,18 +181,65 @@ public class UiccController extends Handler {
 
     public UiccCard getUiccCard(int phoneId) {
         synchronized (mLock) {
-            if (isValidCardIndex(phoneId)) {
-                return mUiccCards[phoneId];
+            return getUiccCardForPhone(phoneId);
+        }
+    }
+
+    /**
+     * API to get UiccCard corresponding to given physical slot index
+     * @param slotId index of physical slot on the device
+     * @return UiccCard object corresponting to given physical slot index; null if card is
+     * absent
+     */
+    public UiccCard getUiccCardForSlot(int slotId) {
+        synchronized (mLock) {
+            UiccSlot uiccSlot = getUiccSlot(slotId);
+            if (uiccSlot != null) {
+                return uiccSlot.getUiccCard();
             }
             return null;
         }
     }
 
-    public UiccCard[] getUiccCards() {
-        // Return cloned array since we don't want to give out reference
-        // to internal data structure.
+    /**
+     * API to get UiccCard corresponding to given phone id
+     * @return UiccCard object corresponding to given phone id; null if there is no card present for
+     * the phone id
+     */
+    public UiccCard getUiccCardForPhone(int phoneId) {
         synchronized (mLock) {
-            return mUiccCards.clone();
+            UiccSlot uiccSlot = getUiccSlotForPhone(phoneId);
+            if (uiccSlot != null) {
+                return uiccSlot.getUiccCard();
+            }
+            return null;
+        }
+    }
+
+    /**
+     * API to get UiccSlot object for a specific physical slot index on the device
+     * @return UiccSlot object for the given physical slot index
+     */
+    public UiccSlot getUiccSlot(int slotId) {
+        synchronized (mLock) {
+            if (isValidSlotIndex(slotId)) {
+                return mUiccSlots[slotId];
+            }
+            return null;
+        }
+    }
+
+    /**
+     * API to get UiccSlot object for a given phone id
+     * @return UiccSlot object for the given phone id
+     */
+    public UiccSlot getUiccSlotForPhone(int phoneId) {
+        synchronized (mLock) {
+            int slotId = getSlotIdFromPhoneId(phoneId);
+            if (isValidSlotIndex(slotId)) {
+                return mUiccSlots[slotId];
+            }
+            return null;
         }
     }
 
@@ -209,10 +286,11 @@ public class UiccController extends Handler {
     @Override
     public void handleMessage (Message msg) {
         synchronized (mLock) {
-            Integer index = getCiIndex(msg);
+            Integer phoneId = getCiIndex(msg);
 
-            if (index < 0 || index >= mCis.length) {
-                Rlog.e(LOG_TAG, "Invalid index : " + index + " received with event " + msg.what);
+            if (phoneId < 0 || phoneId >= mCis.length) {
+                Rlog.e(LOG_TAG, "Invalid phoneId : " + phoneId + " received with event "
+                        + msg.what);
                 return;
             }
 
@@ -220,26 +298,53 @@ public class UiccController extends Handler {
             switch (msg.what) {
                 case EVENT_ICC_STATUS_CHANGED:
                     if (DBG) log("Received EVENT_ICC_STATUS_CHANGED, calling getIccCardStatus");
-                    mCis[index].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE, index));
+                    mCis[phoneId].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE,
+                            phoneId));
+                    break;
+                case EVENT_RADIO_AVAILABLE:
+                case EVENT_RADIO_ON:
+                    if (DBG) {
+                        log("Received EVENT_RADIO_AVAILABLE/EVENT_RADIO_ON, calling "
+                                + "getIccCardStatus");
+                    }
+                    mCis[phoneId].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE,
+                            phoneId));
+                    // slot status should be the same on all RILs; request it only for phoneId 0
+                    if (phoneId == 0) {
+                        if (DBG) {
+                            log("Received EVENT_RADIO_AVAILABLE/EVENT_RADIO_ON for phoneId 0, "
+                                    + "calling getIccSlotsStatus");
+                        }
+                        mCis[phoneId].getIccSlotsStatus(obtainMessage(EVENT_GET_SLOT_STATUS_DONE,
+                                phoneId));
+                    }
                     break;
                 case EVENT_GET_ICC_STATUS_DONE:
                     if (DBG) log("Received EVENT_GET_ICC_STATUS_DONE");
-                    onGetIccCardStatusDone(ar, index);
+                    onGetIccCardStatusDone(ar, phoneId);
+                    break;
+                case EVENT_SLOT_STATUS_CHANGED:
+                case EVENT_GET_SLOT_STATUS_DONE:
+                    if (DBG) {
+                        log("Received EVENT_SLOT_STATUS_CHANGED or EVENT_GET_SLOT_STATUS_DONE");
+                    }
+                    onGetSlotStatusDone(ar);
                     break;
                 case EVENT_RADIO_UNAVAILABLE:
                     if (DBG) log("EVENT_RADIO_UNAVAILABLE, dispose card");
-                    if (mUiccCards[index] != null) {
-                        mUiccCards[index].dispose();
+                    UiccSlot uiccSlot = getUiccSlotForPhone(phoneId);
+                    if (uiccSlot != null) {
+                        uiccSlot.onRadioStateUnavailable();
                     }
-                    mUiccCards[index] = null;
-                    mIccChangedRegistrants.notifyRegistrants(new AsyncResult(null, index, null));
+                    mIccChangedRegistrants.notifyRegistrants(new AsyncResult(null, phoneId, null));
                     break;
                 case EVENT_SIM_REFRESH:
                     if (DBG) log("Received EVENT_SIM_REFRESH");
-                    onSimRefresh(ar, index);
+                    onSimRefresh(ar, phoneId);
                     break;
                 default:
                     Rlog.e(LOG_TAG, " Unknown Event " + msg.what);
+                    break;
             }
         }
     }
@@ -269,11 +374,9 @@ public class UiccController extends Handler {
     // Easy to use API
     public UiccCardApplication getUiccCardApplication(int phoneId, int family) {
         synchronized (mLock) {
-            if (isValidCardIndex(phoneId)) {
-                UiccCard c = mUiccCards[phoneId];
-                if (c != null) {
-                    return mUiccCards[phoneId].getApplication(family);
-                }
+            UiccCard uiccCard = getUiccCardForPhone(phoneId);
+            if (uiccCard != null) {
+                return uiccCard.getApplication(family);
             }
             return null;
         }
@@ -293,17 +396,112 @@ public class UiccController extends Handler {
 
         IccCardStatus status = (IccCardStatus)ar.result;
 
-        if (mUiccCards[index] == null) {
-            //Create new card
-            mUiccCards[index] = new UiccCard(mContext, mCis[index], status, index);
-        } else {
-            //Update already existing card
-            mUiccCards[index].update(mContext, mCis[index] , status);
+        int slotId = status.physicalSlotIndex;
+        if (VDBG) log("onGetIccCardStatusDone: phoneId " + index + " physicalSlotIndex " + slotId);
+        if (slotId == INVALID_SLOT_ID) {
+            slotId = index;
+            mPhoneIdToSlotId[index] = slotId;
         }
+
+        if (VDBG) logPhoneIdToSlotIdMapping();
+
+        if (mUiccSlots[slotId] == null) {
+            if (VDBG) {
+                log("Creating mUiccSlots[" + slotId + "]; mUiccSlots.length = "
+                        + mUiccSlots.length);
+            }
+            mUiccSlots[slotId] = new UiccSlot(mContext, true);
+        }
+
+        mUiccSlots[slotId].update(mCis[index], status, index);
 
         if (DBG) log("Notifying IccChangedRegistrants");
         mIccChangedRegistrants.notifyRegistrants(new AsyncResult(null, index, null));
+    }
 
+    private synchronized void onGetSlotStatusDone(AsyncResult ar) {
+        if (!mIsSlotStatusSupported) {
+            if (VDBG) log("onGetSlotStatusDone: ignoring since mIsSlotStatusSupported is false");
+            return;
+        }
+        Throwable e = ar.exception;
+        if (e != null) {
+            if (!(e instanceof CommandException) || ((CommandException) e).getCommandError()
+                    != CommandException.Error.REQUEST_NOT_SUPPORTED) {
+                // this is not expected; there should be no exception other than
+                // REQUEST_NOT_SUPPORTED
+                Rlog.e(LOG_TAG, "Unexpected error getting slot status.", ar.exception);
+            } else {
+                // REQUEST_NOT_SUPPORTED
+                log("onGetSlotStatusDone: request not supported; marking mIsSlotStatusSupported "
+                        + "to false");
+                mIsSlotStatusSupported = false;
+            }
+            return;
+        }
+
+        ArrayList<IccSlotStatus> status = (ArrayList<IccSlotStatus>) ar.result;
+
+        int numActiveSlots = 0;
+        for (int i = 0; i < status.size(); i++) {
+            IccSlotStatus iss = status.get(i);
+            boolean isActive = (iss.slotState == IccSlotStatus.SlotState.SLOTSTATE_ACTIVE);
+            if (isActive) {
+                numActiveSlots++;
+
+                // sanity check: logicalSlotIndex should be valid for an active slot
+                if (!isValidCardIndex(iss.logicalSlotIndex)) {
+                    throw new RuntimeException("Logical slot index " + iss.logicalSlotIndex
+                            + " invalid for physical slot " + i);
+                }
+                mPhoneIdToSlotId[iss.logicalSlotIndex] = i;
+            }
+
+            if (mUiccSlots[i] == null) {
+                if (VDBG) {
+                    log("Creating mUiccSlot[" + i + "]; mUiccSlots.length = " + mUiccSlots.length);
+                }
+                mUiccSlots[i] = new UiccSlot(mContext, isActive);
+            }
+
+            mUiccSlots[i].update(isActive ? mCis[iss.logicalSlotIndex] : null, iss);
+        }
+
+        if (VDBG) logPhoneIdToSlotIdMapping();
+
+        // sanity check: number of active slots should be valid
+        if (numActiveSlots != mPhoneIdToSlotId.length) {
+            throw new RuntimeException("Number of active slots " + numActiveSlots
+                    + " does not match the expected value " + mPhoneIdToSlotId.length);
+        }
+
+        // sanity check: slotIds should be unique in mPhoneIdToSlotId
+        Set<Integer> slotIds = new HashSet<>();
+        for (int slotId : mPhoneIdToSlotId) {
+            if (slotIds.contains(slotId)) {
+                throw new RuntimeException("slotId " + slotId + " mapped to muptiple phoneIds");
+            }
+            slotIds.add(slotId);
+        }
+    }
+
+    private void logPhoneIdToSlotIdMapping() {
+        log("mPhoneIdToSlotId mapping:");
+        for (int i = 0; i < mPhoneIdToSlotId.length; i++) {
+            log("    phoneId " + i + " slotId " + mPhoneIdToSlotId[i]);
+        }
+    }
+    /**
+     * Slots are initialized when none of them are null.
+     * todo: is this even needed?
+     */
+    private synchronized boolean areSlotsInitialized() {
+        for (UiccSlot slot : mUiccSlots) {
+            if (slot == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void onSimRefresh(AsyncResult ar, Integer index) {
@@ -318,35 +516,50 @@ public class UiccController extends Handler {
         }
 
         IccRefreshResponse resp = (IccRefreshResponse) ar.result;
-        Rlog.d(LOG_TAG, "onSimRefresh: " + resp);
+        log("onSimRefresh: " + resp);
 
-        if (mUiccCards[index] == null) {
+        if (resp == null) {
+            Rlog.e(LOG_TAG, "onSimRefresh: received without input");
+            return;
+        }
+
+        UiccCard uiccCard = getUiccCardForPhone(index);
+        if (uiccCard == null) {
             Rlog.e(LOG_TAG,"onSimRefresh: refresh on null card : " + index);
             return;
         }
 
-        if (resp.refreshResult != IccRefreshResponse.REFRESH_RESULT_RESET) {
-          Rlog.d(LOG_TAG, "Ignoring non reset refresh: " + resp);
-          return;
+        log("Handling refresh: " + resp);
+        boolean changed = false;
+        switch(resp.refreshResult) {
+            case IccRefreshResponse.REFRESH_RESULT_RESET:
+            case IccRefreshResponse.REFRESH_RESULT_INIT:
+                 // Reset the required apps when we know about the refresh so that
+                 // anyone interested does not get stale state.
+                 changed = uiccCard.resetAppWithAid(resp.aid);
+                 break;
+            default:
+                 return;
         }
 
-        Rlog.d(LOG_TAG, "Handling refresh reset: " + resp);
-
-        boolean changed = mUiccCards[index].resetAppWithAid(resp.aid);
-        if (changed) {
+        if (changed && resp.refreshResult == IccRefreshResponse.REFRESH_RESULT_RESET) {
             boolean requirePowerOffOnSimRefreshReset = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_requireRadioPowerOffOnSimRefreshReset);
+                    com.android.internal.R.bool.config_requireRadioPowerOffOnSimRefreshReset);
             if (requirePowerOffOnSimRefreshReset) {
                 mCis[index].setRadioPower(false, null);
-            } else {
-                mCis[index].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE, index));
             }
-            mIccChangedRegistrants.notifyRegistrants(new AsyncResult(null, index, null));
         }
+
+        // The card status could have changed. Get the latest state.
+        mCis[index].getIccCardStatus(obtainMessage(EVENT_GET_ICC_STATUS_DONE, index));
     }
 
     private boolean isValidCardIndex(int index) {
-        return (index >= 0 && index < mUiccCards.length);
+        return (index >= 0 && index < TelephonyManager.getDefault().getPhoneCount());
+    }
+
+    private boolean isValidSlotIndex(int index) {
+        return (index >= 0 && index < mUiccSlots.length);
     }
 
     private void log(String string) {
@@ -374,13 +587,13 @@ public class UiccController extends Handler {
         }
         pw.println();
         pw.flush();
-        pw.println(" mUiccCards: size=" + mUiccCards.length);
-        for (int i = 0; i < mUiccCards.length; i++) {
-            if (mUiccCards[i] == null) {
-                pw.println("  mUiccCards[" + i + "]=null");
+        pw.println(" mUiccSlots: size=" + mUiccSlots.length);
+        for (int i = 0; i < mUiccSlots.length; i++) {
+            if (mUiccSlots[i] == null) {
+                pw.println("  mUiccSlots[" + i + "]=null");
             } else {
-                pw.println("  mUiccCards[" + i + "]=" + mUiccCards[i]);
-                mUiccCards[i].dump(fd, pw, args);
+                pw.println("  mUiccSlots[" + i + "]=" + mUiccSlots[i]);
+                mUiccSlots[i].dump(fd, pw, args);
             }
         }
         pw.println("mCardLogs: ");

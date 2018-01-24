@@ -97,8 +97,8 @@ public class RuimRecords extends IccRecords {
     private static final int EVENT_SMS_ON_RUIM = 21;
     private static final int EVENT_GET_SMS_DONE = 22;
 
-    private static final int EVENT_RUIM_REFRESH = 31;
     private static final int EVENT_APP_LOCKED = 32;
+    private static final int EVENT_APP_NETWORK_LOCKED = 33;
 
     public RuimRecords(UiccCardApplication app, Context c, CommandsInterface ci) {
         super(app, c, ci);
@@ -106,19 +106,19 @@ public class RuimRecords extends IccRecords {
         mAdnCache = new AdnRecordCache(mFh);
 
         mRecordsRequested = false;  // No load request is made till SIM ready
-        mLockedRecordsRequested = false;
+        mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
 
         // recordsToLoad is set to 0 because no requests are made yet
         mRecordsToLoad = 0;
 
         // NOTE the EVENT_SMS_ON_RUIM is not registered
-        mCi.registerForIccRefresh(this, EVENT_RUIM_REFRESH, null);
 
         // Start off by setting empty state
         resetRecords();
 
         mParentApp.registerForReady(this, EVENT_APP_READY, null);
         mParentApp.registerForLocked(this, EVENT_APP_LOCKED, null);
+        mParentApp.registerForNetworkLocked(this, EVENT_APP_NETWORK_LOCKED, null);
         if (DBG) log("RuimRecords X ctor this=" + this);
     }
 
@@ -126,8 +126,9 @@ public class RuimRecords extends IccRecords {
     public void dispose() {
         if (DBG) log("Disposing RuimRecords " + this);
         //Unregister for all events
-        mCi.unregisterForIccRefresh(this);
         mParentApp.unregisterForReady(this);
+        mParentApp.unregisterForLocked(this);
+        mParentApp.unregisterForNetworkLocked(this);
         resetRecords();
         super.dispose();
     }
@@ -155,7 +156,7 @@ public class RuimRecords extends IccRecords {
         // read requests made so far are not valid. This is set to
         // true only when fresh set of read requests are made.
         mRecordsRequested = false;
-        mLockedRecordsRequested = false;
+        mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
     }
 
     public String getMdnNumber() {
@@ -608,7 +609,8 @@ public class RuimRecords extends IccRecords {
                 break;
 
                 case EVENT_APP_LOCKED:
-                    onLocked();
+                case EVENT_APP_NETWORK_LOCKED:
+                    onLocked(msg.what);
                     break;
 
             case EVENT_GET_DEVICE_IDENTITY_DONE:
@@ -703,14 +705,6 @@ public class RuimRecords extends IccRecords {
                 log("Event EVENT_GET_SST_DONE Received");
             break;
 
-            case EVENT_RUIM_REFRESH:
-                isRecordLoadResponse = false;
-                ar = (AsyncResult)msg.obj;
-                if (ar.exception == null) {
-                    handleRuimRefresh((IccRefreshResponse)ar.result);
-                }
-                break;
-
             default:
                 super.handleMessage(msg);   // IccRecords handles generic record load responses
 
@@ -756,7 +750,7 @@ public class RuimRecords extends IccRecords {
 
         if (getRecordsLoaded()) {
             onAllRecordsLoaded();
-        } else if (getLockedRecordsLoaded()) {
+        } else if (getLockedRecordsLoaded() || getNetworkLockedRecordsLoaded()) {
             onLockedAllRecordsLoaded();
         } else if (mRecordsToLoad < 0) {
             loge("recordsToLoad <0, programmer error suspected");
@@ -765,7 +759,15 @@ public class RuimRecords extends IccRecords {
     }
 
     private void onLockedAllRecordsLoaded() {
-        mLockedRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+        if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_LOCKED) {
+            mLockedRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+        } else if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED) {
+            mNetworkLockedRecordsLoadedRegistrants.notifyRegistrants(
+                    new AsyncResult(null, null, null));
+        } else {
+            loge("onLockedAllRecordsLoaded: unexpected mLockedRecordsReqReason "
+                    + mLockedRecordsReqReason);
+        }
     }
 
     @Override
@@ -809,7 +811,7 @@ public class RuimRecords extends IccRecords {
 
         // TODO: The below is hacky since the SubscriptionController may not be ready at this time.
         if (!TextUtils.isEmpty(mMdn)) {
-            int phoneId = mParentApp.getUiccCard().getPhoneId();
+            int phoneId = mParentApp.getUiccProfile().getPhoneId();
             int subId = SubscriptionController.getInstance().getSubIdUsingPhoneId(phoneId);
             if (SubscriptionManager.isValidSubscriptionId(subId)) {
                 SubscriptionManager.from(mContext).setDisplayNumber(mMdn, subId);
@@ -826,9 +828,10 @@ public class RuimRecords extends IccRecords {
         mCi.getCDMASubscription(obtainMessage(EVENT_GET_CDMA_SUBSCRIPTION_DONE));
     }
 
-    private void onLocked() {
+    private void onLocked(int msg) {
         if (DBG) log("only fetch EF_ICCID in locked state");
-        mLockedRecordsRequested = true;
+        mLockedRecordsReqReason = msg == EVENT_APP_LOCKED ? LOCKED_RECORDS_REQ_REASON_LOCKED :
+                LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED;
 
         mFh.loadEFTransparent(EF_ICCID, obtainMessage(EVENT_GET_ICCID_DONE));
         mRecordsToLoad++;
@@ -933,38 +936,10 @@ public class RuimRecords extends IccRecords {
         return 0;
     }
 
-    private void handleRuimRefresh(IccRefreshResponse refreshResponse) {
-        if (refreshResponse == null) {
-            if (DBG) log("handleRuimRefresh received without input");
-            return;
-        }
-
-        if (!TextUtils.isEmpty(refreshResponse.aid)
-                && !refreshResponse.aid.equals(mParentApp.getAid())) {
-            // This is for different app. Ignore.
-            return;
-        }
-
-        switch (refreshResponse.refreshResult) {
-            case IccRefreshResponse.REFRESH_RESULT_FILE_UPDATE:
-                if (DBG) log("handleRuimRefresh with SIM_REFRESH_FILE_UPDATED");
-                mAdnCache.reset();
-                fetchRuimRecords();
-                break;
-            case IccRefreshResponse.REFRESH_RESULT_INIT:
-                if (DBG) log("handleRuimRefresh with SIM_REFRESH_INIT");
-                // need to reload all files (that we care about)
-                onIccRefreshInit();
-                break;
-            case IccRefreshResponse.REFRESH_RESULT_RESET:
-                // Refresh reset is handled by the UiccCard object.
-                if (DBG) log("handleRuimRefresh with SIM_REFRESH_RESET");
-                break;
-            default:
-                // unknown refresh operation
-                if (DBG) log("handleRuimRefresh with unknown operation");
-                break;
-        }
+    @Override
+    protected void handleFileUpdate(int efid) {
+        mAdnCache.reset();
+        fetchRuimRecords();
     }
 
     public String getMdn() {

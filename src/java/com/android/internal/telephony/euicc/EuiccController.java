@@ -15,7 +15,10 @@
  */
 package com.android.internal.telephony.euicc;
 
+import static android.telephony.euicc.EuiccManager.EUICC_OTA_STATUS_UNAVAILABLE;
+
 import android.Manifest;
+import android.Manifest.permission;
 import android.annotation.Nullable;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
@@ -38,11 +41,13 @@ import android.telephony.UiccAccessRule;
 import android.telephony.euicc.DownloadableSubscription;
 import android.telephony.euicc.EuiccInfo;
 import android.telephony.euicc.EuiccManager;
+import android.telephony.euicc.EuiccManager.OtaStatus;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.SubscriptionController;
+import com.android.internal.telephony.euicc.EuiccConnector.OtaStatusChangedCallback;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -167,6 +172,45 @@ public class EuiccController extends IEuiccController.Stub {
         } finally {
             Binder.restoreCallingIdentity(token);
         }
+    }
+
+    /**
+     * Return the current status of OTA update.
+     *
+     * <p>For API simplicity, this call blocks until completion; while it requires an IPC to load,
+     * that IPC should generally be fast.
+     */
+    @Override
+    public @OtaStatus int getOtaStatus() {
+        if (!callerCanWriteEmbeddedSubscriptions()) {
+            throw new SecurityException("Must have WRITE_EMBEDDED_SUBSCRIPTIONS to get OTA status");
+        }
+        long token = Binder.clearCallingIdentity();
+        try {
+            return blockingGetOtaStatusFromEuiccService();
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+
+    /**
+     * Start eUICC OTA update if current eUICC OS is not the latest one. When OTA is started or
+     * finished, the broadcast {@link EuiccManager#ACTION_OTA_STATUS_CHANGED} will be sent.
+     *
+     * This function will only be called from phone process and isn't exposed to the other apps.
+     */
+    public void startOtaUpdatingIfNecessary() {
+        mConnector.startOtaIfNecessary(
+                new OtaStatusChangedCallback() {
+                    @Override
+                    public void onOtaStatusChanged(int status) {
+                        sendOtaStatusChangedBroadcast();
+                    }
+
+                    @Override
+                    public void onEuiccServiceUnavailable() {}
+                });
     }
 
     @Override
@@ -921,6 +965,16 @@ public class EuiccController extends IEuiccController.Stub {
         }
     }
 
+    /**
+     * Send broadcast {@link EuiccManager#ACTION_OTA_STATUS_CHANGED} for OTA status
+     * changed.
+     */
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    public void sendOtaStatusChangedBroadcast() {
+        Intent intent = new Intent(EuiccManager.ACTION_OTA_STATUS_CHANGED);
+        mContext.sendBroadcast(intent, permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
+    }
+
     @Nullable
     private SubscriptionInfo getSubscriptionForSubscriptionId(int subscriptionId) {
         List<SubscriptionInfo> subs = mSubscriptionManager.getAvailableSubscriptionInfoList();
@@ -951,6 +1005,25 @@ public class EuiccController extends IEuiccController.Stub {
             }
         });
         return awaitResult(latch, eidRef);
+    }
+
+    private @OtaStatus int blockingGetOtaStatusFromEuiccService() {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Integer> statusRef =
+                new AtomicReference<>(EUICC_OTA_STATUS_UNAVAILABLE);
+        mConnector.getOtaStatus(new EuiccConnector.GetOtaStatusCommandCallback() {
+            @Override
+            public void onGetOtaStatusComplete(@OtaStatus int status) {
+                statusRef.set(status);
+                latch.countDown();
+            }
+
+            @Override
+            public void onEuiccServiceUnavailable() {
+                latch.countDown();
+            }
+        });
+        return awaitResult(latch, statusRef);
     }
 
     @Nullable

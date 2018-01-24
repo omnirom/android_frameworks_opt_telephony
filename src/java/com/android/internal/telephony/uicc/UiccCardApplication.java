@@ -30,7 +30,6 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.PersoSubState;
 import com.android.internal.telephony.uicc.IccCardStatus.PinState;
-import com.android.internal.telephony.SubscriptionController;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -60,7 +59,7 @@ public class UiccCardApplication {
     public static final int AUTH_CONTEXT_UNDEFINED = PhoneConstants.AUTH_CONTEXT_UNDEFINED;
 
     private final Object  mLock = new Object();
-    private UiccCard      mUiccCard; //parent
+    private UiccProfile   mUiccProfile; //parent
     private AppState      mAppState;
     private AppType       mAppType;
     private int           mAuthContext;
@@ -87,12 +86,12 @@ public class UiccCardApplication {
     private RegistrantList mPinLockedRegistrants = new RegistrantList();
     private RegistrantList mNetworkLockedRegistrants = new RegistrantList();
 
-    public UiccCardApplication(UiccCard uiccCard,
+    public UiccCardApplication(UiccProfile uiccProfile,
                         IccCardApplicationStatus as,
                         Context c,
                         CommandsInterface ci) {
         if (DBG) log("Creating UiccApp: " + as);
-        mUiccCard = uiccCard;
+        mUiccProfile = uiccProfile;
         mAppState = as.app_state;
         mAppType = as.app_type;
         mAuthContext = getAuthContext(mAppType);
@@ -432,7 +431,7 @@ public class UiccCardApplication {
     /**
      * Notifies handler of any transition into State.isPinLocked()
      */
-    public void registerForLocked(Handler h, int what, Object obj) {
+    protected void registerForLocked(Handler h, int what, Object obj) {
         synchronized (mLock) {
             Registrant r = new Registrant (h, what, obj);
             mPinLockedRegistrants.add(r);
@@ -440,7 +439,7 @@ public class UiccCardApplication {
         }
     }
 
-    public void unregisterForLocked(Handler h) {
+    protected void unregisterForLocked(Handler h) {
         synchronized (mLock) {
             mPinLockedRegistrants.remove(h);
         }
@@ -449,7 +448,7 @@ public class UiccCardApplication {
     /**
      * Notifies handler of any transition into State.NETWORK_LOCKED
      */
-    public void registerForNetworkLocked(Handler h, int what, Object obj) {
+    protected void registerForNetworkLocked(Handler h, int what, Object obj) {
         synchronized (mLock) {
             Registrant r = new Registrant (h, what, obj);
             mNetworkLockedRegistrants.add(r);
@@ -457,7 +456,7 @@ public class UiccCardApplication {
         }
     }
 
-    public void unregisterForNetworkLocked(Handler h) {
+    protected void unregisterForNetworkLocked(Handler h) {
         synchronized (mLock) {
             mNetworkLockedRegistrants.remove(h);
         }
@@ -604,7 +603,7 @@ public class UiccCardApplication {
     public PinState getPin1State() {
         synchronized (mLock) {
             if (mPin1Replaced) {
-                return mUiccCard.getUniversalPinState();
+                return mUiccProfile.getUniversalPinState();
             }
             return mPin1State;
         }
@@ -854,11 +853,11 @@ public class UiccCardApplication {
     }
 
     public int getPhoneId() {
-        return mUiccCard.getPhoneId();
+        return mUiccProfile.getPhoneId();
     }
 
-    protected UiccCard getUiccCard() {
-        return mUiccCard;
+    protected UiccProfile getUiccProfile() {
+        return mUiccProfile;
     }
 
     private void log(String msg) {
@@ -871,7 +870,7 @@ public class UiccCardApplication {
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("UiccCardApplication: " + this);
-        pw.println(" mUiccCard=" + mUiccCard);
+        pw.println(" mUiccProfile=" + mUiccProfile);
         pw.println(" mAppState=" + mAppState);
         pw.println(" mAppType=" + mAppType);
         pw.println(" mPersoSubState=" + mPersoSubState);

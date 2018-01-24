@@ -16,9 +16,9 @@
 
 package com.android.internal.telephony;
 
-import static android.telephony.RadioNetworkConstants.RadioAccessNetworks.EUTRAN;
-import static android.telephony.RadioNetworkConstants.RadioAccessNetworks.GERAN;
-import static android.telephony.RadioNetworkConstants.RadioAccessNetworks.UTRAN;
+import static android.telephony.AccessNetworkConstants.AccessNetworkType.EUTRAN;
+import static android.telephony.AccessNetworkConstants.AccessNetworkType.GERAN;
+import static android.telephony.AccessNetworkConstants.AccessNetworkType.UTRAN;
 
 import android.hardware.radio.V1_0.RadioError;
 import android.os.AsyncResult;
@@ -460,12 +460,12 @@ public final class NetworkScanRequestTracker {
         // stopped, a new scan will automatically start with nsri.
         // The new scan can interrupt the live scan only when all the below requirements are met:
         //   1. There is 1 live scan and no other pending scan
-        //   2. The new scan is requested by system process
-        //   3. The live scan is not requested by system process
+        //   2. The new scan is requested by mobile network setting menu (owned by PHONE process)
+        //   3. The live scan is not requested by mobile network setting menu
         private synchronized boolean interruptLiveScan(NetworkScanRequestInfo nsri) {
             if (mLiveRequestInfo != null && mPendingRequestInfo == null
-                    && nsri.mUid == Process.SYSTEM_UID
-                            && mLiveRequestInfo.mUid != Process.SYSTEM_UID) {
+                    && nsri.mUid == Process.PHONE_UID
+                            && mLiveRequestInfo.mUid != Process.PHONE_UID) {
                 doInterruptScan(mLiveRequestInfo.mScanId);
                 mPendingRequestInfo = nsri;
                 notifyMessenger(mLiveRequestInfo, TelephonyScanManager.CALLBACK_SCAN_ERROR,

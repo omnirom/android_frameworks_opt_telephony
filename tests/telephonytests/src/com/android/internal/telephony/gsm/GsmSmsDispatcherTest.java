@@ -26,6 +26,7 @@ import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,8 +52,8 @@ import android.util.Singleton;
 
 import com.android.internal.telephony.ContextFixture;
 import com.android.internal.telephony.ISub;
-import com.android.internal.telephony.ImsSMSDispatcher;
 import com.android.internal.telephony.SMSDispatcher;
+import com.android.internal.telephony.SmsDispatchersController;
 import com.android.internal.telephony.TelephonyTest;
 import com.android.internal.telephony.TelephonyTestUtils;
 import com.android.internal.telephony.TestApplication;
@@ -67,12 +68,15 @@ import org.mockito.Mock;
 import java.util.HashMap;
 
 public class GsmSmsDispatcherTest extends TelephonyTest {
+
+    private static final long TIMEOUT_MS = 500;
+
     @Mock
     private android.telephony.SmsMessage mSmsMessage;
     @Mock
     private SmsMessage mGsmSmsMessage;
     @Mock
-    private ImsSMSDispatcher mImsSmsDispatcher;
+    private SmsDispatchersController mSmsDispatchersController;
     @Mock
     private GsmInboundSmsHandler mGsmInboundSmsHandler;
     @Mock
@@ -105,8 +109,8 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
 
         @Override
         public void onLooperPrepared() {
-            mGsmSmsDispatcher = new GsmSMSDispatcher(mPhone, mSmsUsageMonitor,
-                    mImsSmsDispatcher, mGsmInboundSmsHandler);
+            mGsmSmsDispatcher = new GsmSMSDispatcher(mPhone, mSmsDispatchersController,
+                    mGsmInboundSmsHandler);
             setReady(true);
         }
     }
@@ -120,6 +124,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         // in the cache, a real instance is used.
         mServiceManagerMockedServices.put("isub", mISubStub);
 
+        doReturn(mSmsUsageMonitor).when(mSmsDispatchersController).getUsageMonitor();
         mGsmSmsDispatcherTestHandler = new GsmSmsDispatcherTestHandler(getClass().getSimpleName());
         mGsmSmsDispatcherTestHandler.start();
         waitUntilReady();
@@ -233,6 +238,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
                 Settings.Global.DEVICE_PROVISIONED, 1);
 
         mGsmSmsDispatcher.sendRawPdu(mSmsTracker);
+        waitForHandlerAction(mGsmSmsDispatcher, TIMEOUT_MS);
 
         verify(mSmsUsageMonitor, times(1)).checkDestination(any(), any());
         verify(mSmsUsageMonitor, times(1)).getPremiumSmsPermission(any());

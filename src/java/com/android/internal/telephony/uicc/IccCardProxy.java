@@ -82,8 +82,6 @@ public class IccCardProxy extends Handler implements IccCard {
     private static final int EVENT_NETWORK_LOCKED = 9;
 
     private static final int EVENT_ICC_RECORD_EVENTS = 500;
-    private static final int EVENT_SUBSCRIPTION_ACTIVATED = 501;
-    private static final int EVENT_SUBSCRIPTION_DEACTIVATED = 502;
     private static final int EVENT_CARRIER_PRIVILEGES_LOADED = 503;
 
     private Integer mPhoneId = null;
@@ -97,6 +95,7 @@ public class IccCardProxy extends Handler implements IccCard {
 
     private int mCurrentAppType = UiccController.APP_FAM_3GPP; //default to 3gpp?
     private UiccController mUiccController = null;
+    private UiccSlot mUiccSlot = null;
     private UiccCard mUiccCard = null;
     private UiccCardApplication mUiccApplication = null;
     private IccRecords mIccRecords = null;
@@ -241,16 +240,6 @@ public class IccCardProxy extends Handler implements IccCard {
                 mNetworkLockedRegistrants.notifyRegistrants();
                 setExternalState(State.NETWORK_LOCKED);
                 break;
-            case EVENT_SUBSCRIPTION_ACTIVATED:
-                log("EVENT_SUBSCRIPTION_ACTIVATED");
-                onSubscriptionActivated();
-                break;
-
-            case EVENT_SUBSCRIPTION_DEACTIVATED:
-                log("EVENT_SUBSCRIPTION_DEACTIVATED");
-                onSubscriptionDeactivated();
-                break;
-
             case EVENT_ICC_RECORD_EVENTS:
                 if ((mCurrentAppType == UiccController.APP_FAM_3GPP) && (mIccRecords != null)) {
                     AsyncResult ar = (AsyncResult)msg.obj;
@@ -276,23 +265,13 @@ public class IccCardProxy extends Handler implements IccCard {
         }
     }
 
-    private void onSubscriptionActivated() {
-        updateIccAvailability();
-        updateStateProperty();
-    }
-
-    private void onSubscriptionDeactivated() {
-        resetProperties();
-        updateIccAvailability();
-        updateStateProperty();
-    }
-
     private void onRecordsLoaded() {
         broadcastInternalIccStateChangedIntent(IccCardConstants.INTENT_VALUE_ICC_LOADED, null);
     }
 
     private void updateIccAvailability() {
         synchronized (mLock) {
+            UiccSlot newSlot = mUiccController.getUiccSlotForPhone(mPhoneId);
             UiccCard newCard = mUiccController.getUiccCard(mPhoneId);
             UiccCardApplication newApp = null;
             IccRecords newRecords = null;
@@ -303,9 +282,11 @@ public class IccCardProxy extends Handler implements IccCard {
                 }
             }
 
-            if (mIccRecords != newRecords || mUiccApplication != newApp || mUiccCard != newCard) {
+            if (mIccRecords != newRecords || mUiccApplication != newApp || mUiccCard != newCard
+                    || mUiccSlot != newSlot) {
                 if (DBG) log("Icc changed. Reregistering.");
                 unregisterUiccCardEvents();
+                mUiccSlot = newSlot;
                 mUiccCard = newCard;
                 mUiccApplication = newApp;
                 mIccRecords = newRecords;
@@ -406,34 +387,35 @@ public class IccCardProxy extends Handler implements IccCard {
     }
 
     private void registerUiccCardEvents() {
-        if (mUiccCard != null) {
-            mUiccCard.registerForAbsent(this, EVENT_ICC_ABSENT, null);
+        if (mUiccSlot != null) {
+            // todo: reregistration is not needed unless slot mapping changes
+            mUiccSlot.registerForAbsent(this, EVENT_ICC_ABSENT, null);
         }
         if (mUiccApplication != null) {
             mUiccApplication.registerForReady(this, EVENT_APP_READY, null);
-            mUiccApplication.registerForNetworkLocked(this, EVENT_NETWORK_LOCKED, null);
         }
         if (mIccRecords != null) {
             mIccRecords.registerForImsiReady(this, EVENT_IMSI_READY, null);
             mIccRecords.registerForRecordsLoaded(this, EVENT_RECORDS_LOADED, null);
             mIccRecords.registerForLockedRecordsLoaded(this, EVENT_ICC_LOCKED, null);
+            mIccRecords.registerForNetworkLockedRecordsLoaded(this, EVENT_NETWORK_LOCKED, null);
             mIccRecords.registerForRecordsEvents(this, EVENT_ICC_RECORD_EVENTS, null);
         }
     }
 
     private void unregisterUiccCardEvents() {
-        if (mUiccCard != null) mUiccCard.unregisterForAbsent(this);
+        if (mUiccSlot != null) mUiccSlot.unregisterForAbsent(this);
         if (mUiccCard != null) mUiccCard.unregisterForCarrierPrivilegeRulesLoaded(this);
-        if (mUiccApplication != null) mUiccApplication.unregisterForReady(this);
-        if (mUiccApplication != null) mUiccApplication.unregisterForLocked(this);
-        if (mUiccApplication != null) mUiccApplication.unregisterForNetworkLocked(this);
-        if (mIccRecords != null) mIccRecords.unregisterForImsiReady(this);
-        if (mIccRecords != null) mIccRecords.unregisterForRecordsLoaded(this);
-        if (mIccRecords != null) mIccRecords.unregisterForRecordsEvents(this);
-    }
-
-    private void updateStateProperty() {
-        mTelephonyManager.setSimStateForPhone(mPhoneId, getState().toString());
+        if (mUiccApplication != null) {
+            mUiccApplication.unregisterForReady(this);
+        }
+        if (mIccRecords != null) {
+            mIccRecords.unregisterForImsiReady(this);
+            mIccRecords.unregisterForRecordsLoaded(this);
+            mIccRecords.unregisterForLockedRecordsLoaded(this);
+            mIccRecords.unregisterForNetworkLockedRecordsLoaded(this);
+            mIccRecords.unregisterForRecordsEvents(this);
+        }
     }
 
     private void broadcastIccStateChangedIntent(String value, String reason) {
