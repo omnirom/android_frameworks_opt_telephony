@@ -33,6 +33,9 @@ import com.android.internal.telephony.imsphone.ImsPhoneCallTracker;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.uicc.IccCardProxy;
+import com.android.internal.telephony.uicc.IccCardStatus;
+import com.android.internal.telephony.uicc.UiccCard;
+import com.android.internal.telephony.uicc.UiccProfile;
 
 import dalvik.system.PathClassLoader;
 
@@ -110,13 +113,6 @@ public class TelephonyComponentFactory {
         return new NitzStateMachine(phone);
     }
 
-    /**
-     * Returns a new {@link TimeServiceHelper} instance.
-     */
-    public TimeServiceHelper makeTimeServiceHelper(Context context) {
-        return new TimeServiceHelper(context);
-    }
-
     public SimActivationTracker makeSimActivationTracker(Phone phone) {
         return new SimActivationTracker(phone);
     }
@@ -151,6 +147,14 @@ public class TelephonyComponentFactory {
     public IccCardProxy makeIccCardProxy(Context context, CommandsInterface ci, int phoneId) {
         Rlog.d(LOG_TAG, "makeIccCardProxy");
         return new IccCardProxy(context, ci, phoneId);
+    }
+
+    /**
+     * Create a new UiccProfile object.
+     */
+    public UiccProfile makeUiccProfile(Context context, CommandsInterface ci, IccCardStatus ics,
+                                       int phoneId, UiccCard uiccCard) {
+        return new UiccProfile(context, ci, ics, phoneId, uiccCard);
     }
 
     public EriManager makeEriManager(Phone phone, Context context, int eriFileSource) {

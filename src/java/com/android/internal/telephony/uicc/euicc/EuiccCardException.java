@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package android.telephony.ims.internal;
+package com.android.internal.telephony.uicc.euicc;
 
-import android.telephony.ims.internal.stub.ImsFeatureConfiguration;
-import android.telephony.ims.internal.stub.ImsRegistrationImplBase;
+/**
+ * The base exception class of all exceptions thrown by the methods of an {@link EuiccCard}
+ * instance.
+ */
+public class EuiccCardException extends Exception {
+    public EuiccCardException() {}
 
-public class TestImsRegistration  extends ImsRegistrationImplBase {
-
-    private ImsFeatureConfiguration mTestConfig;
-    private ImsRegistrationImplBase.Callback mCallback = new ImsRegistrationImplBase.Callback() {
-
-    };
-
-    public void setConfig(ImsFeatureConfiguration c) {
-        mTestConfig = c;
+    public EuiccCardException(String message) {
+        super(message);
     }
 
+    public EuiccCardException(String message, Throwable throwable) {
+        super(message, throwable);
+    }
 }
