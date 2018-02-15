@@ -1138,12 +1138,8 @@ public class PhoneMock extends Phone {
         throw new RuntimeException("not implemented");
     }
 
-    public Connection dial(String dialString, int videoState) throws CallStateException {
-        throw new RuntimeException("not implemented");
-    }
-
-    public Connection dial(String dialString, UUSInfo uusInfo, int videoState, Bundle intentExtras)
-            throws CallStateException {
+    @Override
+    public Connection dial(String dialString, DialArgs dialArgs) throws CallStateException {
         throw new RuntimeException("not implemented");
     }
 
@@ -1206,6 +1202,14 @@ public class PhoneMock extends Phone {
     public void setCallForwardingOption(int commandInterfaceCFReason, int commandInterfaceCFAction,
             String dialingNumber, int timerSeconds, Message onComplete) {
         throw new RuntimeException("not implemented");
+    }
+
+    public void getCallBarring(String facility, String password, Message onComplete,
+            int serviceClass) {
+    }
+
+    public void setCallBarring(String facility, boolean lockState, String password,
+            Message onComplete, int serviceClass) {
     }
 
     public void getOutgoingCallerIdDisplay(Message onComplete) {

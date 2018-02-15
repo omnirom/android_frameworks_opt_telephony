@@ -36,9 +36,9 @@ import android.telephony.ServiceState;
 import android.text.TextUtils;
 
 import com.android.ims.ImsCall;
-import com.android.ims.ImsCallProfile;
+import android.telephony.ims.ImsCallProfile;
 import com.android.ims.ImsException;
-import com.android.ims.ImsStreamMediaProfile;
+import android.telephony.ims.ImsStreamMediaProfile;
 import com.android.ims.internal.ImsVideoCallProviderWrapper;
 import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.Connection;
@@ -428,6 +428,7 @@ public class ImsPhoneConnection extends Connection implements
             mDisconnected = true;
 
             mOwner.mPhone.notifyDisconnect(this);
+            notifyDisconnect(mCause);
 
             if (mParent != null) {
                 changed = mParent.connectionDisconnected(this);
@@ -873,6 +874,25 @@ public class ImsPhoneConnection extends Connection implements
                         mShouldIgnoreVideoStateChanges = true;
                     }
                 }
+
+                if (negotiatedCallProfile.mMediaProfile != null) {
+                    boolean isRttOn = negotiatedCallProfile.mMediaProfile.isRttCall();
+
+                    if (isRttOn && mRttTextHandler == null) {
+                        Rlog.d(LOG_TAG, "updateMediaCapabilities -- turning RTT on, profile="
+                                + negotiatedCallProfile);
+                        startRttTextProcessing();
+                        onRttInitiated();
+                        changed = true;
+                    } else if (!isRttOn && mRttTextHandler != null) {
+                        Rlog.d(LOG_TAG, "updateMediaCapabilities -- turning RTT off, profile="
+                                + negotiatedCallProfile);
+                        mRttTextHandler.tearDown();
+                        mRttTextHandler = null;
+                        onRttTerminated();
+                        changed = true;
+                    }
+                }
             }
 
             // Check for a change in the capabilities for the call and update
@@ -960,7 +980,15 @@ public class ImsPhoneConnection extends Connection implements
         mRttTextStream = rttTextStream;
     }
 
+    public boolean hasRttTextStream() {
+        return mRttTextStream != null;
+    }
+
     public void startRttTextProcessing() {
+        if (mRttTextStream == null) {
+            Rlog.w(LOG_TAG, "startRttTextProcessing: no RTT text stream. Ignoring.");
+            return;
+        }
         getOrCreateRttTextHandler().initialize(mRttTextStream);
     }
 
