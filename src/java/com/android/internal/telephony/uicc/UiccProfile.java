@@ -316,6 +316,11 @@ public class UiccProfile extends Handler implements IccCard {
             return;
         }
 
+        if (mUiccCard.getCardState() == IccCardStatus.CardState.CARDSTATE_ABSENT) {
+            setExternalState(IccCardConstants.State.ABSENT);
+            return;
+        }
+
         // By process of elimination, the UICC Card State = PRESENT and state needs to be decided
         // based on apps
         if (mUiccApplication == null) {

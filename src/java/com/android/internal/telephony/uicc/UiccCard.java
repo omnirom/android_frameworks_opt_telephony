@@ -84,15 +84,11 @@ public class UiccCard {
             mIccid = ics.iccid;
             updateCardId();
 
-            if (mCardState != CardState.CARDSTATE_ABSENT) {
-                if (mUiccProfile == null) {
-                    mUiccProfile = TelephonyComponentFactory.getInstance().makeUiccProfile(
-                            mContext, mCi, ics, mPhoneId, this);
-                } else {
-                    mUiccProfile.update(mContext, mCi, ics);
-                }
+            if (mUiccProfile == null) {
+                mUiccProfile = TelephonyComponentFactory.getInstance().makeUiccProfile(
+                        mContext, mCi, ics, mPhoneId, this);
             } else {
-                throw new RuntimeException("Card state is absent when updating!");
+                mUiccProfile.update(mContext, mCi, ics);
             }
         }
     }
