@@ -68,7 +68,6 @@ public class SubscriptionInfoUpdater extends Handler {
     private static final String LOG_TAG = "SubscriptionInfoUpdater";
     private static final int PROJECT_SIM_NUM = TelephonyManager.getDefault().getPhoneCount();
 
-    protected static final int EVENT_SIM_LOCKED_QUERY_ICCID_DONE = 1;
     private static final int EVENT_GET_NETWORK_SELECTION_MODE_DONE = 2;
     private static final int EVENT_SIM_LOADED = 3;
     private static final int EVENT_SIM_ABSENT = 4;
@@ -258,7 +257,7 @@ public class SubscriptionInfoUpdater extends Handler {
                 break;
 
             case EVENT_SIM_ABSENT:
-                handleSimAbsentOrError(msg.arg1, IccCardConstants.INTENT_VALUE_ICC_ABSENT);
+                handleSimAbsent(msg.arg1);
                 break;
 
             case EVENT_SIM_LOCKED:
@@ -273,7 +272,7 @@ public class SubscriptionInfoUpdater extends Handler {
                 break;
 
             case EVENT_SIM_IO_ERROR:
-                handleSimAbsentOrError(msg.arg1, IccCardConstants.INTENT_VALUE_ICC_CARD_IO_ERROR);
+                handleSimError(msg.arg1);
                 break;
 
             case EVENT_SIM_RESTRICTED:
@@ -325,7 +324,7 @@ public class SubscriptionInfoUpdater extends Handler {
         sendMessage(obtainMessage(EVENT_REFRESH_EMBEDDED_SUBSCRIPTIONS, callback));
     }
 
-    protected static class QueryIccIdUserObj {
+    private static class QueryIccIdUserObj {
         public String reason;
         public int slotId;
 
@@ -504,7 +503,7 @@ public class SubscriptionInfoUpdater extends Handler {
         mCarrierServiceBindHelper.updateForPhoneId(slotId, simState);
     }
 
-    protected void handleSimAbsentOrError(int slotId, String simState) {
+    protected void handleSimAbsent(int slotId) {
         if (mIccId[slotId] != null && !mIccId[slotId].equals(ICCID_STRING_FOR_NO_SIM)) {
             logd("SIM" + (slotId + 1) + " hot plug out or error.");
         }
@@ -518,7 +517,7 @@ public class SubscriptionInfoUpdater extends Handler {
         broadcastSimApplicationStateChanged(slotId, TelephonyManager.SIM_STATE_NOT_READY);
     }
 
-    private void handleSimError(int slotId) {
+    protected void handleSimError(int slotId) {
         if (mIccId[slotId] != null && !mIccId[slotId].equals(ICCID_STRING_FOR_NO_SIM)) {
             logd("SIM" + (slotId + 1) + " Error ");
         }
