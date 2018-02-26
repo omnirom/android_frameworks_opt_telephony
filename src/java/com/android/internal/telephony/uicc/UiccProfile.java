@@ -223,7 +223,8 @@ public class UiccProfile extends Handler implements IccCard {
         }
         switch (msg.what) {
             case EVENT_NETWORK_LOCKED:
-                mNetworkLockedRegistrants.notifyRegistrants();
+                mNetworkLockedRegistrants.notifyRegistrants(
+                        new AsyncResult(null, mUiccApplication.getPersoSubState().ordinal(), null));
                 // intentional fall through
             case EVENT_RADIO_OFF_OR_UNAVAILABLE:
             case EVENT_ICC_LOCKED:
@@ -350,8 +351,7 @@ public class UiccProfile extends Handler implements IccCard {
                 cardLocked = true;
                 lockedState = IccCardConstants.State.PUK_REQUIRED;
             } else if (appState == IccCardApplicationStatus.AppState.APPSTATE_SUBSCRIPTION_PERSO) {
-                if (mUiccApplication.getPersoSubState()
-                        == IccCardApplicationStatus.PersoSubState.PERSOSUBSTATE_SIM_NETWORK) {
+                if (mUiccApplication.isPersoLocked()) {
                     if (VDBG) log("updateExternalState: PERSOSUBSTATE_SIM_NETWORK");
                     cardLocked = true;
                     lockedState = IccCardConstants.State.NETWORK_LOCKED;
@@ -592,7 +592,8 @@ public class UiccProfile extends Handler implements IccCard {
             mNetworkLockedRegistrants.add(r);
 
             if (getState() == IccCardConstants.State.NETWORK_LOCKED) {
-                r.notifyRegistrant();
+                r.notifyRegistrant(new AsyncResult(null, mUiccApplication.getPersoSubState()
+                        .ordinal(), null));
             }
         }
     }
