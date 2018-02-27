@@ -56,6 +56,7 @@ import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.VoLteServiceState;
+import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
 
 import com.android.ims.ImsCall;
@@ -409,14 +410,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Set a system property, unless we're in unit test mode
+     * Set a system property for the current phone, unless we're in unit test mode
      */
     // CAF_MSIM TODO this need to be replated with TelephonyManager API ?
     public void setSystemProperty(String property, String value) {
-        if(getUnitTestMode()) {
+        if (getUnitTestMode()) {
             return;
         }
-        SystemProperties.set(property, value);
+        TelephonyManager.setTelephonyProperty(mPhoneId, property, value);
+    }
+
+    /**
+     * Set a system property for all phones, unless we're in unit test mode
+     */
+    public void setGlobalSystemProperty(String property, String value) {
+        if (getUnitTestMode()) {
+            return;
+        }
+        TelephonyManager.setTelephonyProperty(property, value);
     }
 
     /**
@@ -2160,7 +2171,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     public void setIsInEcm(boolean isInEcm) {
-        setSystemProperty(TelephonyProperties.PROPERTY_INECM_MODE, String.valueOf(isInEcm));
+        setGlobalSystemProperty(TelephonyProperties.PROPERTY_INECM_MODE, String.valueOf(isInEcm));
         mIsPhoneInEcmState = isInEcm;
     }
 
@@ -3190,6 +3201,20 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         }
         Rlog.d(LOG_TAG, "isImsRegistered =" + isVolteEnabled);
         return isVolteEnabled;
+    }
+
+    /**
+     * @return the IMS MmTel Registration technology for this Phone, defined in
+     * {@link ImsRegistrationImplBase}.
+     */
+    public int getImsRegistrationTech() {
+        Phone imsPhone = mImsPhone;
+        int regTech = ImsRegistrationImplBase.REGISTRATION_TECH_NONE;
+        if (imsPhone != null) {
+            regTech = imsPhone.getImsRegistrationTech();
+        }
+        Rlog.d(LOG_TAG, "getImsRegistrationTechnology =" + regTech);
+        return regTech;
     }
 
     private boolean getRoamingOverrideHelper(String prefix, String key) {

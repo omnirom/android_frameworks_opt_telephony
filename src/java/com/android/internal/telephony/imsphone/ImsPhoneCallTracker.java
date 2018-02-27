@@ -2177,6 +2177,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             }
             ImsPhoneConnection conn = findConnection(imsCall);
             if (conn != null) {
+                if (DBG) log("onCallUpdated: profile is " + imsCall.getCallProfile());
                 processCallStateChange(imsCall, conn.getCall().mState,
                         DisconnectCause.NOT_DISCONNECTED, true /*ignore state update*/);
                 mMetrics.writeImsCallState(mPhone.getPhoneId(),
@@ -2529,7 +2530,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             // Type of notification: 0 = MO; 1 = MT
             // Refer SuppServiceNotification class documentation.
             supp.notificationType = 1;
-            supp.code = SuppServiceNotification.MT_CODE_CALL_RETRIEVED;
+            supp.code = SuppServiceNotification.CODE_2_CALL_RETRIEVED;
             mPhone.notifySuppSvcNotification(supp);
             mMetrics.writeOnImsCallResumeReceived(mPhone.getPhoneId(), imsCall.getCallSession());
         }
@@ -3330,7 +3331,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         return mState;
     }
 
-    private int getImsRegistrationTech() {
+    public int getImsRegistrationTech() {
         if (mImsManager != null) {
             return mImsManager.getRegistrationTech();
         }
@@ -3881,10 +3882,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
 
         SuppServiceNotification supp = new SuppServiceNotification();
-        // Type of notification: 0 = MO; 1 = MT
-        // Refer SuppServiceNotification class documentation.
-        supp.notificationType = 1;
-        supp.code = SuppServiceNotification.MT_CODE_CALL_ON_HOLD;
+        supp.notificationType = SuppServiceNotification.NOTIFICATION_TYPE_CODE_2;
+        supp.code = SuppServiceNotification.CODE_2_CALL_ON_HOLD;
         mPhone.notifySuppSvcNotification(supp);
         mMetrics.writeOnImsCallHoldReceived(mPhone.getPhoneId(), imsCall.getCallSession());
     }

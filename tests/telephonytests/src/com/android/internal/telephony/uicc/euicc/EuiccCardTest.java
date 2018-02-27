@@ -28,6 +28,7 @@ import static org.mockito.Mockito.verify;
 
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Message;
 import android.service.carrier.CarrierIdentifier;
 import android.service.euicc.EuiccProfileInfo;
 import android.telephony.UiccAccessRule;
@@ -102,6 +103,9 @@ public class EuiccCardTest extends TelephonyTest {
                         protected byte[] getDeviceId() {
                             return IccUtils.bcdToBytes("987654321012345");
                         }
+
+                        @Override
+                        protected void loadEidAndNotifyRegistrants() {}
                     };
             mHandler = new Handler(mTestHandlerThread.getLooper());
             setReady(true);
@@ -145,6 +149,38 @@ public class EuiccCardTest extends TelephonyTest {
             fail("Unexpected exception: " + ExceptionUtils.getCompleteMessage(e) + "\n-----\n"
                     + Log.getStackTraceString(e.getCause()) + "-----");
         }
+    }
+
+    @Test
+    public void testLoadEidAndNotifyRegistrants() throws InterruptedException {
+        int channel = mockLogicalChannelResponses("BF3E065A041A2B3C4D9000");
+
+        {
+            final CountDownLatch latch = new CountDownLatch(1);
+            mHandler.post(() -> {
+                mEuiccCard = new EuiccCard(mContextFixture.getTestDouble(), mMockCi,
+                        mMockIccCardStatus, 0 /* phoneId */);
+                latch.countDown();
+            });
+            assertTrue(latch.await(WAIT_TIMEOUT_MLLIS, TimeUnit.MILLISECONDS));
+        }
+
+        final int eventEidReady = 0;
+        final CountDownLatch latch = new CountDownLatch(1);
+        Handler handler = new Handler(mTestHandlerThread.getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                if (msg.what == eventEidReady) {
+                    assertEquals("1A2B3C4D", mEuiccCard.getEid());
+                    latch.countDown();
+                }
+            }
+        };
+
+        mEuiccCard.registerForEidReady(handler, eventEidReady, null /* obj */);
+        assertTrue(latch.await(WAIT_TIMEOUT_MLLIS, TimeUnit.MILLISECONDS));
+
+        verifyStoreData(channel, "BF3E035C015A");
     }
 
     @Test
@@ -223,7 +259,7 @@ public class EuiccCardTest extends TelephonyTest {
                                         "ABCD92CBB156B280FA4E1429A6ECEEB6E5C1BFE4"),
                                 "com.google.android.apps.myapp", 1)
                 },
-                profile.getUiccAccessRules());
+                profile.getUiccAccessRules().toArray());
         verifyStoreData(channel, "BF2D195A0A896700000000004523015C0B5A909192B79F709599BF76");
     }
 

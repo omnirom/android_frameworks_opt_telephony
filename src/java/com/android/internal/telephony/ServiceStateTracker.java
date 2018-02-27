@@ -1725,21 +1725,22 @@ public class ServiceStateTracker extends Handler {
         int ints[];
         switch (what) {
             case EVENT_POLL_STATE_REGISTRATION: {
-                NetworkRegistrationState regStates = (NetworkRegistrationState) ar.result;
+                NetworkRegistrationState networkRegState = (NetworkRegistrationState) ar.result;
                 VoiceSpecificRegistrationStates voiceSpecificStates =
-                        regStates.getVoiceSpecificStates();
+                        networkRegState.getVoiceSpecificStates();
 
-                int registrationState = regStates.getRegState();
+                int registrationState = networkRegState.getRegState();
                 int cssIndicator = voiceSpecificStates.cssSupported ? 1 : 0;
                 int newVoiceRat = ServiceState.networkTypeToRilRadioTechnology(
-                        regStates.getAccessNetworkTechnology());
+                        networkRegState.getAccessNetworkTechnology());
 
                 mNewSS.setVoiceRegState(regCodeToServiceState(registrationState));
                 mNewSS.setCssIndicator(cssIndicator);
                 mNewSS.setRilVoiceRadioTechnology(newVoiceRat);
+                mNewSS.addNetworkRegistrationState(networkRegState);
 
                 //Denial reason if registrationState = 3
-                int reasonForDenial = regStates.getReasonForDenial();
+                int reasonForDenial = networkRegState.getReasonForDenial();
                 if (mPhone.isPhoneTypeGsm()) {
 
                     mGsmRoaming = regCodeIsRoaming(registrationState);
@@ -1747,7 +1748,7 @@ public class ServiceStateTracker extends Handler {
 
                     boolean isVoiceCapable = mPhone.getContext().getResources()
                             .getBoolean(com.android.internal.R.bool.config_voice_capable);
-                    mEmergencyOnly = regStates.isEmergencyEnabled();
+                    mEmergencyOnly = networkRegState.isEmergencyEnabled();
                 } else {
                     int roamingIndicator = voiceSpecificStates.roamingIndicator;
 
@@ -1772,7 +1773,7 @@ public class ServiceStateTracker extends Handler {
 
                     int systemId = 0;
                     int networkId = 0;
-                    CellIdentity cellIdentity = regStates.getCellIdentity();
+                    CellIdentity cellIdentity = networkRegState.getCellIdentity();
                     if (cellIdentity != null && cellIdentity.getType() == CellInfoType.CDMA) {
                         systemId = ((CellIdentityCdma) cellIdentity).getSystemId();
                         networkId = ((CellIdentityCdma) cellIdentity).getNetworkId();
@@ -1792,7 +1793,7 @@ public class ServiceStateTracker extends Handler {
                     }
                 }
 
-                processCellLocationInfo(mNewCellLoc, regStates.getCellIdentity());
+                processCellLocationInfo(mNewCellLoc, networkRegState.getCellIdentity());
 
                 if (DBG) {
                     log("handlPollVoiceRegResultMessage: regState=" + registrationState
@@ -1802,33 +1803,34 @@ public class ServiceStateTracker extends Handler {
             }
 
             case EVENT_POLL_STATE_GPRS: {
-                NetworkRegistrationState regStates = (NetworkRegistrationState) ar.result;
+                NetworkRegistrationState networkRegState = (NetworkRegistrationState) ar.result;
                 DataSpecificRegistrationStates dataSpecificStates =
-                        regStates.getDataSpecificStates();
-                int regState = regStates.getRegState();
-                int serviceState = regCodeToServiceState(regState);
+                        networkRegState.getDataSpecificStates();
+                int registrationState = networkRegState.getRegState();
+                int serviceState = regCodeToServiceState(registrationState);
                 int newDataRat = ServiceState.networkTypeToRilRadioTechnology(
-                        regStates.getAccessNetworkTechnology());
+                        networkRegState.getAccessNetworkTechnology());
                 mNewSS.setDataRegState(serviceState);
                 mNewSS.setRilDataRadioTechnology(newDataRat);
+                mNewSS.addNetworkRegistrationState(networkRegState);
 
                 if (mPhone.isPhoneTypeGsm()) {
 
-                    mNewReasonDataDenied = regStates.getReasonForDenial();
+                    mNewReasonDataDenied = networkRegState.getReasonForDenial();
                     mNewMaxDataCalls = dataSpecificStates.maxDataCalls;
-                    mDataRoaming = regCodeIsRoaming(regState);
+                    mDataRoaming = regCodeIsRoaming(registrationState);
                     // Save the data roaming state reported by modem registration before resource
                     // overlay or carrier config possibly overrides it.
                     mNewSS.setDataRoamingFromRegistration(mDataRoaming);
 
                     if (DBG) {
                         log("handlPollStateResultMessage: GsmSST dataServiceState=" + serviceState
-                                + " regState=" + regState
+                                + " regState=" + registrationState
                                 + " dataRadioTechnology=" + newDataRat);
                     }
                 } else if (mPhone.isPhoneTypeCdma()) {
 
-                    boolean isDataRoaming = regCodeIsRoaming(regState);
+                    boolean isDataRoaming = regCodeIsRoaming(registrationState);
                     mNewSS.setDataRoaming(isDataRoaming);
                     // Save the data roaming state reported by modem registration before resource
                     // overlay or carrier config possibly overrides it.
@@ -1836,7 +1838,7 @@ public class ServiceStateTracker extends Handler {
 
                     if (DBG) {
                         log("handlPollStateResultMessage: cdma dataServiceState=" + serviceState
-                                + " regState=" + regState
+                                + " regState=" + registrationState
                                 + " dataRadioTechnology=" + newDataRat);
                     }
                 } else {
@@ -1857,19 +1859,20 @@ public class ServiceStateTracker extends Handler {
                     }
 
                     // voice roaming state in done while handling EVENT_POLL_STATE_REGISTRATION_CDMA
-                    boolean isDataRoaming = regCodeIsRoaming(regState);
+                    boolean isDataRoaming = regCodeIsRoaming(registrationState);
                     mNewSS.setDataRoaming(isDataRoaming);
                     // Save the data roaming state reported by modem registration before resource
                     // overlay or carrier config possibly overrides it.
                     mNewSS.setDataRoamingFromRegistration(isDataRoaming);
                     if (DBG) {
                         log("handlPollStateResultMessage: CdmaLteSST dataServiceState="
-                                + serviceState + " regState=" + regState + " dataRadioTechnology="
-                                + newDataRat);
+                                + serviceState + " registrationState=" + registrationState
+                                + " dataRadioTechnology=" + newDataRat);
                     }
                 }
 
-                updateServiceStateLteEarfcnBoost(mNewSS, getLteEarfcn(regStates.getCellIdentity()));
+                updateServiceStateLteEarfcnBoost(mNewSS,
+                        getLteEarfcn(networkRegState.getCellIdentity()));
                 break;
             }
 
@@ -1879,8 +1882,9 @@ public class ServiceStateTracker extends Handler {
 
                     if (opNames != null && opNames.length >= 3) {
                         // FIXME: Giving brandOverride higher precedence, is this desired?
-                        String brandOverride = mUiccController.getUiccCard(getPhoneId()) != null ?
-                                mUiccController.getUiccCard(getPhoneId()).getOperatorBrandOverride() : null;
+                        String brandOverride = mUiccController.getUiccCard(getPhoneId()) != null
+                                ? mUiccController.getUiccCard(getPhoneId())
+                                        .getOperatorBrandOverride() : null;
                         if (brandOverride != null) {
                             log("EVENT_POLL_STATE_OPERATOR: use brandOverride=" + brandOverride);
                             mNewSS.setOperatorName(brandOverride, brandOverride, opNames[2]);
@@ -1910,8 +1914,9 @@ public class ServiceStateTracker extends Handler {
                             // NV device (as opposed to CSIM)
                             mNewSS.setOperatorName(opNames[0], opNames[1], opNames[2]);
                         } else {
-                            String brandOverride = mUiccController.getUiccCard(getPhoneId()) != null ?
-                                    mUiccController.getUiccCard(getPhoneId()).getOperatorBrandOverride() : null;
+                            String brandOverride = mUiccController.getUiccCard(getPhoneId()) != null
+                                    ? mUiccController.getUiccCard(getPhoneId())
+                                    .getOperatorBrandOverride() : null;
                             if (brandOverride != null) {
                                 mNewSS.setOperatorName(brandOverride, brandOverride, opNames[2]);
                             } else {
@@ -3021,11 +3026,11 @@ public class ServiceStateTracker extends Handler {
         String idd = mHbpcdUtils.getIddByMcc(
                 Integer.parseInt(operatorNumeric.substring(0,3)));
         if (idd != null && !idd.isEmpty()) {
-            mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING,
+            mPhone.setGlobalSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING,
                     idd);
         } else {
             // use default "+", since we don't know the current IDP
-            mPhone.setSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING, "+");
+            mPhone.setGlobalSystemProperty(TelephonyProperties.PROPERTY_OPERATOR_IDP_STRING, "+");
         }
     }
 

@@ -18,7 +18,10 @@ package com.android.internal.telephony.uicc.euicc;
 
 import android.annotation.Nullable;
 import android.content.Context;
+import android.os.AsyncResult;
 import android.os.Handler;
+import android.os.Registrant;
+import android.os.RegistrantList;
 import android.service.carrier.CarrierIdentifier;
 import android.service.euicc.EuiccProfileInfo;
 import android.telephony.Rlog;
@@ -48,6 +51,7 @@ import com.android.internal.telephony.uicc.euicc.apdu.RequestProvider;
 import com.android.internal.telephony.uicc.euicc.async.AsyncResultCallback;
 import com.android.internal.telephony.uicc.euicc.async.AsyncResultHelper;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -97,13 +101,54 @@ public class EuiccCard extends UiccCard {
 
     private final ApduSender mApduSender;
     private final Object mLock = new Object();
+    private final RegistrantList mEidReadyRegistrants = new RegistrantList();
     private EuiccSpecVersion mSpecVersion;
-    private String mEid;
+    private volatile String mEid;
 
     public EuiccCard(Context c, CommandsInterface ci, IccCardStatus ics, int phoneId) {
         super(c, ci, ics, phoneId);
         // TODO: Set supportExtendedApdu based on ATR.
         mApduSender = new ApduSender(ci, ISD_R_AID, false /* supportExtendedApdu */);
+
+        loadEidAndNotifyRegistrants();
+    }
+
+    /**
+     * Registers to be notified when EID is ready. If the EID is ready when this method is called,
+     * the registrant will be notified immediately.
+     */
+    public void registerForEidReady(Handler h, int what, Object obj) {
+        Registrant r = new Registrant(h, what, obj);
+        if (mEid != null) {
+            r.notifyRegistrant(new AsyncResult(null, null, null));
+        } else {
+            mEidReadyRegistrants.add(r);
+        }
+    }
+
+    /**
+     * Unregisters to be notified when EID is ready.
+     */
+    public void unregisterForEidReady(Handler h) {
+        mEidReadyRegistrants.remove(h);
+    }
+
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    protected void loadEidAndNotifyRegistrants() {
+        Handler euiccMainThreadHandler = new Handler();
+        AsyncResultCallback<String> cardCb = new AsyncResultCallback<String>() {
+            @Override
+            public void onResult(String result) {
+                mEidReadyRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+            }
+
+            @Override
+            public void onException(Throwable e) {
+                // Not notifying registrants if getting eid fails.
+                Rlog.e(LOG_TAG, "Failed loading eid", e);
+            }
+        };
+        getEid(cardCb, euiccMainThreadHandler);
     }
 
     /**
@@ -145,7 +190,10 @@ public class EuiccCard extends UiccCard {
                             loge("Profile must have an ICCID.");
                             continue;
                         }
-                        EuiccProfileInfo.Builder profileBuilder = new EuiccProfileInfo.Builder();
+                        String strippedIccIdString =
+                                stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
+                        EuiccProfileInfo.Builder profileBuilder =
+                                new EuiccProfileInfo.Builder(strippedIccIdString);
                         buildProfile(profileNode, profileBuilder);
 
                         EuiccProfileInfo profile = profileBuilder.build();
@@ -178,7 +226,10 @@ public class EuiccCard extends UiccCard {
                         return null;
                     }
                     Asn1Node profileNode = profileNodes.get(0);
-                    EuiccProfileInfo.Builder profileBuilder = new EuiccProfileInfo.Builder();
+                    String strippedIccIdString =
+                            stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
+                    EuiccProfileInfo.Builder profileBuilder =
+                            new EuiccProfileInfo.Builder(strippedIccIdString);
                     buildProfile(profileNode, profileBuilder);
                     return profileBuilder.build();
                 },
@@ -263,7 +314,15 @@ public class EuiccCard extends UiccCard {
     }
 
     /**
-     * Gets the EID of the eUICC.
+     * Gets the EID synchronously.
+     * @return The EID string. Returns null if it is not ready yet.
+     */
+    public String getEid() {
+        return mEid;
+    }
+
+    /**
+     * Gets the EID of the eUICC and overwrites mCardId in UiccCard.
      *
      * @param callback The callback to get the result.
      * @param handler The handler to run the callback.
@@ -284,6 +343,7 @@ public class EuiccCard extends UiccCard {
                             .getChild(Tags.TAG_EID).asBytes());
                     synchronized (mLock) {
                         mEid = eid;
+                        mCardId = eid;
                     }
                     return eid;
                 },
@@ -459,7 +519,7 @@ public class EuiccCard extends UiccCard {
                         for (int j = 0; j < opIdSize; j++) {
                             opIds[j] = buildCarrierIdentifier(opIdNodes.get(j));
                         }
-                        builder.add(node.getChild(Tags.TAG_CTX_0).asBits(), opIds,
+                        builder.add(node.getChild(Tags.TAG_CTX_0).asBits(), Arrays.asList(opIds),
                                 node.getChild(Tags.TAG_CTX_2).asBits());
                     }
                     return builder.build();
@@ -924,10 +984,6 @@ public class EuiccCard extends UiccCard {
 
     private static void buildProfile(Asn1Node profileNode, EuiccProfileInfo.Builder profileBuilder)
             throws TagNotFoundException, InvalidAsn1DataException {
-        String strippedIccIdString =
-                stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
-        profileBuilder.setIccid(strippedIccIdString);
-
         if (profileNode.hasChild(Tags.TAG_NICKNAME)) {
             profileBuilder.setNickname(profileNode.getChild(Tags.TAG_NICKNAME).asString());
         }
@@ -971,7 +1027,12 @@ public class EuiccCard extends UiccCard {
         if (profileNode.hasChild(Tags.TAG_CARRIER_PRIVILEGE_RULES)) {
             List<Asn1Node> refArDoNodes = profileNode.getChild(Tags.TAG_CARRIER_PRIVILEGE_RULES)
                     .getChildren(Tags.TAG_REF_AR_DO);
-            profileBuilder.setUiccAccessRule(buildUiccAccessRule(refArDoNodes));
+            UiccAccessRule[] rules = buildUiccAccessRule(refArDoNodes);
+            List<UiccAccessRule> rulesList = null;
+            if (rules != null) {
+                rulesList = Arrays.asList(rules);
+            }
+            profileBuilder.setUiccAccessRule(rulesList);
         }
     }
 
