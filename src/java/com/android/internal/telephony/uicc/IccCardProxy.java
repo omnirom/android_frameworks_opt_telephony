@@ -385,10 +385,6 @@ public class IccCardProxy extends Handler implements IccCard {
     }
 
     private void registerUiccCardEvents() {
-        if (mUiccSlot != null) {
-            // todo: reregistration is not needed unless slot mapping changes
-            mUiccSlot.registerForAbsent(this, EVENT_ICC_ABSENT, null);
-        }
         if (mUiccApplication != null) {
             mUiccApplication.registerForReady(this, EVENT_APP_READY, null);
         }
@@ -402,7 +398,6 @@ public class IccCardProxy extends Handler implements IccCard {
     }
 
     private void unregisterUiccCardEvents() {
-        if (mUiccSlot != null) mUiccSlot.unregisterForAbsent(this);
         if (mUiccCard != null) mUiccCard.unregisterForCarrierPrivilegeRulesLoaded(this);
         if (mUiccApplication != null) {
             mUiccApplication.unregisterForReady(this);
