@@ -809,4 +809,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         }
         verify(mImsPhone, times(1)).startOnHoldTone(nullable(Connection.class));
     }
+
+    @Test
+    @SmallTest
+    public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
+        mCTUT.setSwitchingFgAndBgCallsValue(true);
+        if (mImsCallListener != null) {
+            mImsCallListener.onCallHoldFailed(mImsCall, new ImsReasonInfo(0, -1));
+        }
+        assertTrue(mCTUT.getSwitchingFgAndBgCallsValue());
+    }
 }
