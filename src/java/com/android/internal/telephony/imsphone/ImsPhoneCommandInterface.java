@@ -18,6 +18,7 @@ package com.android.internal.telephony.imsphone;
 
 import android.content.Context;
 import android.net.KeepalivePacketData;
+import android.net.LinkProperties;
 import android.os.Handler;
 import android.os.Message;
 import android.service.carrier.CarrierIdentifier;
@@ -269,8 +270,9 @@ class ImsPhoneCommandInterface extends BaseCommands implements CommandsInterface
     }
 
     @Override
-    public void setupDataCall(int radioTechnology, DataProfile dataProfile, boolean isRoaming,
-                              boolean allowRoaming, Message result) {
+    public void setupDataCall(int accessNetworkType, DataProfile dataProfile, boolean isRoaming,
+                              boolean allowRoaming, int reason, LinkProperties linkProperties,
+                              Message result) {
     }
 
     @Override
@@ -546,10 +548,6 @@ class ImsPhoneCommandInterface extends BaseCommands implements CommandsInterface
     @Override
     public void changeIccPin2ForApp(String oldPin2, String newPin2, String aidPtr,
             Message response) {
-    }
-
-    @Override
-    public void requestIsimAuthentication(String nonce, Message response) {
     }
 
     @Override

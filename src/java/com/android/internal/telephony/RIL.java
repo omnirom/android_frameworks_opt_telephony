@@ -48,14 +48,12 @@ import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.RadioResponseType;
 import android.hardware.radio.V1_0.ResetNvType;
 import android.hardware.radio.V1_0.SelectUiccSub;
-import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.SimApdu;
 import android.hardware.radio.V1_0.SmsWriteArgs;
 import android.hardware.radio.V1_0.UusInfo;
 import android.net.ConnectivityManager;
 import android.net.KeepalivePacketData;
-import android.net.LinkAddress;
-import android.net.NetworkUtils;
+import android.net.LinkProperties;
 import android.os.AsyncResult;
 import android.os.Build;
 import android.os.Handler;
@@ -81,12 +79,13 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.RadioAccessFamily;
 import android.telephony.RadioAccessSpecifier;
 import android.telephony.Rlog;
+import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyHistogram;
 import android.telephony.TelephonyManager;
-import android.telephony.data.DataCallResponse;
 import android.telephony.data.DataProfile;
+import android.telephony.data.DataService;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
@@ -286,10 +285,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                             " mRadioProxyCookie = " + mRadioProxyCookie.get());
                     if ((long) msg.obj == mRadioProxyCookie.get()) {
                         resetProxyAndRequestList();
-
-                        // todo: rild should be back up since message was sent with a delay. this is
-                        // a hack.
-                        getRadioProxy(null);
                     }
                     break;
             }
@@ -324,11 +319,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         public void serviceDied(long cookie) {
             // Deal with service going away
             riljLog("serviceDied");
-            // todo: temp hack to send delayed message so that rild is back up by then
-            //mRilHandler.sendMessage(mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD, cookie));
-            mRilHandler.sendMessageDelayed(
-                    mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD, cookie),
-                    IRADIO_GET_SERVICE_DELAY_MILLIS);
+            mRilHandler.sendMessage(mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD, cookie));
         }
     }
 
@@ -344,9 +335,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         // Clear request list on close
         clearRequestList(RADIO_NOT_AVAILABLE, false);
 
-        // todo: need to get service right away so setResponseFunctions() can be called for
-        // unsolicited indications. getService() is not a blocking call, so it doesn't help to call
-        // it here. Current hack is to call getService() on death notification after a delay.
+        getRadioProxy(null);
     }
 
     /** Returns a {@link IRadio} instance or null if the service is not available. */
@@ -367,7 +356,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
 
         try {
-            mRadioProxy = IRadio.getService(HIDL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId]);
+            mRadioProxy = IRadio.getService(HIDL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId],
+                    true);
             if (mRadioProxy != null) {
                 mRadioProxy.linkToDeath(mRadioProxyDeathRecipient,
                         mRadioProxyCookie.incrementAndGet());
@@ -381,17 +371,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
 
         if (mRadioProxy == null) {
+            // getService() is a blocking call, so this should never happen
+            riljLoge("getRadioProxy: mRadioProxy == null");
             if (result != null) {
                 AsyncResult.forMessage(result, null,
                         CommandException.fromRilErrno(RADIO_NOT_AVAILABLE));
                 result.sendToTarget();
             }
-
-            // if service is not up, treat it like death notification to try to get service again
-            mRilHandler.sendMessageDelayed(
-                    mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD,
-                            mRadioProxyCookie.incrementAndGet()),
-                    IRADIO_GET_SERVICE_DELAY_MILLIS);
         }
 
         return mRadioProxy;
@@ -482,13 +468,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
     private void handleRadioProxyExceptionForRR(RILRequest rr, String caller, Exception e) {
         riljLoge(caller + ": " + e);
         resetProxyAndRequestList();
-
-        // service most likely died, handle exception like death notification to try to get service
-        // again
-        mRilHandler.sendMessageDelayed(
-                mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD,
-                        mRadioProxyCookie.incrementAndGet()),
-                IRADIO_GET_SERVICE_DELAY_MILLIS);
     }
 
     private String convertNullToEmptyString(String string) {
@@ -1140,102 +1119,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return -1;
     }
 
-    /**
-     * Convert SetupDataCallResult defined in types.hal into DataCallResponse
-     * @param dcResult setup data call result
-     * @return converted DataCallResponse object
-     */
-    static DataCallResponse convertDataCallResult(SetupDataCallResult dcResult) {
-
-        // Process address
-        String[] addresses = null;
-        if (!TextUtils.isEmpty(dcResult.addresses)) {
-            addresses = dcResult.addresses.split("\\s+");
-        }
-
-        List<LinkAddress> laList = new ArrayList<>();
-        if (addresses != null) {
-            for (String address : addresses) {
-                address = address.trim();
-                if (address.isEmpty()) continue;
-
-                try {
-                    LinkAddress la;
-                    // Check if the address contains prefix length. If yes, LinkAddress
-                    // can parse that.
-                    if (address.split("/").length == 2) {
-                        la = new LinkAddress(address);
-                    } else {
-                        InetAddress ia = NetworkUtils.numericToInetAddress(address);
-                        la = new LinkAddress(ia, (ia instanceof Inet4Address) ? 32 : 128);
-                    }
-
-                    laList.add(la);
-                } catch (IllegalArgumentException e) {
-                    Rlog.e(RILJ_LOG_TAG, "Unknown address: " + address + ", " + e);
-                }
-            }
-        }
-
-        // Process dns
-        String[] dnses = null;
-        if (!TextUtils.isEmpty(dcResult.dnses)) {
-            dnses = dcResult.dnses.split("\\s+");
-        }
-
-        List<InetAddress> dnsList = new ArrayList<>();
-        if (dnses != null) {
-            for (String dns : dnses) {
-                dns = dns.trim();
-                InetAddress ia;
-                try {
-                    ia = NetworkUtils.numericToInetAddress(dns);
-                    dnsList.add(ia);
-                } catch (IllegalArgumentException e) {
-                    Rlog.e(RILJ_LOG_TAG, "Unknown dns: " + dns + ", exception = " + e);
-                }
-            }
-        }
-
-        // Process gateway
-        String[] gateways = null;
-        if (!TextUtils.isEmpty(dcResult.gateways)) {
-            gateways = dcResult.gateways.split("\\s+");
-        }
-
-        List<InetAddress> gatewayList = new ArrayList<>();
-        if (gateways != null) {
-            for (String gateway : gateways) {
-                gateway = gateway.trim();
-                InetAddress ia;
-                try {
-                    ia = NetworkUtils.numericToInetAddress(gateway);
-                    gatewayList.add(ia);
-                } catch (IllegalArgumentException e) {
-                    Rlog.e(RILJ_LOG_TAG, "Unknown gateway: " + gateway + ", exception = " + e);
-                }
-            }
-        }
-
-        return new DataCallResponse(dcResult.status,
-                dcResult.suggestedRetryTime,
-                dcResult.cid,
-                dcResult.active,
-                dcResult.type,
-                dcResult.ifname,
-                laList,
-                dnsList,
-                gatewayList,
-                new ArrayList<>(Arrays.asList(dcResult.pcscf.trim().split("\\s+"))),
-                dcResult.mtu
-        );
-    }
-
     @Override
-    public void setupDataCall(int radioTechnology, DataProfile dataProfile, boolean isRoaming,
-                              boolean allowRoaming, Message result) {
+    public void setupDataCall(int accessNetworkType, DataProfile dataProfile, boolean isRoaming,
+                              boolean allowRoaming, int reason, LinkProperties linkProperties,
+                              Message result) {
 
         IRadio radioProxy = getRadioProxy(result);
+
         if (radioProxy != null) {
 
             RILRequest rr = obtainRequest(RIL_REQUEST_SETUP_DATA_CALL, result,
@@ -1244,17 +1134,49 @@ public class RIL extends BaseCommands implements CommandsInterface {
             // Convert to HAL data profile
             DataProfileInfo dpi = convertToHalDataProfile(dataProfile);
 
-            if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                        + ",radioTechnology=" + radioTechnology + ",isRoaming="
-                        + isRoaming + ",allowRoaming=" + allowRoaming + "," + dataProfile);
-            }
-
+            android.hardware.radio.V1_2.IRadio radioProxy12 =
+                    android.hardware.radio.V1_2.IRadio.castFrom(radioProxy);
             try {
-                radioProxy.setupDataCall(rr.mSerial, radioTechnology, dpi,
-                        dataProfile.isModemCognitive(), allowRoaming, isRoaming);
-                mMetrics.writeRilSetupDataCall(mPhoneId, rr.mSerial, radioTechnology, dpi.profileId,
-                        dpi.apn, dpi.authType, dpi.protocol);
+                if (radioProxy12 == null) {
+                    // IRadio V1.0
+                    if (RILJ_LOGD) {
+                        riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                                + ",radioTechnology=unknown,isRoaming=" + isRoaming
+                                + ",allowRoaming=" + allowRoaming + "," + dataProfile);
+                    }
+                    // The RAT field in setup data call request was never used before. Starting from
+                    // P, the new API passes in access network type instead of RAT. Since it's
+                    // not possible to convert access network type back to RAT, but we still need to
+                    // support the 1.0 API, we passed in unknown RAT to the modem. And modem must
+                    // setup the data call on its current camped network.
+                    radioProxy.setupDataCall(rr.mSerial, ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN,
+                            dpi, dataProfile.isModemCognitive(), allowRoaming, isRoaming);
+                } else {
+                    // IRadio V1.2
+                    ArrayList<String> addresses = null;
+                    ArrayList<String> dnses = null;
+                    if (linkProperties != null) {
+                        addresses = new ArrayList<>();
+                        for (InetAddress address : linkProperties.getAddresses()) {
+                            addresses.add(address.getHostAddress());
+                        }
+                        dnses = new ArrayList<>();
+                        for (InetAddress dns : linkProperties.getDnsServers()) {
+                            dnses.add(dns.getHostAddress());
+                        }
+                    }
+
+                    if (RILJ_LOGD) {
+                        riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                                + ",accessNetworkType=" + accessNetworkType + ",isRoaming="
+                                + isRoaming + ",allowRoaming=" + allowRoaming + "," + dataProfile
+                                + ",addresses=" + addresses + ",dnses=" + dnses);
+                    }
+
+                    radioProxy12.setupDataCall_1_2(rr.mSerial, accessNetworkType, dpi,
+                            dataProfile.isModemCognitive(), allowRoaming, isRoaming, reason,
+                            addresses, dnses);
+                }
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "setupDataCall", e);
             }
@@ -1538,10 +1460,17 @@ public class RIL extends BaseCommands implements CommandsInterface {
                         + requestToString(rr.mRequest) + " cid = " + cid + " reason = " + reason);
             }
 
+            android.hardware.radio.V1_2.IRadio radioProxy12 =
+                    android.hardware.radio.V1_2.IRadio.castFrom(radioProxy);
+
             try {
-                radioProxy.deactivateDataCall(rr.mSerial, cid, (reason == 0) ? false : true);
-                mMetrics.writeRilDeactivateDataCall(mPhoneId, rr.mSerial,
-                        cid, reason);
+                if (radioProxy12 == null) {
+                    radioProxy.deactivateDataCall(rr.mSerial, cid,
+                            (reason == DataService.REQUEST_REASON_SHUTDOWN));
+                } else {
+                    radioProxy12.deactivateDataCall_1_2(rr.mSerial, cid, reason);
+                }
+                mMetrics.writeRilDeactivateDataCall(mPhoneId, rr.mSerial, cid, reason);
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "deactivateDataCall", e);
             }
@@ -2883,26 +2812,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 radioProxy.getCdmaSubscriptionSource(rr.mSerial);
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "getCdmaSubscriptionSource", e);
-            }
-        }
-    }
-
-    @Override
-    public void requestIsimAuthentication(String nonce, Message result) {
-        IRadio radioProxy = getRadioProxy(result);
-        if (radioProxy != null) {
-            RILRequest rr = obtainRequest(RIL_REQUEST_ISIM_AUTHENTICATION, result,
-                    mRILDefaultWorkSource);
-
-            if (RILJ_LOGD) {
-                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                        + " nonce = " + nonce);
-            }
-
-            try {
-                radioProxy.requestIsimAuthentication(rr.mSerial, convertNullToEmptyString(nonce));
-            } catch (RemoteException | RuntimeException e) {
-                handleRadioProxyExceptionForRR(rr, "requestIsimAuthentication", e);
             }
         }
     }

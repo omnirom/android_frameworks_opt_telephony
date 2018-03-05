@@ -70,6 +70,7 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccFileHandler;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.uicc.IsimRecords;
+import com.android.internal.telephony.uicc.SIMRecords;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
@@ -655,7 +656,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                     String dialString = (String) ar.result;
                     if (TextUtils.isEmpty(dialString)) return;
                     try {
-                        dialInternal(dialString, null, VideoProfile.STATE_AUDIO_ONLY, null);
+                        dialInternal(dialString, new DialArgs.Builder().build());
                     } catch (CallStateException e) {
                         Rlog.e(LOG_TAG, "silent redial failed: " + e);
                     }
@@ -3048,14 +3049,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * Dials a number.
      *
      * @param dialString The number to dial.
-     * @param uusInfo The UUSInfo.
-     * @param videoState The video state for the call.
-     * @param intentExtras Extras from the original CALL intent.
+     * @param dialArgs Parameters to dial with.
      * @return The Connection.
      * @throws CallStateException
      */
-    protected Connection dialInternal(
-            String dialString, UUSInfo uusInfo, int videoState, Bundle intentExtras)
+    protected Connection dialInternal(String dialString, DialArgs dialArgs)
             throws CallStateException {
         // dialInternal shall be overriden by GsmCdmaPhone
         return null;
@@ -3555,6 +3553,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      **/
     public void setSimPowerState(int state) {
         mCi.setSimCardPower(state, null);
+    }
+
+    public SIMRecords getSIMRecords() {
+        return null;
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {

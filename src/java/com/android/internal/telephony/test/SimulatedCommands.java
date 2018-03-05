@@ -17,10 +17,10 @@
 package com.android.internal.telephony.test;
 
 import android.hardware.radio.V1_0.DataRegStateResult;
+import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.VoiceRegStateResult;
 import android.net.KeepalivePacketData;
-import android.net.LinkAddress;
-import android.net.NetworkUtils;
+import android.net.LinkProperties;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -34,6 +34,7 @@ import android.telephony.CellInfo;
 import android.telephony.CellInfoGsm;
 import android.telephony.IccOpenLogicalChannelResponse;
 import android.telephony.ImsiEncryptionInfo;
+import android.telephony.NetworkRegistrationState;
 import android.telephony.NetworkScanRequest;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -60,7 +61,6 @@ import com.android.internal.telephony.uicc.IccIoResult;
 import com.android.internal.telephony.uicc.IccSlotStatus;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -119,10 +119,17 @@ public class SimulatedCommands extends BaseCommands
     int mNetworkType;
     String mPin2Code;
     boolean mSsnNotifyOn = false;
-    private int mVoiceRegState = ServiceState.RIL_REG_STATE_HOME;
+    private int mVoiceRegState = NetworkRegistrationState.REG_STATE_HOME;
     private int mVoiceRadioTech = ServiceState.RIL_RADIO_TECHNOLOGY_UMTS;
-    private int mDataRegState = ServiceState.RIL_REG_STATE_HOME;
+    private int mDataRegState = NetworkRegistrationState.REG_STATE_HOME;
     private int mDataRadioTech = ServiceState.RIL_RADIO_TECHNOLOGY_UMTS;
+    public boolean mCssSupported;
+    public int mRoamingIndicator;
+    public int mSystemIsInPrl;
+    public int mDefaultRoamingIndicator;
+    public int mReasonForDenial;
+    public int mMaxDataCalls;
+
     private SignalStrength mSignalStrength;
     private List<CellInfo> mCellInfoList;
     private int[] mImsRegState;
@@ -137,7 +144,7 @@ public class SimulatedCommands extends BaseCommands
     int mNextCallFailCause = CallFailCause.NORMAL_CLEARING;
 
     private boolean mDcSuccess = true;
-    private DataCallResponse mDcResponse;
+    private SetupDataCallResult mSetupDataCallResult;
     private boolean mIsRadioPowerFailResponse = false;
 
     //***** Constructor
@@ -957,6 +964,11 @@ public class SimulatedCommands extends BaseCommands
         VoiceRegStateResult ret = new VoiceRegStateResult();
         ret.regState = mVoiceRegState;
         ret.rat = mVoiceRadioTech;
+        ret.cssSupported = mCssSupported;
+        ret.roamingIndicator = mRoamingIndicator;
+        ret.systemIsInPrl = mSystemIsInPrl;
+        ret.defaultRoamingIndicator = mDefaultRoamingIndicator;
+        ret.reasonForDenial = mReasonForDenial;
 
         resultSuccess(result, ret);
     }
@@ -983,6 +995,8 @@ public class SimulatedCommands extends BaseCommands
         DataRegStateResult ret = new DataRegStateResult();
         ret.regState = mDataRegState;
         ret.rat = mDataRadioTech;
+        ret.maxDataCalls = mMaxDataCalls;
+        ret.reasonDataDenied = mReasonForDenial;
 
         resultSuccess(result, ret);
     }
@@ -1110,8 +1124,8 @@ public class SimulatedCommands extends BaseCommands
         unimplemented(response);
     }
 
-    public void setDataCallResponse(final boolean success, final DataCallResponse dcResponse) {
-        mDcResponse = dcResponse;
+    public void setDataCallResult(final boolean success, final SetupDataCallResult dcResult) {
+        mSetupDataCallResult = dcResult;
         mDcSuccess = success;
     }
 
@@ -1123,28 +1137,37 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
-    public void setupDataCall(int radioTechnology, DataProfile dataProfile, boolean isRoaming,
-                              boolean allowRoaming, Message result) {
+    public void setupDataCall(int accessNetworkType, DataProfile dataProfile, boolean isRoaming,
+                              boolean allowRoaming, int reason, LinkProperties linkProperties,
+                              Message result) {
 
-        SimulatedCommandsVerifier.getInstance().setupDataCall(radioTechnology, dataProfile,
-                isRoaming, allowRoaming, result);
+        SimulatedCommandsVerifier.getInstance().setupDataCall(accessNetworkType, dataProfile,
+                isRoaming, allowRoaming, reason, linkProperties, result);
 
-        if (mDcResponse == null) {
+        if (mSetupDataCallResult == null) {
             try {
-                mDcResponse = new DataCallResponse(0, -1, 1, 2, "IP", "rmnet_data7",
-                        Arrays.asList(new LinkAddress("12.34.56.78/32")),
-                        Arrays.asList(NetworkUtils.numericToInetAddress("98.76.54.32")),
-                        Arrays.asList(NetworkUtils.numericToInetAddress("11.22.33.44")),
-                        null, 1440);
+                mSetupDataCallResult = new SetupDataCallResult();
+                mSetupDataCallResult.status = 0;
+                mSetupDataCallResult.suggestedRetryTime = -1;
+                mSetupDataCallResult.cid = 1;
+                mSetupDataCallResult.active = 2;
+                mSetupDataCallResult.type = "IP";
+                mSetupDataCallResult.ifname = "rmnet_data7";
+                mSetupDataCallResult.addresses = "12.34.56.78";
+                mSetupDataCallResult.dnses = "98.76.54.32";
+                mSetupDataCallResult.gateways = "11.22.33.44";
+                mSetupDataCallResult.pcscf = "";
+                mSetupDataCallResult.mtu = 1440;
             } catch (Exception e) {
 
             }
         }
 
         if (mDcSuccess) {
-            resultSuccess(result, mDcResponse);
+            resultSuccess(result, mSetupDataCallResult);
         } else {
-            resultFail(result, mDcResponse, new RuntimeException("Setup data call failed!"));
+            resultFail(result, mSetupDataCallResult,
+                    new RuntimeException("Setup data call failed!"));
         }
     }
 
@@ -1825,11 +1848,6 @@ public class SimulatedCommands extends BaseCommands
     @Override
     public void changeIccPin2ForApp(String oldPin2, String newPin2, String aidPtr,
             Message response) {
-        unimplemented(response);
-    }
-
-    @Override
-    public void requestIsimAuthentication(String nonce, Message response) {
         unimplemented(response);
     }
 

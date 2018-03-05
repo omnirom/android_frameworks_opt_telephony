@@ -446,10 +446,6 @@ abstract class ImsPhoneBase extends Phone {
             Message response) {
     }
 
-    @Override
-    public void getDataCallList(Message response) {
-    }
-
     public List<DataConnection> getCurrentDataConnectionList () {
         return null;
     }
@@ -540,6 +536,16 @@ abstract class ImsPhoneBase extends Phone {
     public LinkProperties getLinkProperties(String apnType) {
         // FIXME: what's this for Volte?
         return null;
+    }
+
+    @Override
+    public void getCallBarring(String facility, String password, Message onComplete,
+            int serviceClass) {
+    }
+
+    @Override
+    public void setCallBarring(String facility, boolean lockState, String password,
+            Message onComplete, int serviceClass) {
     }
 
     @Override
