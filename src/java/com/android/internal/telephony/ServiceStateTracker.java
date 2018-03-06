@@ -2149,6 +2149,7 @@ public class ServiceStateTracker extends Handler {
             String plmn = null;
             boolean showPlmn = false;
             int rule = (iccRecords != null) ? iccRecords.getDisplayRule(mSS) : 0;
+            boolean noService = false;
             if (combinedRegState == ServiceState.STATE_OUT_OF_SERVICE
                     || combinedRegState == ServiceState.STATE_EMERGENCY_ONLY) {
                 showPlmn = true;
@@ -2165,6 +2166,7 @@ public class ServiceStateTracker extends Handler {
                     // No service at all
                     plmn = Resources.getSystem().
                             getText(com.android.internal.R.string.lockscreen_carrier_default).toString();
+                    noService = true;
                 }
                 if (DBG) log("updateSpnDisplay: radio is on but out " +
                         "of service, set plmn='" + plmn + "'");
@@ -2189,7 +2191,7 @@ public class ServiceStateTracker extends Handler {
             //    EXTRA_DATA_SPN = dataSpn
             String spn = (iccRecords != null) ? iccRecords.getServiceProviderName() : "";
             String dataSpn = spn;
-            boolean showSpn = !TextUtils.isEmpty(spn)
+            boolean showSpn = !noService && !TextUtils.isEmpty(spn)
                     && ((rule & SIMRecords.SPN_RULE_SHOW_SPN)
                     == SIMRecords.SPN_RULE_SHOW_SPN);
 
@@ -2425,11 +2427,11 @@ public class ServiceStateTracker extends Handler {
     }
 
     protected final void log(String s) {
-        Rlog.d(LOG_TAG, s);
+        Rlog.d(LOG_TAG, "[" + mPhone.getPhoneId() + "] " + s);
     }
 
     protected final void loge(String s) {
-        Rlog.e(LOG_TAG, s);
+        Rlog.e(LOG_TAG, "[" + mPhone.getPhoneId() + "] " + s);
     }
 
     /**

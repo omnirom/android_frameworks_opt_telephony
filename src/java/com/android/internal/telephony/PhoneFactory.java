@@ -142,12 +142,6 @@ public class PhoneFactory {
                 int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
                 Rlog.i(LOG_TAG, "Cdma Subscription set to " + cdmaSubscription);
 
-                if (context.getPackageManager().hasSystemFeature(
-                        PackageManager.FEATURE_TELEPHONY_EUICC)) {
-                    sEuiccController = EuiccController.init(context);
-                    sEuiccCardController = EuiccCardController.init(context);
-                }
-
                 /* In case of multi SIM mode two instances of Phone, RIL are created,
                    where as in single SIM mode only instance. isMultiSimEnabled() function checks
                    whether it is single SIM or multi SIM mode */
@@ -185,6 +179,12 @@ public class PhoneFactory {
                 // Instantiate UiccController so that all other classes can just
                 // call getInstance()
                 sUiccController = UiccController.make(context, sCommandsInterfaces);
+
+                if (context.getPackageManager().hasSystemFeature(
+                        PackageManager.FEATURE_TELEPHONY_EUICC)) {
+                    sEuiccController = EuiccController.init(context);
+                    sEuiccCardController = EuiccCardController.init(context);
+                }
 
                 for (int i = 0; i < numPhones; i++) {
                     Phone phone = null;

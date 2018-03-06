@@ -336,8 +336,8 @@ public class ProxyController {
         synchronized (mSetRadioAccessFamilyStatus) {
             AsyncResult ar = (AsyncResult)msg.obj;
             // Abort here only in Single SIM case, in Multi SIM cases
-            // send FINISH with failure so that below layers can do
-            // fall back to proper states.
+            // send FINISH with failure so that below layers can re-bind
+            // old logical modems.
             if ((TelephonyManager.getDefault().getPhoneCount() == 1) && (ar.exception != null)) {
                 // just abort now.  They didn't take our start so we don't have to revert
                 logd("onStartRadioCapabilityResponse got exception=" + ar.exception);
@@ -508,6 +508,7 @@ public class ProxyController {
 
             // Reset the status counter as existing session failed
             mRadioAccessFamilyStatusCounter = 0;
+
             // send FINISH request with fail status and then uniqueDifferentId
             mTransactionFailed = true;
             issueFinish(mRadioCapabilitySessionId);

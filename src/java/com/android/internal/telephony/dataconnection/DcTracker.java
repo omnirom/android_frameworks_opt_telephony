@@ -1564,6 +1564,11 @@ public class DcTracker extends Handler {
                     }
                 }
             } else {
+                // Exclude the IMS APN from single DataConenction case.
+                if (reason.equals(Phone.REASON_SINGLE_PDN_ARBITRATION)
+                        && apnContext.getApnType().equals(PhoneConstants.APN_TYPE_IMS)) {
+                    continue;
+                }
                 // TODO - only do cleanup if not disconnected
                 if (apnContext.isDisconnected() == false) didDisconnect = true;
                 apnContext.setReason(reason);
