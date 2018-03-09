@@ -897,8 +897,9 @@ public class CatService extends Handler implements AppInterface {
         if (iccRefreshState != null) {
             //This case is when MSG_ID_ICC_REFRESH is received.
             intent.putExtra(AppInterface.REFRESH_RESULT, iccRefreshState.refreshResult);
+            intent.putExtra(AppInterface.AID, iccRefreshState.aid);
             CatLog.d(this, "Sending IccResult with Result: "
-                    + iccRefreshState.refreshResult);
+                    + iccRefreshState.refreshResult + " " + "aid: " + iccRefreshState.aid);
         }
 
         // This sends an intent with CARD_ABSENT (0 - false) /CARD_PRESENT (1 - true).
