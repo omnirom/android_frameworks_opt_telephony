@@ -28,7 +28,6 @@ import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.AsyncResult;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -50,6 +49,7 @@ import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.PhoneStateListener;
+import android.telephony.PhysicalChannelConfig;
 import android.telephony.RadioAccessFamily;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -279,6 +279,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private String mName;
     private final String mActionDetached;
     private final String mActionAttached;
+    protected DeviceStateMonitor mDeviceStateMonitor;
 
     protected int mPhoneId;
 
@@ -2145,6 +2146,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyCellInfo(this, privatizeCellInfoList(cellInfo));
     }
 
+    /** Notify {@link PhysicalChannelConfig} changes. */
+    public void notifyPhysicalChannelConfiguration(List<PhysicalChannelConfig> configs) {
+        mNotifier.notifyPhysicalChannelConfiguration(this, configs);
+    }
+
     public void notifyVoLteServiceStateChanged(VoLteServiceState lteState) {
         mNotifier.notifyVoLteServiceStateChanged(this, lteState);
     }
@@ -3602,6 +3608,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return null;
     }
 
+    public void setRadioIndicationUpdateMode(int filters, int mode) {
+        if (mDeviceStateMonitor != null) {
+            mDeviceStateMonitor.setIndicationUpdateMode(filters, mode);
+        }
+    }
+
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Phone: subId=" + getSubId());
         pw.println(" mPhoneId=" + mPhoneId);
@@ -3714,6 +3726,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             }
 
             pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mDeviceStateMonitor != null) {
+            pw.println("DeviceStateMonitor:");
+            mDeviceStateMonitor.dump(fd, pw, args);
             pw.println("++++++++++++++++++++++++++++++++");
         }
 
