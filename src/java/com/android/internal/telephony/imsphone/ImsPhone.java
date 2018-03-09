@@ -658,9 +658,19 @@ public class ImsPhone extends ImsPhoneBase {
     private Connection dialInternal(String dialString, DialArgs dialArgs,
                                     ResultReceiver wrappedCallback)
             throws CallStateException {
-
-        // Need to make sure dialString gets parsed properly
-        String newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+        if (dialArgs.intentExtras != null) {
+            isConferenceUri = dialArgs.intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = dialArgs.intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
+        String newDialString = dialString;
+        // Need to make sure dialString gets parsed properly.
+        if (!isConferenceUri && !isSkipSchemaParsing) {
+            newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        }
 
         // handle in-call MMI first if applicable
         if (handleInCallMmiCommands(newDialString)) {
@@ -717,6 +727,11 @@ public class ImsPhone extends ImsPhoneBase {
 
             return null;
         }
+    }
+
+    @Override
+    public void addParticipant(String dialString) throws CallStateException {
+        mCT.addParticipant(dialString);
     }
 
     @Override
