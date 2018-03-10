@@ -35,6 +35,7 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.CommandsInterface.RadioState;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.uicc.IccCardStatus.CardState;
+import com.android.internal.telephony.uicc.euicc.EuiccCard;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -48,6 +49,7 @@ public class UiccSlot extends Handler {
 
     public static final String EXTRA_ICC_CARD_ADDED =
             "com.android.internal.telephony.uicc.ICC_CARD_ADDED";
+    public static final int INVALID_PHONE_ID = -1;
 
     private final Object mLock = new Object();
     private boolean mActive;
@@ -58,7 +60,8 @@ public class UiccSlot extends Handler {
     private RadioState mLastRadioState = RadioState.RADIO_UNAVAILABLE;
     private boolean mIsEuicc;
     private String mIccId;
-    private Integer mPhoneId = null;
+    private AnswerToReset mAtr;
+    private int mPhoneId = INVALID_PHONE_ID;
 
     private static final int EVENT_CARD_REMOVED = 13;
     private static final int EVENT_CARD_ADDED = 14;
@@ -96,12 +99,9 @@ public class UiccSlot extends Handler {
                     sendMessage(obtainMessage(EVENT_CARD_REMOVED, null));
                 }
 
-                UiccProfile.broadcastInternalIccStateChangedIntent(
-                        IccCardConstants.INTENT_VALUE_ICC_ABSENT, null, mPhoneId);
-
-                // no card present in the slot now; dispose card and make mUiccCard null
-                mUiccCard.dispose();
-                mUiccCard = null;
+                if (mUiccCard != null) {
+                    mUiccCard.update(mContext, mCi, ics);
+                }
             } else if (oldState == CardState.CARDSTATE_ABSENT
                     && mCardState != CardState.CARDSTATE_ABSENT) {
                 // No notifications while radio is off or we just powering up
@@ -119,12 +119,15 @@ public class UiccSlot extends Handler {
                 if (!mIsEuicc) {
                     mUiccCard = new UiccCard(mContext, mCi, ics, mPhoneId);
                 } else {
-                    // todo: initialize new EuiccCard object here
-                    //mUiccCard = new EuiccCard();
+                    mUiccCard = new EuiccCard(mContext, mCi, ics, phoneId);
                 }
             } else {
                 if (mUiccCard != null) {
                     mUiccCard.update(mContext, mCi, ics);
+                } else {
+                    if (!mIsEuicc) {
+                        mUiccCard = new UiccCard(mContext, mCi, ics, mPhoneId);
+                    }
                 }
             }
             mLastRadioState = radioState;
@@ -142,7 +145,7 @@ public class UiccSlot extends Handler {
                 if (mActive) {
                     mActive = false;
                     mLastRadioState = RadioState.RADIO_UNAVAILABLE;
-                    mPhoneId = null;
+                    mPhoneId = INVALID_PHONE_ID;
                     if (mUiccCard != null) mUiccCard.dispose();
                     mUiccCard = null;
                 }
@@ -151,9 +154,9 @@ public class UiccSlot extends Handler {
                 mIccId = iss.iccid;
             } else if (!mActive && iss.slotState == IccSlotStatus.SlotState.SLOTSTATE_ACTIVE) {
                 mActive = true;
+                parseAtr(iss.atr);
                 // todo - ignoring these fields for now; relying on sim state changed to update
                 // these
-                //      iss.atr;
                 //      iss.cardState;
                 //      iss.iccid;
                 //      iss.logicalSlotIndex;
@@ -161,9 +164,20 @@ public class UiccSlot extends Handler {
         }
     }
 
+    private void checkIsEuiccSupported() {
+        if (mAtr != null && mAtr.isEuiccSupported()) {
+            mIsEuicc = true;
+        } else {
+            mIsEuicc = false;
+        }
+    }
+
     private void parseAtr(String atr) {
-        // todo - parse atr and set mIsEuicc based on it
-        mIsEuicc = false;
+        mAtr = AnswerToReset.parseAtr(atr);
+        if (mAtr == null) {
+            return;
+        }
+        checkIsEuiccSupported();
     }
 
     public boolean isEuicc() {
@@ -172,6 +186,10 @@ public class UiccSlot extends Handler {
 
     public boolean isActive() {
         return mActive;
+    }
+
+    public int getPhoneId() {
+        return mPhoneId;
     }
 
     public String getIccId() {
@@ -305,7 +323,7 @@ public class UiccSlot extends Handler {
         }
         mUiccCard = null;
 
-        if (mPhoneId != null) {
+        if (mPhoneId != INVALID_PHONE_ID) {
             UiccProfile.broadcastInternalIccStateChangedIntent(
                     IccCardConstants.INTENT_VALUE_ICC_UNKNOWN, null, mPhoneId);
         }

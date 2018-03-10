@@ -18,7 +18,11 @@ package com.android.internal.telephony.uicc.euicc;
 
 import android.annotation.Nullable;
 import android.content.Context;
+import android.content.res.Resources;
+import android.os.AsyncResult;
 import android.os.Handler;
+import android.os.Registrant;
+import android.os.RegistrantList;
 import android.service.carrier.CarrierIdentifier;
 import android.service.euicc.EuiccProfileInfo;
 import android.telephony.Rlog;
@@ -48,6 +52,7 @@ import com.android.internal.telephony.uicc.euicc.apdu.RequestProvider;
 import com.android.internal.telephony.uicc.euicc.async.AsyncResultCallback;
 import com.android.internal.telephony.uicc.euicc.async.AsyncResultHelper;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -80,6 +85,16 @@ public class EuiccCard extends UiccCard {
 
     private static final EuiccSpecVersion SGP_2_0 = new EuiccSpecVersion(2, 0, 0);
 
+    // Device capabilities.
+    private static final String DEV_CAP_GSM = "gsm";
+    private static final String DEV_CAP_UTRAN = "utran";
+    private static final String DEV_CAP_CDMA_1X = "cdma_1x";
+    private static final String DEV_CAP_HRPD = "hrpd";
+    private static final String DEV_CAP_EHRPD = "ehrpd";
+    private static final String DEV_CAP_EUTRAN = "eutran";
+    private static final String DEV_CAP_NFC = "nfc";
+    private static final String DEV_CAP_CRL = "crl";
+
     // These interfaces are used for simplifying the code by leveraging lambdas.
     private interface ApduRequestBuilder {
         void build(RequestBuilder requestBuilder)
@@ -97,13 +112,54 @@ public class EuiccCard extends UiccCard {
 
     private final ApduSender mApduSender;
     private final Object mLock = new Object();
+    private final RegistrantList mEidReadyRegistrants = new RegistrantList();
     private EuiccSpecVersion mSpecVersion;
-    private String mEid;
+    private volatile String mEid;
 
     public EuiccCard(Context c, CommandsInterface ci, IccCardStatus ics, int phoneId) {
         super(c, ci, ics, phoneId);
         // TODO: Set supportExtendedApdu based on ATR.
         mApduSender = new ApduSender(ci, ISD_R_AID, false /* supportExtendedApdu */);
+
+        loadEidAndNotifyRegistrants();
+    }
+
+    /**
+     * Registers to be notified when EID is ready. If the EID is ready when this method is called,
+     * the registrant will be notified immediately.
+     */
+    public void registerForEidReady(Handler h, int what, Object obj) {
+        Registrant r = new Registrant(h, what, obj);
+        if (mEid != null) {
+            r.notifyRegistrant(new AsyncResult(null, null, null));
+        } else {
+            mEidReadyRegistrants.add(r);
+        }
+    }
+
+    /**
+     * Unregisters to be notified when EID is ready.
+     */
+    public void unregisterForEidReady(Handler h) {
+        mEidReadyRegistrants.remove(h);
+    }
+
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    protected void loadEidAndNotifyRegistrants() {
+        Handler euiccMainThreadHandler = new Handler();
+        AsyncResultCallback<String> cardCb = new AsyncResultCallback<String>() {
+            @Override
+            public void onResult(String result) {
+                mEidReadyRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
+            }
+
+            @Override
+            public void onException(Throwable e) {
+                // Not notifying registrants if getting eid fails.
+                Rlog.e(LOG_TAG, "Failed loading eid", e);
+            }
+        };
+        getEid(cardCb, euiccMainThreadHandler);
     }
 
     /**
@@ -145,7 +201,10 @@ public class EuiccCard extends UiccCard {
                             loge("Profile must have an ICCID.");
                             continue;
                         }
-                        EuiccProfileInfo.Builder profileBuilder = new EuiccProfileInfo.Builder();
+                        String strippedIccIdString =
+                                stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
+                        EuiccProfileInfo.Builder profileBuilder =
+                                new EuiccProfileInfo.Builder(strippedIccIdString);
                         buildProfile(profileNode, profileBuilder);
 
                         EuiccProfileInfo profile = profileBuilder.build();
@@ -178,7 +237,10 @@ public class EuiccCard extends UiccCard {
                         return null;
                     }
                     Asn1Node profileNode = profileNodes.get(0);
-                    EuiccProfileInfo.Builder profileBuilder = new EuiccProfileInfo.Builder();
+                    String strippedIccIdString =
+                            stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
+                    EuiccProfileInfo.Builder profileBuilder =
+                            new EuiccProfileInfo.Builder(strippedIccIdString);
                     buildProfile(profileNode, profileBuilder);
                     return profileBuilder.build();
                 },
@@ -263,7 +325,15 @@ public class EuiccCard extends UiccCard {
     }
 
     /**
-     * Gets the EID of the eUICC.
+     * Gets the EID synchronously.
+     * @return The EID string. Returns null if it is not ready yet.
+     */
+    public String getEid() {
+        return mEid;
+    }
+
+    /**
+     * Gets the EID of the eUICC and overwrites mCardId in UiccCard.
      *
      * @param callback The callback to get the result.
      * @param handler The handler to run the callback.
@@ -284,6 +354,7 @@ public class EuiccCard extends UiccCard {
                             .getChild(Tags.TAG_EID).asBytes());
                     synchronized (mLock) {
                         mEid = eid;
+                        mCardId = eid;
                     }
                     return eid;
                 },
@@ -459,7 +530,7 @@ public class EuiccCard extends UiccCard {
                         for (int j = 0; j < opIdSize; j++) {
                             opIds[j] = buildCarrierIdentifier(opIdNodes.get(j));
                         }
-                        builder.add(node.getChild(Tags.TAG_CTX_0).asBits(), opIds,
+                        builder.add(node.getChild(Tags.TAG_CTX_0).asBits(), Arrays.asList(opIds),
                                 node.getChild(Tags.TAG_CTX_2).asBits());
                     }
                     return builder.build();
@@ -539,8 +610,16 @@ public class EuiccCard extends UiccCard {
                     byte[] tacBytes = new byte[4];
                     System.arraycopy(imeiBytes, 0, tacBytes, 0, 4);
 
-                    // TODO: Get device capabilities.
                     Asn1Node.Builder devCapsBuilder = Asn1Node.newBuilder(Tags.TAG_CTX_COMP_1);
+                    String[] devCapsStrings = getResources().getStringArray(
+                            com.android.internal.R.array.config_telephonyEuiccDeviceCapabilities);
+                    if (devCapsStrings != null) {
+                        for (String devCapItem : devCapsStrings) {
+                            addDeviceCapability(devCapsBuilder, devCapItem);
+                        }
+                    } else {
+                        if (DBG) logd("No device capabilities set.");
+                    }
 
                     Asn1Node.Builder ctxParams1Builder = Asn1Node.newBuilder(Tags.TAG_CTX_COMP_0)
                             .addChildAsString(Tags.TAG_CTX_0, matchingId)
@@ -815,6 +894,62 @@ public class EuiccCard extends UiccCard {
                 callback, handler);
     }
 
+    /**
+     * Sets a device capability version as the child of the given device capability ASN1 node
+     * builder.
+     *
+     * @param devCapBuilder The ASN1 node builder to modify.
+     * @param devCapItem The device capability and its supported version in pair.
+     */
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    public void addDeviceCapability(Asn1Node.Builder devCapBuilder, String devCapItem) {
+        String[] split = devCapItem.split(",");
+        if (split.length != 2) {
+            loge("Invalid device capability item: " + Arrays.toString(split));
+            return;
+        }
+
+        String devCap = split[0].trim();
+        Integer version;
+        try {
+            version = Integer.parseInt(split[1].trim());
+        } catch (NumberFormatException e) {
+            loge("Invalid device capability version number.", e);
+            return;
+        }
+
+        byte[] versionBytes = new byte[] { version.byteValue(), 0, 0 };
+        switch (devCap) {
+            case DEV_CAP_GSM:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_0, versionBytes);
+                break;
+            case DEV_CAP_UTRAN:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_1, versionBytes);
+                break;
+            case DEV_CAP_CDMA_1X:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_2, versionBytes);
+                break;
+            case DEV_CAP_HRPD:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_3, versionBytes);
+                break;
+            case DEV_CAP_EHRPD:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_4, versionBytes);
+                break;
+            case DEV_CAP_EUTRAN:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_5, versionBytes);
+                break;
+            case DEV_CAP_NFC:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_6, versionBytes);
+                break;
+            case DEV_CAP_CRL:
+                devCapBuilder.addChildAsBytes(Tags.TAG_CTX_7, versionBytes);
+                break;
+            default:
+                loge("Invalid device capability name: " + devCap);
+                break;
+        }
+    }
+
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     protected byte[] getDeviceId() {
         byte[] imeiBytes = new byte[8];
@@ -823,6 +958,11 @@ public class EuiccCard extends UiccCard {
             IccUtils.bcdToBytes(phone.getDeviceId(), imeiBytes);
         }
         return imeiBytes;
+    }
+
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    protected Resources getResources()  {
+        return Resources.getSystem();
     }
 
     private RequestProvider newRequestProvider(ApduRequestBuilder builder) {
@@ -924,10 +1064,6 @@ public class EuiccCard extends UiccCard {
 
     private static void buildProfile(Asn1Node profileNode, EuiccProfileInfo.Builder profileBuilder)
             throws TagNotFoundException, InvalidAsn1DataException {
-        String strippedIccIdString =
-                stripTrailingFs(profileNode.getChild(Tags.TAG_ICCID).asBytes());
-        profileBuilder.setIccid(strippedIccIdString);
-
         if (profileNode.hasChild(Tags.TAG_NICKNAME)) {
             profileBuilder.setNickname(profileNode.getChild(Tags.TAG_NICKNAME).asString());
         }
@@ -971,7 +1107,12 @@ public class EuiccCard extends UiccCard {
         if (profileNode.hasChild(Tags.TAG_CARRIER_PRIVILEGE_RULES)) {
             List<Asn1Node> refArDoNodes = profileNode.getChild(Tags.TAG_CARRIER_PRIVILEGE_RULES)
                     .getChildren(Tags.TAG_REF_AR_DO);
-            profileBuilder.setUiccAccessRule(buildUiccAccessRule(refArDoNodes));
+            UiccAccessRule[] rules = buildUiccAccessRule(refArDoNodes);
+            List<UiccAccessRule> rulesList = null;
+            if (rules != null) {
+                rulesList = Arrays.asList(rules);
+            }
+            profileBuilder.setUiccAccessRule(rulesList);
         }
     }
 
@@ -1087,6 +1228,10 @@ public class EuiccCard extends UiccCard {
 
     private static void loge(String message) {
         Rlog.e(LOG_TAG, message);
+    }
+
+    private static void loge(String message, Throwable tr) {
+        Rlog.e(LOG_TAG, message, tr);
     }
 
     private static void logi(String message) {
