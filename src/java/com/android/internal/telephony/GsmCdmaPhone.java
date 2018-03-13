@@ -97,6 +97,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.codeaurora.ims.QtiCallConstants;
+
 /**
  * {@hide}
  */
@@ -1036,6 +1038,12 @@ public class GsmCdmaPhone extends Phone {
                 ringingCallState.isAlive());
     }
 
+    /* Validate the given extras if the call is for CS domain or not */
+    protected boolean shallDialOnCircuitSwitch(Bundle extras) {
+        return (extras != null && extras.getInt(QtiCallConstants.EXTRA_CALL_DOMAIN,
+                QtiCallConstants.DOMAIN_AUTOMATIC) == QtiCallConstants.DOMAIN_CS);
+    }
+
     @Override
     public Connection dial(String dialString, @NonNull DialArgs dialArgs)
             throws CallStateException {
@@ -1055,7 +1063,8 @@ public class GsmCdmaPhone extends Phone {
                  && imsPhone != null
                  && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
                  (imsPhone.isVideoEnabled() && VideoProfile.isVideo(dialArgs.videoState)))
-                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
+                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras);
 
         boolean useImsForEmergency = imsPhone != null
                 && isEmergency
