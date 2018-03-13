@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,14 @@
 package com.android.internal.telephony.uicc;
 
 import android.app.ActivityManager;
-import android.app.AlertDialog;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
-import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Binder;
@@ -44,11 +42,13 @@ import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.UiccAccessRule;
 import android.text.TextUtils;
+import android.util.ArrayMap;
+import android.util.ArraySet;
 import android.util.LocalLog;
-import android.view.WindowManager;
 
-import com.android.internal.R;
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.telephony.IccCardConstants;
@@ -61,12 +61,15 @@ import com.android.internal.telephony.cat.CatService;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccCardStatus.CardState;
 import com.android.internal.telephony.uicc.IccCardStatus.PinState;
+import com.android.internal.telephony.uicc.euicc.EuiccCard;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * This class represents the carrier profiles in the {@link UiccCard}. Each profile contains
@@ -94,7 +97,7 @@ public class UiccProfile extends Handler implements IccCard {
     private int mCdmaSubscriptionAppIndex;
     private int mImsSubscriptionAppIndex;
     private UiccCardApplication[] mUiccApplications =
-        new UiccCardApplication[IccCardStatus.CARD_MAX_APPS];
+            new UiccCardApplication[IccCardStatus.CARD_MAX_APPS];
     private Context mContext;
     private CommandsInterface mCi;
     private UiccCard mUiccCard; //parent
@@ -122,6 +125,7 @@ public class UiccProfile extends Handler implements IccCard {
     private static final int EVENT_APP_READY = 6;
     private static final int EVENT_RECORDS_LOADED = 7;
     private static final int EVENT_NETWORK_LOCKED = 9;
+    private static final int EVENT_EID_READY = 10;
 
     private static final int EVENT_ICC_RECORD_EVENTS = 500;
 
@@ -137,6 +141,17 @@ public class UiccProfile extends Handler implements IccCard {
     public static final String ACTION_INTERNAL_SIM_STATE_CHANGED =
             "android.intent.action.internal_sim_state_changed";
 
+    private final ContentObserver mProvisionCompleteContentObserver =
+            new ContentObserver(new Handler()) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    mContext.getContentResolver().unregisterContentObserver(this);
+                    for (String pkgName : getUninstalledCarrierPackages()) {
+                        InstallCarrierAppUtils.showNotification(mContext, pkgName);
+                        InstallCarrierAppUtils.registerPackageInstallReceiver(mContext);
+                    }
+                }
+            };
     /*----------------------------------------------------*/
 
     public UiccProfile(Context c, CommandsInterface ci, IccCardStatus ics, int phoneId,
@@ -152,6 +167,11 @@ public class UiccProfile extends Handler implements IccCard {
                 setCurrentAppType(phone.getPhoneType() == PhoneConstants.PHONE_TYPE_GSM);
             }
         }
+
+        if (mUiccCard instanceof EuiccCard) {
+            ((EuiccCard) mUiccCard).registerForEidReady(this, EVENT_EID_READY, null);
+        }
+
         update(c, ci, ics);
 
         if (ICC_CARD_PROXY_REMOVED) {
@@ -170,6 +190,13 @@ public class UiccProfile extends Handler implements IccCard {
 
             unregisterAllAppEvents();
             unregisterCurrAppEvents();
+
+            InstallCarrierAppUtils.hideAllNotifications(mContext);
+            InstallCarrierAppUtils.unregisterPackageInstallReceiver(mContext);
+
+            if (mUiccCard instanceof EuiccCard) {
+                ((EuiccCard) mUiccCard).unregisterForEidReady(this);
+            }
 
             if (ICC_CARD_PROXY_REMOVED) {
                 mCi.unregisterForOffOrNotAvailable(this);
@@ -223,12 +250,14 @@ public class UiccProfile extends Handler implements IccCard {
         }
         switch (msg.what) {
             case EVENT_NETWORK_LOCKED:
-                mNetworkLockedRegistrants.notifyRegistrants();
+                mNetworkLockedRegistrants.notifyRegistrants(
+                        new AsyncResult(null, mUiccApplication.getPersoSubState().ordinal(), null));
                 // intentional fall through
             case EVENT_RADIO_OFF_OR_UNAVAILABLE:
             case EVENT_ICC_LOCKED:
             case EVENT_APP_READY:
             case EVENT_RECORDS_LOADED:
+            case EVENT_EID_READY:
                 if (VDBG) log("handleMessage: Received " + msg.what);
                 updateExternalState();
                 break;
@@ -246,7 +275,7 @@ public class UiccProfile extends Handler implements IccCard {
 
             case EVENT_CARRIER_PRIVILEGES_LOADED:
                 if (VDBG) log("EVENT_CARRIER_PRIVILEGES_LOADED");
-                onCarrierPriviligesLoadedMessage();
+                onCarrierPrivilegesLoadedMessage();
                 updateExternalState();
                 break;
 
@@ -315,7 +344,14 @@ public class UiccProfile extends Handler implements IccCard {
             setExternalState(IccCardConstants.State.CARD_RESTRICTED);
             return;
         }
-
+        if (mUiccCard.getCardState() == IccCardStatus.CardState.CARDSTATE_ABSENT) {
+            setExternalState(IccCardConstants.State.ABSENT);
+            return;
+        }
+        if (mUiccCard instanceof EuiccCard && ((EuiccCard) mUiccCard).getEid() == null) {
+            if (DBG) log("EID is not ready yet.");
+            return;
+        }
         // By process of elimination, the UICC Card State = PRESENT and state needs to be decided
         // based on apps
         if (mUiccApplication == null) {
@@ -345,8 +381,7 @@ public class UiccProfile extends Handler implements IccCard {
                 cardLocked = true;
                 lockedState = IccCardConstants.State.PUK_REQUIRED;
             } else if (appState == IccCardApplicationStatus.AppState.APPSTATE_SUBSCRIPTION_PERSO) {
-                if (mUiccApplication.getPersoSubState()
-                        == IccCardApplicationStatus.PersoSubState.PERSOSUBSTATE_SIM_NETWORK) {
+                if (mUiccApplication.isPersoLocked()) {
                     if (VDBG) log("updateExternalState: PERSOSUBSTATE_SIM_NETWORK");
                     cardLocked = true;
                     lockedState = IccCardConstants.State.NETWORK_LOCKED;
@@ -587,7 +622,8 @@ public class UiccProfile extends Handler implements IccCard {
             mNetworkLockedRegistrants.add(r);
 
             if (getState() == IccCardConstants.State.NETWORK_LOCKED) {
-                r.notifyRegistrant();
+                r.notifyRegistrant(new AsyncResult(null, mUiccApplication.getPersoSubState()
+                        .ordinal(), null));
             }
         }
     }
@@ -814,7 +850,7 @@ public class UiccProfile extends Handler implements IccCard {
             log("Before privilege rules: " + mCarrierPrivilegeRules + " : " + ics.mCardState);
             if (mCarrierPrivilegeRules == null && ics.mCardState == CardState.CARDSTATE_PRESENT) {
                 mCarrierPrivilegeRules = new UiccCarrierPrivilegeRules(this,
-                    obtainMessage(EVENT_CARRIER_PRIVILEGES_LOADED));
+                        obtainMessage(EVENT_CARRIER_PRIVILEGES_LOADED));
             } else if (mCarrierPrivilegeRules != null
                     && ics.mCardState != CardState.CARDSTATE_PRESENT) {
                 mCarrierPrivilegeRules = null;
@@ -862,10 +898,17 @@ public class UiccProfile extends Handler implements IccCard {
                 checkIndexLocked(mImsSubscriptionAppIndex, AppType.APPTYPE_ISIM, null);
     }
 
+    /**
+     * Checks if the app is supported for the purposes of checking if all apps are ready/loaded, so
+     * this only checks for SIM/USIM and CSIM/RUIM apps. ISIM is considered not supported for this
+     * purpose as there are cards that have ISIM app that is never read (there are SIMs for which
+     * the state of ISIM goes to DETECTED but never to READY).
+     */
     private boolean isSupportedApplication(UiccCardApplication app) {
+        // TODO: 2/15/18 Add check to see if ISIM app will go to READY state, and if yes, check for
+        // ISIM also (currently ISIM is considered as not supported in this function)
         if (app.getType() != AppType.APPTYPE_USIM && app.getType() != AppType.APPTYPE_CSIM
-                && app.getType() != AppType.APPTYPE_ISIM && app.getType() != AppType.APPTYPE_SIM
-                && app.getType() != AppType.APPTYPE_RUIM) {
+                && app.getType() != AppType.APPTYPE_SIM && app.getType() != AppType.APPTYPE_RUIM) {
             return false;
         }
         return true;
@@ -952,8 +995,8 @@ public class UiccProfile extends Handler implements IccCard {
         }
     }
 
-    private boolean isPackageInstalled(String pkgName) {
-        PackageManager pm = mContext.getPackageManager();
+    static boolean isPackageInstalled(Context context, String pkgName) {
+        PackageManager pm = context.getPackageManager();
         try {
             pm.getPackageInfo(pkgName, PackageManager.GET_ACTIVITIES);
             if (DBG) log(pkgName + " is installed.");
@@ -964,70 +1007,95 @@ public class UiccProfile extends Handler implements IccCard {
         }
     }
 
-    private class ClickListener implements DialogInterface.OnClickListener {
-        String mPkgName;
-        ClickListener(String pkgName) {
-            this.mPkgName = pkgName;
-        }
-        @Override
-        public void onClick(DialogInterface dialog, int which) {
-            synchronized (mLock) {
-                if (which == DialogInterface.BUTTON_POSITIVE) {
-                    Intent market = new Intent(Intent.ACTION_VIEW);
-                    market.setData(Uri.parse("market://details?id=" + mPkgName));
-                    market.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    mContext.startActivity(market);
-                } else if (which == DialogInterface.BUTTON_NEGATIVE) {
-                    if (DBG) log("Not now clicked for carrier app dialog.");
-                }
-            }
-        }
-    }
-
     private void promptInstallCarrierApp(String pkgName) {
-        DialogInterface.OnClickListener listener = new ClickListener(pkgName);
-
-        Resources r = Resources.getSystem();
-        String message = r.getString(R.string.carrier_app_dialog_message);
-        String buttonTxt = r.getString(R.string.carrier_app_dialog_button);
-        String notNowTxt = r.getString(R.string.carrier_app_dialog_not_now);
-
-        AlertDialog dialog = new AlertDialog.Builder(mContext)
-                .setMessage(message)
-                .setNegativeButton(notNowTxt, listener)
-                .setPositiveButton(buttonTxt, listener)
-                .create();
-        dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
-        dialog.show();
+        Intent showDialogIntent = InstallCarrierAppTrampolineActivity.get(mContext, pkgName);
+        mContext.startActivity(showDialogIntent);
     }
 
-    private void onCarrierPriviligesLoadedMessage() {
+    private void onCarrierPrivilegesLoadedMessage() {
         UsageStatsManager usm = (UsageStatsManager) mContext.getSystemService(
                 Context.USAGE_STATS_SERVICE);
         if (usm != null) {
             usm.onCarrierPrivilegedAppsChanged();
         }
+
+        InstallCarrierAppUtils.hideAllNotifications(mContext);
+        InstallCarrierAppUtils.unregisterPackageInstallReceiver(mContext);
+
         synchronized (mLock) {
             mCarrierPrivilegeRegistrants.notifyRegistrants();
-            String whitelistSetting = Settings.Global.getString(mContext.getContentResolver(),
-                    Settings.Global.CARRIER_APP_WHITELIST);
-            if (TextUtils.isEmpty(whitelistSetting)) {
-                return;
-            }
-            HashSet<String> carrierAppSet = new HashSet<String>(
-                    Arrays.asList(whitelistSetting.split("\\s*;\\s*")));
-            if (carrierAppSet.isEmpty()) {
-                return;
-            }
-
-            List<String> pkgNames = mCarrierPrivilegeRules.getPackageNames();
-            for (String pkgName : pkgNames) {
-                if (!TextUtils.isEmpty(pkgName) && carrierAppSet.contains(pkgName)
-                        && !isPackageInstalled(pkgName)) {
+            boolean isProvisioned = Settings.Global.getInt(
+                    mContext.getContentResolver(),
+                    Settings.Global.DEVICE_PROVISIONED, 1) == 1;
+            // Only show dialog if the phone is through with Setup Wizard.  Otherwise, wait for
+            // completion and show a notification instead
+            if (isProvisioned) {
+                for (String pkgName : getUninstalledCarrierPackages()) {
                     promptInstallCarrierApp(pkgName);
                 }
+            } else {
+                final Uri uri = Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED);
+                mContext.getContentResolver().registerContentObserver(
+                        uri,
+                        false,
+                        mProvisionCompleteContentObserver);
             }
         }
+    }
+
+    private Set<String> getUninstalledCarrierPackages() {
+        String whitelistSetting = Settings.Global.getString(
+                mContext.getContentResolver(),
+                Settings.Global.CARRIER_APP_WHITELIST);
+        if (TextUtils.isEmpty(whitelistSetting)) {
+            return Collections.emptySet();
+        }
+        Map<String, String> certPackageMap = parseToCertificateToPackageMap(whitelistSetting);
+        if (certPackageMap.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        Set<String> uninstalledCarrierPackages = new ArraySet<>();
+        List<UiccAccessRule> accessRules = mCarrierPrivilegeRules.getAccessRules();
+        for (UiccAccessRule accessRule : accessRules) {
+            String certHexString = accessRule.getCertificateHexString().toUpperCase();
+            String pkgName = certPackageMap.get(certHexString);
+            if (!TextUtils.isEmpty(pkgName) && !isPackageInstalled(mContext, pkgName)) {
+                uninstalledCarrierPackages.add(pkgName);
+            }
+        }
+        return uninstalledCarrierPackages;
+    }
+
+    /**
+     * Converts a string in the format: key1:value1;key2:value2... into a map where the keys are
+     * hex representations of app certificates - all upper case - and the values are package names
+     * @hide
+     */
+    @VisibleForTesting
+    public static Map<String, String> parseToCertificateToPackageMap(String whitelistSetting) {
+        final String pairDelim = "\\s*;\\s*";
+        final String keyValueDelim = "\\s*:\\s*";
+
+        List<String> keyValuePairList = Arrays.asList(whitelistSetting.split(pairDelim));
+
+        if (keyValuePairList.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> map = new ArrayMap<>(keyValuePairList.size());
+        for (String keyValueString: keyValuePairList) {
+            String[] keyValue = keyValueString.split(keyValueDelim);
+
+            if (keyValue.length == 2) {
+                map.put(keyValue[0].toUpperCase(), keyValue[1]);
+            } else {
+                loge("Incorrect length of key-value pair in carrier app whitelist map.  "
+                        + "Length should be exactly 2");
+            }
+        }
+
+        return map;
     }
 
     /**
@@ -1280,6 +1348,16 @@ public class UiccProfile extends Handler implements IccCard {
     }
 
     /**
+     * Exposes {@link UiccCarrierPrivilegeRules#getCarrierPrivilegeStatusForUid}.
+     */
+    public int getCarrierPrivilegeStatusForUid(PackageManager packageManager, int uid) {
+        UiccCarrierPrivilegeRules carrierPrivilegeRules = getCarrierPrivilegeRules();
+        return carrierPrivilegeRules == null
+                ? TelephonyManager.CARRIER_PRIVILEGE_STATUS_RULES_NOT_LOADED :
+                carrierPrivilegeRules.getCarrierPrivilegeStatusForUid(packageManager, uid);
+    }
+
+    /**
      * Exposes {@link UiccCarrierPrivilegeRules#getCarrierPackageNamesForIntent}.
      */
     public List<String> getCarrierPackageNamesForIntent(
@@ -1366,11 +1444,11 @@ public class UiccProfile extends Handler implements IccCard {
         Rlog.d(LOG_TAG, msg);
     }
 
-    private void loge(String msg) {
+    private static void loge(String msg) {
         Rlog.e(LOG_TAG, msg);
     }
 
-    private void loglocal(String msg) {
+    private static void loglocal(String msg) {
         if (DBG) sLocalLog.log(msg);
     }
 

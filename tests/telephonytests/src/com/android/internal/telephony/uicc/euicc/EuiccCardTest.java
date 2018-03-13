@@ -25,9 +25,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import android.content.res.Resources;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Message;
 import android.service.carrier.CarrierIdentifier;
 import android.service.euicc.EuiccProfileInfo;
 import android.telephony.UiccAccessRule;
@@ -43,6 +46,8 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus;
 import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.asn1.Asn1Node;
+import com.android.internal.telephony.uicc.asn1.InvalidAsn1DataException;
+import com.android.internal.telephony.uicc.asn1.TagNotFoundException;
 import com.android.internal.telephony.uicc.euicc.apdu.LogicalChannelMocker;
 import com.android.internal.telephony.uicc.euicc.async.AsyncResultCallback;
 
@@ -51,6 +56,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -102,6 +108,15 @@ public class EuiccCardTest extends TelephonyTest {
                         protected byte[] getDeviceId() {
                             return IccUtils.bcdToBytes("987654321012345");
                         }
+
+                        @Override
+                        protected void loadEidAndNotifyRegistrants() {}
+
+                        @Override
+                        protected Resources getResources() {
+                            return mMockResources;
+                        }
+
                     };
             mHandler = new Handler(mTestHandlerThread.getLooper());
             setReady(true);
@@ -117,6 +132,9 @@ public class EuiccCardTest extends TelephonyTest {
     private Handler mHandler;
 
     private EuiccCard mEuiccCard;
+
+    @Mock
+    private Resources mMockResources;
 
     @Before
     public void setUp() throws Exception {
@@ -145,6 +163,38 @@ public class EuiccCardTest extends TelephonyTest {
             fail("Unexpected exception: " + ExceptionUtils.getCompleteMessage(e) + "\n-----\n"
                     + Log.getStackTraceString(e.getCause()) + "-----");
         }
+    }
+
+    @Test
+    public void testLoadEidAndNotifyRegistrants() throws InterruptedException {
+        int channel = mockLogicalChannelResponses("BF3E065A041A2B3C4D9000");
+
+        {
+            final CountDownLatch latch = new CountDownLatch(1);
+            mHandler.post(() -> {
+                mEuiccCard = new EuiccCard(mContextFixture.getTestDouble(), mMockCi,
+                        mMockIccCardStatus, 0 /* phoneId */);
+                latch.countDown();
+            });
+            assertTrue(latch.await(WAIT_TIMEOUT_MLLIS, TimeUnit.MILLISECONDS));
+        }
+
+        final int eventEidReady = 0;
+        final CountDownLatch latch = new CountDownLatch(1);
+        Handler handler = new Handler(mTestHandlerThread.getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                if (msg.what == eventEidReady) {
+                    assertEquals("1A2B3C4D", mEuiccCard.getEid());
+                    latch.countDown();
+                }
+            }
+        };
+
+        mEuiccCard.registerForEidReady(handler, eventEidReady, null /* obj */);
+        assertTrue(latch.await(WAIT_TIMEOUT_MLLIS, TimeUnit.MILLISECONDS));
+
+        verifyStoreData(channel, "BF3E035C015A");
     }
 
     @Test
@@ -223,7 +273,7 @@ public class EuiccCardTest extends TelephonyTest {
                                         "ABCD92CBB156B280FA4E1429A6ECEEB6E5C1BFE4"),
                                 "com.google.android.apps.myapp", 1)
                 },
-                profile.getUiccAccessRules());
+                profile.getUiccAccessRules().toArray());
         verifyStoreData(channel, "BF2D195A0A896700000000004523015C0B5A909192B79F709599BF76");
     }
 
@@ -484,6 +534,10 @@ public class EuiccCardTest extends TelephonyTest {
 
     @Test
     public void testAuthenticateServer() {
+        when(mMockResources.getStringArray(
+                com.android.internal.R.array.config_telephonyEuiccDeviceCapabilities))
+                .thenReturn(new String[] {});
+
         int channel = mockLogicalChannelResponses("BF3802A0009000");
 
         ResultCaptor<byte[]> resultCaptor = new ResultCaptor<>();
@@ -506,6 +560,10 @@ public class EuiccCardTest extends TelephonyTest {
 
     @Test
     public void testAuthenticateServer_Error() {
+        when(mMockResources.getStringArray(
+                com.android.internal.R.array.config_telephonyEuiccDeviceCapabilities))
+                .thenReturn(new String[] {});
+
         int channel = mockLogicalChannelResponses("BF38038101039000");
 
         ResultCaptor<byte[]> resultCaptor = new ResultCaptor<>();
@@ -522,6 +580,39 @@ public class EuiccCardTest extends TelephonyTest {
                         + "800D4131423243332D583459355A36" // Matching id
                         + "A112800489674523" // TAC
                         + "A100" // Device capabilities
+                        + "82088967452301214305"); // IMEI
+    }
+
+    @Test
+    public void testAuthenticateService_devCap() {
+        when(mMockResources.getStringArray(
+                com.android.internal.R.array.config_telephonyEuiccDeviceCapabilities))
+                .thenReturn(new String[] {
+                        "gsm,11",
+                        "utran,11",
+                        "cdma1x,1",
+                        "hrpd,3",
+                        "ehrpd,12",
+                        "eutran,11"});
+
+        int channel = mockLogicalChannelResponses("BF3802A0009000");
+
+        ResultCaptor<byte[]> resultCaptor = new ResultCaptor<>();
+        mEuiccCard.authenticateServer("A1B2C3-X4Y5Z6", // Matching id
+                Asn1Node.newBuilder(0xA0).build().toBytes(),
+                Asn1Node.newBuilder(0xA1).build().toBytes(),
+                Asn1Node.newBuilder(0xA2).build().toBytes(),
+                Asn1Node.newBuilder(0xA3).build().toBytes(), resultCaptor, mHandler);
+        resultCaptor.await();
+
+        assertUnexpectedException(resultCaptor.exception);
+        assertEquals("BF3802A000", IccUtils.bytesToHexString(resultCaptor.result));
+        verifyStoreData(channel,
+                "BF3846" + "A000" + "A100" + "A200" + "A300" + "A03C"
+                        + "800D4131423243332D583459355A36" // Matching id
+                        + "A12B800489674523" // TAC
+                        // Device capabilities
+                        + "A11980030B000081030B0000830303000084030C000085030B0000"
                         + "82088967452301214305"); // IMEI
     }
 
@@ -814,6 +905,83 @@ public class EuiccCardTest extends TelephonyTest {
 
         assertUnexpectedException(resultCaptor.exception);
         verifyStoreData(channel, "BF3003800105");
+    }
+
+    @Test
+    public void testAddDeviceCapability() throws InvalidAsn1DataException, TagNotFoundException {
+        Asn1Node.Builder devCapsBuilder = Asn1Node.newBuilder(Tags.TAG_CTX_COMP_1);
+
+        String devCapItem = "gsm,11";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        Asn1Node node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_0));
+        Asn1Node child = node.getChild(Tags.TAG_CTX_0);
+        assertTrue(Arrays.equals(new byte[] {11, 0 , 0}, child.asBytes()));
+
+        devCapItem = "utran,11";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_1));
+        child = node.getChild(Tags.TAG_CTX_1);
+        assertTrue(Arrays.equals(new byte[] {11, 0 , 0}, child.asBytes()));
+
+        devCapItem = "cdma_1x,1";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_2));
+        child = node.getChild(Tags.TAG_CTX_2);
+        assertTrue(Arrays.equals(new byte[] {1, 0 , 0}, child.asBytes()));
+
+        devCapItem = "hrpd,1";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_3));
+        child = node.getChild(Tags.TAG_CTX_3);
+        assertTrue(Arrays.equals(new byte[] {1, 0 , 0}, child.asBytes()));
+
+        devCapItem = "ehrpd,12";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_4));
+        child = node.getChild(Tags.TAG_CTX_4);
+        assertTrue(Arrays.equals(new byte[] {12, 0 , 0}, child.asBytes()));
+
+        devCapItem = "eutran,11";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_5));
+        child = node.getChild(Tags.TAG_CTX_5);
+        assertTrue(Arrays.equals(new byte[] {11, 0 , 0}, child.asBytes()));
+
+        devCapItem = "nfc,0";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_6));
+        child = node.getChild(Tags.TAG_CTX_6);
+        assertTrue(Arrays.equals(new byte[] {0, 0 , 0}, child.asBytes()));
+
+        devCapItem = "crl,0";
+        mEuiccCard.addDeviceCapability(devCapsBuilder, devCapItem);
+        node = devCapsBuilder.build();
+
+        assertTrue(node.hasChild(Tags.TAG_CTX_7));
+        child = node.getChild(Tags.TAG_CTX_7);
+        assertTrue(Arrays.equals(new byte[] {0, 0 , 0}, child.asBytes()));
+
+        // Array length should not be 3.
+        Asn1Node.Builder devCapsBuilder2 = Asn1Node.newBuilder(Tags.TAG_CTX_COMP_1);
+        devCapItem = "gsm,1,1";
+        mEuiccCard.addDeviceCapability(devCapsBuilder2, devCapItem);
+        node = devCapsBuilder2.build();
+
+        assertFalse(node.hasChild(Tags.TAG_CTX_0));
     }
 
     private void verifyStoreData(int channel, String command) {
