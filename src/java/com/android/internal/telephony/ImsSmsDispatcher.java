@@ -105,11 +105,14 @@ public class ImsSmsDispatcher extends SMSDispatcher {
         @Override
         public void onSendSmsResult(int token, int messageRef, @SendStatusResult int status,
                 int reason) throws RemoteException {
+            Rlog.d(TAG, "onSendSmsResult token=" + token + " messageRef=" + messageRef
+                    + " status=" + status + " reason=" + reason);
             SmsTracker tracker = mTrackers.get(token);
             if (tracker == null) {
                 throw new IllegalArgumentException("Invalid token.");
             }
-            switch(reason) {
+            tracker.mMessageRef = messageRef;
+            switch(status) {
                 case ImsSmsImplBase.SEND_STATUS_OK:
                     tracker.onSent(mContext);
                     break;
@@ -181,7 +184,7 @@ public class ImsSmsDispatcher extends SMSDispatcher {
                 } catch (ImsException e) {
                     Rlog.e(TAG, "Failed to acknowledgeSms(). Error: " + e.getMessage());
                 }
-            });
+            }, true);
         }
     };
 

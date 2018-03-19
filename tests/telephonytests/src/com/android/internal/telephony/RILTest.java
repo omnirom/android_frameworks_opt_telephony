@@ -188,7 +188,7 @@ public class RILTest extends TelephonyTest {
     private static final int RSSNR = 2147483647;
     private static final int RSRP = 96;
     private static final int RSRQ = 10;
-    private static final int SIGNAL_NOICE_RATIO = 6;
+    private static final int SIGNAL_NOISE_RATIO = 6;
     private static final int SIGNAL_STRENGTH = 24;
     private static final int SYSTEM_ID = 65533;
     private static final int TAC = 65535;
@@ -1160,7 +1160,7 @@ public class RILTest extends TelephonyTest {
         cellinfo.signalStrengthCdma.ecio = ECIO;
         cellinfo.signalStrengthEvdo.dbm = DBM;
         cellinfo.signalStrengthEvdo.ecio = ECIO;
-        cellinfo.signalStrengthEvdo.signalNoiseRatio = SIGNAL_NOICE_RATIO;
+        cellinfo.signalStrengthEvdo.signalNoiseRatio = SIGNAL_NOISE_RATIO;
         android.hardware.radio.V1_0.CellInfo record = new android.hardware.radio.V1_0.CellInfo();
         record.cellInfoType = TYPE_CDMA;
         record.registered = false;
@@ -1183,7 +1183,7 @@ public class RILTest extends TelephonyTest {
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthCdma cs = new CellSignalStrengthCdma(
-                -DBM, -ECIO, -DBM, -ECIO, SIGNAL_NOICE_RATIO);
+                DBM, ECIO, DBM, ECIO, SIGNAL_NOISE_RATIO);
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_UNKNOWN);
@@ -1394,7 +1394,7 @@ public class RILTest extends TelephonyTest {
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthCdma cs = new CellSignalStrengthCdma(
-                -DBM, -ECIO, -DBM, -ECIO, SIGNAL_NOICE_RATIO);
+                DBM, ECIO, DBM, ECIO, SIGNAL_NOISE_RATIO);
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
@@ -1402,7 +1402,7 @@ public class RILTest extends TelephonyTest {
     }
 
     @Test
-    public void testConvertHalCellInfoList_1_2ForCdmaWithEmptyOperatorInfd() throws Exception {
+    public void testConvertHalCellInfoList_1_2ForCdmaWithEmptyOperatorInfo() throws Exception {
         ArrayList<CellInfo> ret = getCellInfoListForCdma(EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
 
         assertEquals(1, ret.size());
@@ -1415,7 +1415,7 @@ public class RILTest extends TelephonyTest {
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthCdma cs = new CellSignalStrengthCdma(
-                -DBM, -ECIO, -DBM, -ECIO, SIGNAL_NOICE_RATIO);
+                DBM, ECIO, DBM, ECIO, SIGNAL_NOISE_RATIO);
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
@@ -1550,7 +1550,7 @@ public class RILTest extends TelephonyTest {
         cellinfo.signalStrengthCdma.ecio = ECIO;
         cellinfo.signalStrengthEvdo.dbm = DBM;
         cellinfo.signalStrengthEvdo.ecio = ECIO;
-        cellinfo.signalStrengthEvdo.signalNoiseRatio = SIGNAL_NOICE_RATIO;
+        cellinfo.signalStrengthEvdo.signalNoiseRatio = SIGNAL_NOISE_RATIO;
         android.hardware.radio.V1_2.CellInfo record = new android.hardware.radio.V1_2.CellInfo();
         record.cellInfoType = TYPE_CDMA;
         record.registered = false;
@@ -1564,4 +1564,62 @@ public class RILTest extends TelephonyTest {
 
         return RIL.convertHalCellInfoList_1_2(records);
     }
+
+    public android.telephony.SignalStrength getTdScdmaSignalStrength_1_0(int tdscdmaNegDbm) {
+        android.hardware.radio.V1_0.SignalStrength halSs =
+                new android.hardware.radio.V1_0.SignalStrength();
+        halSs.lte.signalStrength = SIGNAL_STRENGTH;
+        halSs.lte.rsrp = RSRP;
+        halSs.lte.rsrq = RSRQ;
+        halSs.lte.rssnr = RSSNR;
+        halSs.gw.signalStrength = SIGNAL_STRENGTH;
+        halSs.gw.bitErrorRate = BIT_ERROR_RATE;
+        halSs.cdma.dbm = DBM;
+        halSs.cdma.ecio = ECIO;
+        halSs.evdo.dbm = DBM;
+        halSs.evdo.ecio = ECIO;
+        halSs.evdo.signalNoiseRatio = SIGNAL_NOISE_RATIO;
+        halSs.tdScdma.rscp = tdscdmaNegDbm;
+        android.telephony.SignalStrength ss = RIL.convertHalSignalStrength(halSs);
+        // FIXME: We should not need to call validateInput here b/74115980.
+        ss.validateInput();
+        return ss;
+    }
+
+    public android.telephony.SignalStrength getTdScdmaSignalStrength_1_2(int tdscdmaAsu) {
+        android.hardware.radio.V1_2.SignalStrength halSs =
+                new android.hardware.radio.V1_2.SignalStrength();
+        halSs.lte.signalStrength = SIGNAL_STRENGTH;
+        halSs.lte.rsrp = RSRP;
+        halSs.lte.rsrq = RSRQ;
+        halSs.lte.rssnr = RSSNR;
+        halSs.gsm.signalStrength = SIGNAL_STRENGTH;
+        halSs.gsm.bitErrorRate = BIT_ERROR_RATE;
+        halSs.cdma.dbm = DBM;
+        halSs.cdma.ecio = ECIO;
+        halSs.evdo.dbm = DBM;
+        halSs.evdo.ecio = ECIO;
+        halSs.evdo.signalNoiseRatio = SIGNAL_NOISE_RATIO;
+        halSs.wcdma.base.signalStrength = 99;
+        halSs.wcdma.rscp = 255;
+        halSs.tdScdma.rscp = tdscdmaAsu;
+        android.telephony.SignalStrength ss = RIL.convertHalSignalStrength_1_2(halSs);
+        // FIXME: We should not need to call validateInput here b/74115980
+        // but unless we call it, we have to pass Integer.MAX_VALUE for wcdma RSCP,
+        // which is outside the allowable range for the HAL. This value is being
+        // coerced inside SignalStrength.validateInput().
+        ss.validateInput();
+        return ss;
+    }
+
+    @Test
+    public void testHalSignalStrengthTdScdma() throws Exception {
+        // Check that the minimum value is the same.
+        assertEquals(getTdScdmaSignalStrength_1_0(120), getTdScdmaSignalStrength_1_2(0));
+        // Check that the maximum common value is the same.
+        assertEquals(getTdScdmaSignalStrength_1_0(25), getTdScdmaSignalStrength_1_2(95));
+        // Check that an invalid value is the same.
+        assertEquals(getTdScdmaSignalStrength_1_0(-1), getTdScdmaSignalStrength_1_2(255));
+    }
+
 }

@@ -97,6 +97,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.codeaurora.ims.QtiCallConstants;
+
 /**
  * {@hide}
  */
@@ -158,7 +160,6 @@ public class GsmCdmaPhone extends Phone {
     public ServiceStateTracker mSST;
     private ArrayList <MmiCode> mPendingMMIs = new ArrayList<MmiCode>();
     private IccPhoneBookInterfaceManager mIccPhoneBookIntManager;
-    private DeviceStateMonitor mDeviceStateMonitor;
     // Used for identify the carrier of current subscription
     private CarrierIdentifier mCarrerIdentifier;
 
@@ -1037,6 +1038,12 @@ public class GsmCdmaPhone extends Phone {
                 ringingCallState.isAlive());
     }
 
+    /* Validate the given extras if the call is for CS domain or not */
+    protected boolean shallDialOnCircuitSwitch(Bundle extras) {
+        return (extras != null && extras.getInt(QtiCallConstants.EXTRA_CALL_DOMAIN,
+                QtiCallConstants.DOMAIN_AUTOMATIC) == QtiCallConstants.DOMAIN_CS);
+    }
+
     @Override
     public Connection dial(String dialString, @NonNull DialArgs dialArgs)
             throws CallStateException {
@@ -1044,7 +1051,7 @@ public class GsmCdmaPhone extends Phone {
             throw new CallStateException("Sending UUS information NOT supported in CDMA!");
         }
 
-        boolean isEmergency = PhoneNumberUtils.isEmergencyNumber(getSubId(), dialString);
+        boolean isEmergency = isEmergencyNumber(dialString);
         Phone imsPhone = mImsPhone;
 
         CarrierConfigManager configManager =
@@ -1056,7 +1063,8 @@ public class GsmCdmaPhone extends Phone {
                  && imsPhone != null
                  && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
                  (imsPhone.isVideoEnabled() && VideoProfile.isVideo(dialArgs.videoState)))
-                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
+                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
+                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras);
 
         boolean useImsForEmergency = imsPhone != null
                 && isEmergency
@@ -1116,7 +1124,8 @@ public class GsmCdmaPhone extends Phone {
         // Check non-emergency voice CS call - shouldn't dial when POWER_OFF
         if (mSST != null && mSST.mSS.getState() == ServiceState.STATE_POWER_OFF /* CS POWER_OFF */
                 && !VideoProfile.isVideo(dialArgs.videoState) /* voice call */
-                && !isEmergency /* non-emergency call */) {
+                && !isEmergency /* non-emergency call */
+                && !(isUt && useImsForUt) /* not UT */) {
             throw new CallStateException(
                 CallStateException.ERROR_POWER_OFF,
                 "cannot dial voice call in airplane mode");
@@ -1165,7 +1174,7 @@ public class GsmCdmaPhone extends Phone {
         }
 
         Phone imsPhone = mImsPhone;
-        boolean isEmergency = PhoneNumberUtils.isEmergencyNumber(getSubId(), dialString);
+        boolean isEmergency = isEmergencyNumber(dialString);
         boolean shouldConfirmCall =
                         // Using IMS
                         isImsUseEnabled()
@@ -1344,6 +1353,27 @@ public class GsmCdmaPhone extends Phone {
             if (mCT.mState == PhoneConstants.State.OFFHOOK && check) {
                 mCi.sendBurstDtmf(dtmfString, on, off, onComplete);
             }
+        }
+    }
+
+    @Override
+    public void addParticipant(String dialString) throws CallStateException {
+        Phone imsPhone = mImsPhone;
+        boolean imsUseEnabled = isImsUseEnabled()
+                 && imsPhone != null
+                 && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
+                 imsPhone.isVideoEnabled())
+                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
+
+        if (imsUseEnabled) {
+            try {
+                logd("addParticipant :: Trying to add participant in IMS call");
+                imsPhone.addParticipant(dialString);
+            } catch (CallStateException e) {
+                loge("addParticipant :: IMS PS call exception " + e);
+            }
+        } else {
+            loge("addParticipant :: IMS is disabled so unable to add participant with IMS call");
         }
     }
 
@@ -2285,10 +2315,10 @@ public class GsmCdmaPhone extends Phone {
                 // Force update IMS service if it is available, if it isn't the config will be
                 // updated when ImsPhoneCallTracker opens a connection.
                 ImsManager imsManager = ImsManager.getInstance(mContext, mPhoneId);
-                if (imsManager.isServiceAvailable()) {
+                if (imsManager.isServiceAvailable() && getIccRecordsLoaded()) {
                     imsManager.updateImsServiceConfig(true);
                 } else {
-                    logd("ImsManager is not available to update CarrierConfig.");
+                    logd("ImsManager/IccRecords Loaded are not available to update CarrierConfig.");
                 }
 
                 // Update broadcastEmergencyCallStateChanges
@@ -3422,10 +3452,6 @@ public class GsmCdmaPhone extends Phone {
         }
         pw.println(" isCspPlmnEnabled()=" + isCspPlmnEnabled());
         pw.flush();
-        pw.println("++++++++++++++++++++++++++++++++");
-        pw.println("DeviceStateMonitor:");
-        mDeviceStateMonitor.dump(fd, pw, args);
-        pw.println("++++++++++++++++++++++++++++++++");
     }
 
     @Override

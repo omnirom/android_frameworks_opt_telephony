@@ -33,17 +33,18 @@ import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
+import android.telephony.ims.ImsCallProfile;
+import android.telephony.ims.ImsStreamMediaProfile;
 import android.text.TextUtils;
 
 import com.android.ims.ImsCall;
-import android.telephony.ims.ImsCallProfile;
 import com.android.ims.ImsException;
-import android.telephony.ims.ImsStreamMediaProfile;
 import com.android.ims.internal.ImsVideoCallProviderWrapper;
 import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
 
 import java.util.Objects;
@@ -210,17 +211,37 @@ public class ImsPhoneConnection extends Connection implements
     /** This is an MO call, created when dialing */
     public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
             ImsPhoneCall parent, boolean isEmergency) {
+        this(phone, dialString, ct, parent, isEmergency, null);
+    }
+
+    /** This is an MO call, created when dialing */
+    public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
+            ImsPhoneCall parent, boolean isEmergency, Bundle extras) {
         super(PhoneConstants.PHONE_TYPE_IMS);
         createWakeLock(phone.getContext());
         acquireWakeLock();
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+
+        if (extras != null) {
+            isConferenceUri = extras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = extras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
 
         mOwner = ct;
         mHandler = new MyHandler(mOwner.getLooper());
 
         mDialString = dialString;
 
-        mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
-        mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
+        if (isConferenceUri || isSkipSchemaParsing) {
+            mAddress = dialString;
+            mPostDialString = "";
+        } else {
+            mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
+            mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
+        }
 
         //mIndex = -1;
 
@@ -985,7 +1006,6 @@ public class ImsPhoneConnection extends Connection implements
         imsCall.sendRttModifyResponse(accept);
         if (accept) {
             setCurrentRttTextStream(textStream);
-            startRttTextProcessing();
         } else {
             Rlog.e(LOG_TAG, "sendRttModifyResponse: foreground call has no connections");
         }

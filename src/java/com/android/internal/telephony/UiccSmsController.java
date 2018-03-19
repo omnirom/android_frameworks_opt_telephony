@@ -39,7 +39,7 @@ import java.util.List;
  * UiccSmsController to provide an inter-process communication to
  * access Sms in Icc.
  */
-public class UiccSmsController extends ISms.Stub {
+public class UiccSmsController extends ISmsBaseImpl {
     static final String LOG_TAG = "RIL_UiccSmsController";
 
     protected UiccSmsController() {
@@ -99,7 +99,7 @@ public class UiccSmsController extends ISms.Stub {
     @Override
     public void sendDataForSubscriber(int subId, String callingPackage, String destAddr,
             String scAddr, int destPort, byte[] data, PendingIntent sentIntent,
-            PendingIntent deliveryIntent) {
+            PendingIntent deliveryIntent) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendData(callingPackage, destAddr, scAddr, destPort, data,
@@ -126,7 +126,8 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     public void sendText(String callingPackage, String destAddr, String scAddr,
-            String text, PendingIntent sentIntent, PendingIntent deliveryIntent) {
+            String text, PendingIntent sentIntent, PendingIntent deliveryIntent) 
+            throws android.os.RemoteException {
         sendTextForSubscriber(getPreferredSmsSubscription(), callingPackage, destAddr, scAddr,
             text, sentIntent, deliveryIntent, true /* persistMessageForNonDefaultSmsApp*/);
     }
@@ -134,7 +135,7 @@ public class UiccSmsController extends ISms.Stub {
     @Override
     public void sendTextForSubscriber(int subId, String callingPackage, String destAddr,
             String scAddr, String text, PendingIntent sentIntent, PendingIntent deliveryIntent,
-            boolean persistMessageForNonDefaultSmsApp) {
+            boolean persistMessageForNonDefaultSmsApp) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendText(callingPackage, destAddr, scAddr, text, sentIntent,
@@ -163,7 +164,7 @@ public class UiccSmsController extends ISms.Stub {
     public void sendTextForSubscriberWithOptions(int subId, String callingPackage,
             String destAddr, String scAddr, String parts, PendingIntent sentIntents,
             PendingIntent deliveryIntents, boolean persistMessage, int priority,
-            boolean expectMore, int validityPeriod) {
+            boolean expectMore, int validityPeriod) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             iccSmsIntMgr.sendTextWithOptions(callingPackage, destAddr, scAddr, parts, sentIntents,
@@ -202,7 +203,7 @@ public class UiccSmsController extends ISms.Stub {
     public void sendMultipartTextForSubscriberWithOptions(int subId, String callingPackage,
             String destAddr, String scAddr, List<String> parts, List<PendingIntent> sentIntents,
             List<PendingIntent> deliveryIntents, boolean persistMessage, int priority,
-            boolean expectMore, int validityPeriod) {
+            boolean expectMore, int validityPeriod) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             iccSmsIntMgr.sendMultipartTextWithOptions(callingPackage, destAddr, scAddr, parts,
@@ -255,12 +256,13 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public int getPremiumSmsPermission(String packageName) {
+    public int getPremiumSmsPermission(String packageName) throws android.os.RemoteException {
         return getPremiumSmsPermissionForSubscriber(getPreferredSmsSubscription(), packageName);
     }
 
     @Override
-    public int getPremiumSmsPermissionForSubscriber(int subId, String packageName) {
+    public int getPremiumSmsPermissionForSubscriber(int subId, String packageName)
+            throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             return iccSmsIntMgr.getPremiumSmsPermission(packageName);
@@ -272,12 +274,14 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public void setPremiumSmsPermission(String packageName, int permission) {
+    public void setPremiumSmsPermission(String packageName, int permission)
+            throws android.os.RemoteException {
          setPremiumSmsPermissionForSubscriber(getPreferredSmsSubscription(), packageName, permission);
     }
 
     @Override
-    public void setPremiumSmsPermissionForSubscriber(int subId, String packageName, int permission) {
+    public void setPremiumSmsPermissionForSubscriber(int subId, String packageName, int permission)
+            throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             iccSmsIntMgr.setPremiumSmsPermission(packageName, permission);
@@ -287,7 +291,7 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public boolean isImsSmsSupportedForSubscriber(int subId) {
+    public boolean isImsSmsSupportedForSubscriber(int subId) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             return iccSmsIntMgr.isImsSmsSupported();
@@ -298,7 +302,7 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public boolean isSmsSimPickActivityNeeded(int subId) {
+    public boolean isSmsSimPickActivityNeeded(int subId) throws android.os.RemoteException {
         final Context context = ActivityThread.currentApplication().getApplicationContext();
         TelephonyManager telephonyManager =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
@@ -331,7 +335,7 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public String getImsSmsFormatForSubscriber(int subId) {
+    public String getImsSmsFormatForSubscriber(int subId) throws android.os.RemoteException {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
             return iccSmsIntMgr.getImsSmsFormat();
@@ -343,7 +347,8 @@ public class UiccSmsController extends ISms.Stub {
 
     @Override
     public void injectSmsPduForSubscriber(
-            int subId, byte[] pdu, String format, PendingIntent receivedIntent) {
+            int subId, byte[] pdu, String format, PendingIntent receivedIntent)
+            throws android.os.RemoteException{
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.injectSmsPdu(pdu, format, receivedIntent);
@@ -367,7 +372,7 @@ public class UiccSmsController extends ISms.Stub {
      * @return User preferred SMS subscription
      */
     @Override
-    public int getPreferredSmsSubscription() {
+    public int getPreferredSmsSubscription() throws android.os.RemoteException {
         return SubscriptionController.getInstance().getDefaultSmsSubId();
     }
 
@@ -376,7 +381,7 @@ public class UiccSmsController extends ISms.Stub {
      * @return True if SMS prompt is enabled.
      */
     @Override
-    public boolean isSMSPromptEnabled() {
+    public boolean isSMSPromptEnabled() throws android.os.RemoteException {
         return PhoneFactory.isSMSPromptEnabled();
     }
 
@@ -409,7 +414,8 @@ public class UiccSmsController extends ISms.Stub {
     }
 
     @Override
-    public String createAppSpecificSmsToken(int subId, String callingPkg, PendingIntent intent) {
+    public String createAppSpecificSmsToken(int subId, String callingPkg, PendingIntent intent)
+            throws android.os.RemoteException {
         return getPhone(subId).getAppSmsManager().createAppSpecificSmsToken(callingPkg, intent);
     }
 
@@ -425,6 +431,22 @@ public class UiccSmsController extends ISms.Stub {
     private void sendErrorInPendingIntents(List<PendingIntent> intents, int errorCode) {
         for (PendingIntent intent : intents) {
             sendErrorInPendingIntent(intent, errorCode);
+        }
+    }
+
+    /**
+     * Get the capacity count of sms on Icc card.
+     **/
+    @Override
+    public int getSmsCapacityOnIccForSubscriber(int subId)
+            throws android.os.RemoteException {
+       IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
+
+        if (iccSmsIntMgr != null ) {
+            return iccSmsIntMgr.getSmsCapacityOnIcc();
+        } else {
+            Rlog.e(LOG_TAG, "iccSmsIntMgr is null for " + " subId: " + subId);
+            return -1;
         }
     }
 }
