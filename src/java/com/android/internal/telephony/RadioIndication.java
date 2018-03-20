@@ -81,12 +81,13 @@ import android.hardware.radio.V1_0.SimRefreshResult;
 import android.hardware.radio.V1_0.SsInfoData;
 import android.hardware.radio.V1_0.StkCcUnsolSsResult;
 import android.hardware.radio.V1_0.SuppSvcNotification;
+import android.hardware.radio.V1_2.CellConnectionStatus;
 import android.hardware.radio.V1_2.IRadioIndication;
-import android.hardware.radio.V1_2.PhysicalChannelConfig;
 import android.os.AsyncResult;
 import android.os.SystemProperties;
 import android.telephony.CellInfo;
 import android.telephony.PcoData;
+import android.telephony.PhysicalChannelConfig;
 import android.telephony.SignalStrength;
 import android.telephony.SmsMessage;
 
@@ -101,6 +102,7 @@ import com.android.internal.telephony.uicc.IccRefreshResponse;
 import com.android.internal.telephony.uicc.IccUtils;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public class RadioIndication extends IRadioIndication.Stub {
     RIL mRil;
@@ -239,7 +241,15 @@ public class RadioIndication extends IRadioIndication.Stub {
      */
     public void currentLinkCapacityEstimate(int indicationType,
                                             android.hardware.radio.V1_2.LinkCapacityEstimate lce) {
-      // TODO(b/70638175) Implement method.
+        mRil.processIndication(indicationType);
+
+        LinkCapacityEstimate response = RIL.convertHalLceData(lce, mRil);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_LCEDATA_RECV, response);
+
+        if (mRil.mLceInfoRegistrants != null) {
+            mRil.mLceInfoRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
+        }
     }
 
     /**
@@ -262,8 +272,31 @@ public class RadioIndication extends IRadioIndication.Stub {
      * Indicates current physical channel configuration.
      */
     public void currentPhysicalChannelConfigs(int indicationType,
-                                   ArrayList<PhysicalChannelConfig> configs) {
-      // TODO(b/70638175) Implement method.
+            ArrayList<android.hardware.radio.V1_2.PhysicalChannelConfig> configs) {
+        List<PhysicalChannelConfig> response = new ArrayList<>(configs.size());
+
+        for (android.hardware.radio.V1_2.PhysicalChannelConfig config : configs) {
+            int status;
+            switch (config.status) {
+                case CellConnectionStatus.PRIMARY_SERVING:
+                    status = PhysicalChannelConfig.CONNECTION_PRIMARY_SERVING;
+                    break;
+                case CellConnectionStatus.SECONDARY_SERVING:
+                    status = PhysicalChannelConfig.CONNECTION_SECONDARY_SERVING;
+                    break;
+                default:
+                    // only PRIMARY_SERVING and SECONDARY_SERVING are supported.
+                    mRil.riljLoge("Unsupported CellConnectionStatus in PhysicalChannelConfig: "
+                            + config.status);
+                    status = PhysicalChannelConfig.CONNECTION_UNKNOWN;
+                    break;
+            }
+
+            response.add(new PhysicalChannelConfig(status, config.cellBandwidthDownlink));
+        }
+
+        mRil.mPhysicalChannelConfigurationRegistrants.notifyRegistrants(
+                new AsyncResult(null, response, null));
     }
 
     public void dataCallListChanged(int indicationType, ArrayList<SetupDataCallResult> dcList) {
@@ -806,12 +839,12 @@ public class RadioIndication extends IRadioIndication.Stub {
     public void lceData(int indicationType, LceDataInfo lce) {
         mRil.processIndication(indicationType);
 
-        ArrayList<Integer> response = RIL.convertHalLceData(lce, mRil);
+        LinkCapacityEstimate response = RIL.convertHalLceData(lce, mRil);
 
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_LCEDATA_RECV, response);
 
-        if (mRil.mLceInfoRegistrant != null) {
-            mRil.mLceInfoRegistrant.notifyRegistrant(new AsyncResult(null, response, null));
+        if (mRil.mLceInfoRegistrants != null) {
+            mRil.mLceInfoRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
         }
     }
 

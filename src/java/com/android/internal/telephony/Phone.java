@@ -28,7 +28,6 @@ import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.AsyncResult;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -48,7 +47,9 @@ import android.telephony.CellInfoCdma;
 import android.telephony.CellLocation;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
+import android.telephony.PhoneNumberUtils;
 import android.telephony.PhoneStateListener;
+import android.telephony.PhysicalChannelConfig;
 import android.telephony.RadioAccessFamily;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -278,6 +279,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private String mName;
     private final String mActionDetached;
     private final String mActionAttached;
+    protected DeviceStateMonitor mDeviceStateMonitor;
 
     protected int mPhoneId;
 
@@ -2144,6 +2146,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyCellInfo(this, privatizeCellInfoList(cellInfo));
     }
 
+    /** Notify {@link PhysicalChannelConfig} changes. */
+    public void notifyPhysicalChannelConfiguration(List<PhysicalChannelConfig> configs) {
+        mNotifier.notifyPhysicalChannelConfiguration(this, configs);
+    }
+
     public void notifyVoLteServiceStateChanged(VoLteServiceState lteState) {
         mNotifier.notifyVoLteServiceStateChanged(this, lteState);
     }
@@ -2356,6 +2363,23 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public String getCdmaPrlVersion(){
         return null;
+    }
+
+    /**
+     * Initiate to add a participant in an IMS call.
+     * This happens asynchronously, so you cannot assume the audio path is
+     * connected (or a call index has been assigned) until PhoneStateChanged
+     * notification has occurred.
+     *
+     * @exception CallStateException if a new outgoing call is not currently
+     *                possible because no more call slots exist or a call exists
+     *                that is dialing, alerting, ringing, or waiting. Other
+     *                errors are handled asynchronously.
+     */
+    public void addParticipant(String dialString) throws CallStateException {
+        // To be overridden by GsmCdmaPhone and ImsPhone.
+        throw new CallStateException("addParticipant :: No-Op base implementation. "
+                + this);
     }
 
     /**
@@ -3584,6 +3608,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return null;
     }
 
+    public void setRadioIndicationUpdateMode(int filters, int mode) {
+        if (mDeviceStateMonitor != null) {
+            mDeviceStateMonitor.setIndicationUpdateMode(filters, mode);
+        }
+    }
+
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Phone: subId=" + getSubId());
         pw.println(" mPhoneId=" + mPhoneId);
@@ -3699,6 +3729,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.println("++++++++++++++++++++++++++++++++");
         }
 
+        if (mDeviceStateMonitor != null) {
+            pw.println("DeviceStateMonitor:");
+            mDeviceStateMonitor.dump(fd, pw, args);
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
         if (mCi != null && mCi instanceof RIL) {
             try {
                 ((RIL)mCi).dump(fd, pw, args);
@@ -3709,5 +3745,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.flush();
             pw.println("++++++++++++++++++++++++++++++++");
         }
+    }
+
+    public boolean isEmergencyNumber(String address) {
+        return PhoneNumberUtils.isEmergencyNumber(getSubId(), address);
     }
 }

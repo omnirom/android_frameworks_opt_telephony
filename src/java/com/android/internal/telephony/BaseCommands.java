@@ -75,6 +75,8 @@ public abstract class BaseCommands implements CommandsInterface {
     protected RegistrantList mRilNetworkScanResultRegistrants = new RegistrantList();
     protected RegistrantList mModemResetRegistrants = new RegistrantList();
     protected RegistrantList mNattKeepaliveStatusRegistrants = new RegistrantList();
+    protected RegistrantList mPhysicalChannelConfigurationRegistrants = new RegistrantList();
+    protected RegistrantList mLceInfoRegistrants = new RegistrantList();
 
     protected Registrant mGsmSmsRegistrant;
     protected Registrant mCdmaSmsRegistrant;
@@ -95,7 +97,6 @@ public abstract class BaseCommands implements CommandsInterface {
     protected Registrant mGsmBroadcastSmsRegistrant;
     protected Registrant mCatCcAlphaRegistrant;
     protected Registrant mSsRegistrant;
-    protected Registrant mLceInfoRegistrant;
 
     // Preferred network type received from PhoneFactory.
     // This is used when establishing a connection to the
@@ -836,6 +837,17 @@ public abstract class BaseCommands implements CommandsInterface {
     }
 
     @Override
+    public void registerForPhysicalChannelConfiguration(Handler h, int what, Object obj) {
+        Registrant r = new Registrant(h, what, obj);
+        mPhysicalChannelConfigurationRegistrants.add(r);
+    }
+
+    @Override
+    public void unregisterForPhysicalChannelConfiguration(Handler h) {
+        mPhysicalChannelConfigurationRegistrants.remove(h);
+    }
+
+    @Override
     public void registerForSrvccStateChanged(Handler h, int what, Object obj) {
         Registrant r = new Registrant (h, what, obj);
 
@@ -899,15 +911,18 @@ public abstract class BaseCommands implements CommandsInterface {
 
     @Override
     public void registerForLceInfo(Handler h, int what, Object obj) {
-      mLceInfoRegistrant = new Registrant(h, what, obj);
+        Registrant r = new Registrant(h, what, obj);
+
+        synchronized (mStateMonitor) {
+            mLceInfoRegistrants.add(r);
+        }
     }
 
     @Override
     public void unregisterForLceInfo(Handler h) {
-      if (mLceInfoRegistrant != null && mLceInfoRegistrant.getHandler() == h) {
-          mLceInfoRegistrant.clear();
-          mLceInfoRegistrant = null;
-      }
+        synchronized (mStateMonitor) {
+            mLceInfoRegistrants.remove(h);
+        }
     }
 
     @Override

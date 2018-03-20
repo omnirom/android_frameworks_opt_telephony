@@ -62,6 +62,7 @@ import android.telephony.CellInfoWcdma;
 import android.telephony.CellLocation;
 import android.telephony.DataSpecificRegistrationStates;
 import android.telephony.NetworkRegistrationState;
+import android.telephony.PhysicalChannelConfig;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
@@ -216,6 +217,7 @@ public class ServiceStateTracker extends Handler {
     protected static final int EVENT_SIM_NOT_INSERTED                  = 52;
     protected static final int EVENT_IMS_SERVICE_STATE_CHANGED         = 53;
     protected static final int EVENT_RADIO_POWER_OFF_DONE              = 54;
+    protected static final int EVENT_PHYSICAL_CHANNEL_CONFIG           = 55;
 
     private class CellInfoResult {
         List<CellInfo> list;
@@ -484,6 +486,7 @@ public class ServiceStateTracker extends Handler {
         mUiccController.registerForIccChanged(this, EVENT_ICC_CHANGED, null);
         mCi.setOnSignalStrengthUpdate(this, EVENT_SIGNAL_STRENGTH_UPDATE, null);
         mCi.registerForCellInfoList(this, EVENT_UNSOL_CELL_INFO_LIST, null);
+        mCi.registerForPhysicalChannelConfiguration(this, EVENT_PHYSICAL_CHANNEL_CONFIG, null);
 
         mSubscriptionController = SubscriptionController.getInstance();
         mSubscriptionManager = SubscriptionManager.from(phone.getContext());
@@ -644,6 +647,7 @@ public class ServiceStateTracker extends Handler {
         mCi.unSetOnSignalStrengthUpdate(this);
         mUiccController.unregisterForIccChanged(this);
         mCi.unregisterForCellInfoList(this);
+        mCi.unregisterForPhysicalChannelConfiguration(this);
         mSubscriptionManager
             .removeOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
         mCi.unregisterForImsNetworkStateChanged(this);
@@ -1414,6 +1418,18 @@ public class ServiceStateTracker extends Handler {
                     boolean enable = (boolean) ar.result;
                     if (DBG) log("EVENT_RADIO_POWER_FROM_CARRIER: " + enable);
                     setRadioPowerFromCarrier(enable);
+                }
+                break;
+
+            case EVENT_PHYSICAL_CHANNEL_CONFIG:
+                ar = (AsyncResult) msg.obj;
+                if (ar.exception == null) {
+                    List<PhysicalChannelConfig> list = (List<PhysicalChannelConfig>) ar.result;
+                    if (VDBG) {
+                        log("EVENT_PHYSICAL_CHANNEL_CONFIG: size=" + list.size() + " list="
+                                + list);
+                    }
+                    mPhone.notifyPhysicalChannelConfiguration(list);
                 }
                 break;
 
@@ -3930,8 +3946,16 @@ public class ServiceStateTracker extends Handler {
                 mSignalStrength.setGsm(isGsm);
             }
             mSignalStrength.setLteRsrpBoost(mSS.getLteEarfcnRsrpBoost());
-            mSignalStrength.setUseOnlyRsrpForLteLevel(isUseOnlyRsrpForLteLevel());
-            mSignalStrength.setLteRsrpThresholds(getLteRsrpThresholds());
+
+            PersistableBundle config = getCarrierConfig();
+            mSignalStrength.setUseOnlyRsrpForLteLevel(config.getBoolean(
+                    CarrierConfigManager.KEY_USE_ONLY_RSRP_FOR_LTE_SIGNAL_BAR_BOOL));
+            mSignalStrength.setLteRsrpThresholds(config.getIntArray(
+                    CarrierConfigManager.KEY_LTE_RSRP_THRESHOLDS_INT_ARRAY));
+            mSignalStrength.setWcdmaDefaultSignalMeasurement(config.getString(
+                    CarrierConfigManager.KEY_WCDMA_DEFAULT_SIGNAL_STRENGTH_MEASUREMENT_STRING));
+            mSignalStrength.setWcdmaRscpThresholds(config.getIntArray(
+                    CarrierConfigManager.KEY_WCDMA_RSCP_THRESHOLDS_INT_ARRAY));
         } else {
             log("onSignalStrengthResult() Exception from RIL : " + ar.exception);
             mSignalStrength = new SignalStrength(isGsm);
@@ -4502,26 +4526,6 @@ public class ServiceStateTracker extends Handler {
             regState = dataRegState;
         }
         return regState;
-    }
-
-    /**
-     * Check whether to use only RSRP for the number of LTE signal bar.
-     *
-     * @return true if it should use only RSRP for the number of LTE signal bar.
-     */
-    private boolean isUseOnlyRsrpForLteLevel() {
-        return getCarrierConfig().getBoolean(
-                CarrierConfigManager.KEY_USE_ONLY_RSRP_FOR_LTE_SIGNAL_BAR_BOOL);
-    }
-
-    /**
-     * Gets the threshold array for determining the display level of LTE signal bar.
-     *
-     * @return int array for determining the display level.
-     */
-    private int[] getLteRsrpThresholds() {
-        return getCarrierConfig().getIntArray(
-                CarrierConfigManager.KEY_LTE_RSRP_THRESHOLDS_INT_ARRAY);
     }
 
     /**
