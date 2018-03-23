@@ -27,7 +27,6 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
 import android.telephony.Rlog;
-import android.util.LocalLog;
 import android.view.WindowManager;
 
 import com.android.internal.R;
@@ -65,8 +64,6 @@ public class UiccSlot extends Handler {
 
     private static final int EVENT_CARD_REMOVED = 13;
     private static final int EVENT_CARD_ADDED = 14;
-
-    private static final LocalLog sLocalLog = new LocalLog(100);
 
     public UiccSlot(Context c, boolean isActive) {
         if (DBG) log("Creating");
@@ -202,6 +199,10 @@ public class UiccSlot extends Handler {
         }
     }
 
+    public boolean isExtendedApduSupported() {
+        return  (mAtr != null && mAtr.isExtendedApduSupported());
+    }
+
     @Override
     protected void finalize() {
         if (DBG) log("UiccSlot finalized");
@@ -324,7 +325,7 @@ public class UiccSlot extends Handler {
         mUiccCard = null;
 
         if (mPhoneId != INVALID_PHONE_ID) {
-            UiccProfile.broadcastInternalIccStateChangedIntent(
+            UiccController.updateInternalIccState(
                     IccCardConstants.INTENT_VALUE_ICC_UNKNOWN, null, mPhoneId);
         }
 
@@ -338,10 +339,6 @@ public class UiccSlot extends Handler {
 
     private void loge(String msg) {
         Rlog.e(TAG, msg);
-    }
-
-    private void loglocal(String msg) {
-        if (DBG) sLocalLog.log(msg);
     }
 
     /**
@@ -361,8 +358,6 @@ public class UiccSlot extends Handler {
         }
         pw.println();
         pw.flush();
-        pw.println("sLocalLog:");
-        sLocalLog.dump(fd, pw, args);
         pw.flush();
     }
 }
