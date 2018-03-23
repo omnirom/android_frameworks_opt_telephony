@@ -344,6 +344,7 @@ public class CarrierServiceStateTracker extends Handler {
                 notificationIntent.setComponent(new ComponentName("com.android.phone",
                         "com.android.phone.MobileNetworkSettings"));
             }
+            notificationIntent.putExtra("expandable", true);
             PendingIntent settingsIntent = PendingIntent.getActivity(context, 0, notificationIntent,
                     PendingIntent.FLAG_ONE_SHOT);
             CharSequence title = context.getText(

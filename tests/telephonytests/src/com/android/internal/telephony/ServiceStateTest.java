@@ -199,9 +199,9 @@ public class ServiceStateTest extends TestCase {
         ss.setIsManualSelection(true);
         assertTrue(ss.getIsManualSelection());
 
-        ss.setSystemAndNetworkId(123, 456);
-        assertEquals(123, ss.getSystemId());
-        assertEquals(456, ss.getNetworkId());
+        ss.setCdmaSystemAndNetworkId(123, 456);
+        assertEquals(123, ss.getCdmaSystemId());
+        assertEquals(456, ss.getCdmaNetworkId());
 
         ss.setEmergencyOnly(true);
         assertTrue(ss.isEmergencyOnly());
@@ -220,7 +220,7 @@ public class ServiceStateTest extends TestCase {
         ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT);
         ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_EVDO_0);
         ss.setCssIndicator(1);
-        ss.setSystemAndNetworkId(2, 3);
+        ss.setCdmaSystemAndNetworkId(2, 3);
         ss.setCdmaRoamingIndicator(4);
         ss.setCdmaDefaultRoamingIndicator(5);
         ss.setCdmaEriIconIndex(6);
@@ -250,7 +250,7 @@ public class ServiceStateTest extends TestCase {
         ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_1xRTT);
         ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_EVDO_0);
         ss.setCssIndicator(1);
-        ss.setSystemAndNetworkId(2, 3);
+        ss.setCdmaSystemAndNetworkId(2, 3);
         ss.setCdmaRoamingIndicator(4);
         ss.setCdmaDefaultRoamingIndicator(5);
         ss.setCdmaEriIconIndex(6);
@@ -305,5 +305,45 @@ public class ServiceStateTest extends TestCase {
         ss.addNetworkRegistrationState(wwanDataRegState);
         assertEquals(ss.getNetworkRegistrationStates(AccessNetworkConstants.TransportType.WWAN,
                 NetworkRegistrationState.DOMAIN_PS), wwanDataRegState);
+    }
+
+    @SmallTest
+    public void testDuplexMode_notLte() {
+        ServiceState ss = new ServiceState();
+        ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_GSM);
+        ss.setChannelNumber(2400);
+
+        assertEquals(ss.getDuplexMode(), ServiceState.DUPLEX_MODE_UNKNOWN);
+    }
+
+    @SmallTest
+    public void testDuplexMode_invalidEarfcn() {
+        ServiceState ss = new ServiceState();
+        ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_LTE);
+        ss.setChannelNumber(-1);
+
+        assertEquals(ss.getDuplexMode(), ServiceState.DUPLEX_MODE_UNKNOWN);
+
+        ss.setChannelNumber(Integer.MAX_VALUE);
+
+        assertEquals(ss.getDuplexMode(), ServiceState.DUPLEX_MODE_UNKNOWN);
+    }
+
+    @SmallTest
+    public void testDuplexMode_FddChannel() {
+        ServiceState ss = new ServiceState();
+        ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_LTE);
+        ss.setChannelNumber(2400); // band 5
+
+        assertEquals(ss.getDuplexMode(), ServiceState.DUPLEX_MODE_FDD);
+    }
+
+    @SmallTest
+    public void testDuplexMode_TddChannel() {
+        ServiceState ss = new ServiceState();
+        ss.setRilDataRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_LTE);
+        ss.setChannelNumber(36000); // band 33
+
+        assertEquals(ss.getDuplexMode(), ServiceState.DUPLEX_MODE_TDD);
     }
 }

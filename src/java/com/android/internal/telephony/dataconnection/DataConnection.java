@@ -39,6 +39,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
@@ -50,6 +51,7 @@ import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Pair;
 import android.util.SparseArray;
+import android.util.StatsLog;
 import android.util.TimeUtils;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -297,8 +299,20 @@ public class DataConnection extends StateMachine {
         return new LinkProperties(mLinkProperties);
     }
 
-    boolean getIsInactive() {
+    boolean isInactive() {
         return getCurrentState() == mInactiveState;
+    }
+
+    boolean isDisconnecting() {
+        return getCurrentState() == mDisconnectingState;
+    }
+
+    boolean isActive() {
+        return getCurrentState() == mActiveState;
+    }
+
+    boolean isActivating() {
+        return getCurrentState() == mActivatingState;
     }
 
     int getCid() {
@@ -1271,7 +1285,7 @@ public class DataConnection extends StateMachine {
                     break;
                 }
                 case DcAsyncChannel.REQ_IS_INACTIVE: {
-                    boolean val = getIsInactive();
+                    boolean val = isInactive();
                     if (VDBG) log("REQ_IS_INACTIVE  isInactive=" + val);
                     mAc.replyToMessage(msg, DcAsyncChannel.RSP_IS_INACTIVE, val ? 1 : 0);
                     break;
@@ -1463,6 +1477,12 @@ public class DataConnection extends StateMachine {
         public void enter() {
             mTag += 1;
             if (DBG) log("DcInactiveState: enter() mTag=" + mTag);
+            StatsLog.write(StatsLog.MOBILE_CONNECTION_STATE_CHANGED,
+                    StatsLog.MOBILE_CONNECTION_STATE_CHANGED__STATE__INACTIVE,
+                    mPhone.getPhoneId(), mId,
+                    mApnSetting != null ? (long) mApnSetting.typesBitmap : 0L,
+                    mApnSetting != null
+                        ? mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT) : false);
 
             if (mConnectionParams != null) {
                 if (DBG) {
@@ -1552,6 +1572,15 @@ public class DataConnection extends StateMachine {
      * The state machine is activating a connection.
      */
     private class DcActivatingState extends State {
+        @Override
+        public void enter() {
+            StatsLog.write(StatsLog.MOBILE_CONNECTION_STATE_CHANGED,
+                    StatsLog.MOBILE_CONNECTION_STATE_CHANGED__STATE__ACTIVATING,
+                    mPhone.getPhoneId(), mId,
+                    mApnSetting != null ? (long) mApnSetting.typesBitmap : 0L,
+                    mApnSetting != null
+                        ? mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT) : false);
+        }
         @Override
         public boolean processMessage(Message msg) {
             boolean retVal;
@@ -1660,6 +1689,12 @@ public class DataConnection extends StateMachine {
 
         @Override public void enter() {
             if (DBG) log("DcActiveState: enter dc=" + DataConnection.this);
+            StatsLog.write(StatsLog.MOBILE_CONNECTION_STATE_CHANGED,
+                    StatsLog.MOBILE_CONNECTION_STATE_CHANGED__STATE__ACTIVE,
+                    mPhone.getPhoneId(), mId,
+                    mApnSetting != null ? (long) mApnSetting.typesBitmap : 0L,
+                    mApnSetting != null
+                        ? mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT) : false);
 
             updateNetworkInfo();
 
@@ -1838,10 +1873,26 @@ public class DataConnection extends StateMachine {
                     KeepalivePacketData pkt = (KeepalivePacketData) msg.obj;
                     int slotId = msg.arg1;
                     int intervalMillis = msg.arg2 * 1000;
-                    mPhone.mCi.startNattKeepalive(
-                            DataConnection.this.mCid, pkt, intervalMillis,
-                            DataConnection.this.obtainMessage(
-                                    EVENT_KEEPALIVE_STARTED, slotId, 0, null));
+                    if (mDataServiceManager.getTransportType()
+                            == AccessNetworkConstants.TransportType.WWAN) {
+                        mPhone.mCi.startNattKeepalive(
+                                DataConnection.this.mCid, pkt, intervalMillis,
+                                DataConnection.this.obtainMessage(
+                                        EVENT_KEEPALIVE_STARTED, slotId, 0, null));
+                    } else {
+                        // We currently do not support NATT Keepalive requests using the
+                        // DataService API, so unless the request is WWAN (always bound via
+                        // the CommandsInterface), the request cannot be honored.
+                        //
+                        // TODO: b/72331356 to add support for Keepalive to the DataService
+                        // so that keepalive requests can be handled (if supported) by the
+                        // underlying transport.
+                        if (mNetworkAgent != null) {
+                            mNetworkAgent.onPacketKeepaliveEvent(
+                                    msg.arg1,
+                                    ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
+                        }
+                    }
                     retVal = HANDLED;
                     break;
                 }
@@ -1950,6 +2001,15 @@ public class DataConnection extends StateMachine {
      */
     private class DcDisconnectingState extends State {
         @Override
+        public void enter() {
+            StatsLog.write(StatsLog.MOBILE_CONNECTION_STATE_CHANGED,
+                    StatsLog.MOBILE_CONNECTION_STATE_CHANGED__STATE__DISCONNECTING,
+                    mPhone.getPhoneId(), mId,
+                    mApnSetting != null ? (long) mApnSetting.typesBitmap : 0L,
+                    mApnSetting != null
+                        ? mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT) : false);
+        }
+        @Override
         public boolean processMessage(Message msg) {
             boolean retVal;
 
@@ -1998,6 +2058,15 @@ public class DataConnection extends StateMachine {
      * The state machine is disconnecting after an creating a connection.
      */
     private class DcDisconnectionErrorCreatingConnection extends State {
+        @Override
+        public void enter() {
+            StatsLog.write(StatsLog.MOBILE_CONNECTION_STATE_CHANGED,
+                    StatsLog.MOBILE_CONNECTION_STATE_CHANGED__STATE__DISCONNECTION_ERROR_CREATING_CONNECTION,
+                    mPhone.getPhoneId(), mId,
+                    mApnSetting != null ? (long) mApnSetting.typesBitmap : 0L,
+                    mApnSetting != null
+                        ? mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT) : false);
+        }
         @Override
         public boolean processMessage(Message msg) {
             boolean retVal;
