@@ -118,6 +118,8 @@ public class GsmCdmaPhone extends Phone {
     /** List of Registrants to receive Supplementary Service Notifications. */
     private RegistrantList mSsnRegistrants = new RegistrantList();
 
+    private static final int IMEI_14_DIGIT = 14;
+
     //CDMA
     // Default Emergency Callback Mode exit timer
     private static final int DEFAULT_ECM_EXIT_TIMER_VALUE = 300000;
@@ -1466,15 +1468,14 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getDeviceId() {
-        if (isPhoneTypeGsm()) {
-            return mImei;
-        } else {
-            CarrierConfigManager configManager = (CarrierConfigManager)
-                    mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            boolean force_imei = configManager.getConfigForSubId(getSubId())
-                    .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
-            if (force_imei) return mImei;
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        boolean force_imei = configManager.getConfigForSubId(getSubId())
+                .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
 
+        if (isPhoneTypeGsm() || force_imei) {
+            return getImei();
+        } else {
             String id = getMeid();
             if ((id == null) || id.matches("^0*$")) {
                 loge("getDeviceId(): MEID is not initialized use ESN");
@@ -1501,6 +1502,14 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getImei() {
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        boolean enable14DigitImei = configManager.getConfigForSubId(getSubId())
+                .getBoolean("config_enable_display_14digit_imei");
+        if (enable14DigitImei && !TextUtils.isEmpty(mImei)
+                && mImei.length() > IMEI_14_DIGIT) {
+            return mImei.substring(0, IMEI_14_DIGIT);
+        }
         return mImei;
     }
 
