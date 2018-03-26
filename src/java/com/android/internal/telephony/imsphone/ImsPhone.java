@@ -715,7 +715,7 @@ public class ImsPhone extends ImsPhoneBase {
             return mCT.dial(dialString, imsDialArgsBuilder.build());
         } else if (mmi.isTemporaryModeCLIR()) {
             imsDialArgsBuilder.setClirMode(mmi.getCLIRMode());
-            return mCT.dial(dialString, imsDialArgsBuilder.build());
+            return mCT.dial(mmi.getDialingNumber(), imsDialArgsBuilder.build());
         } else if (!mmi.isSupportedOverImsPhone()) {
             // If the mmi is not supported by IMS service,
             // try to initiate dialing with default phone
@@ -1291,11 +1291,17 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public void registerForSuppServiceNotification(Handler h, int what, Object obj) {
         mSsnRegistrants.addUnique(h, what, obj);
+        if (mSsnRegistrants.size() == 1) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(true, null);
+        }
     }
 
     @Override
     public void unregisterForSuppServiceNotification(Handler h) {
         mSsnRegistrants.remove(h);
+        if (mSsnRegistrants.size() == 0) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(false, null);
+        }
     }
 
     @Override
