@@ -23,6 +23,7 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.RemoteException;
 import android.os.SystemProperties;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Slog;
@@ -396,6 +397,12 @@ public final class MccTable {
         return locale;
     }
 
+    private static boolean isInvalidOperatorNumeric(String operatorNumeric) {
+        return operatorNumeric == null
+                || operatorNumeric.length() < 5
+                || operatorNumeric.startsWith("000");
+    }
+
     /**
      * Set the country code for wifi.  This sets allowed wifi channels based on the
      * country of the carrier we see.  If we can't see any, reset to 0 so we don't
@@ -404,6 +411,30 @@ public final class MccTable {
      * @param mcc Mobile Country Code of the operator.  0 if not known
      */
     private static void setWifiCountryCodeFromMcc(Context context, int mcc) {
+        final SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
+        final TelephonyManager tm = TelephonyManager.from(context);
+        Slog.d(LOG_TAG, "setWifiCountryCodeFromMcc mcc = " + mcc);
+        int[] subIds = subscriptionManager.getActiveSubscriptionIdList();
+        int phoneId = 0;
+        boolean isValidOnAnySub = false;
+        // Prior to update the "no country" status to wifi service if it is invalid,
+        // Check If any SUB already has valid operator numeric. If it is
+        // found ignore the current SUB's empty or invalid operator numeric.
+        if (mcc == 0 && subIds != null && subIds.length > 0) {
+            for (int subId : subIds) {
+                phoneId = SubscriptionController.getInstance().getPhoneId(subId);
+                String operatorNumeric = tm.getNetworkOperatorForPhone(phoneId);
+                if (!isInvalidOperatorNumeric(operatorNumeric)) {
+                    Slog.d(LOG_TAG, "operatornumeric is valid, "
+                            + "Do not overwrite");
+                    isValidOnAnySub = true;
+                    break;
+                }
+            }
+            if (isValidOnAnySub) {
+                return;
+            }
+        }
         String country = MccTable.countryCodeForMcc(mcc);
         Slog.d(LOG_TAG, "WIFI_COUNTRY_CODE set to " + country);
         WifiManager wM = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
