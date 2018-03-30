@@ -238,7 +238,8 @@ public class GsmCdmaPhone extends Phone {
         @Override
         public void onReceive(Context context, Intent intent) {
             Rlog.d(LOG_TAG, "mBroadcastReceiver: action " + intent.getAction());
-            if (intent.getAction().equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED)) {
+            if (intent.getAction().equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED) &&
+                    intent.getExtras().getInt(PhoneConstants.PHONE_KEY) == mPhoneId) {
                 sendMessage(obtainMessage(EVENT_CARRIER_CONFIG_CHANGED));
             }
         }
