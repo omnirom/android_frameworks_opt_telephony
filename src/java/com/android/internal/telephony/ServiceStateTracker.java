@@ -246,7 +246,9 @@ public class ServiceStateTracker extends Handler {
     private String mCurPlmn = null;
     private boolean mCurShowPlmn = false;
     private boolean mCurShowSpn = false;
-    private int mSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    @VisibleForTesting
+    public int mSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    private int mPrevSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     private boolean mImsRegistered = false;
 
@@ -277,6 +279,7 @@ public class ServiceStateTracker extends Handler {
             if (DBG) log("SubscriptionListener.onSubscriptionInfoChanged");
             // Set the network type, in case the radio does not restore it.
             int subId = mPhone.getSubId();
+            ServiceStateTracker.this.mPrevSubId = mPreviousSubId.get();
             if (mPreviousSubId.getAndSet(subId) != subId) {
                 if (mSubscriptionController.isActiveSubId(subId)) {
                     Context context = mPhone.getContext();
@@ -1062,7 +1065,9 @@ public class ServiceStateTracker extends Handler {
             case EVENT_SIM_READY:
                 // Reset the mPreviousSubId so we treat a SIM power bounce
                 // as a first boot.  See b/19194287
-                mOnSubscriptionsChangedListener.mPreviousSubId.set(-1);
+                mOnSubscriptionsChangedListener.mPreviousSubId.set(
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+                mPrevSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
                 mIsSimReady = true;
                 pollState();
                 // Signal strength polling stops when radio is off
@@ -1604,6 +1609,10 @@ public class ServiceStateTracker extends Handler {
 
         if (ar.exception != null) {
             CommandException.Error err=null;
+
+            if (ar.exception instanceof IllegalStateException) {
+                log("handlePollStateResult exception " + ar.exception);
+            }
 
             if (ar.exception instanceof CommandException) {
                 err = ((CommandException)(ar.exception)).getCommandError();
@@ -3466,17 +3475,19 @@ public class ServiceStateTracker extends Handler {
     }
 
     /**
-     * Cancels all notifications posted to NotificationManager. These notifications for restricted
-     * state and rejection cause for cs registration are no longer valid after the SIM has been
-     * removed.
+     * Cancels all notifications posted to NotificationManager for this subId. These notifications
+     * for restricted state and rejection cause for cs registration are no longer valid after the
+     * SIM has been removed.
      */
     private void cancelAllNotifications() {
-        if (DBG) log("setNotification: cancelAllNotifications");
+        if (DBG) log("cancelAllNotifications: mPrevSubId=" + mPrevSubId);
         NotificationManager notificationManager = (NotificationManager)
                 mPhone.getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-        notificationManager.cancel(PS_NOTIFICATION);
-        notificationManager.cancel(CS_NOTIFICATION);
-        notificationManager.cancel(CS_REJECT_CAUSE_NOTIFICATION);
+        if (SubscriptionManager.isValidSubscriptionId(mPrevSubId)) {
+            notificationManager.cancel(Integer.toString(mPrevSubId), PS_NOTIFICATION);
+            notificationManager.cancel(Integer.toString(mPrevSubId), CS_NOTIFICATION);
+            notificationManager.cancel(Integer.toString(mPrevSubId), CS_REJECT_CAUSE_NOTIFICATION);
+        }
     }
 
     /**
@@ -3488,6 +3499,12 @@ public class ServiceStateTracker extends Handler {
     @VisibleForTesting
     public void setNotification(int notifyType) {
         if (DBG) log("setNotification: create notification " + notifyType);
+
+        if (!SubscriptionManager.isValidSubscriptionId(mSubId)) {
+            // notifications are posted per-sub-id, so return if current sub-id is invalid
+            loge("cannot setNotification on invalid subid mSubId=" + mSubId);
+            return;
+        }
 
         // Needed because sprout RIL sends these when they shouldn't?
         boolean isSetNotification = mPhone.getContext().getResources().getBoolean(
@@ -3520,6 +3537,10 @@ public class ServiceStateTracker extends Handler {
         int notificationId = CS_NOTIFICATION;
         int icon = com.android.internal.R.drawable.stat_sys_warning;
 
+        final boolean multipleSubscriptions = (((TelephonyManager) mPhone.getContext()
+                  .getSystemService(Context.TELEPHONY_SERVICE)).getPhoneCount() > 1);
+        final int simNumber = mSubscriptionController.getSlotIndex(mSubId) + 1;
+
         switch (notifyType) {
             case PS_ENABLED:
                 long dataSubId = SubscriptionManager.getDefaultDataSubscriptionId();
@@ -3528,37 +3549,52 @@ public class ServiceStateTracker extends Handler {
                 }
                 notificationId = PS_NOTIFICATION;
                 title = context.getText(com.android.internal.R.string.RestrictedOnDataTitle);
-                details = context.getText(com.android.internal.R.string.RestrictedStateContent);
+                details = multipleSubscriptions
+                        ? context.getString(
+                                com.android.internal.R.string.RestrictedStateContentMsimTemplate,
+                                simNumber) :
+                        context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case PS_DISABLED:
                 notificationId = PS_NOTIFICATION;
                 break;
             case CS_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnAllVoiceTitle);
-                details = context.getText(
-                        com.android.internal.R.string.RestrictedStateContent);
+                details = multipleSubscriptions
+                        ? context.getString(
+                                com.android.internal.R.string.RestrictedStateContentMsimTemplate,
+                                simNumber) :
+                        context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_NORMAL_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnNormalTitle);
-                details = context.getText(com.android.internal.R.string.RestrictedStateContent);
+                details = multipleSubscriptions
+                        ? context.getString(
+                                com.android.internal.R.string.RestrictedStateContentMsimTemplate,
+                                simNumber) :
+                        context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_EMERGENCY_ENABLED:
                 title = context.getText(com.android.internal.R.string.RestrictedOnEmergencyTitle);
-                details = context.getText(
-                        com.android.internal.R.string.RestrictedStateContent);
+                details = multipleSubscriptions
+                        ? context.getString(
+                                com.android.internal.R.string.RestrictedStateContentMsimTemplate,
+                                simNumber) :
+                        context.getText(com.android.internal.R.string.RestrictedStateContent);
                 break;
             case CS_DISABLED:
                 // do nothing and cancel the notification later
                 break;
             case CS_REJECT_CAUSE_ENABLED:
                 notificationId = CS_REJECT_CAUSE_NOTIFICATION;
-                int resId = selectResourceForRejectCode(mRejectCode);
+                int resId = selectResourceForRejectCode(mRejectCode, multipleSubscriptions);
                 if (0 == resId) {
                     loge("setNotification: mRejectCode=" + mRejectCode + " is not handled.");
                     return;
                 } else {
                     icon = com.android.internal.R.drawable.stat_notify_mmcc_indication_icn;
-                    title = Resources.getSystem().getString(resId);
+                    // if using the single SIM resource, mSubId will be ignored
+                    title = context.getString(resId, mSubId);
                     details = null;
                 }
                 break;
@@ -3566,7 +3602,7 @@ public class ServiceStateTracker extends Handler {
 
         if (DBG) {
             log("setNotification, create notification, notifyType: " + notifyType
-                    + ", title: " + title + ", details: " + details);
+                    + ", title: " + title + ", details: " + details + ", subId: " + mSubId);
         }
 
         mNotification = new Notification.Builder(context)
@@ -3587,10 +3623,25 @@ public class ServiceStateTracker extends Handler {
 
         if (notifyType == PS_DISABLED || notifyType == CS_DISABLED) {
             // cancel previous post notification
-            notificationManager.cancel(notificationId);
+            notificationManager.cancel(Integer.toString(mSubId), notificationId);
         } else {
-            // update restricted state notification
-            notificationManager.notify(notificationId, mNotification);
+            boolean show = false;
+            if (mSS.isEmergencyOnly() && notifyType == CS_EMERGENCY_ENABLED) {
+                // if reg state is emergency only, always show restricted emergency notification.
+                show = true;
+            } else if (notifyType == CS_REJECT_CAUSE_ENABLED) {
+                // always show notification due to CS reject irrespective of service state.
+                show = true;
+            } else if (mSS.getState() == ServiceState.STATE_IN_SERVICE) {
+                // for non in service states, we have system UI and signal bar to indicate limited
+                // service. No need to show notification again. This also helps to mitigate the
+                // issue if phone go to OOS and camp to other networks and received restricted ind.
+                show = true;
+            }
+            // update restricted state notification for this subId
+            if (show) {
+                notificationManager.notify(Integer.toString(mSubId), notificationId, mNotification);
+            }
         }
     }
 
@@ -3600,20 +3651,28 @@ public class ServiceStateTracker extends Handler {
      *
      * @param rejCode should be compatible with TS 24.008.
      */
-    private int selectResourceForRejectCode(int rejCode) {
+    private int selectResourceForRejectCode(int rejCode, boolean multipleSubscriptions) {
         int rejResourceId = 0;
         switch (rejCode) {
             case 1:// Authentication reject
-                rejResourceId = com.android.internal.R.string.mmcc_authentication_reject;
+                rejResourceId = multipleSubscriptions
+                        ? com.android.internal.R.string.mmcc_authentication_reject_msim_template :
+                        com.android.internal.R.string.mmcc_authentication_reject;
                 break;
             case 2:// IMSI unknown in HLR
-                rejResourceId = com.android.internal.R.string.mmcc_imsi_unknown_in_hlr;
+                rejResourceId = multipleSubscriptions
+                        ? com.android.internal.R.string.mmcc_imsi_unknown_in_hlr_msim_template :
+                        com.android.internal.R.string.mmcc_imsi_unknown_in_hlr;
                 break;
             case 3:// Illegal MS
-                rejResourceId = com.android.internal.R.string.mmcc_illegal_ms;
+                rejResourceId = multipleSubscriptions
+                        ? com.android.internal.R.string.mmcc_illegal_ms_msim_template :
+                        com.android.internal.R.string.mmcc_illegal_ms;
                 break;
             case 6:// Illegal ME
-                rejResourceId = com.android.internal.R.string.mmcc_illegal_me;
+                rejResourceId = multipleSubscriptions
+                        ? com.android.internal.R.string.mmcc_illegal_me_msim_template :
+                        com.android.internal.R.string.mmcc_illegal_me;
                 break;
             default:
                 // The other codes are not defined or not required by operators till now.
