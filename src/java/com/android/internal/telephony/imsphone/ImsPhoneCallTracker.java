@@ -2760,6 +2760,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (conn.getDisconnectCause() == DisconnectCause.NOT_DISCONNECTED) {
                     if (isHandoverToWifi) {
                         removeMessages(EVENT_CHECK_FOR_WIFI_HANDOVER);
+                        if (mIsViLteDataMetered) {
+                            conn.setVideoEnabled(true);
+                        }
 
                         if (mNotifyHandoverVideoFromLTEToWifi && mHasPerformedStartOfCallHandover) {
                             // This is a handover which happened mid-call (ie not the start of call
@@ -2779,7 +2782,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 }
 
                 if (isHandoverFromWifi && imsCall.isVideoCall()) {
-                    if (mNotifyHandoverVideoFromWifiToLTE &&    mIsDataEnabled) {
+                    if (mIsViLteDataMetered) {
+                        conn.setVideoEnabled(mIsDataEnabled);
+                    }
+
+                    if (mNotifyHandoverVideoFromWifiToLTE && mIsDataEnabled) {
                         if (conn.getDisconnectCause() == DisconnectCause.NOT_DISCONNECTED) {
                             log("onCallHandover :: notifying of WIFI to LTE handover.");
                             conn.onConnectionEvent(
@@ -3666,6 +3673,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
     }
 
+    public boolean isViLteDataMetered() {
+        return mIsViLteDataMetered;
+    }
+
     /**
      * Handler of data enabled changed event
      * @param enabled True if data is enabled, otherwise disabled.
@@ -3687,7 +3698,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         // Inform connections that data has been disabled to ensure we turn off video capability
         // if this is an LTE call.
         for (ImsPhoneConnection conn : mConnections) {
-            conn.handleDataEnabledChange(enabled);
+            ImsCall imsCall = conn.getImsCall();
+            boolean isVideoEnabled = enabled || (imsCall != null && imsCall.isWifiCall());
+            conn.setVideoEnabled(isVideoEnabled);
         }
 
         int reasonCode;

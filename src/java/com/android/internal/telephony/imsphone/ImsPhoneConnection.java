@@ -968,6 +968,15 @@ public class ImsPhoneConnection extends Connection implements
                 changed = true;
             }
 
+            if (!mOwner.isViLteDataMetered()) {
+                Rlog.v(LOG_TAG, "data is not metered");
+            } else {
+                if (mImsVideoCallProviderWrapper != null) {
+                    mImsVideoCallProviderWrapper.setIsVideoEnabled(
+                            hasCapabilities(Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL));
+                }
+            }
+
             int newAudioQuality =
                     getAudioQualityFromCallProfile(localCallProfile, remoteCallProfile);
             if (getAudioQuality() != newAudioQuality) {
@@ -1313,14 +1322,10 @@ public class ImsPhoneConnection extends Connection implements
         mShouldIgnoreVideoStateChanges = false;
     }
 
-    public void handleDataEnabledChange(boolean isDataEnabled) {
-        mIsVideoEnabled = isDataEnabled;
-        Rlog.i(LOG_TAG, "handleDataEnabledChange: isDataEnabled=" + isDataEnabled
+    public void setVideoEnabled(boolean isVideoEnabled) {
+        mIsVideoEnabled = isVideoEnabled;
+        Rlog.i(LOG_TAG, "setVideoEnabled: mIsVideoEnabled = " + mIsVideoEnabled
                 + "; updating local video availability.");
         updateMediaCapabilities(getImsCall());
-        if (mImsVideoCallProviderWrapper != null) {
-            mImsVideoCallProviderWrapper.setIsVideoEnabled(
-                    hasCapabilities(Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL));
-        }
     }
 }
