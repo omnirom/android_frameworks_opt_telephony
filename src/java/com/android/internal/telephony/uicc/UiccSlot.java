@@ -96,8 +96,13 @@ public class UiccSlot extends Handler {
                     sendMessage(obtainMessage(EVENT_CARD_REMOVED, null));
                 }
 
+                UiccController.updateInternalIccState(
+                        IccCardConstants.INTENT_VALUE_ICC_ABSENT, null, mPhoneId);
+
+                // no card present in the slot now; dispose card and make mUiccCard null
                 if (mUiccCard != null) {
-                    mUiccCard.update(mContext, mCi, ics);
+                    mUiccCard.dispose();
+                    mUiccCard = null;
                 }
             } else if ((oldState == null || oldState == CardState.CARDSTATE_ABSENT)
                     && mCardState != CardState.CARDSTATE_ABSENT) {
@@ -121,10 +126,6 @@ public class UiccSlot extends Handler {
             } else {
                 if (mUiccCard != null) {
                     mUiccCard.update(mContext, mCi, ics);
-                } else {
-                    if (!mIsEuicc) {
-                        mUiccCard = new UiccCard(mContext, mCi, ics, mPhoneId);
-                    }
                 }
             }
             mLastRadioState = radioState;

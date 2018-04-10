@@ -417,14 +417,12 @@ public class UiccProfile extends IccCard {
             setExternalState(IccCardConstants.State.CARD_RESTRICTED);
             return;
         }
-        if (mUiccCard.getCardState() == IccCardStatus.CardState.CARDSTATE_ABSENT) {
-            setExternalState(IccCardConstants.State.ABSENT);
-            return;
-        }
+
         if (mUiccCard instanceof EuiccCard && ((EuiccCard) mUiccCard).getEid() == null) {
             if (DBG) log("EID is not ready yet.");
             return;
         }
+
         // By process of elimination, the UICC Card State = PRESENT and state needs to be decided
         // based on apps
         if (mUiccApplication == null) {
