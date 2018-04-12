@@ -76,9 +76,11 @@ public class UiccSlot extends Handler {
      * Update slot. The main trigger for this is a change in the ICC Card status.
      */
     public void update(CommandsInterface ci, IccCardStatus ics, int phoneId) {
+        if (DBG) log("cardStatus update: " + ics.toString());
         synchronized (mLock) {
             CardState oldState = mCardState;
             mCardState = ics.mCardState;
+            mIccId = ics.iccid;
             mPhoneId = phoneId;
             parseAtr(ics.atr);
             mCi = ci;
@@ -96,11 +98,20 @@ public class UiccSlot extends Handler {
                     sendMessage(obtainMessage(EVENT_CARD_REMOVED, null));
                 }
 
+                UiccController.updateInternalIccState(
+                        IccCardConstants.INTENT_VALUE_ICC_ABSENT, null, mPhoneId);
+
+                // no card present in the slot now; dispose card and make mUiccCard null
                 if (mUiccCard != null) {
-                    mUiccCard.update(mContext, mCi, ics);
+                    mUiccCard.dispose();
+                    mUiccCard = null;
                 }
-            } else if ((oldState == null || oldState == CardState.CARDSTATE_ABSENT)
-                    && mCardState != CardState.CARDSTATE_ABSENT) {
+            // Because mUiccCard may be updated in both IccCardStatus and IccSlotStatus, we need to
+            // create a new UiccCard instance in two scenarios:
+            //   1. mCardState is changing from ABSENT to non ABSENT.
+            //   2. The latest mCardState is not ABSENT, but there is no UiccCard instance.
+            } else if ((oldState == null || oldState == CardState.CARDSTATE_ABSENT
+                    || mUiccCard == null) && mCardState != CardState.CARDSTATE_ABSENT) {
                 // No notifications while radio is off or we just powering up
                 if (radioState == RadioState.RADIO_ON && mLastRadioState == RadioState.RADIO_ON) {
                     if (DBG) log("update: notify card added");
@@ -121,10 +132,6 @@ public class UiccSlot extends Handler {
             } else {
                 if (mUiccCard != null) {
                     mUiccCard.update(mContext, mCi, ics);
-                } else {
-                    if (!mIsEuicc) {
-                        mUiccCard = new UiccCard(mContext, mCi, ics, mPhoneId);
-                    }
                 }
             }
             mLastRadioState = radioState;
@@ -135,7 +142,7 @@ public class UiccSlot extends Handler {
      * Update slot based on IccSlotStatus.
      */
     public void update(CommandsInterface ci, IccSlotStatus iss) {
-        log("slotStatus update");
+        if (DBG) log("slotStatus update: " + iss.toString());
         synchronized (mLock) {
             mCi = ci;
             if (iss.slotState == IccSlotStatus.SlotState.SLOTSTATE_INACTIVE) {
