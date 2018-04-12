@@ -98,8 +98,13 @@ public class UiccSlot extends Handler {
                     sendMessage(obtainMessage(EVENT_CARD_REMOVED, null));
                 }
 
+                UiccController.updateInternalIccState(
+                        IccCardConstants.INTENT_VALUE_ICC_ABSENT, null, mPhoneId);
+
+                // no card present in the slot now; dispose card and make mUiccCard null
                 if (mUiccCard != null) {
-                    mUiccCard.update(mContext, mCi, ics);
+                    mUiccCard.dispose();
+                    mUiccCard = null;
                 }
             // Because mUiccCard may be updated in both IccCardStatus and IccSlotStatus, we need to
             // create a new UiccCard instance in two scenarios:
@@ -127,10 +132,6 @@ public class UiccSlot extends Handler {
             } else {
                 if (mUiccCard != null) {
                     mUiccCard.update(mContext, mCi, ics);
-                } else {
-                    if (!mIsEuicc) {
-                        mUiccCard = new UiccCard(mContext, mCi, ics, mPhoneId);
-                    }
                 }
             }
             mLastRadioState = radioState;
