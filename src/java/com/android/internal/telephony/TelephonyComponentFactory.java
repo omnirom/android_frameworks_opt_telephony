@@ -263,4 +263,8 @@ public class TelephonyComponentFactory {
         Rlog.d(LOG_TAG, "makeRIL");
         return new RIL(context, preferredNetworkType, cdmaSubscription, instanceId);
     }
+
+    public LocaleTracker makeLocaleTracker(Phone phone, Looper looper) {
+        return new LocaleTracker(phone, looper);
+    }
 }
