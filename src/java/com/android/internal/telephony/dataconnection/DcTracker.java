@@ -254,6 +254,7 @@ public class DcTracker extends Handler {
             } else if (action.equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED)) {
                 if (mIccRecords.get() != null && mIccRecords.get().getRecordsLoaded()) {
                     setDefaultDataRoamingEnabled();
+                    mDataEnabledSettings.setDefaultMobileDataEnabled();
                 }
             } else {
                 if (DBG) log("onReceive: Unknown action=" + action);
