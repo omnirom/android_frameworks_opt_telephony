@@ -204,7 +204,8 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
         //   if sms over IMS is not supported AND
         //   this is not a retry case after sms over IMS failed
         //     indicated by mImsRetry > 0
-        if (0 == tracker.mImsRetry && !isIms()) {
+        if ((mSmsDispatchersController.isImsServiceAvailable()) ||
+                 (0 == tracker.mImsRetry && !isIms())) {
             if (tracker.mRetryCount == 0 && tracker.mExpectMore) {
                 mCi.sendSMSExpectMore(IccUtils.bytesToHexString(smsc),
                         IccUtils.bytesToHexString(pdu), reply);
