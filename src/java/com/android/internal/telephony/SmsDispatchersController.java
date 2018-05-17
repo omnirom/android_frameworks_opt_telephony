@@ -333,6 +333,10 @@ public class SmsDispatchersController extends Handler {
         return mIms;
     }
 
+    public boolean isImsServiceAvailable() {
+        return mImsSmsDispatcher.isAvailable();
+    }
+
     public String getImsSmsFormat() {
         return mImsSmsFormat;
     }
