@@ -148,7 +148,8 @@ public class CdmaSMSDispatcher extends SMSDispatcher {
         //   if sms over IMS is not supported AND
         //   this is not a retry case after sms over IMS failed
         //     indicated by mImsRetry > 0
-        if (0 == tracker.mImsRetry && !isIms() || imsSmsDisabled) {
+        if ((mSmsDispatchersController.isImsServiceAvailable()) ||
+                (0 == tracker.mImsRetry && !isIms() || imsSmsDisabled)) {
             mCi.sendCdmaSms(pdu, reply);
         } else {
             mCi.sendImsCdmaSms(pdu, tracker.mImsRetry, tracker.mMessageRef, reply);
