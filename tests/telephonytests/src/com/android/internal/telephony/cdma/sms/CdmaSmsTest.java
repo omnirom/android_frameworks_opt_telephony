@@ -1041,7 +1041,7 @@ public class CdmaSmsTest extends AndroidTestCase {
 
         str_test = "+00123456789";
         sms_addr = CdmaSmsAddress.parse(str_test);
-        assertEquals(CdmaSmsAddress.DIGIT_MODE_4BIT_DTMF, sms_addr.digitMode);
+        assertEquals(CdmaSmsAddress.DIGIT_MODE_8BIT_CHAR, sms_addr.digitMode);
 
         str_test = "test@test.com";
         sms_addr = CdmaSmsAddress.parse(str_test);

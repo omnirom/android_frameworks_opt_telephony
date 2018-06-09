@@ -158,6 +158,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     @SmallTest
     public void testHandleActionCarrierConfigChanged() {
         Intent intent = new Intent(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        intent.putExtra(PhoneConstants.PHONE_KEY, mPhoneUT.getPhoneId());
         mContext.sendBroadcast(intent);
         waitForMs(50);
         verify(mSST, times(1)).pollState();
@@ -564,7 +565,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         doReturn(imsi).when(mSimRecords).getIMSI();
         mPhoneUT.getCallForwardingOption(CF_REASON_UNCONDITIONAL, null);
         verify(mSimulatedCommandsVerifier).queryCallForwardStatus(
-                eq(CF_REASON_UNCONDITIONAL), eq(CommandsInterface.SERVICE_CLASS_VOICE),
+                eq(CF_REASON_UNCONDITIONAL), anyInt(),
                 nullable(String.class), nullable(Message.class));
         waitForMs(50);
         verify(mSimRecords).setVoiceCallForwardingFlag(anyInt(), anyBoolean(),
@@ -860,6 +861,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                 getSubIdUsingPhoneId(anyInt());
         assertEquals(false, mPhoneUT.getCallForwardingIndicator());
 
+        doReturn(true).when(mSubscriptionController).isActiveSubId(anyInt());
         // valid subId, sharedPreference not present
         int subId1 = 0;
         int subId2 = 1;
