@@ -4031,7 +4031,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
     // Update the Rtt attribute
     private ImsCallProfile setRttModeBasedOnOperator(ImsCallProfile profile) {
-        if (!mPhone.canProcessRttReqest()) {
+        if (!(mPhone.isRttSupported() && mPhone.isRttOn())) {
             return profile;
         }
 
@@ -4052,7 +4052,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private ImsStreamMediaProfile addRttAttributeIfRequired(ImsCall call,
             ImsStreamMediaProfile mediaProfile) {
 
-        if (!mPhone.canProcessRttReqest()) {
+        if (!mPhone.isRttSupported()) {
             return mediaProfile;
         }
 
