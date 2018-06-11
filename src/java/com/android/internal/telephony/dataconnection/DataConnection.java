@@ -2221,7 +2221,6 @@ public class DataConnection extends StateMachine {
                 String logStr = "Changed from " + mNetworkCapabilities + " to "
                         + networkCapabilities + ", Data RAT="
                         + mPhone.getServiceState().getRilDataRadioTechnology()
-                        + ", DUN APN=\"" + mDct.fetchDunApn() + "\""
                         + ", mApnSetting=" + mApnSetting;
                 mNetCapsLocalLog.log(logStr);
                 log(logStr);

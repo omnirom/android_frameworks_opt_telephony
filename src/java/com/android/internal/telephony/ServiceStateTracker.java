@@ -582,6 +582,11 @@ public class ServiceStateTracker extends Handler {
         }
 
         // If we are previously in service, we need to notify that we are out of service now.
+        if (mSS != null && mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE) {
+            mNetworkDetachedRegistrants.notifyRegistrants();
+        }
+
+        // If we are previously in service, we need to notify that we are out of service now.
         if (mSS != null && mSS.getDataRegState() == ServiceState.STATE_IN_SERVICE) {
             mDetachedRegistrants.notifyRegistrants();
         }
@@ -671,6 +676,10 @@ public class ServiceStateTracker extends Handler {
         mCi.unregisterForImsNetworkStateChanged(this);
         mPhone.getCarrierActionAgent().unregisterForCarrierAction(this,
                 CARRIER_ACTION_SET_RADIO_ENABLED);
+        if (mCSST != null) {
+            mCSST.dispose();
+            mCSST = null;
+        }
     }
 
     public boolean getDesiredPowerState() {
@@ -3019,7 +3028,8 @@ public class ServiceStateTracker extends Handler {
             if (!hasBrandOverride && (mCi.getRadioState().isOn()) && (mPhone.isEriFileLoaded()) &&
                     (!ServiceState.isLte(mSS.getRilVoiceRadioTechnology()) ||
                             mPhone.getContext().getResources().getBoolean(com.android.internal.R.
-                                    bool.config_LTE_eri_for_network_name))) {
+                                    bool.config_LTE_eri_for_network_name)) &&
+                                    (!mIsSubscriptionFromRuim)) {
                 // Only when CDMA is in service, ERI will take effect
                 String eriText = mSS.getOperatorAlpha();
                 // Now the Phone sees the new ServiceState so it can get the new ERI text

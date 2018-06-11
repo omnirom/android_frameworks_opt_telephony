@@ -1195,18 +1195,27 @@ public class RIL extends BaseCommands implements CommandsInterface {
             try {
                 if (radioProxy12 == null) {
                     // IRadio V1.0
+
+                    // Getting data RAT here is just a workaround to support the older 1.0 vendor
+                    // RIL. The new data service interface passes access network type instead of
+                    // RAT for setup data request. It is impossible to convert access network
+                    // type back to RAT here, so we directly get the data RAT from phone.
+                    int dataRat = ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN;
+                    Phone phone = PhoneFactory.getPhone(mPhoneId);
+                    if (phone != null) {
+                        ServiceState ss = phone.getServiceState();
+                        if (ss != null) {
+                            dataRat = ss.getRilDataRadioTechnology();
+                        }
+                    }
                     if (RILJ_LOGD) {
                         riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                                + ",radioTechnology=unknown,isRoaming=" + isRoaming
+                                + ",dataRat=" + dataRat + ",isRoaming=" + isRoaming
                                 + ",allowRoaming=" + allowRoaming + "," + dataProfile);
                     }
-                    // The RAT field in setup data call request was never used before. Starting from
-                    // P, the new API passes in access network type instead of RAT. Since it's
-                    // not possible to convert access network type back to RAT, but we still need to
-                    // support the 1.0 API, we passed in unknown RAT to the modem. And modem must
-                    // setup the data call on its current camped network.
-                    radioProxy.setupDataCall(rr.mSerial, ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN,
-                            dpi, dataProfile.isModemCognitive(), allowRoaming, isRoaming);
+
+                    radioProxy.setupDataCall(rr.mSerial, dataRat, dpi,
+                            dataProfile.isModemCognitive(), allowRoaming, isRoaming);
                 } else {
                     // IRadio V1.2
                     ArrayList<String> addresses = new ArrayList<>();
@@ -5043,6 +5052,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "RIL_UNSOL_ICC_SLOT_STATUS";
             case RIL_UNSOL_KEEPALIVE_STATUS:
                 return "RIL_UNSOL_KEEPALIVE_STATUS";
+            case RIL_UNSOL_PHYSICAL_CHANNEL_CONFIG:
+                return "RIL_UNSOL_PHYSICAL_CHANNEL_CONFIG";
             default:
                 return "<unknown response>";
         }
