@@ -1425,8 +1425,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void registerForServiceStateChanged(
             Handler h, int what, Object obj) {
-        checkCorrectThread(h);
-
         mServiceStateRegistrants.add(h, what, obj);
     }
 

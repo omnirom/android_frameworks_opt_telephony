@@ -116,7 +116,7 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
         assertFalse(connection.isMultiparty());
         assertNotNull(connection.getRemainingPostDialString());
         /* CDMA phone type dont have origDialString */
-        assertNull(connection.getOrigDialString());
+        assertEquals("+1 (700).555-41NN,1234", connection.getOrigDialString());
     }
 
     @Test @SmallTest
