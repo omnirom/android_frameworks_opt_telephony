@@ -2891,6 +2891,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             }
         }
 
+        @Override
+        public void onCallSessionPropertyChanged(ImsCall imsCall, int property) {
+          ImsPhoneConnection conn = findConnection(imsCall);
+            if (conn != null) {
+                conn.onCallSessionPropertyChanged(property);
+            }
+        }
+
         /**
          * Handles a change to the multiparty state for an {@code ImsCall}.  Notifies the associated
          * {@link ImsPhoneConnection} of the change.
