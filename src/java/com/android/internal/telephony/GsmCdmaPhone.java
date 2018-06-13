@@ -1867,9 +1867,7 @@ public class GsmCdmaPhone extends Phone {
             int serviceClass) {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
-            if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+            if ((imsPhone != null) && imsPhone.isUtEnabled()) {
                 imsPhone.getCallBarring(facility, password, onComplete, serviceClass);
                 return;
             }
@@ -1884,9 +1882,7 @@ public class GsmCdmaPhone extends Phone {
             Message onComplete, int serviceClass) {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
-            if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+            if ((imsPhone != null) && imsPhone.isUtEnabled()) {
                 imsPhone.setCallBarring(facility, lockState, password, onComplete, serviceClass);
                 return;
             }
