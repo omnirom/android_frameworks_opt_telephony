@@ -136,6 +136,17 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         doAnswer(new Answer<Void>() {
             @Override
             public Void answer(InvocationOnMock invocation) throws Throwable {
+                // trigger the listener on accept call
+                if (mImsCallListener != null) {
+                    mImsCallListener.onCallStarted(mImsCall);
+                }
+                return null;
+            }
+        }).when(mImsCall).accept(anyInt(), (ImsStreamMediaProfile) any());
+
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
                 // trigger the listener on reject call
                 int reasonCode = (int) invocation.getArguments()[0];
                 if (mImsCallListener != null) {
@@ -364,7 +375,8 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         try {
             mCTUT.acceptCall(ImsCallProfile.CALL_TYPE_VOICE);
             verify(mImsCall, times(1)).accept(eq(ImsCallProfile
-                    .getCallTypeFromVideoState(ImsCallProfile.CALL_TYPE_VOICE)));
+                    .getCallTypeFromVideoState(ImsCallProfile.CALL_TYPE_VOICE)),
+                    (ImsStreamMediaProfile) any());
         } catch (Exception ex) {
             ex.printStackTrace();
             Assert.fail("unexpected exception thrown" + ex.getMessage());
