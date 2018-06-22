@@ -197,6 +197,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (mPendingMO != null) {
+            mPendingMO.onDisconnect(DisconnectCause.ERROR_UNSPECIFIED);
             mPendingMO.dispose();
         }
 
