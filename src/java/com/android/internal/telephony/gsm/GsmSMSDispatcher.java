@@ -203,8 +203,7 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
         //   this tracker uses ImsSmsDispatcher to handle SMS over IMS. This dispatcher has received
         //     this message because the ImsSmsDispatcher has indicated that the message needs to
         //     fall back to sending over CS.
-        if ((mSmsDispatchersController.isImsServiceAvailable()) ||
-                 (0 == tracker.mImsRetry && !isIms() || tracker.mUsesImsServiceForIms)) {
+        if (0 == tracker.mImsRetry && !isIms() || tracker.mUsesImsServiceForIms) {
             if (tracker.mRetryCount == 0 && tracker.mExpectMore) {
                 mCi.sendSMSExpectMore(IccUtils.bytesToHexString(smsc),
                         IccUtils.bytesToHexString(pdu), reply);
