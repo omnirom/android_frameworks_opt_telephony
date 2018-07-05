@@ -147,8 +147,7 @@ public class CdmaSMSDispatcher extends SMSDispatcher {
         //   SMS over IMS is disabled because of the network type OR
         //   SMS over IMS is being handled by the ImsSmsDispatcher implementation and has indicated
         //   that the message should fall back to sending over CS.
-        if ((mSmsDispatchersController.isImsServiceAvailable()) ||
-                (0 == tracker.mImsRetry && !isIms() || imsSmsDisabled || tracker.mUsesImsServiceForIms)) {
+        if (0 == tracker.mImsRetry && !isIms() || imsSmsDisabled || tracker.mUsesImsServiceForIms) {
             mCi.sendCdmaSms(pdu, reply);
         } else {
             mCi.sendImsCdmaSms(pdu, tracker.mImsRetry, tracker.mMessageRef, reply);
