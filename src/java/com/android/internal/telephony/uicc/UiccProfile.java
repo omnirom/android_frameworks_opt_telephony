@@ -502,6 +502,7 @@ public class UiccProfile extends IccCard {
                 setExternalState(IccCardConstants.State.NOT_READY);
                 break;
             case APPSTATE_READY:
+                checkAndUpdateIfAnyAppToBeIgnored();
                 if (areReadyAppsRecordsLoaded() && areCarrierPriviligeRulesLoaded()) {
                     if (VDBG) log("updateExternalState: setting state to LOADED");
                     setExternalState(IccCardConstants.State.LOADED);
@@ -967,9 +968,28 @@ public class UiccProfile extends IccCard {
         return true;
     }
 
-    private boolean areReadyAppsRecordsLoaded() {
+    private void checkAndUpdateIfAnyAppToBeIgnored() {
+        boolean[] appReadyStateTracker = new boolean[AppType.APPTYPE_ISIM.ordinal() + 1];
         for (UiccCardApplication app : mUiccApplications) {
             if (app != null && isSupportedApplication(app) && app.isReady()) {
+                appReadyStateTracker[app.getType().ordinal()] = true;
+            }
+        }
+
+        for (UiccCardApplication app : mUiccApplications) {
+            if (app != null && isSupportedApplication(app) && !app.isReady()) {
+                /* Checks if the  appReadyStateTracker has already an entry in ready state
+                   with same type as app */
+                if (appReadyStateTracker[app.getType().ordinal()]) {
+                    app.setAppIgnoreState(true);
+                }
+            }
+        }
+    }
+
+    private boolean areReadyAppsRecordsLoaded() {
+        for (UiccCardApplication app : mUiccApplications) {
+            if (app != null && isSupportedApplication(app) && app.isReady() && !app.isAppIgnored()) {
                 IccRecords ir = app.getIccRecords();
                 if (ir == null || !ir.isLoaded()) {
                     if (VDBG) log("areReadyAppsRecordsLoaded: return false");
