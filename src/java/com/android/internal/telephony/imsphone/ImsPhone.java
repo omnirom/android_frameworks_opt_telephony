@@ -1511,14 +1511,20 @@ public class ImsPhone extends ImsPhoneBase {
                 if (VDBG) logd("EVENT_SERVICE_STATE_CHANGED");
                 ar = (AsyncResult) msg.obj;
                 ServiceState newServiceState = (ServiceState) ar.result;
-                // only update if roaming status changed and voice or data is in service.
+                // only update if roaming status changed
                 // The STATE_IN_SERVICE is checked to prevent wifi calling mode change when phone
                 // moves from roaming to no service.
                 if (mRoaming != newServiceState.getRoaming() &&
                            (newServiceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE ||
                            newServiceState.getDataRegState() == ServiceState.STATE_IN_SERVICE)) {
-                    if (DBG) logd("Roaming state changed- " + mRoaming);
-                    updateRoamingState(newServiceState.getRoaming());
+                    if (DBG) logd("Roaming state changed - " + mRoaming);
+                    // Update WFC mode only if voice or data is in service.
+                    // The STATE_IN_SERVICE is checked to prevent wifi calling mode change
+                    // when phone moves from roaming to no service.
+                    boolean isInService =
+                            (newServiceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE ||
+                            newServiceState.getDataRegState() == ServiceState.STATE_IN_SERVICE);
+                    updateRoamingState(newServiceState.getRoaming(), isInService);
                 }
                 break;
             case EVENT_VOICE_CALL_ENDED:
@@ -1527,7 +1533,7 @@ public class ImsPhone extends ImsPhoneBase {
                 // only update if roaming status changed
                 boolean newRoaming = getCurrentRoaming();
                 if (mRoaming != newRoaming) {
-                    updateRoamingState(newRoaming);
+                    updateRoamingState(newRoaming, true);
                 }
                 break;
 
@@ -1894,12 +1900,16 @@ public class ImsPhone extends ImsPhoneBase {
         return mCT.getVtDataUsage(perUidStats);
     }
 
-    private void updateRoamingState(boolean newRoaming) {
+    private void updateRoamingState(boolean newRoaming, boolean isInService) {
         if (mCT.getState() == PhoneConstants.State.IDLE) {
             if (DBG) logd("updateRoamingState now: " + newRoaming);
             mRoaming = newRoaming;
-            ImsManager imsManager = ImsManager.getInstance(mContext, mPhoneId);
-            imsManager.setWfcMode(imsManager.getWfcMode(newRoaming), newRoaming);
+            if (isInService) {
+                ImsManager imsManager = ImsManager.getInstance(mContext, mPhoneId);
+                imsManager.setWfcMode(imsManager.getWfcMode(newRoaming), newRoaming);
+            } else {
+                if (DBG) Rlog.d(LOG_TAG, "updateRoamingState service state is OUT_OF_SERVICE");
+            }
         } else {
             if (DBG) logd("updateRoamingState postponed: " + newRoaming);
             mCT.registerForVoiceCallEnded(this,
@@ -1910,7 +1920,7 @@ public class ImsPhone extends ImsPhoneBase {
     private boolean getCurrentRoaming() {
         TelephonyManager tm = (TelephonyManager) mContext
                 .getSystemService(Context.TELEPHONY_SERVICE);
-        return tm.isNetworkRoaming();
+        return tm.isNetworkRoaming(getSubId());
     }
 
     private BroadcastReceiver mRttReceiver = new BroadcastReceiver() {

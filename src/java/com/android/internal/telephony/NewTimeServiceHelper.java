@@ -17,6 +17,8 @@
 package com.android.internal.telephony;
 
 import android.app.AlarmManager;
+import android.app.timedetector.TimeDetector;
+import android.app.timedetector.TimeSignal;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -26,23 +28,19 @@ import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
+import android.util.TimestampedValue;
 
 /**
  * An interface to various time / time zone detection behaviors that should be centralized into a
  * new service.
  */
 // Non-final to allow mocking.
-public class TimeServiceHelper {
+public class NewTimeServiceHelper {
 
     /**
      * Callback interface for automatic detection enable/disable changes.
      */
     public interface Listener {
-        /**
-         * Automatic time detection has been enabled or disabled.
-         */
-        void onTimeDetectionChange(boolean enabled);
-
         /**
          * Automatic time zone detection has been enabled or disabled.
          */
@@ -53,13 +51,15 @@ public class TimeServiceHelper {
 
     private final Context mContext;
     private final ContentResolver mCr;
+    private final TimeDetector mTimeDetector;
 
     private Listener mListener;
 
     /** Creates a TimeServiceHelper */
-    public TimeServiceHelper(Context context) {
+    public NewTimeServiceHelper(Context context) {
         mContext = context;
         mCr = context.getContentResolver();
+        mTimeDetector = context.getSystemService(TimeDetector.class);
     }
 
     /**
@@ -74,13 +74,6 @@ public class TimeServiceHelper {
             throw new IllegalStateException("listener already set");
         }
         this.mListener = listener;
-        mCr.registerContentObserver(
-                Settings.Global.getUriFor(Settings.Global.AUTO_TIME), true,
-                new ContentObserver(new Handler()) {
-                    public void onChange(boolean selfChange) {
-                        listener.onTimeDetectionChange(isTimeDetectionEnabled());
-                    }
-                });
         mCr.registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.AUTO_TIME_ZONE), true,
                 new ContentObserver(new Handler()) {
@@ -113,17 +106,6 @@ public class TimeServiceHelper {
     }
 
     /**
-     * Returns true if automatic time detection is enabled in settings.
-     */
-    public boolean isTimeDetectionEnabled() {
-        try {
-            return Settings.Global.getInt(mCr, Settings.Global.AUTO_TIME) > 0;
-        } catch (Settings.SettingNotFoundException snfe) {
-            return true;
-        }
-    }
-
-    /**
      * Returns true if automatic time zone detection is enabled in settings.
      */
     public boolean isTimeZoneDetectionEnabled() {
@@ -145,17 +127,13 @@ public class TimeServiceHelper {
     }
 
     /**
-     * Set the time and Send out a sticky broadcast so the system can determine
-     * if the time was set by the carrier.
+     * Suggest the time to the {@link TimeDetector}.
      *
-     * @param time time set by network
+     * @param signalTimeMillis the signal time as received from the network
      */
-    public void setDeviceTime(long time) {
-        SystemClock.setCurrentTimeMillis(time);
-        Intent intent = new Intent(TelephonyIntents.ACTION_NETWORK_SET_TIME);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
-        intent.putExtra("time", time);
-        mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+    public void suggestDeviceTime(TimestampedValue<Long> signalTimeMillis) {
+        TimeSignal timeSignal = new TimeSignal(TimeSignal.SOURCE_ID_NITZ, signalTimeMillis);
+        mTimeDetector.suggestTime(timeSignal);
     }
 
     /**

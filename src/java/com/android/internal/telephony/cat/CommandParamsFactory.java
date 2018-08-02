@@ -182,6 +182,7 @@ class CommandParamsFactory extends Handler {
                  break;
              case SEND_DTMF:
              case SEND_SMS:
+             case REFRESH:
              case RUN_AT:
              case SEND_SS:
              case SEND_USSD:
@@ -190,9 +191,6 @@ class CommandParamsFactory extends Handler {
              case GET_CHANNEL_STATUS:
              case SET_UP_CALL:
                  cmdPending = processSetupCall(cmdDet, ctlvs);
-                 break;
-             case REFRESH:
-                 cmdPending = processEventNotify(cmdDet, ctlvs);
                  break;
              case LAUNCH_BROWSER:
                  cmdPending = processLaunchBrowser(cmdDet, ctlvs);

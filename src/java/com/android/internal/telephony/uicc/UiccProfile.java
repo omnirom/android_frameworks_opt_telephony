@@ -585,7 +585,7 @@ public class UiccProfile extends IccCard {
                         String countryCode = operator.substring(0, 3);
                         if (countryCode != null) {
                             mTelephonyManager.setSimCountryIsoForPhone(mPhoneId,
-                                    MccTable.countryCodeForMcc(Integer.parseInt(countryCode)));
+                                    MccTable.countryCodeForMcc(countryCode));
                         } else {
                             loge("setExternalState: state LOADED; Country code is null");
                         }
@@ -772,6 +772,13 @@ public class UiccProfile extends IccCard {
     public boolean getIccFdnEnabled() {
         synchronized (mLock) {
             return mUiccApplication != null && mUiccApplication.getIccFdnEnabled();
+        }
+    }
+
+    @Override
+    public boolean getIccFdnAvailable() {
+        synchronized (mLock) {
+            return mUiccApplication != null && mUiccApplication.getIccFdnAvailable();
         }
     }
 
@@ -987,9 +994,24 @@ public class UiccProfile extends IccCard {
         }
     }
 
-    private boolean areReadyAppsRecordsLoaded() {
+    private boolean areAllApplicationsReady() {
         for (UiccCardApplication app : mUiccApplications) {
-            if (app != null && isSupportedApplication(app) && app.isReady() && !app.isAppIgnored()) {
+            if (app != null && isSupportedApplication(app) && !app.isReady()
+                    && !app.isAppIgnored()) {
+                if (VDBG) log("areAllApplicationsReady: return false");
+                return false;
+            }
+        }
+
+        if (VDBG) {
+            log("areAllApplicationsReady: outside loop, return " + (mUiccApplication != null));
+        }
+        return mUiccApplication != null;
+    }
+
+    private boolean areAllRecordsLoaded() {
+        for (UiccCardApplication app : mUiccApplications) {
+            if (app != null && isSupportedApplication(app) && !app.isAppIgnored()) {
                 IccRecords ir = app.getIccRecords();
                 if (ir == null || !ir.isLoaded()) {
                     if (VDBG) log("areReadyAppsRecordsLoaded: return false");
@@ -1273,8 +1295,12 @@ public class UiccProfile extends IccCard {
      * Resets the application with the input AID. Returns true if any changes were made.
      *
      * A null aid implies a card level reset - all applications must be reset.
+     *
+     * @param aid aid of the application which should be reset; null imples all applications
+     * @param reset true if reset is required. false for initialization.
+     * @return boolean indicating if there was any change made as part of the reset
      */
-    public boolean resetAppWithAid(String aid) {
+    public boolean resetAppWithAid(String aid, boolean reset) {
         synchronized (mLock) {
             boolean changed = false;
             for (int i = 0; i < mUiccApplications.length; i++) {
@@ -1286,11 +1312,12 @@ public class UiccProfile extends IccCard {
                     changed = true;
                 }
             }
-            if (TextUtils.isEmpty(aid)) {
+            if (reset && TextUtils.isEmpty(aid)) {
                 if (mCarrierPrivilegeRules != null) {
                     mCarrierPrivilegeRules = null;
                     changed = true;
                 }
+                // CatService shall be disposed only when a card level reset happens.
                 if (mCatService != null) {
                     mCatService.dispose();
                     mCatService = null;
@@ -1440,6 +1467,26 @@ public class UiccProfile extends IccCard {
         return carrierPrivilegeRules == null
                 ? TelephonyManager.CARRIER_PRIVILEGE_STATUS_RULES_NOT_LOADED :
                 carrierPrivilegeRules.getCarrierPrivilegeStatusForUid(packageManager, uid);
+    }
+
+    /**
+     * Match the input certificate to any loaded carrier privileges access rules.
+     *
+     * @param cert certificate in hex string
+     * @return true if matching certificate is found. false otherwise.
+     */
+    public boolean hasCarrierPrivilegeRulesLoadedForCertHex(String cert) {
+        UiccCarrierPrivilegeRules carrierPrivilegeRules = getCarrierPrivilegeRules();
+        if (carrierPrivilegeRules != null) {
+            List<UiccAccessRule> accessRules = carrierPrivilegeRules.getAccessRules();
+            for (UiccAccessRule accessRule : accessRules) {
+                String certHexString = accessRule.getCertificateHexString();
+                if (!TextUtils.isEmpty(certHexString) && certHexString.equalsIgnoreCase(cert)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

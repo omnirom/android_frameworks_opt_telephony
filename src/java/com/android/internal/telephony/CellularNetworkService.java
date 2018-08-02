@@ -228,7 +228,7 @@ public class CellularNetworkService extends NetworkService {
                 CellIdentity cellIdentity =
                         convertHalCellIdentityToCellIdentity(voiceRegState.cellIdentity);
 
-                return new NetworkRegistrationState(transportType, domain, regState,
+                return new NetworkRegistrationState(domain, transportType, regState,
                         accessNetworkTechnology, reasonForDenial, emergencyOnly, availableServices,
                         cellIdentity, cssSupported, roamingIndicator, systemIsInPrl,
                         defaultRoamingIndicator);
@@ -248,7 +248,7 @@ public class CellularNetworkService extends NetworkService {
                 CellIdentity cellIdentity =
                         convertHalCellIdentityToCellIdentity(voiceRegState.cellIdentity);
 
-                return new NetworkRegistrationState(transportType, domain, regState,
+                return new NetworkRegistrationState(domain, transportType, regState,
                         accessNetworkTechnology, reasonForDenial, emergencyOnly, availableServices,
                         cellIdentity, cssSupported, roamingIndicator, systemIsInPrl,
                         defaultRoamingIndicator);
@@ -258,8 +258,8 @@ public class CellularNetworkService extends NetworkService {
         }
 
         private NetworkRegistrationState createRegistrationStateFromDataRegState(Object result) {
-            int transportType = TransportType.WWAN;
             int domain = NetworkRegistrationState.DOMAIN_PS;
+            int transportType = TransportType.WWAN;
 
             if (result instanceof android.hardware.radio.V1_0.DataRegStateResult) {
                 android.hardware.radio.V1_0.DataRegStateResult dataRegState =
@@ -273,7 +273,7 @@ public class CellularNetworkService extends NetworkService {
                 CellIdentity cellIdentity =
                         convertHalCellIdentityToCellIdentity(dataRegState.cellIdentity);
 
-                return new NetworkRegistrationState(transportType, domain, regState,
+                return new NetworkRegistrationState(domain, transportType, regState,
                         accessNetworkTechnology, reasonForDenial, emergencyOnly, availableServices,
                         cellIdentity, maxDataCalls);
             } else if (result instanceof android.hardware.radio.V1_2.DataRegStateResult) {
@@ -288,7 +288,7 @@ public class CellularNetworkService extends NetworkService {
                 CellIdentity cellIdentity =
                         convertHalCellIdentityToCellIdentity(dataRegState.cellIdentity);
 
-                return new NetworkRegistrationState(transportType, domain, regState,
+                return new NetworkRegistrationState(domain, transportType, regState,
                         accessNetworkTechnology, reasonForDenial, emergencyOnly, availableServices,
                         cellIdentity, maxDataCalls);
             }
@@ -330,7 +330,8 @@ public class CellularNetworkService extends NetworkService {
                                 cellIdentity.cellIdentityTdscdma.get(0);
                         result = new  CellIdentityTdscdma(cellIdentityTdscdma.mcc,
                                 cellIdentityTdscdma.mnc, cellIdentityTdscdma.lac,
-                                cellIdentityTdscdma.cid, cellIdentityTdscdma.cpid);
+                                cellIdentityTdscdma.cid, cellIdentityTdscdma.cpid,
+                                Integer.MAX_VALUE, null, null);
                     }
                     break;
                 }
@@ -417,6 +418,7 @@ public class CellularNetworkService extends NetworkService {
                                 cellIdentityTdscdma.base.lac,
                                 cellIdentityTdscdma.base.cid,
                                 cellIdentityTdscdma.base.cpid,
+                                cellIdentityTdscdma.uarfcn,
                                 cellIdentityTdscdma.operatorNames.alphaLong,
                                 cellIdentityTdscdma.operatorNames.alphaShort);
                     }

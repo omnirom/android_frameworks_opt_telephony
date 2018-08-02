@@ -62,7 +62,6 @@ public abstract class IccRecords extends Handler implements IccConstants {
     protected RegistrantList mNewSmsRegistrants = new RegistrantList();
     protected RegistrantList mNetworkSelectionModeAutomaticRegistrants = new RegistrantList();
     protected RegistrantList mSpnUpdatedRegistrants = new RegistrantList();
-    protected RegistrantList mRecordsOverrideRegistrants = new RegistrantList();
 
     protected int mRecordsToLoad;  // number of pending load requests
 
@@ -222,7 +221,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
         mCarrierTestOverride.override(mccmnc, imsi, iccid, gid1, gid2, pnn, spn);
         mTelephonyManager.setSimOperatorNameForPhone(mParentApp.getPhoneId(), spn);
         mTelephonyManager.setSimOperatorNumericForPhone(mParentApp.getPhoneId(), mccmnc);
-        mRecordsOverrideRegistrants.notifyRegistrants();
+        mRecordsLoadedRegistrants.notifyRegistrants();
     }
 
     /**
@@ -312,26 +311,8 @@ public abstract class IccRecords extends Handler implements IccConstants {
             r.notifyRegistrant(new AsyncResult(null, null, null));
         }
     }
-
     public void unregisterForRecordsLoaded(Handler h) {
         mRecordsLoadedRegistrants.remove(h);
-    }
-
-    public void unregisterForRecordsOverride(Handler h) {
-        mRecordsOverrideRegistrants.remove(h);
-    }
-
-    public void registerForRecordsOverride(Handler h, int what, Object obj) {
-        if (mDestroyed.get()) {
-            return;
-        }
-
-        Registrant r = new Registrant(h, what, obj);
-        mRecordsOverrideRegistrants.add(r);
-
-        if (getRecordsLoaded()) {
-            r.notifyRegistrant(new AsyncResult(null, null, null));
-        }
     }
 
     /**

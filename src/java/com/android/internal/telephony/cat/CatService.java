@@ -395,10 +395,6 @@ public class CatService extends Handler implements AppInterface {
                 break;
             case DISPLAY_TEXT:
                 break;
-            case REFRESH:
-                //Stk app service displays alpha id to user if it is present, nothing to do here.
-                CatLog.d(this, "Pass Refresh to Stk app");
-                break;
             case SET_UP_IDLE_MODE_TEXT:
                 resultCode = cmdParams.mLoadIconFailed ? ResultCode.PRFRMD_ICON_NOT_DISPLAYED
                                                                             : ResultCode.OK;
@@ -438,6 +434,13 @@ public class CatService extends Handler implements AppInterface {
             case SELECT_ITEM:
             case GET_INPUT:
             case GET_INKEY:
+                break;
+            case REFRESH:
+            case RUN_AT:
+                if (STK_DEFAULT.equals(((DisplayTextParams)cmdParams).mTextMsg.text)) {
+                    // Remove the default text which was temporarily added and shall not be shown
+                    ((DisplayTextParams)cmdParams).mTextMsg.text = null;
+                }
                 break;
             case SEND_DTMF:
             case SEND_SMS:

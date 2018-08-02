@@ -106,10 +106,18 @@ public class TelephonyComponentFactory {
     }
 
     /**
+     * Sets the NitzStateMachine implementation to use during implementation. This boolean
+     * should be removed once the new implementation is stable.
+     */
+    static final boolean USE_NEW_NITZ_STATE_MACHINE = true;
+
+    /**
      * Returns a new {@link NitzStateMachine} instance.
      */
     public NitzStateMachine makeNitzStateMachine(GsmCdmaPhone phone) {
-        return new NitzStateMachine(phone);
+        return USE_NEW_NITZ_STATE_MACHINE
+                ? new NewNitzStateMachine(phone)
+                : new OldNitzStateMachine(phone);
     }
 
     public SimActivationTracker makeSimActivationTracker(Phone phone) {
@@ -129,8 +137,8 @@ public class TelephonyComponentFactory {
         return new CarrierActionAgent(phone);
     }
 
-    public CarrierIdentifier makeCarrierIdentifier(Phone phone) {
-        return new CarrierIdentifier(phone);
+    public CarrierResolver makeCarrierResolver(Phone phone) {
+        return new CarrierResolver(phone);
     }
 
     public IccPhoneBookInterfaceManager makeIccPhoneBookInterfaceManager(Phone phone) {

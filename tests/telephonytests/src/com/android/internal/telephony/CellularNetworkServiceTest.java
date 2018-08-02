@@ -54,7 +54,7 @@ public class CellularNetworkServiceTest extends TelephonyTest {
         mCellularNetworkService = new CellularNetworkService();
         ServiceInfo serviceInfo =  new ServiceInfo();
         serviceInfo.packageName = "com.android.phone";
-        serviceInfo.permission = "android.permission.BIND_NETWORK_SERVICE";
+        serviceInfo.permission = "android.permission.BIND_TELEPHONY_NETWORK_SERVICE";
         IntentFilter filter = new IntentFilter();
         mContextFixture.addService(
                 NetworkService.NETWORK_SERVICE_INTERFACE,
@@ -132,7 +132,7 @@ public class CellularNetworkServiceTest extends TelephonyTest {
         waitForMs(1000);
 
         NetworkRegistrationState expectedState = new NetworkRegistrationState(
-                AccessNetworkConstants.TransportType.WWAN, domain, voiceRegState,
+                domain, AccessNetworkConstants.TransportType.WWAN, voiceRegState,
                 ServiceState.rilRadioTechnologyToNetworkType(voiceRadioTech), reasonForDenial,
                 false, availableServices, null, cssSupported,
                 roamingIndicator, systemIsInPrl, defaultRoamingIndicator);
@@ -155,7 +155,7 @@ public class CellularNetworkServiceTest extends TelephonyTest {
         waitForMs(1000);
 
         expectedState = new NetworkRegistrationState(
-                AccessNetworkConstants.TransportType.WWAN, domain, voiceRegState,
+                domain, AccessNetworkConstants.TransportType.WWAN, voiceRegState,
                 ServiceState.rilRadioTechnologyToNetworkType(voiceRadioTech), reasonForDenial,
                 false, availableServices, null, maxDataCalls);
 

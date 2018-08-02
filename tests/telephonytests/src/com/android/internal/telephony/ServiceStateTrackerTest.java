@@ -74,13 +74,13 @@ import android.telephony.gsm.GsmCellLocation;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
+import android.util.TimestampedValue;
 
 import com.android.internal.R;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.test.SimulatedCommands;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus;
-import com.android.internal.telephony.util.TimeStampedValue;
 
 import org.junit.After;
 import org.junit.Before;
@@ -141,7 +141,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         mCellularNetworkService = new CellularNetworkService();
         ServiceInfo serviceInfo =  new ServiceInfo();
         serviceInfo.packageName = "com.android.phone";
-        serviceInfo.permission = "android.permission.BIND_NETWORK_SERVICE";
+        serviceInfo.permission = "android.permission.BIND_TELEPHONY_NETWORK_SERVICE";
         IntentFilter filter = new IntentFilter();
         mContextFixture.addService(
                 NetworkService.NETWORK_SERVICE_INTERFACE,
@@ -640,6 +640,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         assertEquals(3, cl.getCid());
     }
 
+    @FlakyTest /* flakes 0.86% of the time */
     @Test
     @MediumTest
     public void testUpdatePhoneType() {
@@ -1011,6 +1012,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 ((AsyncResult)messageArgumentCaptor.getValue().obj).result);
     }
 
+    @FlakyTest /* flakes 0.43% of the time */
     @Test
     @MediumTest
     public void testRegAndUnregForNetworkAttached() throws Exception {
@@ -1494,15 +1496,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
             mSimulatedCommands.triggerNITZupdate(nitzStr);
             waitForMs(200);
 
-            ArgumentCaptor<TimeStampedValue<NitzData>> argumentsCaptor =
-                    ArgumentCaptor.forClass(TimeStampedValue.class);
+            ArgumentCaptor<TimestampedValue<NitzData>> argumentsCaptor =
+                    ArgumentCaptor.forClass(TimestampedValue.class);
             verify(mNitzStateMachine, times(1))
                     .handleNitzReceived(argumentsCaptor.capture());
 
             // Confirm the argument was what we expected.
-            TimeStampedValue<NitzData> actualNitzSignal = argumentsCaptor.getValue();
-            assertEquals(expectedNitzData, actualNitzSignal.mValue);
-            assertTrue(actualNitzSignal.mElapsedRealtime <= SystemClock.elapsedRealtime());
+            TimestampedValue<NitzData> actualNitzSignal = argumentsCaptor.getValue();
+            assertEquals(expectedNitzData, actualNitzSignal.getValue());
+            assertTrue(actualNitzSignal.getReferenceTimeMillis() <= SystemClock.elapsedRealtime());
         }
     }
 
@@ -1648,7 +1650,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     private void sendRegStateUpdateForLteCellId(CellIdentityLte cellId) {
         NetworkRegistrationState dataResult = new NetworkRegistrationState(
-                1, 2, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, 1);
+                2, 1, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, 1);
         NetworkRegistrationState voiceResult = new NetworkRegistrationState(
                 1, 1, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId,
                 false, 0, 0, 0);
@@ -1711,7 +1713,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthResetsOnOos() throws Exception {
         testPhyChanBandwidthRatchetedOnPhyChanBandwidth();
         NetworkRegistrationState dataResult = new NetworkRegistrationState(
-                1, 2, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, 1);
+                2, 1, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, 1);
         NetworkRegistrationState voiceResult = new NetworkRegistrationState(
                 1, 1, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null,
                 false, 0, 0, 0);

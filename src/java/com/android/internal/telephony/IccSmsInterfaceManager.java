@@ -40,6 +40,7 @@ import android.service.carrier.CarrierMessagingService;
 import android.telephony.Rlog;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
+import android.util.LocalLog;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -52,6 +53,8 @@ import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.util.HexDump;
 
+import java.io.FileDescriptor;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -87,6 +90,8 @@ public class IccSmsInterfaceManager {
     final protected AppOpsManager mAppOps;
     final private UserManager mUserManager;
     protected SmsDispatchersController mDispatchersController;
+
+    private final LocalLog mCellBroadcastLocalLog = new LocalLog(100);
 
     protected Handler mHandler = new Handler() {
         @Override
@@ -790,7 +795,7 @@ public class IccSmsInterfaceManager {
         } else if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_CDMA) {
             return enableCdmaBroadcastRange(startMessageId, endMessageId);
         } else {
-            throw new IllegalArgumentException("Not a supportted RAN Type");
+            throw new IllegalArgumentException("Not a supported RAN Type");
         }
     }
 
@@ -800,7 +805,7 @@ public class IccSmsInterfaceManager {
         } else if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_CDMA)  {
             return disableCdmaBroadcastRange(startMessageId, endMessageId);
         } else {
-            throw new IllegalArgumentException("Not a supportted RAN Type");
+            throw new IllegalArgumentException("Not a supported RAN Type");
         }
     }
 
@@ -813,15 +818,21 @@ public class IccSmsInterfaceManager {
         String client = mContext.getPackageManager().getNameForUid(
                 Binder.getCallingUid());
 
+        String msg;
         if (!mCellBroadcastRangeManager.enableRange(startMessageId, endMessageId, client)) {
-            log("Failed to add GSM cell broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+            msg = "Failed to add GSM cell broadcast channels range " + startMessageId
+                    + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
             return false;
         }
 
-        if (DBG)
-            log("Added GSM cell broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+        if (DBG) {
+            msg = "Added GSM cell broadcast channels range " + startMessageId
+                    + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
+        }
 
         setCellBroadcastActivation(!mCellBroadcastRangeManager.isEmpty());
 
@@ -837,15 +848,21 @@ public class IccSmsInterfaceManager {
         String client = mContext.getPackageManager().getNameForUid(
                 Binder.getCallingUid());
 
+        String msg;
         if (!mCellBroadcastRangeManager.disableRange(startMessageId, endMessageId, client)) {
-            log("Failed to remove GSM cell broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+            msg = "Failed to remove GSM cell broadcast channels range " + startMessageId
+                    + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
             return false;
         }
 
-        if (DBG)
-            log("Removed GSM cell broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+        if (DBG) {
+            msg = "Removed GSM cell broadcast channels range " + startMessageId
+                    + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
+        }
 
         setCellBroadcastActivation(!mCellBroadcastRangeManager.isEmpty());
 
@@ -861,15 +878,20 @@ public class IccSmsInterfaceManager {
         String client = mContext.getPackageManager().getNameForUid(
                 Binder.getCallingUid());
 
+        String msg;
         if (!mCdmaBroadcastRangeManager.enableRange(startMessageId, endMessageId, client)) {
-            log("Failed to add cdma broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+            msg = "Failed to add cdma broadcast channels range " + startMessageId + " to "
+                    + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
             return false;
         }
 
-        if (DBG)
-            log("Added cdma broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+        if (DBG) {
+            msg = "Added cdma broadcast channels range " + startMessageId + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
+        }
 
         setCdmaBroadcastActivation(!mCdmaBroadcastRangeManager.isEmpty());
 
@@ -885,15 +907,20 @@ public class IccSmsInterfaceManager {
         String client = mContext.getPackageManager().getNameForUid(
                 Binder.getCallingUid());
 
+        String msg;
         if (!mCdmaBroadcastRangeManager.disableRange(startMessageId, endMessageId, client)) {
-            log("Failed to remove cdma broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+            msg = "Failed to remove cdma broadcast channels range " + startMessageId + " to "
+                    + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
             return false;
         }
 
-        if (DBG)
-            log("Removed cdma broadcast subscription for MID range " + startMessageId
-                    + " to " + endMessageId + " from client " + client);
+        if (DBG) {
+            msg = "Removed cdma broadcast channels range " + startMessageId + " to " + endMessageId;
+            log(msg);
+            mCellBroadcastLocalLog.log(msg);
+        }
 
         setCdmaBroadcastActivation(!mCdmaBroadcastRangeManager.isEmpty());
 
@@ -1335,6 +1362,14 @@ public class IccSmsInterfaceManager {
         String result  = null;
         result = SmsNumberUtils.filterDestAddr(mPhone, destAddr);
         return result != null ? result : destAddr;
+    }
+
+    public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        pw.println("CellBroadcast log:");
+        mCellBroadcastLocalLog.dump(fd, pw, args);
+        pw.println("SMS dispatcher controller log:");
+        mDispatchersController.dump(fd, pw, args);
+        pw.flush();
     }
 
     public int getSmsCapacityOnIcc() {

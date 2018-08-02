@@ -260,7 +260,7 @@ public class ImsSmsDispatcher extends SMSDispatcher {
     public boolean isEmergencySmsSupport(String destAddr) {
         PersistableBundle b;
         boolean eSmsCarrierSupport = false;
-        if (!PhoneNumberUtils.isLocalEmergencyNumber(mContext, destAddr)) {
+        if (!PhoneNumberUtils.isLocalEmergencyNumber(mContext, mPhone.getSubId(), destAddr)) {
             Rlog.e(TAG, "Emergency Sms is not supported for: " + destAddr);
             return false;
         }
@@ -276,7 +276,7 @@ public class ImsSmsDispatcher extends SMSDispatcher {
             return false;
         }
         eSmsCarrierSupport = b.getBoolean(CarrierConfigManager.
-                                                      KEY_EMERGENCY_SMS_SUPPORT_BOOL);
+                                                      KEY_SUPPORT_EMERGENCY_SMS_OVER_IMS_BOOL);
         boolean lteOrLimitedLte = isEmergencySmsPossible();
         Rlog.i(TAG, "isEmergencySmsSupport emergencySmsCarrierSupport: "
                + eSmsCarrierSupport + " destAddr: " + destAddr + " mIsImsServiceUp: "
