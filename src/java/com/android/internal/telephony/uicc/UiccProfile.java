@@ -1009,7 +1009,7 @@ public class UiccProfile extends IccCard {
         return mUiccApplication != null;
     }
 
-    private boolean areAllRecordsLoaded() {
+    private boolean areReadyAppsRecordsLoaded() {
         for (UiccCardApplication app : mUiccApplications) {
             if (app != null && isSupportedApplication(app) && !app.isAppIgnored()) {
                 IccRecords ir = app.getIccRecords();

@@ -472,7 +472,9 @@ public class DataConnection extends StateMachine {
     }
 
     private boolean isApnTypeDefault() {
-        for (String type : mApnSetting.types) {
+        final String[] types = ApnSetting.getApnTypesStringFromBitmask(
+            mApnSetting.getApnTypeBitmask()).split(",");
+        for (String type : types) {
             if (type.equals(PhoneConstants.APN_TYPE_DEFAULT)) {
                 return true;
             } else {
