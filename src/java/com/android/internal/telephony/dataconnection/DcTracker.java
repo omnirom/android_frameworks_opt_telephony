@@ -284,29 +284,31 @@ public class DcTracker extends Handler {
     };
 
     private SubscriptionManager mSubscriptionManager;
-    private final OnSubscriptionsChangedListener mOnSubscriptionsChangedListener =
-            new OnSubscriptionsChangedListener() {
-                public final AtomicInteger mPreviousSubId =
-                        new AtomicInteger(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+    private final DctOnSubscriptionsChangedListener
+            mOnSubscriptionsChangedListener = new DctOnSubscriptionsChangedListener();
 
-                /**
-                 * Callback invoked when there is any change to any SubscriptionInfo. Typically
-                 * this method invokes {@link SubscriptionManager#getActiveSubscriptionInfoList}
-                 */
-                @Override
-                public void onSubscriptionsChanged() {
-                    if (DBG) log("SubscriptionListener.onSubscriptionInfoChanged");
-                    // Set the network type, in case the radio does not restore it.
-                    int subId = mPhone.getSubId();
-                    if (mSubscriptionManager.isActiveSubId(subId)) {
-                        registerSettingsObserver();
-                    }
-                    if (mPreviousSubId.getAndSet(subId) != subId &&
-                            mSubscriptionManager.isActiveSubId(subId)) {
-                        onRecordsLoadedOrSubIdChanged();
-                    }
-                }
-            };
+    private class DctOnSubscriptionsChangedListener extends OnSubscriptionsChangedListener {
+        public final AtomicInteger mPreviousSubId =
+                new AtomicInteger(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+
+        /**
+         * Callback invoked when there is any change to any SubscriptionInfo. Typically
+         * this method invokes {@link SubscriptionManager#getActiveSubscriptionInfoList}
+         */
+        @Override
+        public void onSubscriptionsChanged() {
+            if (DBG) log("SubscriptionListener.onSubscriptionInfoChanged");
+            // Set the network type, in case the radio does not restore it.
+            int subId = mPhone.getSubId();
+            if (mSubscriptionManager.isActiveSubId(subId)) {
+                registerSettingsObserver();
+            }
+            if (mSubscriptionManager.isActiveSubId(subId) &&
+                    mPreviousSubId.getAndSet(subId) != subId) {
+                onRecordsLoadedOrSubIdChanged();
+            }
+        }
+    };
 
     private final SettingsObserver mSettingsObserver;
 
@@ -2385,6 +2387,9 @@ public class DcTracker extends Handler {
         mAutoAttachOnCreationConfig = false;
         // Clear auto attach as modem is expected to do a new attach once SIM is ready
         mAutoAttachOnCreation.set(false);
+        // Reset previous SUB ID as the same SIM might be inserted back in hot-swap case
+        mOnSubscriptionsChangedListener.mPreviousSubId.set(
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID);
     }
 
     private void onSetDependencyMet(String apnType, boolean met) {
