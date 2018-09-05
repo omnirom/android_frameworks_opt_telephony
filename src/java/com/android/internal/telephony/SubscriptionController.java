@@ -921,10 +921,17 @@ public class SubscriptionController extends ISub.Stub {
      */
     @Override
     public int addSubInfoRecord(String iccId, int slotIndex) {
-        String fullIccId = iccId;
+        String fullIccId;
         Phone phone = PhoneFactory.getPhone(slotIndex);
-        if (phone != null) {
+        UiccCard uiccCard = UiccController.getInstance().getUiccCardForSlot(slotIndex);
+        if (phone != null && uiccCard != null) {
             fullIccId = phone.getFullIccSerialNumber();
+            if (TextUtils.isEmpty(fullIccId)) {
+                fullIccId = iccId;
+            }
+        } else {
+            if (DBG) logdl("[addSubInfoRecord]- null fullIccId");
+            return -1;
         }
 
         if (DBG) logdl("[addSubInfoRecord]+ iccId:" + SubscriptionInfo.givePrintableIccid(iccId) +
@@ -974,7 +981,7 @@ public class SubscriptionController extends ISub.Stub {
 
                     if (oldIccId != null && oldIccId.length() != iccId.length()
                            && (oldIccId.equals(IccUtils.getDecimalSubstring(iccId))
-                                    || iccId.equals(IccUtils.stripTrailingFs(oldIccId)))) {
+                           || iccId.equalsIgnoreCase(IccUtils.stripTrailingFs(oldIccId)))) {
                         value.put(SubscriptionManager.ICC_ID, iccId);
                     }
 
