@@ -91,6 +91,7 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.PhoneInternalInterface;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
@@ -282,10 +283,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private static final int EVENT_CHECK_FOR_WIFI_HANDOVER = 25;
     private static final int EVENT_ON_FEATURE_CAPABILITY_CHANGED = 26;
     private static final int EVENT_SUPP_SERVICE_INDICATION = 27;
+    private static final int EVENT_REDIAL_WIFI_E911_CALL = 28;
+    private static final int EVENT_REDIAL_WIFI_E911_TIMEOUT = 29;
 
     private static final int TIMEOUT_HANGUP_PENDINGMO = 500;
 
     private static final int HANDOVER_TO_WIFI_TIMEOUT_MS = 60000; // ms
+
+    private static final int TIMEOUT_REDIAL_WIFI_E911_MS = 10000;
 
     //***** Instance Variables
     private ArrayList<ImsPhoneConnection> mConnections = new ArrayList<ImsPhoneConnection>();
@@ -341,8 +346,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private boolean mIgnoreDataEnabledChangedForVideoCalls = false;
     private boolean mIsViLteDataMetered = false;
     private boolean mAlwaysPlayRemoteHoldTone = false;
+    private boolean mAutoRetryFailedWifiEmergencyCall = false;
     private boolean mIgnoreResetUtCapability = false;
 
+    private String mLastDialString = null;
+    private PhoneInternalInterface.DialArgs mLastDialArgs = null;
     /**
      * Listeners to changes in the phone state.  Intended for use by other interested IMS components
      * without the need to register a full blown {@link android.telephony.PhoneStateListener}.
@@ -470,6 +478,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 PreciseDisconnectCause.SIP_NOT_REACHABLE);
         PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_CLIENT_ERROR,
                 PreciseDisconnectCause.SIP_CLIENT_ERROR);
+        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_TRANSACTION_DOES_NOT_EXIST,
+                PreciseDisconnectCause.SIP_TRANSACTION_DOES_NOT_EXIST);
         PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVER_INTERNAL_ERROR,
                 PreciseDisconnectCause.SIP_SERVER_INTERNAL_ERROR);
         PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVICE_UNAVAILABLE,
@@ -986,6 +996,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 }
             }
 
+            mLastDialString = dialString;
+            mLastDialArgs = dialArgs;
             mPendingMO = new ImsPhoneConnection(mPhone,
                     checkForTestEmergencyNumber(dialString), this, mForegroundCall,
                     isEmergencyNumber, dialArgs.intentExtras);
@@ -1144,6 +1156,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 CarrierConfigManager.KEY_SUPPORT_PAUSE_IMS_VIDEO_CALLS_BOOL);
         mAlwaysPlayRemoteHoldTone = carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_ALWAYS_PLAY_REMOTE_HOLD_TONE_BOOL);
+        mAutoRetryFailedWifiEmergencyCall = carrierConfig.getBoolean(
+                CarrierConfigManager.KEY_AUTO_RETRY_FAILED_WIFI_EMERGENCY_CALL);
         mIgnoreResetUtCapability =  carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_IGNORE_RESET_UT_CAPABILITY_BOOL);
 
@@ -2320,26 +2334,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mPhone.initiateSilentRedial();
                     return;
                 } else {
-                    mPendingMO = null;
-                    ImsPhoneConnection conn = findConnection(imsCall);
-                    Call.State callState;
-                    if (conn != null) {
-                        callState = conn.getState();
-                    } else {
-                        // Need to fall back in case connection is null; it shouldn't be, but a sane
-                        // fallback is to assume we're dialing.  This state is only used to
-                        // determine which disconnect string to show in the case of a low battery
-                        // disconnect.
-                        callState = Call.State.DIALING;
-                    }
-                    int cause = getDisconnectCauseFromReasonInfo(reasonInfo, callState);
-
-                    if(conn != null) {
-                        conn.setPreciseDisconnectCause(
-                                getPreciseDisconnectCauseFromReasonInfo(reasonInfo));
-                    }
-
-                    processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
+                    sendCallStartFailedDisconnect(imsCall, reasonInfo);
                 }
                 mMetrics.writeOnImsCallStartFailed(mPhone.getPhoneId(), imsCall.getCallSession(),
                         reasonInfo);
@@ -2422,7 +2417,21 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 conn.setPreciseDisconnectCause(getPreciseDisconnectCauseFromReasonInfo(reasonInfo));
             }
 
-            processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
+            if (reasonInfo.getCode() == ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL
+                    && mAutoRetryFailedWifiEmergencyCall) {
+                Pair<ImsCall, ImsReasonInfo> callInfo = new Pair<>(imsCall, reasonInfo);
+                mPhone.getDefaultPhone().getServiceStateTracker().registerForNetworkAttached(
+                        ImsPhoneCallTracker.this, EVENT_REDIAL_WIFI_E911_CALL, callInfo);
+                sendMessageDelayed(obtainMessage(EVENT_REDIAL_WIFI_E911_TIMEOUT, callInfo),
+                        TIMEOUT_REDIAL_WIFI_E911_MS);
+                final ConnectivityManager mgr = (ConnectivityManager) mPhone.getContext()
+                        .getSystemService(Context.CONNECTIVITY_SERVICE);
+                mgr.setAirplaneMode(false);
+                return;
+            } else {
+                processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
+            }
+
             if (mForegroundCall.getState() != ImsPhoneCall.State.ACTIVE) {
                 if (mRingingCall.getState().isRinging()) {
                     // Drop pending MO. We should address incoming call first
@@ -3079,6 +3088,29 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
     };
 
+    public void sendCallStartFailedDisconnect(ImsCall imsCall, ImsReasonInfo reasonInfo) {
+        mPendingMO = null;
+        ImsPhoneConnection conn = findConnection(imsCall);
+        Call.State callState;
+        if (conn != null) {
+            callState = conn.getState();
+        } else {
+            // Need to fall back in case connection is null; it shouldn't be, but a sane
+            // fallback is to assume we're dialing.  This state is only used to
+            // determine which disconnect string to show in the case of a low battery
+            // disconnect.
+            callState = Call.State.DIALING;
+        }
+        int cause = getDisconnectCauseFromReasonInfo(reasonInfo, callState);
+
+        if (conn != null) {
+            conn.setPreciseDisconnectCause(
+                    getPreciseDisconnectCauseFromReasonInfo(reasonInfo));
+        }
+
+        processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
+    }
+
     public ImsUtInterface getUtInterface() throws ImsException {
         if (mImsManager == null) {
             throw getImsManagerIsNullException();
@@ -3248,6 +3280,35 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 } catch (ImsException e) {
                     Rlog.e(LOG_TAG, "Exception in parsing SS Data: " + e);
                 }
+                break;
+            }
+            case EVENT_REDIAL_WIFI_E911_CALL: {
+                Pair<ImsCall, ImsReasonInfo> callInfo =
+                        (Pair<ImsCall, ImsReasonInfo>) ((AsyncResult) msg.obj).userObj;
+                removeMessages(EVENT_REDIAL_WIFI_E911_TIMEOUT);
+                mPhone.getDefaultPhone().getServiceStateTracker()
+                        .unregisterForNetworkAttached(this);
+                ImsPhoneConnection oldConnection = findConnection(callInfo.first);
+                if (oldConnection == null) {
+                    sendCallStartFailedDisconnect(callInfo.first, callInfo.second);
+                }
+                mForegroundCall.detach(oldConnection);
+                removeConnection(oldConnection);
+                try {
+                    Connection newConnection =
+                            mPhone.getDefaultPhone().dial(mLastDialString, mLastDialArgs);
+                    oldConnection.onOriginalConnectionReplaced(newConnection);
+                } catch (CallStateException e) {
+                    sendCallStartFailedDisconnect(callInfo.first, callInfo.second);
+                }
+                break;
+            }
+            case EVENT_REDIAL_WIFI_E911_TIMEOUT: {
+                Pair<ImsCall, ImsReasonInfo> callInfo = (Pair<ImsCall, ImsReasonInfo>) msg.obj;
+                mPhone.getDefaultPhone().getServiceStateTracker()
+                        .unregisterForNetworkAttached(this);
+                removeMessages(EVENT_REDIAL_WIFI_E911_CALL);
+                sendCallStartFailedDisconnect(callInfo.first, callInfo.second);
                 break;
             }
         }

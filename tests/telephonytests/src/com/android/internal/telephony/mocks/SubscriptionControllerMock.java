@@ -270,7 +270,7 @@ public class SubscriptionControllerMock extends SubscriptionController {
         throw new RuntimeException("not implemented");
     }
     @Override
-    public void setSubscriptionProperty(int subId, String propKey, String propValue) {
+    public int setSubscriptionProperty(int subId, String propKey, String propValue) {
         throw new RuntimeException("not implemented");
     }
     @Override
