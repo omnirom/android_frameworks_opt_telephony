@@ -149,6 +149,9 @@ public interface CallFailCause {
     int DIAL_MODIFIED_TO_SS   = 245;
     int DIAL_MODIFIED_TO_DIAL = 246;
 
+    //Access class blocked - TS 31.121 5.2.1
+    int ACCESS_CLASS_BLOCKED = 260;
+
     // Supplementary new disconnect type
     int NO_ROUTE_TO_DESTINATION = 3;
     int CALL_FAIL_NO_USER_RESPONDING = 18;
