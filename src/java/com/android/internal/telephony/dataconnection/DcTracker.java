@@ -1480,8 +1480,18 @@ public class DcTracker extends Handler {
             apnContext.setConcurrentVoiceAndDataAllowed(mPhone.getServiceStateTracker()
                     .isConcurrentVoiceAndDataAllowed());
             if (apnContext.getState() == DctConstants.State.IDLE) {
+                String requestedApnType = apnContext.getApnType();
+                /*when UICC card is not present, add default emergency apn to apnsettings
+                  only if emergency apn is not present.
+                */
+                if(requestedApnType.equals(PhoneConstants.APN_TYPE_EMERGENCY)){
+                    if(mAllApnSettings == null){
+                        mAllApnSettings = new ArrayList<ApnSetting>();
+                    }
+                    addEmergencyApnSetting();
+                }
                 ArrayList<ApnSetting> waitingApns =
-                        buildWaitingApns(apnContext.getApnType(), radioTech);
+                        buildWaitingApns(requestedApnType, radioTech);
                 if (waitingApns.isEmpty()) {
                     notifyNoData(DcFailCause.MISSING_UNKNOWN_APN, apnContext);
                     notifyOffApnsOfAvailability(apnContext.getReason());
