@@ -23,7 +23,9 @@ import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.provider.Telephony.Sms.Intents;
 import android.telephony.CarrierConfigManager;
+import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
+import android.telephony.ServiceState;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.aidl.IImsSmsListener;
 import android.telephony.ims.feature.ImsFeature;
@@ -31,8 +33,6 @@ import android.telephony.ims.feature.MmTelFeature;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.telephony.ims.stub.ImsSmsImplBase;
 import android.telephony.ims.stub.ImsSmsImplBase.SendStatusResult;
-import android.telephony.PhoneNumberUtils;
-import android.telephony.ServiceState;
 import android.util.Pair;
 
 import com.android.ims.ImsException;
@@ -141,6 +141,7 @@ public class ImsSmsDispatcher extends SMSDispatcher {
                         tracker.onFailed(mContext, RESULT_ERROR_GENERIC_FAILURE, 0);
                         mTrackers.remove(token);
                     }
+                    break;
                 default:
             }
         }
@@ -238,7 +239,7 @@ public class ImsSmsDispatcher extends SMSDispatcher {
     private void setListeners() throws ImsException {
         getImsManager().addRegistrationCallback(mRegistrationCallback);
         getImsManager().addCapabilitiesCallback(mCapabilityCallback);
-        getImsManager().setSmsListener(mImsSmsListener);
+        getImsManager().setSmsListener(getSmsListener());
         getImsManager().onSmsReady();
     }
 
@@ -387,5 +388,10 @@ public class ImsSmsDispatcher extends SMSDispatcher {
     @Override
     protected boolean isCdmaMo() {
         return mSmsDispatchersController.isCdmaFormat(getFormat());
+    }
+
+    @VisibleForTesting
+    public IImsSmsListener getSmsListener() {
+        return mImsSmsListener;
     }
 }

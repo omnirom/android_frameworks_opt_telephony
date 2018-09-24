@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony;
 
+import static android.telephony.PhoneStateListener.LISTEN_PHONE_CAPABILITY_CHANGE;
 import static android.telephony.SubscriptionManager.INVALID_PHONE_INDEX;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
@@ -35,7 +36,10 @@ import android.os.Message;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.RemoteException;
+import android.telephony.PhoneCapability;
+import android.telephony.PhoneStateListener;
 import android.telephony.Rlog;
+import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -60,7 +64,6 @@ public class PhoneSwitcher extends Handler {
     protected final static String LOG_TAG = "PhoneSwitcher";
     protected final static boolean VDBG = false;
 
-    protected int mMaxActivePhones;
     protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<DcRequest>();
     protected final RegistrantList[] mActivePhoneRegistrants;
     protected final SubscriptionController mSubscriptionController;
@@ -71,7 +74,9 @@ public class PhoneSwitcher extends Handler {
     protected final int mNumPhones;
     private final Phone[] mPhones;
     private final LocalLog mLocalLog;
+    private final PhoneStateListener mPhoneStateListener;
 
+    protected int mMaxActivePhones;
     protected int mDefaultDataSubscription;
 
     protected final static int EVENT_DEFAULT_SUBSCRIPTION_CHANGED = 101;
@@ -99,6 +104,11 @@ public class PhoneSwitcher extends Handler {
         mLocalLog = null;
         mActivePhoneRegistrants = null;
         mNumPhones = 0;
+        mPhoneStateListener = new PhoneStateListener(looper) {
+            public void onPhoneCapabilityChanged(PhoneCapability capability) {
+                onPhoneCapabilityChangedInternal(capability);
+            }
+        };
     }
 
     public PhoneSwitcher(int maxActivePhones, int numPhones, Context context,
@@ -113,6 +123,16 @@ public class PhoneSwitcher extends Handler {
         mLocalLog = new LocalLog(MAX_LOCAL_LOG_LINES);
 
         mSubscriptionController = subscriptionController;
+
+        mPhoneStateListener = new PhoneStateListener(looper) {
+            public void onPhoneCapabilityChanged(PhoneCapability capability) {
+                onPhoneCapabilityChangedInternal(capability);
+            }
+        };
+
+        TelephonyManager telephonyManager =
+                (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        telephonyManager.listen(mPhoneStateListener, LISTEN_PHONE_CAPABILITY_CHANGE);
 
         mActivePhoneRegistrants = new RegistrantList[numPhones];
         mPhoneStates = new PhoneState[numPhones];
@@ -281,7 +301,6 @@ public class PhoneSwitcher extends Handler {
             sb.append(" default ").append(mDefaultDataSubscription).append("->").append(dataSub);
             mDefaultDataSubscription = dataSub;
             diffDetected = true;
-
         }
 
         for (int i = 0; i < mNumPhones; i++) {
@@ -374,6 +393,16 @@ public class PhoneSwitcher extends Handler {
         // Skip ALLOW_DATA for single SIM device
         if (mNumPhones > 1) {
             mCommandsInterfaces[phoneId].setDataAllowed(mPhoneStates[phoneId].active, null);
+        }
+    }
+
+    private void onPhoneCapabilityChangedInternal(PhoneCapability capability) {
+        int newMaxActivePhones = TelephonyManager.getDefault()
+                .getNumberOfModemsWithSimultaneousDataConnections();
+        if (mMaxActivePhones != newMaxActivePhones) {
+            mMaxActivePhones = newMaxActivePhones;
+            log("Max active phones changed to " + mMaxActivePhones);
+            onEvaluate(true, "phoneCfgChanged");
         }
     }
 

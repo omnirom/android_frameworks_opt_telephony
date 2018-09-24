@@ -64,6 +64,7 @@ import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
+import com.android.internal.telephony.dataconnection.AccessNetworksManager;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
@@ -284,6 +285,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private final String mActionDetached;
     private final String mActionAttached;
     protected DeviceStateMonitor mDeviceStateMonitor;
+    protected AccessNetworksManager mAccessNetworksManager;
 
     protected int mPhoneId;
 
@@ -2129,9 +2131,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      *
      * @param itemID the ID of the item to read
      * @param response callback message with the String response in the obj field
+     * @param workSource calling WorkSource
      */
-    public void nvReadItem(int itemID, Message response) {
-        mCi.nvReadItem(itemID, response);
+    public void nvReadItem(int itemID, Message response, WorkSource workSource) {
+        mCi.nvReadItem(itemID, response, workSource);
     }
 
     /**
@@ -2141,9 +2144,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param itemID the ID of the item to read
      * @param itemValue the value to write, as a String
      * @param response Callback message.
+     * @param workSource calling WorkSource
      */
-    public void nvWriteItem(int itemID, String itemValue, Message response) {
-        mCi.nvWriteItem(itemID, itemValue, response);
+    public void nvWriteItem(int itemID, String itemValue, Message response,
+            WorkSource workSource) {
+        mCi.nvWriteItem(itemID, itemValue, response, workSource);
     }
 
     /**
@@ -2392,6 +2397,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             mContext.sendBroadcast(intent);
+
+            // {@link TelephonyManager.ACTION_SECRET_CODE} will replace {@link
+            // TelephonyIntents#SECRET_CODE_ACTION} in the next Android version. Before
+            // that both of these two actions will be broadcast.
+            Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
+                    Uri.parse("android_secret_code://" + code));
+            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+            mContext.sendBroadcast(secrectCodeIntent);
         }
     }
 
@@ -3517,8 +3530,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Returns the modem activity information
      */
-    public void getModemActivityInfo(Message response)  {
-        mCi.getModemActivityInfo(response);
+    public void getModemActivityInfo(Message response, WorkSource workSource)  {
+        mCi.getModemActivityInfo(response, workSource);
     }
 
     /**
@@ -3533,8 +3546,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Set allowed carriers
      */
-    public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message response) {
-        mCi.setAllowedCarriers(carriers, response);
+    public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message response,
+            WorkSource workSource) {
+        mCi.setAllowedCarriers(carriers, response, workSource);
     }
 
     /** Sets the SignalStrength reporting criteria. */
@@ -3550,8 +3564,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Get allowed carriers
      */
-    public void getAllowedCarriers(Message response) {
-        mCi.getAllowedCarriers(response);
+    public void getAllowedCarriers(Message response, WorkSource workSource) {
+        mCi.getAllowedCarriers(response, workSource);
     }
 
     /**
@@ -3697,8 +3711,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * - {@link android.telephony.TelephonyManager#CARD_POWER_UP}
      * - {@link android.telephony.TelephonyManager#CARD_POWER_UP_PASS_THROUGH}
      **/
-    public void setSimPowerState(int state) {
-        mCi.setSimCardPower(state, null);
+    public void setSimPowerState(int state, WorkSource workSource) {
+        mCi.setSimCardPower(state, null, workSource);
     }
 
     public SIMRecords getSIMRecords() {

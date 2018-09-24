@@ -18,6 +18,8 @@
 
 package com.android.internal.telephony;
 
+import static com.android.internal.util.DumpUtils.checkDumpPermission;
+
 import android.annotation.Nullable;
 import android.app.ActivityThread;
 import android.app.PendingIntent;
@@ -42,9 +44,12 @@ import java.util.List;
  * Implements the ISmsImplBase interface used in the SmsManager API.
  */
 public class UiccSmsController extends ISmsImplBase {
-    static final String LOG_TAG = "RIL_UiccSmsController";
+    static final String LOG_TAG = "UiccSmsController";
 
-    protected UiccSmsController() {
+    private final Context mContext;
+
+    protected UiccSmsController(Context context) {
+        mContext = context;
         if (ServiceManager.getService("isms") == null) {
             ServiceManager.addService("isms", this);
         }
@@ -123,6 +128,7 @@ public class UiccSmsController extends ISmsImplBase {
         } else {
             Rlog.e(LOG_TAG,"sendText iccSmsIntMgr is null for" +
                           " Subscription: " + subId);
+            sendErrorInPendingIntent(sentIntent, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
 
@@ -152,21 +158,23 @@ public class UiccSmsController extends ISmsImplBase {
         } else {
             Rlog.e(LOG_TAG,"sendText iccSmsIntMgr is null for" +
                           " Subscription: " + subId);
+            sendErrorInPendingIntent(sentIntent, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
 
     @Override
     public void sendTextForSubscriberWithOptions(int subId, String callingPackage,
-            String destAddr, String scAddr, String parts, PendingIntent sentIntents,
-            PendingIntent deliveryIntents, boolean persistMessage, int priority,
+            String destAddr, String scAddr, String parts, PendingIntent sentIntent,
+            PendingIntent deliveryIntent, boolean persistMessage, int priority,
             boolean expectMore, int validityPeriod) {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null ) {
-            iccSmsIntMgr.sendTextWithOptions(callingPackage, destAddr, scAddr, parts, sentIntents,
-                    deliveryIntents, persistMessage,  priority, expectMore, validityPeriod);
+            iccSmsIntMgr.sendTextWithOptions(callingPackage, destAddr, scAddr, parts, sentIntent,
+                    deliveryIntent, persistMessage,  priority, expectMore, validityPeriod);
         } else {
             Rlog.e(LOG_TAG,"sendTextWithOptions iccSmsIntMgr is null for" +
                           " Subscription: " + subId);
+            sendErrorInPendingIntent(sentIntent, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
 
@@ -198,6 +206,7 @@ public class UiccSmsController extends ISmsImplBase {
         } else {
             Rlog.e(LOG_TAG,"sendMultipartTextWithOptions iccSmsIntMgr is null for" +
                           " Subscription: " + subId);
+            sendErrorInPendingIntents(sentIntents, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
 
@@ -393,6 +402,10 @@ public class UiccSmsController extends ISmsImplBase {
 
     @Override
     protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        if (!checkDumpPermission(mContext, LOG_TAG, pw)) {
+            return;
+        }
+
         IndentingPrintWriter indentingPW =
                 new IndentingPrintWriter(pw, "    " /* singleIndent */);
         for (Phone phone : PhoneFactory.getPhones()) {
@@ -431,6 +444,10 @@ public class UiccSmsController extends ISmsImplBase {
     }
 
     private void sendErrorInPendingIntents(List<PendingIntent> intents, int errorCode) {
+        if (intents == null) {
+            return;
+        }
+
         for (PendingIntent intent : intents) {
             sendErrorInPendingIntent(intent, errorCode);
         }

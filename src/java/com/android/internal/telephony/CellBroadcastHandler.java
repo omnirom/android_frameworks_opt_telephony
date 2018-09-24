@@ -94,7 +94,8 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
         TelephonyMetrics metrics = TelephonyMetrics.getInstance();
         metrics.writeNewCBSms(mPhone.getPhoneId(), message.getMessageFormat(),
                 message.getMessagePriority(), message.isCmasMessage(), message.isEtwsMessage(),
-                message.getServiceCategory());
+                message.getServiceCategory(), message.getSerialNumber(),
+                System.currentTimeMillis());
 
         String msg;
         Intent intent;
@@ -103,6 +104,8 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
             log(msg);
             mLocalLog.log(msg);
             intent = new Intent(Telephony.Sms.Intents.SMS_EMERGENCY_CB_RECEIVED_ACTION);
+            //Emergency alerts need to be delivered with high priority
+            intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
             // Explicitly send the intent to the default cell broadcast receiver.
             intent.setPackage(mContext.getResources().getString(
                     com.android.internal.R.string.config_defaultCellBroadcastReceiverPkg));

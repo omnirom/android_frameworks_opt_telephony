@@ -115,7 +115,10 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -174,6 +177,18 @@ public class RIL extends BaseCommands implements CommandsInterface {
     AtomicBoolean mTestingEmergencyCall = new AtomicBoolean(false);
 
     final Integer mPhoneId;
+
+    /**
+     * A set that records if radio service is disabled in hal for
+     * a specific phone id slot to avoid further getService request.
+     */
+    Set<Integer> mDisabledRadioServices = new HashSet();
+
+    /**
+     * A set that records if oem hook service is disabled in hal for
+     * a specific phone id slot to avoid further getService request.
+     */
+    Set<Integer> mDisabledOemHookServices = new HashSet();
 
     /* default work source which will blame phone process */
     protected WorkSource mRILDefaultWorkSource;
@@ -350,7 +365,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     /** Returns a {@link IRadio} instance or null if the service is not available. */
     @VisibleForTesting
-    public IRadio getRadioProxy(Message result) {
+    public synchronized IRadio getRadioProxy(Message result) {
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getRadioProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -366,16 +381,26 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
 
         try {
-            mRadioProxy = IRadio.getService(HIDL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId],
-                    true);
-            if (mRadioProxy != null) {
-                mRadioProxy.linkToDeath(mRadioProxyDeathRecipient,
-                        mRadioProxyCookie.incrementAndGet());
-                mRadioProxy.setResponseFunctions(mRadioResponse, mRadioIndication);
+            if (mDisabledRadioServices.contains(mPhoneId)) {
+                riljLoge("getRadioProxy: mRadioProxy for " + HIDL_SERVICE_NAME[mPhoneId]
+                        + " is disabled");
             } else {
-                riljLoge("getRadioProxy: mRadioProxy == null");
+                mRadioProxy = IRadio.getService(HIDL_SERVICE_NAME[mPhoneId],
+                        true);
+                if (mRadioProxy != null) {
+                    mRadioProxy.linkToDeath(mRadioProxyDeathRecipient,
+                            mRadioProxyCookie.incrementAndGet());
+                    mRadioProxy.setResponseFunctions(mRadioResponse, mRadioIndication);
+                } else {
+                    mDisabledRadioServices.add(mPhoneId);
+                    riljLoge("getRadioProxy: mRadioProxy for "
+                            + HIDL_SERVICE_NAME[mPhoneId] + " is disabled");
+                }
             }
-        } catch (RemoteException | RuntimeException e) {
+        } catch (NoSuchElementException e) {
+            mRadioProxy = null;
+            riljLoge("IRadio service is not on the device HAL: " + e);
+        } catch (RemoteException e) {
             mRadioProxy = null;
             riljLoge("RadioProxy getService/setResponseFunctions: " + e);
         }
@@ -395,7 +420,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     /** Returns an {@link IOemHook} instance or null if the service is not available. */
     @VisibleForTesting
-    public IOemHook getOemHookProxy(Message result) {
+    public synchronized IOemHook getOemHookProxy(Message result) {
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getOemHookProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -411,16 +436,25 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
 
         try {
-            mOemHookProxy = IOemHook.getService(
-                    HIDL_SERVICE_NAME[mPhoneId == null ? 0 : mPhoneId], true);
-            if (mOemHookProxy != null) {
-                // not calling linkToDeath() as ril service runs in the same process and death
-                // notification for that should be sufficient
-                mOemHookProxy.setResponseFunctions(mOemHookResponse, mOemHookIndication);
+            if (mDisabledOemHookServices.contains(mPhoneId)) {
+                riljLoge("getOemHookProxy: mOemHookProxy for " + HIDL_SERVICE_NAME[mPhoneId]
+                        + " is disabled");
             } else {
-                riljLoge("getOemHookProxy: mOemHookProxy == null");
+                mOemHookProxy = IOemHook.getService(HIDL_SERVICE_NAME[mPhoneId], true);
+                if (mOemHookProxy != null) {
+                    // not calling linkToDeath() as ril service runs in the same process and death
+                    // notification for that should be sufficient
+                    mOemHookProxy.setResponseFunctions(mOemHookResponse, mOemHookIndication);
+                } else {
+                    mDisabledOemHookServices.add(mPhoneId);
+                    riljLoge("getOemHookProxy: mOemHookProxy for " + HIDL_SERVICE_NAME[mPhoneId]
+                            + " is disabled");
+                }
             }
-        } catch (RemoteException | RuntimeException e) {
+        } catch (NoSuchElementException e) {
+            mRadioProxy = null;
+            riljLoge("IOemHook service is not on the device HAL: " + e);
+        }  catch (RemoteException e) {
             mOemHookProxy = null;
             riljLoge("OemHookProxy getService/setResponseFunctions: " + e);
         }
@@ -454,7 +488,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         mCdmaSubscription  = cdmaSubscription;
         mPreferredNetworkType = preferredNetworkType;
         mPhoneType = RILConstants.NO_PHONE;
-        mPhoneId = instanceId;
+        mPhoneId = instanceId == null ? 0 : instanceId;
 
         ConnectivityManager cm = (ConnectivityManager)context.getSystemService(
                 Context.CONNECTIVITY_SERVICE);
@@ -3214,11 +3248,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void nvReadItem(int itemID, Message result) {
+    public void nvReadItem(int itemID, Message result, WorkSource workSource) {
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_NV_READ_ITEM, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
@@ -3234,11 +3269,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void nvWriteItem(int itemId, String itemValue, Message result) {
+    public void nvWriteItem(int itemId, String itemValue, Message result, WorkSource workSource) {
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_NV_WRITE_ITEM, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
@@ -3573,11 +3609,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void getModemActivityInfo(Message result) {
+    public void getModemActivityInfo(Message result, WorkSource workSource) {
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_GET_ACTIVITY_INFO, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
@@ -3599,12 +3636,15 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message result) {
+    public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message result,
+            WorkSource workSource) {
         checkNotNull(carriers, "Allowed carriers list cannot be null.");
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
+
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_SET_ALLOWED_CARRIERS, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 String logStr = "";
@@ -3658,11 +3698,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void getAllowedCarriers(Message result) {
+    public void getAllowedCarriers(Message result, WorkSource workSource) {
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
+
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_GET_ALLOWED_CARRIERS, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
@@ -3807,11 +3849,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void setSimCardPower(int state, Message result) {
+    public void setSimCardPower(int state, Message result, WorkSource workSource) {
+        workSource = getDeafultWorkSourceIfInvalid(workSource);
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_SET_SIM_CARD_POWER, result,
-                    mRILDefaultWorkSource);
+                    workSource);
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " " + state);
@@ -5036,23 +5079,19 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     void riljLog(String msg) {
-        Rlog.d(RILJ_LOG_TAG, msg
-                + (mPhoneId != null ? (" [SUB" + mPhoneId + "]") : ""));
+        Rlog.d(RILJ_LOG_TAG, msg + (" [SUB" + mPhoneId + "]"));
     }
 
     void riljLoge(String msg) {
-        Rlog.e(RILJ_LOG_TAG, msg
-                + (mPhoneId != null ? (" [SUB" + mPhoneId + "]") : ""));
+        Rlog.e(RILJ_LOG_TAG, msg + (" [SUB" + mPhoneId + "]"));
     }
 
     void riljLoge(String msg, Exception e) {
-        Rlog.e(RILJ_LOG_TAG, msg
-                + (mPhoneId != null ? (" [SUB" + mPhoneId + "]") : ""), e);
+        Rlog.e(RILJ_LOG_TAG, msg + (" [SUB" + mPhoneId + "]"), e);
     }
 
     void riljLogv(String msg) {
-        Rlog.v(RILJ_LOG_TAG, msg
-                + (mPhoneId != null ? (" [SUB" + mPhoneId + "]") : ""));
+        Rlog.v(RILJ_LOG_TAG, msg + (" [SUB" + mPhoneId + "]"));
     }
 
     void unsljLog(int response) {

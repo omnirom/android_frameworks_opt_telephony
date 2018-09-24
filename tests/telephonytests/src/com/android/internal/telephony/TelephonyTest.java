@@ -60,6 +60,7 @@ import com.android.ims.ImsEcbm;
 import com.android.ims.ImsManager;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
+import com.android.internal.telephony.dataconnection.AccessNetworksManager;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.imsphone.ImsExternalCallTracker;
 import com.android.internal.telephony.imsphone.ImsPhone;
@@ -190,6 +191,8 @@ public abstract class TelephonyTest {
     @Mock
     protected DeviceStateMonitor mDeviceStateMonitor;
     @Mock
+    protected AccessNetworksManager mAccessNetworksManager;
+    @Mock
     protected IntentBroadcaster mIntentBroadcaster;
     @Mock
     protected NitzStateMachine mNitzStateMachine;
@@ -199,6 +202,8 @@ public abstract class TelephonyTest {
     protected SubscriptionInfoUpdater mSubInfoRecordUpdater;
     @Mock
     protected LocaleTracker mLocaleTracker;
+    @Mock
+    protected RestrictedState mRestrictedState;
 
     protected ImsCallProfile mImsCallProfile;
     protected TelephonyManager mTelephonyManager;
@@ -249,13 +254,15 @@ public abstract class TelephonyTest {
 
     protected void waitUntilReady() {
         synchronized (mLock) {
-            try {
-                mLock.wait(MAX_INIT_WAIT_MS);
-            } catch (InterruptedException ie) {
-            }
-
             if (!mReady) {
-                fail("Telephony tests failed to initialize");
+                try {
+                    mLock.wait(MAX_INIT_WAIT_MS);
+                } catch (InterruptedException ie) {
+                }
+
+                if (!mReady) {
+                    fail("Telephony tests failed to initialize");
+                }
             }
         }
     }
@@ -371,6 +378,8 @@ public abstract class TelephonyTest {
                 .makeCarrierActionAgent(nullable(Phone.class));
         doReturn(mDeviceStateMonitor).when(mTelephonyComponentFactory)
                 .makeDeviceStateMonitor(nullable(Phone.class));
+        doReturn(mAccessNetworksManager).when(mTelephonyComponentFactory)
+                .makeAccessNetworksManager(nullable(Phone.class));
         doReturn(mNitzStateMachine).when(mTelephonyComponentFactory)
                 .makeNitzStateMachine(nullable(GsmCdmaPhone.class));
         doReturn(mLocaleTracker).when(mTelephonyComponentFactory)
@@ -458,7 +467,9 @@ public abstract class TelephonyTest {
                 nullable(String.class), nullable(IBinder.class), nullable(String.class), anyInt(),
                 nullable(Intent[].class), nullable(String[].class), anyInt(),
                 nullable(Bundle.class), anyInt());
+        doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
         mSST.mSS = mServiceState;
+        mSST.mRestrictedState = mRestrictedState;
         mServiceManagerMockedServices.put("connectivity_metrics_logger", mConnMetLoggerBinder);
 
         //SIM
@@ -528,8 +539,10 @@ public abstract class TelephonyTest {
             switch (method) {
                 case BlockedNumberContract.SystemContract.METHOD_SHOULD_SYSTEM_BLOCK_NUMBER:
                     Bundle bundle = new Bundle();
-                    bundle.putBoolean(BlockedNumberContract.RES_NUMBER_IS_BLOCKED,
-                            mBlockedNumbers.contains(arg));
+                    int blockStatus = mBlockedNumbers.contains(arg)
+                            ? BlockedNumberContract.STATUS_BLOCKED_IN_LIST
+                            : BlockedNumberContract.STATUS_NOT_BLOCKED;
+                    bundle.putInt(BlockedNumberContract.RES_BLOCK_STATUS, blockStatus);
                     return bundle;
                 case BlockedNumberContract.SystemContract.METHOD_NOTIFY_EMERGENCY_CONTACT:
                     mNumEmergencyContactNotifications++;

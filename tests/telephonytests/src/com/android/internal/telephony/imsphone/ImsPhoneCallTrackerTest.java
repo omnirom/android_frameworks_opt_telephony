@@ -827,6 +827,32 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testCallRestrictedDisconnect() {
+        doReturn(true).when(mSST.mRestrictedState).isCsRestricted();
+        assertEquals(DisconnectCause.CS_RESTRICTED, mCTUT.getDisconnectCauseFromReasonInfo(
+                new ImsReasonInfo(ImsReasonInfo.CODE_UNSPECIFIED, 0), Call.State.ACTIVE));
+    }
+
+    @Test
+    @SmallTest
+    public void testCallRestrictedEmergencyDisconnect() {
+        doReturn(true).when(mSST.mRestrictedState).isCsEmergencyRestricted();
+        assertEquals(DisconnectCause.CS_RESTRICTED_EMERGENCY,
+                mCTUT.getDisconnectCauseFromReasonInfo(
+                        new ImsReasonInfo(ImsReasonInfo.CODE_UNSPECIFIED, 0), Call.State.ACTIVE));
+    }
+
+    @Test
+    @SmallTest
+    public void testCallRestrictedNormal() {
+        doReturn(true).when(mSST.mRestrictedState).isCsNormalRestricted();
+        assertEquals(DisconnectCause.CS_RESTRICTED_NORMAL,
+                mCTUT.getDisconnectCauseFromReasonInfo(
+                        new ImsReasonInfo(ImsReasonInfo.CODE_UNSPECIFIED, 0), Call.State.ACTIVE));
+    }
+
+    @Test
+    @SmallTest
     public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
         mCTUT.setSwitchingFgAndBgCallsValue(true);
         if (mImsCallListener != null) {
@@ -835,3 +861,4 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         assertTrue(mCTUT.getSwitchingFgAndBgCallsValue());
     }
 }
+
