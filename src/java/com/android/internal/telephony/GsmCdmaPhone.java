@@ -2006,28 +2006,6 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
-    public void getNeighboringCids(Message response, WorkSource workSource) {
-        if (isPhoneTypeGsm()) {
-            mCi.getNeighboringCids(response, workSource);
-        } else {
-            /*
-             * This is currently not implemented.  At least as of June
-             * 2009, there is no neighbor cell information available for
-             * CDMA because some party is resisting making this
-             * information readily available.  Consequently, calling this
-             * function can have no useful effect.  This situation may
-             * (and hopefully will) change in the future.
-             */
-            if (response != null) {
-                CommandException ce = new CommandException(
-                        CommandException.Error.REQUEST_NOT_SUPPORTED);
-                AsyncResult.forMessage(response).exception = ce;
-                response.sendToTarget();
-            }
-        }
-    }
-
-    @Override
     public void setTTYMode(int ttyMode, Message onComplete) {
         // Send out the TTY Mode change over RIL as well
         super.setTTYMode(ttyMode, onComplete);
@@ -2720,11 +2698,22 @@ public class GsmCdmaPhone extends Phone {
                 if (DBG) {
                     logd("New Uicc application found. type = " + newUiccApplication.getType());
                 }
+                final IccRecords iccRecords = newUiccApplication.getIccRecords();
                 mUiccApplication.set(newUiccApplication);
-                mIccRecords.set(newUiccApplication.getIccRecords());
+                mIccRecords.set(iccRecords);
                 logd("mIccRecords = " + mIccRecords);
                 registerForIccRecordEvents();
-                mIccPhoneBookIntManager.updateIccRecords(mIccRecords.get());
+                mIccPhoneBookIntManager.updateIccRecords(iccRecords);
+                if (iccRecords != null) {
+                    final String simOperatorNumeric = iccRecords.getOperatorNumeric();
+                    if (DBG) {
+                        logd("New simOperatorNumeric = " + simOperatorNumeric);
+                    }
+                    if (!TextUtils.isEmpty(simOperatorNumeric)) {
+                        TelephonyManager.from(mContext).setSimOperatorNumericForPhone(mPhoneId,
+                                simOperatorNumeric);
+                    }
+                }
             }
         }
     }

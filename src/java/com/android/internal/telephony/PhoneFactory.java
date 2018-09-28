@@ -82,6 +82,7 @@ public class PhoneFactory {
     static private boolean sMadeDefaults = false;
     static private PhoneNotifier sPhoneNotifier;
     static private Context sContext;
+    static private PhoneConfigurationManager sPhoneConfigurationManager;
     static private PhoneSwitcher sPhoneSwitcher;
     static private SubscriptionMonitor sSubscriptionMonitor;
     static private TelephonyNetworkFactory[] sTelephonyNetworkFactories;
@@ -89,9 +90,6 @@ public class PhoneFactory {
     static private NotificationChannelController sNotificationChannelController;
 
     static private final HashMap<String, LocalLog>sLocalLogs = new HashMap<String, LocalLog>();
-
-    // TODO - make this a dynamic property read from the modem
-    public static final int MAX_ACTIVE_PHONES = 1;
 
     //***** Class Methods
 
@@ -245,8 +243,13 @@ public class PhoneFactory {
 
                 sSubscriptionMonitor = new SubscriptionMonitor(tr, sContext, sc, numPhones);
 
+                sPhoneConfigurationManager = PhoneConfigurationManager.init(sContext);
+
+                int maxActivePhones = sPhoneConfigurationManager
+                        .getNumberOfModemsWithSimultaneousDataConnections();
+
                 sPhoneSwitcher = telephonyComponentFactory.
-                        makePhoneSwitcher(MAX_ACTIVE_PHONES, numPhones,
+                        makePhoneSwitcher(maxActivePhones, numPhones,
                         sContext, sc, Looper.myLooper(), tr, sCommandsInterfaces,
                         sPhones);
 
