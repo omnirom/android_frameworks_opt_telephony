@@ -231,7 +231,7 @@ public class DataConnection extends StateMachine {
     static final int EVENT_KEEPALIVE_STOP_REQUEST = BASE + 22;
     static final int EVENT_LINK_CAPACITY_CHANGED = BASE + 23;
     static final int EVENT_RESET = BASE + 24;
-    static final int EVENT_DATA_CONNECTION_DDS_SWITCHED = BASE + 24;
+    static final int EVENT_DATA_CONNECTION_DDS_SWITCHED = BASE + 25;
 
     private static final int CMD_TO_STRING_COUNT =
             EVENT_DATA_CONNECTION_DDS_SWITCHED - BASE + 1;
