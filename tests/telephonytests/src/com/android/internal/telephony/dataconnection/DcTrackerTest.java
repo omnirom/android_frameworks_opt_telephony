@@ -142,7 +142,7 @@ public class DcTrackerTest extends TelephonyTest {
     @Mock
     ApnSetting mApnSetting;
     @Mock
-    DcAsyncChannel mDcac;
+    DataConnection mDataConnection;
     @Mock
     PackageManagerService mMockPackageManagerInternal;
 
@@ -718,6 +718,7 @@ public class DcTrackerTest extends TelephonyTest {
         // Simulate the timer expires.
         Intent intent = new Intent("com.android.internal.telephony.data-reconnect.default");
         intent.putExtra("reconnect_alarm_extra_type", PhoneConstants.APN_TYPE_DEFAULT);
+        intent.putExtra("reconnect_alarm_extra_transport_type", TransportType.WWAN);
         intent.putExtra(PhoneConstants.SUBSCRIPTION_KEY, 0);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         mContext.sendBroadcast(intent);
@@ -1020,7 +1021,7 @@ public class DcTrackerTest extends TelephonyTest {
                 TextUtils.join(",", canHandleTypes)));
         doReturn(apnSetting).when(mApnContext).getNextApnSetting();
         doReturn(apnSetting).when(mApnContext).getApnSetting();
-        doReturn(mDcac).when(mApnContext).getDcAc();
+        doReturn(mDataConnection).when(mApnContext).getDataConnection();
         doReturn(true).when(mApnContext).isEnabled();
         doReturn(true).when(mApnContext).getDependencyMet();
         doReturn(true).when(mApnContext).isReady();
@@ -1314,6 +1315,7 @@ public class DcTrackerTest extends TelephonyTest {
         Intent intent = new Intent("com.android.internal.telephony.data-reconnect.default");
         intent.putExtra("reconnect_alarm_extra_type", PhoneConstants.APN_TYPE_DEFAULT);
         intent.putExtra(PhoneConstants.SUBSCRIPTION_KEY, 0);
+        intent.putExtra("reconnect_alarm_extra_transport_type", TransportType.WWAN);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         mContext.sendBroadcast(intent);
         waitForMs(200);

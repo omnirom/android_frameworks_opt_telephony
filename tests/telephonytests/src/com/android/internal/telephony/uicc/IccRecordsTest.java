@@ -29,19 +29,20 @@
 
 package com.android.internal.telephony.uicc;
 
-import org.mockito.Mock;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
-import org.mockito.MockitoAnnotations;
+
+import android.os.HandlerThread;
+
+import com.android.internal.telephony.TelephonyTest;
+
 import org.junit.After;
 import static org.junit.Assert.assertEquals;
 import org.junit.Before;
 import org.junit.Test;
-import com.android.internal.telephony.TelephonyTest;
 
 import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
-import android.content.Context;
 import android.os.AsyncResult;
-import android.os.HandlerThread;
 import android.os.Message;
 
 public class IccRecordsTest extends TelephonyTest {
@@ -83,6 +84,19 @@ public class IccRecordsTest extends TelephonyTest {
 
     }
 
+    @Test
+    public void testSetImsiInvalid() {
+        mIccRecords.setImsi("0123456789FFFFFF");
+        assertEquals(mIccRecords.getIMSI(), "0123456789");
+        mIccRecords.setImsi("0123456789ffffff");
+        assertEquals(mIccRecords.getIMSI(), "0123456789");
+        mIccRecords.setImsi("ffffff");
+        assertEquals(mIccRecords.getIMSI(), null);
+        mIccRecords.setImsi("12F34F567890");
+        assertEquals(mIccRecords.getIMSI(), null);
+        mIccRecords.setImsi("123456ABCDEF");
+        assertEquals(mIccRecords.getIMSI(), null);
+    }
 
     @Test
     public void testGetSmsCapacityOnIcc() {

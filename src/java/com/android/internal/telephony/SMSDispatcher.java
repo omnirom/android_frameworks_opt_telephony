@@ -17,8 +17,6 @@
 package com.android.internal.telephony;
 
 import static android.Manifest.permission.SEND_SMS_NO_CONFIRMATION;
-import static com.android.internal.telephony.IccSmsInterfaceManager.SMS_MESSAGE_PERIOD_NOT_SPECIFIED;
-import static com.android.internal.telephony.IccSmsInterfaceManager.SMS_MESSAGE_PRIORITY_NOT_SPECIFIED;
 import static android.telephony.SmsManager.RESULT_ERROR_FDN_CHECK_FAILURE;
 import static android.telephony.SmsManager.RESULT_ERROR_GENERIC_FAILURE;
 import static android.telephony.SmsManager.RESULT_ERROR_LIMIT_EXCEEDED;
@@ -27,6 +25,9 @@ import static android.telephony.SmsManager.RESULT_ERROR_NULL_PDU;
 import static android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF;
 import static android.telephony.SmsManager.RESULT_ERROR_SHORT_CODE_NEVER_ALLOWED;
 import static android.telephony.SmsManager.RESULT_ERROR_SHORT_CODE_NOT_ALLOWED;
+
+import static com.android.internal.telephony.IccSmsInterfaceManager.SMS_MESSAGE_PERIOD_NOT_SPECIFIED;
+import static com.android.internal.telephony.IccSmsInterfaceManager.SMS_MESSAGE_PRIORITY_NOT_SPECIFIED;
 
 import android.annotation.Nullable;
 import android.annotation.UserIdInt;
@@ -83,9 +84,9 @@ import android.widget.TextView;
 
 import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.telephony.cdma.sms.UserData;
 import com.android.internal.telephony.GsmAlphabet.TextEncodingDetails;
 import com.android.internal.telephony.SmsUsageMonitor.SmsAuthorizationCallback;
+import com.android.internal.telephony.cdma.sms.UserData;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
 
@@ -880,6 +881,16 @@ public abstract class SMSDispatcher extends Handler {
         }
     }
 
+    private void triggerSentIntentForFailure(List<PendingIntent> sentIntents) {
+        if (sentIntents == null) {
+            return;
+        }
+
+        for (PendingIntent sentIntent : sentIntents) {
+            triggerSentIntentForFailure(sentIntent);
+        }
+    }
+
     private boolean sendSmsByCarrierApp(boolean isDataSms, SmsTracker tracker ) {
         String carrierPackage = getCarrierAppPackageName();
         if (carrierPackage != null) {
@@ -960,14 +971,19 @@ public abstract class SMSDispatcher extends Handler {
      *  Validity Period(Maximum) -> 635040 mins(i.e.63 weeks).
      *  Any Other values included Negative considered as Invalid Validity Period of the message.
      */
-    protected void sendMultipartText(String destAddr, String scAddr,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PROTECTED)
+    public void sendMultipartText(String destAddr, String scAddr,
             ArrayList<String> parts, ArrayList<PendingIntent> sentIntents,
             ArrayList<PendingIntent> deliveryIntents, Uri messageUri, String callingPkg,
             boolean persistMessage, int priority, boolean expectMore, int validityPeriod) {
         final String fullMessageText = getMultipartMessageText(parts);
         int refNumber = getNextConcatenatedRef() & 0x00FF;
-        int msgCount = parts.size();
         int encoding = SmsConstants.ENCODING_UNKNOWN;
+        int msgCount = parts.size();
+        if (msgCount < 1) {
+            triggerSentIntentForFailure(sentIntents);
+            return;
+        }
 
         TextEncodingDetails[] encodingForParts = new TextEncodingDetails[msgCount];
         for (int i = 0; i < msgCount; i++) {
@@ -1022,13 +1038,11 @@ public abstract class SMSDispatcher extends Handler {
                         sentIntent, deliveryIntent, (i == (msgCount - 1)),
                         unsentPartCount, anyPartFailed, messageUri,
                         fullMessageText, priority, expectMore, validityPeriod);
+            if (trackers[i] == null) {
+                triggerSentIntentForFailure(sentIntents);
+                return;
+            }
             trackers[i].mPersistMessage = persistMessage;
-        }
-
-        if (parts == null || trackers == null || trackers.length == 0
-                || trackers[0] == null) {
-            Rlog.e(TAG, "Cannot send multipart text. parts=" + parts + " trackers=" + trackers);
-            return;
         }
 
         String carrierPackage = getCarrierAppPackageName();
@@ -1040,11 +1054,7 @@ public abstract class SMSDispatcher extends Handler {
         } else {
             Rlog.v(TAG, "No carrier package.");
             for (SmsTracker tracker : trackers) {
-                if (tracker != null) {
-                    sendSubmitPdu(tracker);
-                } else {
-                    Rlog.e(TAG, "Null tracker.");
-                }
+                sendSubmitPdu(tracker);
             }
         }
     }
@@ -1079,13 +1089,18 @@ public abstract class SMSDispatcher extends Handler {
                     com.android.internal.telephony.cdma.SmsMessage.getSubmitPdu(destinationAddress,
                             uData, (deliveryIntent != null) && lastPart, priority);
 
-            HashMap map = getSmsTrackerMap(destinationAddress, scAddress,
-                    message, submitPdu);
-            return getSmsTracker(map, sentIntent, deliveryIntent,
-                    getFormat(), unsentPartCount, anyPartFailed, messageUri, smsHeader,
-                    (!lastPart || expectMore), fullMessageText, true /*isText*/,
-                    true /*persistMessage*/, priority, validityPeriod);
-
+            if (submitPdu != null) {
+                HashMap map = getSmsTrackerMap(destinationAddress, scAddress,
+                        message, submitPdu);
+                return getSmsTracker(map, sentIntent, deliveryIntent,
+                        getFormat(), unsentPartCount, anyPartFailed, messageUri, smsHeader,
+                        (!lastPart || expectMore), fullMessageText, true /*isText*/,
+                        true /*persistMessage*/, priority, validityPeriod);
+            } else {
+                Rlog.e(TAG, "CdmaSMSDispatcher.getNewSubmitPduTracker(): getSubmitPdu() returned "
+                        + "null");
+                return null;
+            }
         } else {
             SmsMessageBase.SubmitPduBase pdu =
                     com.android.internal.telephony.gsm.SmsMessage.getSubmitPdu(scAddress,
@@ -1100,7 +1115,8 @@ public abstract class SMSDispatcher extends Handler {
                         smsHeader, (!lastPart || expectMore), fullMessageText, true /*isText*/,
                         false /*persistMessage*/, priority, validityPeriod);
             } else {
-                Rlog.e(TAG, "GsmSMSDispatcher.sendNewSubmitPdu(): getSubmitPdu() returned null");
+                Rlog.e(TAG, "GsmSMSDispatcher.getNewSubmitPduTracker(): getSubmitPdu() returned "
+                        + "null");
                 return null;
             }
         }
@@ -1218,20 +1234,24 @@ public abstract class SMSDispatcher extends Handler {
             int rule = mPremiumSmsRule.get();
             int smsCategory = SmsUsageMonitor.CATEGORY_NOT_SHORT_CODE;
             if (rule == PREMIUM_RULE_USE_SIM || rule == PREMIUM_RULE_USE_BOTH) {
-                String simCountryIso = mTelephonyManager.getSimCountryIso();
+                String simCountryIso =
+                        mTelephonyManager.getSimCountryIsoForPhone(mPhone.getPhoneId());
                 if (simCountryIso == null || simCountryIso.length() != 2) {
                     Rlog.e(TAG, "Can't get SIM country Iso: trying network country Iso");
-                    simCountryIso = mTelephonyManager.getNetworkCountryIso();
+                    simCountryIso =
+                            mTelephonyManager.getNetworkCountryIsoForPhone(mPhone.getPhoneId());
                 }
 
                 smsCategory = mSmsDispatchersController.getUsageMonitor().checkDestination(
                         tracker.mDestAddress, simCountryIso);
             }
             if (rule == PREMIUM_RULE_USE_NETWORK || rule == PREMIUM_RULE_USE_BOTH) {
-                String networkCountryIso = mTelephonyManager.getNetworkCountryIso();
+                String networkCountryIso =
+                        mTelephonyManager.getNetworkCountryIsoForPhone(mPhone.getPhoneId());
                 if (networkCountryIso == null || networkCountryIso.length() != 2) {
                     Rlog.e(TAG, "Can't get Network country Iso: trying SIM country Iso");
-                    networkCountryIso = mTelephonyManager.getSimCountryIso();
+                    networkCountryIso =
+                            mTelephonyManager.getSimCountryIsoForPhone(mPhone.getPhoneId());
                 }
 
                 smsCategory = SmsUsageMonitor.mergeShortCodeCategories(smsCategory,
