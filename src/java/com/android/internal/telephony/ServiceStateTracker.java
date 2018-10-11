@@ -4158,6 +4158,10 @@ public class ServiceStateTracker extends Handler {
                     CarrierConfigManager.KEY_WCDMA_DEFAULT_SIGNAL_STRENGTH_MEASUREMENT_STRING));
             mSignalStrength.setWcdmaRscpThresholds(config.getIntArray(
                     CarrierConfigManager.KEY_WCDMA_RSCP_THRESHOLDS_INT_ARRAY));
+
+            if (mSignalStrength.getLevel() == SignalStrength.SIGNAL_STRENGTH_NONE_OR_UNKNOWN) {
+                mSignalStrength.fixType();
+            }
         } else {
             log("onSignalStrengthResult() Exception from RIL : " + ar.exception);
             mSignalStrength = new SignalStrength(isGsm);
