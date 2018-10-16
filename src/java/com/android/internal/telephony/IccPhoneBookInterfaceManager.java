@@ -89,6 +89,8 @@ public class IccPhoneBookInterfaceManager {
                             logd("GET_RECORD_SIZE Size " + mRecordSize[0] +
                                     " total " + mRecordSize[1] +
                                     " #record " + mRecordSize[2]);
+                        } else {
+                            loge("EVENT_GET_SIZE_DONE: failed; ex=" + ar.exception);
                         }
                         notifyPending(ar);
                     }
@@ -100,6 +102,9 @@ public class IccPhoneBookInterfaceManager {
                     }
                     synchronized (mLock) {
                         mSuccess = (ar.exception == null);
+                        if (!mSuccess) {
+                            loge("EVENT_UPDATE_DONE - failed; ex=" + ar.exception);
+                        }
                         notifyPending(ar);
                     }
                     break;
@@ -110,7 +115,8 @@ public class IccPhoneBookInterfaceManager {
                             if(DBG) logd("Load ADN records done");
                             mRecords = (List<AdnRecord>) ar.result;
                         } else {
-                            if(DBG) logd("Cannot load ADN records");
+                            loge("EVENT_LOAD_DONE: Cannot load ADN records; ex="
+                                    + ar.exception);
                             mRecords = null;
                         }
                         notifyPending(ar);

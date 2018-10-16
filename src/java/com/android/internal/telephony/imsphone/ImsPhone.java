@@ -382,7 +382,7 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public void
     switchHoldingAndActive() throws CallStateException {
-        mCT.switchWaitingOrHoldingAndActive();
+        throw new UnsupportedOperationException("Use hold() and unhold() instead.");
     }
 
     @Override
@@ -391,7 +391,12 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     public boolean canDial() {
-        return mCT.canDial();
+        try {
+            mCT.checkForDialIssues();
+        } catch (CallStateException cse) {
+            return false;
+        }
+        return true;
     }
 
     @Override
@@ -435,6 +440,23 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public boolean isImsAvailable() {
         return mCT.isImsServiceReady();
+    }
+
+    /**
+     * Hold the currently active call, possibly unholding a currently held call.
+     * @throws CallStateException
+     */
+    public void holdActiveCall() throws CallStateException {
+        mCT.holdActiveCall();
+    }
+
+    /**
+     * Unhold the currently active call, possibly holding a currently active call.
+     * If the call tracker is already in the middle of a hold operation, this is a noop.
+     * @throws CallStateException
+     */
+    public void unholdHeldCall() throws CallStateException {
+        mCT.unholdHeldCall();
     }
 
     private boolean handleCallDeflectionIncallSupplementaryService(
@@ -520,8 +542,8 @@ public class ImsPhone extends ImsPhoneBase {
                     if (DBG) logd("MmiCode 1: hangup foreground");
                     mCT.hangup(call);
                 } else {
-                    if (DBG) logd("MmiCode 1: switchWaitingOrHoldingAndActive");
-                    mCT.switchWaitingOrHoldingAndActive();
+                    if (DBG) logd("MmiCode 1: holdActiveCallForWaitingCall");
+                    mCT.holdActiveCallForWaitingCall();
                 }
             }
         } catch (CallStateException e) {
@@ -548,8 +570,8 @@ public class ImsPhone extends ImsPhoneBase {
                     if (DBG) logd("MmiCode 2: accept ringing call");
                     mCT.acceptCall(ImsCallProfile.CALL_TYPE_VOICE);
                 } else {
-                    if (DBG) logd("MmiCode 2: switchWaitingOrHoldingAndActive");
-                    mCT.switchWaitingOrHoldingAndActive();
+                    if (DBG) logd("MmiCode 2: holdActiveCall");
+                    mCT.holdActiveCall();
                 }
             } catch (CallStateException e) {
                 if (DBG) Rlog.d(LOG_TAG, "switch failed", e);

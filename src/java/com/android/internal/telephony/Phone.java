@@ -41,9 +41,7 @@ import android.provider.Settings;
 import android.service.carrier.CarrierIdentifier;
 import android.telecom.VideoProfile;
 import android.telephony.CarrierConfigManager;
-import android.telephony.CellIdentityCdma;
 import android.telephony.CellInfo;
-import android.telephony.CellInfoCdma;
 import android.telephony.CellLocation;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
@@ -202,8 +200,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     // Carrier's CDMA prefer mode setting
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
     protected static final int EVENT_MODEM_RESET                    = 45;
+    protected static final int EVENT_VRS_OR_RAT_CHANGED             = 46;
 
-    protected static final int EVENT_LAST                       = EVENT_MODEM_RESET;
+    protected static final int EVENT_LAST                       = EVENT_VRS_OR_RAT_CHANGED;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -353,6 +352,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     protected final RegistrantList mEmergencyCallToggledRegistrants
             = new RegistrantList();
+
+    private final RegistrantList mCellInfoRegistrants = new RegistrantList();
 
     protected Registrant mPostDialHandler;
 
@@ -879,6 +880,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         migrate(mMmiRegistrants, from.mMmiRegistrants);
         migrate(mUnknownConnectionRegistrants, from.mUnknownConnectionRegistrants);
         migrate(mSuppServiceFailedRegistrants, from.mSuppServiceFailedRegistrants);
+        migrate(mCellInfoRegistrants, from.mCellInfoRegistrants);
         if (from.isInEmergencyCall()) {
             setIsInEmergencyCall();
         }
@@ -1492,6 +1494,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Registers for CellInfo changed.
+     * Message.obj will contain an AsyncResult.
+     * AsyncResult.result will be a List<CellInfo> instance
+     */
+    public void registerForCellInfo(
+            Handler h, int what, Object obj) {
+        mCellInfoRegistrants.add(h, what, obj);
+    }
+
+    /**
+     * Unregisters for CellInfo notification.
+     * Extraneous calls are tolerated silently
+     */
+    public void unregisterForCellInfo(Handler h) {
+        mCellInfoRegistrants.remove(h);
+    }
+
+    /**
      * Enables or disables echo suppression.
      */
     public void setEchoSuppressionEnabled() {
@@ -1696,49 +1716,33 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * @param workSource calling WorkSource
-     * @return all available cell information or null if none.
+     * @return the last known CellInfo
      */
-    public List<CellInfo> getAllCellInfo(WorkSource workSource) {
-        List<CellInfo> cellInfoList = getServiceStateTracker().getAllCellInfo(workSource);
-        return privatizeCellInfoList(cellInfoList);
-    }
-
-    public CellLocation getCellLocation() {
-        return getCellLocation(null);
+    public List<CellInfo> getAllCellInfo() {
+        return getServiceStateTracker().getAllCellInfo();
     }
 
     /**
-     * Clear CDMA base station lat/long values if location setting is disabled.
-     * @param cellInfoList the original cell info list from the RIL
-     * @return the original list with CDMA lat/long cleared if necessary
+     * @param workSource calling WorkSource
+     * @param rspMsg the response message containing the cell info
      */
-    private List<CellInfo> privatizeCellInfoList(List<CellInfo> cellInfoList) {
-        if (cellInfoList == null) return null;
-        int mode = Settings.Secure.getInt(getContext().getContentResolver(),
-                Settings.Secure.LOCATION_MODE, Settings.Secure.LOCATION_MODE_OFF);
-        if (mode == Settings.Secure.LOCATION_MODE_OFF) {
-            ArrayList<CellInfo> privateCellInfoList = new ArrayList<CellInfo>(cellInfoList.size());
-            // clear lat/lon values for location privacy
-            for (CellInfo c : cellInfoList) {
-                if (c instanceof CellInfoCdma) {
-                    CellInfoCdma cellInfoCdma = (CellInfoCdma) c;
-                    CellIdentityCdma cellIdentity = cellInfoCdma.getCellIdentity();
-                    CellIdentityCdma maskedCellIdentity = new CellIdentityCdma(
-                            cellIdentity.getNetworkId(),
-                            cellIdentity.getSystemId(),
-                            cellIdentity.getBasestationId(),
-                            Integer.MAX_VALUE, Integer.MAX_VALUE);
-                    CellInfoCdma privateCellInfoCdma = new CellInfoCdma(cellInfoCdma);
-                    privateCellInfoCdma.setCellIdentity(maskedCellIdentity);
-                    privateCellInfoList.add(privateCellInfoCdma);
-                } else {
-                    privateCellInfoList.add(c);
-                }
-            }
-            cellInfoList = privateCellInfoList;
-        }
-        return cellInfoList;
+    public void getAllCellInfo(WorkSource workSource, Message rspMsg) {
+        getServiceStateTracker().requestAllCellInfo(workSource, rspMsg);
+    }
+
+    /**
+     * @return the current cell location if known
+     */
+    public CellLocation getCellLocation() {
+        return getServiceStateTracker().getCellLocation();
+    }
+
+    /**
+     * @param workSource calling WorkSource
+     * @param rspMsg the response message containing the cell location
+     */
+    public void getCellLocation(WorkSource workSource, Message rspMsg) {
+        getServiceStateTracker().requestCellLocation(workSource, rspMsg);
     }
 
     /**
@@ -2224,7 +2228,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     public void notifyCellInfo(List<CellInfo> cellInfo) {
-        mNotifier.notifyCellInfo(this, privatizeCellInfoList(cellInfo));
+        AsyncResult ar = new AsyncResult(null, cellInfo, null);
+        mCellInfoRegistrants.notifyRegistrants(ar);
+
+        mNotifier.notifyCellInfo(this, cellInfo);
     }
 
     /** Notify {@link PhysicalChannelConfig} changes. */

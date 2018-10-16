@@ -22,6 +22,7 @@ import android.os.SystemClock;
 import android.telecom.ConferenceParticipant;
 import android.telephony.DisconnectCause;
 import android.telephony.Rlog;
+import android.telephony.ServiceState;
 import android.util.Log;
 
 import java.lang.Override;
@@ -94,7 +95,7 @@ public abstract class Connection {
     public interface Listener {
         public void onVideoStateChanged(int videoState);
         public void onConnectionCapabilitiesChanged(int capability);
-        public void onWifiChanged(boolean isWifi);
+        public void onCallRadioTechChanged(@ServiceState.RilRadioTechnology int vrat);
         public void onVideoProviderChanged(
                 android.telecom.Connection.VideoProvider videoProvider);
         public void onAudioQualityChanged(int audioQuality);
@@ -113,6 +114,7 @@ public abstract class Connection {
         public void onRttInitiated();
         public void onRttTerminated();
         public void onOriginalConnectionReplaced(Connection newConnection);
+        public void onIsNetworkEmergencyCallChanged(boolean isEmergencyCall);
     }
 
     /**
@@ -124,7 +126,7 @@ public abstract class Connection {
         @Override
         public void onConnectionCapabilitiesChanged(int capability) {}
         @Override
-        public void onWifiChanged(boolean isWifi) {}
+        public void onCallRadioTechChanged(@ServiceState.RilRadioTechnology int vrat) {}
         @Override
         public void onVideoProviderChanged(
                 android.telecom.Connection.VideoProvider videoProvider) {}
@@ -160,6 +162,8 @@ public abstract class Connection {
         public void onRttTerminated() {}
         @Override
         public void onOriginalConnectionReplaced(Connection newConnection) {}
+        @Override
+        public void onIsNetworkEmergencyCallChanged(boolean isEmergencyCall) {}
     }
 
     public static final int AUDIO_QUALITY_STANDARD = 1;
@@ -211,7 +215,13 @@ public abstract class Connection {
     Object mUserData;
     private int mVideoState;
     private int mConnectionCapabilities;
-    private boolean mIsWifi;
+    /**
+     * Determines the call radio technology for current connection.
+     *
+     * This is used to propagate the call radio technology to upper layer.
+     */
+    private @ServiceState.RilRadioTechnology int mCallRadioTech =
+            ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN;
     private boolean mAudioModeIsVoip;
     private int mAudioQuality;
     private int mCallSubstate;
@@ -222,6 +232,11 @@ public abstract class Connection {
     private boolean mAnsweringDisconnectsActiveCall;
     private boolean mAllowAddCallDuringVideoCall;
     private boolean mAllowHoldingVideoCall;
+
+    /**
+     * When {@code true}, the network has indicated that this is an emergency call.
+     */
+    private boolean mIsNetworkIdentifiedEmergencyCall;
 
     /**
      * Used to indicate that this originated from pulling a {@link android.telecom.Connection} with
@@ -748,7 +763,17 @@ public abstract class Connection {
      * @return {@code True} if the connection is using a wifi network.
      */
     public boolean isWifi() {
-        return mIsWifi;
+        return getCallRadioTech() == ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN;
+    }
+
+    /**
+     * Returns radio technology is used for the connection.
+     *
+     * @return the RIL Voice Radio Technology used for current connection,
+     *         see {@code RIL_RADIO_TECHNOLOGY_*} in {@link android.telephony.ServiceState}.
+     */
+    public @ServiceState.RilRadioTechnology int getCallRadioTech() {
+        return mCallRadioTech;
     }
 
     /**
@@ -819,14 +844,18 @@ public abstract class Connection {
     }
 
     /**
-     * Sets whether a wifi network is used for the connection.
+     * Sets RIL voice radio technology used for current connection.
      *
-     * @param isWifi {@code True} if wifi is being used.
+     * @param vrat the RIL voice radio technology for current connection,
+     *             see {@code RIL_RADIO_TECHNOLOGY_*} in {@link android.telephony.ServiceState}.
      */
-    public void setWifi(boolean isWifi) {
-        mIsWifi = isWifi;
+    public void setCallRadioTech(@ServiceState.RilRadioTechnology int vrat) {
+        if (mCallRadioTech == vrat) {
+            return;
+        }
+        mCallRadioTech = vrat;
         for (Listener l : mListeners) {
-            l.onWifiChanged(mIsWifi);
+            l.onCallRadioTechChanged(vrat);
         }
     }
 
@@ -1129,6 +1158,25 @@ public abstract class Connection {
             mConnectTimeReal = SystemClock.elapsedRealtime();
             mDuration = 0;
         }
+    }
+
+    /**
+     * Sets whether this {@link Connection} has been identified by the network as an emergency call.
+     * @param isNetworkIdentifiedEmergencyCall {@code true} if ecall, {@code false} otherwise.
+     */
+    public void setIsNetworkIdentifiedEmergencyCall(boolean isNetworkIdentifiedEmergencyCall) {
+        mIsNetworkIdentifiedEmergencyCall = isNetworkIdentifiedEmergencyCall;
+        for (Listener l : mListeners) {
+            l.onIsNetworkEmergencyCallChanged(isNetworkIdentifiedEmergencyCall);
+        }
+    }
+
+    /**
+     * @return Whether this {@link Connection} has been identified by the network as an emergency
+     * call.
+     */
+    public boolean isNetworkIdentifiedEmergencyCall() {
+        return mIsNetworkIdentifiedEmergencyCall;
     }
 
     /**

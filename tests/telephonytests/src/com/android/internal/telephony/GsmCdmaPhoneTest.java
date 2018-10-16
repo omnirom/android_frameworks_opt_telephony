@@ -240,17 +240,17 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         CellLocation cellLocation = new GsmCellLocation();
         WorkSource workSource = new WorkSource(Process.myUid(),
             mContext.getPackageName());
-        doReturn(cellLocation).when(mSST).getCellLocation(workSource);
-        assertEquals(cellLocation, mPhoneUT.getCellLocation(workSource));
+        doReturn(cellLocation).when(mSST).getCellLocation();
+        assertEquals(cellLocation, mPhoneUT.getCellLocation());
 
         // Switch to CDMA
         switchToCdma();
 
         CdmaCellLocation cdmaCellLocation = new CdmaCellLocation();
-        doReturn(cdmaCellLocation).when(mSST).getCellLocation(workSource);
+        doReturn(cdmaCellLocation).when(mSST).getCellLocation();
 
         CdmaCellLocation actualCellLocation =
-                (CdmaCellLocation) mPhoneUT.getCellLocation(workSource);
+                (CdmaCellLocation) mPhoneUT.getCellLocation();
 
         assertEquals(actualCellLocation, cdmaCellLocation);
     }
@@ -949,5 +949,32 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         AsyncResult ret = (AsyncResult) message.obj;
         assertEquals(EVENT_SET_ICC_LOCK_ENABLED, message.what);
         assertTrue(ret.exception != null);
+    }
+
+    @Test
+    @SmallTest
+    public void testGetCsCallRadioTech() {
+        ServiceState ss = new ServiceState();
+        mSST.mSS = ss;
+
+        // vrs in-service, vrat umts, expected umts
+        ss.setVoiceRegState(ServiceState.STATE_IN_SERVICE);
+        ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_UMTS);
+        assertEquals(mPhoneUT.getCsCallRadioTech(), ServiceState.RIL_RADIO_TECHNOLOGY_UMTS);
+
+        // vrs oos, vrat umts, expected unknown
+        ss.setVoiceRegState(ServiceState.STATE_OUT_OF_SERVICE);
+        ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_UMTS);
+        assertEquals(mPhoneUT.getCsCallRadioTech(), ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
+
+        // vrs in-service, vrat lte, expected unknown
+        ss.setVoiceRegState(ServiceState.STATE_IN_SERVICE);
+        ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_LTE);
+        assertEquals(mPhoneUT.getCsCallRadioTech(), ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
+
+        // vrs in-service, vrat iwlan, expected unknown
+        ss.setVoiceRegState(ServiceState.STATE_IN_SERVICE);
+        ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN);
+        assertEquals(mPhoneUT.getCsCallRadioTech(), ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
     }
 }

@@ -19,7 +19,6 @@ package com.android.internal.telephony;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.nullable;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doAnswer;
@@ -35,7 +34,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -165,8 +163,6 @@ public abstract class TelephonyTest {
     @Mock
     protected IActivityManager mIActivityManager;
     @Mock
-    protected InboundSmsTracker mInboundSmsTracker;
-    @Mock
     protected IIntentSender mIIntentSender;
     @Mock
     protected IBinder mIBinder;
@@ -217,7 +213,7 @@ public abstract class TelephonyTest {
     private Object mLock = new Object();
     private boolean mReady;
     protected HashMap<String, IBinder> mServiceManagerMockedServices = new HashMap<>();
-    private Phone[] mPhones;
+    protected Phone[] mPhones;
 
 
     protected HashMap<Integer, ImsManager> mImsManagerInstances = new HashMap<>();
@@ -350,16 +346,6 @@ public abstract class TelephonyTest {
                 .makeDcTracker(nullable(Phone.class));
         doReturn(mWspTypeDecoder).when(mTelephonyComponentFactory)
                 .makeWspTypeDecoder(nullable(byte[].class));
-        doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
-                .makeInboundSmsTracker(nullable(byte[].class), anyLong(), anyInt(), anyBoolean(),
-                        anyBoolean(), nullable(String.class), nullable(String.class),
-                        nullable(String.class));
-        doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
-                .makeInboundSmsTracker(nullable(byte[].class), anyLong(), anyInt(), anyBoolean(),
-                        nullable(String.class), nullable(String.class), anyInt(), anyInt(),
-                        anyInt(), anyBoolean(), nullable(String.class));
-        doReturn(mInboundSmsTracker).when(mTelephonyComponentFactory)
-                .makeInboundSmsTracker(nullable(Cursor.class), anyBoolean());
         doReturn(mImsCT).when(mTelephonyComponentFactory)
                 .makeImsPhoneCallTracker(nullable(ImsPhone.class));
         doReturn(mCdmaSSM).when(mTelephonyComponentFactory)

@@ -16,10 +16,11 @@
 
 package com.android.internal.telephony;
 
-import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
-
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.isNull;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import android.content.Context;
 import android.net.wifi.WifiManager;
 import android.os.AsyncResult;
 import android.os.HandlerThread;
+import android.os.Message;
 import android.telephony.CellIdentityGsm;
 import android.telephony.CellInfoGsm;
 import android.telephony.ServiceState;
@@ -47,7 +49,6 @@ public class LocaleTrackerTest extends TelephonyTest {
     private static final String COUNTRY_CODE_UNAVAILABLE = "";
 
     private LocaleTracker mLocaleTracker;
-    private LocaleTrackerTestHandler mLocaleTrackerTestHandler;
 
     private CellInfoGsm mCellInfo;
     private WifiManager mWifiManager;
@@ -65,10 +66,17 @@ public class LocaleTrackerTest extends TelephonyTest {
         }
     }
 
+    private LocaleTrackerTestHandler mHandlerThread;
+
     @Before
     public void setUp() throws Exception {
         logd("LocaleTrackerTest +Setup!");
         super.setUp(getClass().getSimpleName());
+
+        mHandlerThread = new LocaleTrackerTestHandler("LocaleTrackerTestHandler");
+        mHandlerThread.start();
+        waitUntilReady();
+
 
         // This is a workaround to bypass setting system properties, which causes access violation.
         doReturn(-1).when(mPhone).getPhoneId();
@@ -77,35 +85,44 @@ public class LocaleTrackerTest extends TelephonyTest {
         mCellInfo = new CellInfoGsm();
         mCellInfo.setCellIdentity(new CellIdentityGsm(Integer.parseInt(US_MCC),
                 Integer.parseInt(FAKE_MNC), 0, 0));
-        doReturn(Arrays.asList(mCellInfo)).when(mPhone).getAllCellInfo(isNull());
-        doReturn(true).when(mSST).getDesiredPowerState();
+        doAnswer(invocation -> {
+            Message m = invocation.getArgument(1);
+            AsyncResult.forMessage(m, Arrays.asList(mCellInfo), null);
+            m.sendToTarget();
+            return null; }).when(mPhone).getAllCellInfo(any(), any());
 
-        mLocaleTrackerTestHandler = new LocaleTrackerTestHandler(getClass().getSimpleName());
-        mLocaleTrackerTestHandler.start();
-        waitUntilReady();
         logd("LocaleTrackerTest -Setup!");
     }
 
     @After
     public void tearDown() throws Exception {
-        mLocaleTracker.removeCallbacksAndMessages(null);
-        mLocaleTrackerTestHandler.quit();
+        mHandlerThread.quit();
+        mHandlerThread.join();
         super.tearDown();
+    }
+
+    private void sendServiceState(int state) {
+        ServiceState ss = new ServiceState();
+        ss.setState(state);
+        AsyncResult ar = new AsyncResult(null, ss, null);
+        mLocaleTracker.sendMessage(
+                mLocaleTracker.obtainMessage(2 /*SERVICE_STATE_CHANGED*/, ar));
+        waitForHandlerAction(mLocaleTracker, 100);
+    }
+
+    private void sendGsmCellInfo() {
+        // send an unsol cell info
+        mLocaleTracker
+                .obtainMessage(4 /*UNSOL_CELL_INFO*/,
+                        new AsyncResult(null, Arrays.asList(mCellInfo), null))
+                .sendToTarget();
+        waitForHandlerAction(mLocaleTracker, 100);
     }
 
     @Test
     @SmallTest
     public void testUpdateOperatorNumericSync() throws Exception {
-        mLocaleTracker.updateOperatorNumericSync(US_MCC + FAKE_MNC);
-        assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
-    }
-
-    @Test
-    @SmallTest
-    public void testUpdateOperatorNumericAsync() throws Exception {
-        mLocaleTracker.updateOperatorNumericAsync(US_MCC + FAKE_MNC);
-        waitForMs(100);
+        mLocaleTracker.updateOperatorNumeric(US_MCC + FAKE_MNC);
         assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
         verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
     }
@@ -113,72 +130,74 @@ public class LocaleTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testNoSim() throws Exception {
-        mLocaleTracker.updateOperatorNumericAsync("");
-        waitForHandlerAction(mLocaleTracker, 100);
+        mLocaleTracker.updateOperatorNumeric("");
+        sendGsmCellInfo();
+        sendServiceState(ServiceState.STATE_EMERGENCY_ONLY);
         assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
         verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
+        assertTrue(mLocaleTracker.isTracking());
     }
 
     @Test
     @SmallTest
     public void testBootupInAirplaneModeOn() throws Exception {
-        doReturn(false).when(mSST).getDesiredPowerState();
-        mLocaleTracker.updateOperatorNumericAsync("");
-        waitForHandlerAction(mLocaleTracker, 100);
+        mLocaleTracker.updateOperatorNumeric("");
+        sendServiceState(ServiceState.STATE_POWER_OFF);
         assertEquals(COUNTRY_CODE_UNAVAILABLE, mLocaleTracker.getCurrentCountry());
         verify(mWifiManager).setCountryCode(COUNTRY_CODE_UNAVAILABLE);
+        assertFalse(mLocaleTracker.isTracking());
     }
 
     @Test
     @SmallTest
-    public void testTogglingAirplaneMode() throws Exception {
-        mLocaleTracker.updateOperatorNumericSync(US_MCC + FAKE_MNC);
+    public void testToggleAirplaneModeOn() throws Exception {
+        sendServiceState(ServiceState.STATE_IN_SERVICE);
+        mLocaleTracker.updateOperatorNumeric(US_MCC + FAKE_MNC);
         assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
         verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
+        assertFalse(mLocaleTracker.isTracking());
 
-        doReturn(false).when(mSST).getDesiredPowerState();
-        mLocaleTracker.updateOperatorNumericAsync("");
+        mLocaleTracker.updateOperatorNumeric("");
         waitForHandlerAction(mLocaleTracker, 100);
         assertEquals(COUNTRY_CODE_UNAVAILABLE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager).setCountryCode(COUNTRY_CODE_UNAVAILABLE);
-
-        doReturn(true).when(mSST).getDesiredPowerState();
-        mLocaleTracker.updateOperatorNumericSync(US_MCC + FAKE_MNC);
-        assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager, times(2)).setCountryCode(US_COUNTRY_CODE);
+        verify(mWifiManager, times(2)).setCountryCode(COUNTRY_CODE_UNAVAILABLE);
+        sendServiceState(ServiceState.STATE_POWER_OFF);
+        assertFalse(mLocaleTracker.isTracking());
     }
 
     @Test
     @SmallTest
-    public void testCellInfoUnavailableRetry() throws Exception {
-        doReturn(null).when(mPhone).getAllCellInfo(isNull());
-        mLocaleTracker.updateOperatorNumericAsync("");
+    public void testToggleAirplaneModeOff() throws Exception {
+        sendServiceState(ServiceState.STATE_POWER_OFF);
+        mLocaleTracker.updateOperatorNumeric("");
         waitForHandlerAction(mLocaleTracker, 100);
         assertEquals(COUNTRY_CODE_UNAVAILABLE, mLocaleTracker.getCurrentCountry());
         verify(mWifiManager).setCountryCode(COUNTRY_CODE_UNAVAILABLE);
+        assertFalse(mLocaleTracker.isTracking());
 
-        doReturn(Arrays.asList(mCellInfo)).when(mPhone).getAllCellInfo(isNull());
-        waitForHandlerActionDelayed(mLocaleTracker, 100, 2500);
+        sendServiceState(ServiceState.STATE_OUT_OF_SERVICE);
+        waitForHandlerAction(mLocaleTracker, 100);
+        assertTrue(mLocaleTracker.isTracking());
+        waitForHandlerAction(mLocaleTracker, 100);
         assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
     }
 
     @Test
     @SmallTest
-    public void testOutOfAirplaneMode() throws Exception {
-        doReturn(null).when(mPhone).getAllCellInfo(isNull());
-        mLocaleTracker.updateOperatorNumericAsync("");
-        waitForHandlerAction(mLocaleTracker, 100);
-        assertEquals(COUNTRY_CODE_UNAVAILABLE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager).setCountryCode(COUNTRY_CODE_UNAVAILABLE);
+    public void testGetCellInfoDelayTime() throws Exception {
+        assertEquals(2000, LocaleTracker.getCellInfoDelayTime(0));
+        assertEquals(2000, LocaleTracker.getCellInfoDelayTime(1));
+        assertEquals(4000, LocaleTracker.getCellInfoDelayTime(2));
+        assertEquals(8000, LocaleTracker.getCellInfoDelayTime(3));
+        assertEquals(16000, LocaleTracker.getCellInfoDelayTime(4));
+        assertEquals(32000, LocaleTracker.getCellInfoDelayTime(5));
+        assertEquals(64000, LocaleTracker.getCellInfoDelayTime(6));
+        assertEquals(128000, LocaleTracker.getCellInfoDelayTime(7));
+        assertEquals(256000, LocaleTracker.getCellInfoDelayTime(8));
+        assertEquals(512000, LocaleTracker.getCellInfoDelayTime(9));
 
-        doReturn(Arrays.asList(mCellInfo)).when(mPhone).getAllCellInfo(isNull());
-        ServiceState ss = new ServiceState();
-        ss.setState(ServiceState.STATE_IN_SERVICE);
-        AsyncResult ar = new AsyncResult(null, ss, null);
-        mLocaleTracker.sendMessage(mLocaleTracker.obtainMessage(3, ar));
-        waitForHandlerAction(mLocaleTracker, 100);
-        assertEquals(US_COUNTRY_CODE, mLocaleTracker.getCurrentCountry());
-        verify(mWifiManager).setCountryCode(US_COUNTRY_CODE);
+        for (int i = 10; i <= 2000; i++) {
+            assertEquals(600000, LocaleTracker.getCellInfoDelayTime(i));
+        }
     }
 }
