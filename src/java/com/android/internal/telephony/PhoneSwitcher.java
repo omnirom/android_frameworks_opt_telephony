@@ -96,8 +96,8 @@ public class PhoneSwitcher extends Handler {
     // Corresponding phoneId after considerting mPreferredDataSubId and mDefaultDataSubId above.
     protected int mPreferredDataPhoneId = SubscriptionManager.INVALID_PHONE_INDEX;
 
-    private static final int EVENT_DEFAULT_SUBSCRIPTION_CHANGED   = 101;
-    private static final int EVENT_SUBSCRIPTION_CHANGED           = 102;
+    protected static final int EVENT_DEFAULT_SUBSCRIPTION_CHANGED = 101;
+    protected static final int EVENT_SUBSCRIPTION_CHANGED         = 102;
     private static final int EVENT_REQUEST_NETWORK                = 103;
     private static final int EVENT_RELEASE_NETWORK                = 104;
     private static final int EVENT_EMERGENCY_TOGGLE               = 105;
