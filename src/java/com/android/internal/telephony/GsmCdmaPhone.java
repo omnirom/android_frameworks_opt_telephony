@@ -130,31 +130,18 @@ public class GsmCdmaPhone extends Phone {
     private static final int IMEI_14_DIGIT = 14;
 
     //CDMA
-    // Default Emergency Callback Mode exit timer
-    private static final int DEFAULT_ECM_EXIT_TIMER_VALUE = 300000;
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
-    public static final int RESTART_ECM_TIMER = 0; // restart Ecm timer
-    public static final int CANCEL_ECM_TIMER = 1; // cancel Ecm timer
     private CdmaSubscriptionSourceManager mCdmaSSM;
     public int mCdmaSubscriptionSource = CdmaSubscriptionSourceManager.SUBSCRIPTION_SOURCE_UNKNOWN;
     public EriManager mEriManager;
     private PowerManager.WakeLock mWakeLock;
     // mEriFileLoadedRegistrants are informed after the ERI text has been loaded
     private final RegistrantList mEriFileLoadedRegistrants = new RegistrantList();
-    // mEcmExitRespRegistrant is informed after the phone has been exited
-    private Registrant mEcmExitRespRegistrant;
     private String mEsn;
     private String mMeid;
     // string to define how the carrier specifies its own ota sp number
     private String mCarrierOtaSpNumSchema;
 
-    // A runnable which is used to automatically exit from Ecm after a period of time.
-    private Runnable mExitEcmRunnable = new Runnable() {
-        @Override
-        public void run() {
-            exitEmergencyCallbackMode();
-        }
-    };
     public static final String PROPERTY_CDMA_HOME_OPERATOR_NUMERIC =
             "ro.cdma.home.operator.numeric";
 
@@ -176,8 +163,6 @@ public class GsmCdmaPhone extends Phone {
 
     private int mPrecisePhoneType;
 
-    // mEcmTimerResetRegistrants are informed after Ecm timer is canceled or re-started
-    private final RegistrantList mEcmTimerResetRegistrants = new RegistrantList();
 
     private String mImei;
     private String mImeiSv;
@@ -253,7 +238,7 @@ public class GsmCdmaPhone extends Phone {
         if (ci instanceof SimulatedRadioControl) {
             mSimulatedRadioControl = (SimulatedRadioControl) ci;
         }
-
+        mEcbmHandler = EcbmHandler.getInstance().initialize(mContext, this, mCi, mPhoneId);
         mCT = mTelephonyComponentFactory.makeGsmCdmaCallTracker(this);
         mIccPhoneBookIntManager = mTelephonyComponentFactory.makeIccPhoneBookInterfaceManager(this);
         PowerManager pm
@@ -275,9 +260,6 @@ public class GsmCdmaPhone extends Phone {
                 mCi, this, EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED, null);
         mEriManager = mTelephonyComponentFactory.makeEriManager(this, mContext,
                 EriManager.ERI_FROM_XML);
-        mCi.setEmergencyCallbackMode(this, EVENT_EMERGENCY_CALLBACK_MODE_ENTER, null);
-        mCi.registerForExitEmergencyCallbackMode(this, EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE,
-                null);
         mCi.registerForModemReset(this, EVENT_MODEM_RESET, null);
         // get the string that specifies the carrier OTA Sp number
         mCarrierOtaSpNumSchema = TelephonyManager.from(mContext).getOtaSpNumberSchemaForPhone(
@@ -314,11 +296,13 @@ public class GsmCdmaPhone extends Phone {
         } else {
             mCdmaSubscriptionSource = mCdmaSSM.getCdmaSubscriptionSource();
             // This is needed to handle phone process crashes
-            mIsPhoneInEcmState = getInEcmMode();
-            if (mIsPhoneInEcmState) {
-                // Send a message which will invoke handleExitEmergencyCallbackMode
-                mCi.exitEmergencyCallbackMode(
-                        obtainMessage(EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE));
+            final boolean isInEcm = getInEcmMode();
+            if (isInEcm) {
+                try {
+                    mEcbmHandler.exitEmergencyCallbackMode();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
 
             mCi.setPhoneType(PhoneConstants.PHONE_TYPE_CDMA);
@@ -393,7 +377,6 @@ public class GsmCdmaPhone extends Phone {
     }
 
     private void switchPhoneType(int precisePhoneType) {
-        removeCallbacks(mExitEcmRunnable);
 
         initRatSpecific(precisePhoneType);
 
@@ -641,17 +624,6 @@ public class GsmCdmaPhone extends Phone {
         }
     }
 
-    //CDMA
-    private void sendEmergencyCallbackModeChange(){
-        //Send an Intent
-        Intent intent = new Intent(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
-        intent.putExtra(PhoneConstants.PHONE_IN_ECM_STATE, isInEcm());
-        SubscriptionManager.putPhoneIdAndSubIdExtra(intent, getPhoneId());
-        ActivityManager.broadcastStickyIntent(intent, UserHandle.USER_ALL);
-        if (DBG) logd("sendEmergencyCallbackModeChange");
-    }
-
-    @Override
     public void sendEmergencyCallStateChange(boolean callActive) {
         if (mBroadcastEmergencyCallStateChanges) {
             Intent intent = new Intent(TelephonyIntents.ACTION_EMERGENCY_CALL_STATE_CHANGED);
@@ -2096,16 +2068,6 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
-    public void setOnEcbModeExitResponse(Handler h, int what, Object obj) {
-        mEcmExitRespRegistrant = new Registrant(h, what, obj);
-    }
-
-    @Override
-    public void unsetOnEcbModeExitResponse(Handler h) {
-        mEcmExitRespRegistrant.clear();
-    }
-
-    @Override
     public void registerForCallWaiting(Handler h, int what, Object obj) {
         mCT.registerForCallWaiting(h, what, obj);
     }
@@ -2309,27 +2271,10 @@ public class GsmCdmaPhone extends Phone {
             }
             break;
 
-            case EVENT_EMERGENCY_CALLBACK_MODE_ENTER:{
-                handleEnterEmergencyCallbackMode(msg);
-            }
-            break;
-
-            case  EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE:{
-                handleExitEmergencyCallbackMode(msg);
-            }
-            break;
-
             case EVENT_MODEM_RESET: {
-                logd("Event EVENT_MODEM_RESET Received" + " isInEcm = " + isInEcm()
-                        + " isPhoneTypeGsm = " + isPhoneTypeGsm() + " mImsPhone = " + mImsPhone);
-                if (isInEcm()) {
-                    if (isPhoneTypeGsm()) {
-                        if (mImsPhone != null) {
-                            mImsPhone.handleExitEmergencyCallbackMode();
-                        }
-                    } else {
-                        handleExitEmergencyCallbackMode(msg);
-                    }
+                logd("Event EVENT_MODEM_RESET Received" + " isInEcm = " + mEcbmHandler.isInEcm());
+                if (mEcbmHandler.isInEcm()) {
+                    mEcbmHandler.handleExitEmergencyCallbackMode(mPhoneId);
                 }
             }
             break;
@@ -3005,106 +2950,8 @@ public class GsmCdmaPhone extends Phone {
         r.unregisterForRecordsLoaded(this);
     }
 
-    @Override
-    public void exitEmergencyCallbackMode() {
-        if (DBG) {
-            Rlog.d(LOG_TAG, "exitEmergencyCallbackMode: mImsPhone=" + mImsPhone
-                    + " isPhoneTypeGsm=" + isPhoneTypeGsm());
-        }
-        if (isPhoneTypeGsm()) {
-            if (mImsPhone != null) {
-                mImsPhone.exitEmergencyCallbackMode();
-            }
-        } else {
-            if (mWakeLock.isHeld()) {
-                mWakeLock.release();
-            }
-            // Send a message which will invoke handleExitEmergencyCallbackMode
-            mCi.exitEmergencyCallbackMode(obtainMessage(EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE));
-        }
-    }
-
-    //CDMA
-    private void handleEnterEmergencyCallbackMode(Message msg) {
-        if (DBG) {
-            Rlog.d(LOG_TAG, "handleEnterEmergencyCallbackMode, isInEcm()="
-                    + isInEcm());
-        }
-        // if phone is not in Ecm mode, and it's changed to Ecm mode
-        if (!isInEcm()) {
-            setIsInEcm(true);
-
-            // notify change
-            sendEmergencyCallbackModeChange();
-
-            // Post this runnable so we will automatically exit
-            // if no one invokes exitEmergencyCallbackMode() directly.
-            long delayInMillis = SystemProperties.getLong(
-                    TelephonyProperties.PROPERTY_ECM_EXIT_TIMER, DEFAULT_ECM_EXIT_TIMER_VALUE);
-            postDelayed(mExitEcmRunnable, delayInMillis);
-            // We don't want to go to sleep while in Ecm
-            mWakeLock.acquire();
-        }
-    }
-
-    //CDMA
-    private void handleExitEmergencyCallbackMode(Message msg) {
-        AsyncResult ar = (AsyncResult)msg.obj;
-        if (DBG) {
-            Rlog.d(LOG_TAG, "handleExitEmergencyCallbackMode,ar.exception , isInEcm="
-                    + ar.exception + isInEcm());
-        }
-        // Remove pending exit Ecm runnable, if any
-        removeCallbacks(mExitEcmRunnable);
-
-        if (mEcmExitRespRegistrant != null) {
-            mEcmExitRespRegistrant.notifyRegistrant(ar);
-        }
-        // if exiting ecm success
-        if (ar.exception == null) {
-            if (isInEcm()) {
-                setIsInEcm(false);
-            }
-
-            // release wakeLock
-            if (mWakeLock.isHeld()) {
-                mWakeLock.release();
-            }
-
-            // send an Intent
-            sendEmergencyCallbackModeChange();
-            // Re-initiate data connection
-            mDcTracker.setInternalDataEnabled(true);
-            notifyEmergencyCallRegistrants(false);
-        }
-    }
-
-    //CDMA
     public void notifyEmergencyCallRegistrants(boolean started) {
         mEmergencyCallToggledRegistrants.notifyResult(started ? 1 : 0);
-    }
-
-    //CDMA
-    /**
-     * Handle to cancel or restart Ecm timer in emergency call back mode
-     * if action is CANCEL_ECM_TIMER, cancel Ecm timer and notify apps the timer is canceled;
-     * otherwise, restart Ecm timer and notify apps the timer is restarted.
-     */
-    public void handleTimerInEmergencyCallbackMode(int action) {
-        switch(action) {
-            case CANCEL_ECM_TIMER:
-                removeCallbacks(mExitEcmRunnable);
-                mEcmTimerResetRegistrants.notifyResult(Boolean.TRUE);
-                break;
-            case RESTART_ECM_TIMER:
-                long delayInMillis = SystemProperties.getLong(
-                        TelephonyProperties.PROPERTY_ECM_EXIT_TIMER, DEFAULT_ECM_EXIT_TIMER_VALUE);
-                postDelayed(mExitEcmRunnable, delayInMillis);
-                mEcmTimerResetRegistrants.notifyResult(Boolean.FALSE);
-                break;
-            default:
-                Rlog.e(LOG_TAG, "handleTimerInEmergencyCallbackMode, unsupported action " + action);
-        }
     }
 
     //CDMA
@@ -3650,27 +3497,6 @@ public class GsmCdmaPhone extends Phone {
             return null;
         }
         return subInfo.getCountryIso().toUpperCase();
-    }
-
-    public void notifyEcbmTimerReset(Boolean flag) {
-        mEcmTimerResetRegistrants.notifyResult(flag);
-    }
-
-    /**
-     * Registration point for Ecm timer reset
-     *
-     * @param h handler to notify
-     * @param what User-defined message code
-     * @param obj placed in Message.obj
-     */
-    @Override
-    public void registerForEcmTimerReset(Handler h, int what, Object obj) {
-        mEcmTimerResetRegistrants.addUnique(h, what, obj);
-    }
-
-    @Override
-    public void unregisterForEcmTimerReset(Handler h) {
-        mEcmTimerResetRegistrants.remove(h);
     }
 
     /**

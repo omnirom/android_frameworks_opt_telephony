@@ -66,6 +66,7 @@ import com.android.ims.ImsManager;
 import com.android.internal.R;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DcTracker;
+import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -233,12 +234,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private static final int ALREADY_IN_AUTO_SELECTION = 1;
 
     /**
-     * This method is invoked when the Phone exits Emergency Callback Mode.
-     */
-    protected void handleExitEmergencyCallbackMode() {
-    }
-
-    /**
      * Small container class used to hold information relevant to
      * the carrier selection process. operatorNumeric can be ""
      * if we are looking for automatic selection. operatorAlphaLong is the
@@ -266,9 +261,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private boolean mIsVoiceCapable = true;
     private final AppSmsManager mAppSmsManager;
     private SimActivationTracker mSimActivationTracker;
-    // Keep track of whether or not the phone is in Emergency Callback Mode for Phone and
-    // subclasses
-    protected boolean mIsPhoneInEcmState = false;
 
     // Variable to cache the video capability. When RAT changes, we lose this info and are unable
     // to recover from the state. We cache it and notify listeners when they register.
@@ -297,6 +289,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private static final boolean LCE_PULL_MODE = true;
     private int mLceStatus = RILConstants.LCE_NOT_AVAILABLE;
     protected TelephonyComponentFactory mTelephonyComponentFactory;
+    protected EcbmHandler mEcbmHandler;
 
     //IMS
     /**
@@ -2244,20 +2237,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false);
     }
 
-    /**
-     * @return {@code true} if we are in emergency call back mode. This is a period where the phone
-     * should be using as little power as possible and be ready to receive an incoming call from the
-     * emergency operator.
-     */
     public boolean isInEcm() {
-        return mIsPhoneInEcmState;
+        return EcbmHandler.getInstance().isInEcm();
     }
-
-    public void setIsInEcm(boolean isInEcm) {
-        setGlobalSystemProperty(TelephonyProperties.PROPERTY_INECM_MODE, String.valueOf(isInEcm));
-        mIsPhoneInEcmState = isInEcm;
-    }
-
     private static int getVideoState(Call call) {
         int videoState = VideoProfile.STATE_AUDIO_ONLY;
         Connection conn = call.getEarliestConnection();
@@ -2518,14 +2500,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * request to exit emergency call back mode
-     * the caller should use setOnECMModeExitResponse
-     * to receive the emergency callback mode exit response
-     */
-    public void exitEmergencyCallbackMode() {
-    }
-
-    /**
      * Register for notifications when CDMA OTA Provision status change
      *
      * @param h Handler that receives the notification message.
@@ -2589,22 +2563,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param h Handler to be removed from the registrant list.
      */
     public void unregisterForCallWaiting(Handler h){
-    }
-
-    /**
-     * Registration point for Ecm timer reset
-     * @param h handler to notify
-     * @param what user-defined message code
-     * @param obj placed in Message.obj
-     */
-    public void registerForEcmTimerReset(Handler h, int what, Object obj) {
-    }
-
-    /**
-     * Unregister for notification for Ecm timer reset
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForEcmTimerReset(Handler h) {
     }
 
     /**
@@ -2775,24 +2733,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void unregisterForT53AudioControlInfo(Handler h) {
         mCi.unregisterForT53AudioControlInfo(h);
-    }
-
-    /**
-     * registers for exit emergency call back mode request response
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void setOnEcbModeExitResponse(Handler h, int what, Object obj){
-    }
-
-    /**
-     * Unregisters for exit emergency call back mode request response
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unsetOnEcbModeExitResponse(Handler h){
     }
 
     /**
@@ -3158,6 +3098,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             //mImsPhone.removeReferences();
             mImsPhone = null;
         }
+        if (mEcbmHandler != null) {
+            mEcbmHandler.updateImsPhone(mImsPhone, mPhoneId);
+        }
+
     }
 
     /**
