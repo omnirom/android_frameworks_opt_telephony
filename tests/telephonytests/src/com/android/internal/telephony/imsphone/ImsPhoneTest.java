@@ -28,7 +28,9 @@ import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.nullable;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -50,14 +52,15 @@ import android.os.SystemProperties;
 import android.support.test.filters.FlakyTest;
 import android.telephony.CarrierConfigManager;
 import android.telephony.ServiceState;
+import android.telephony.ims.ImsCallProfile;
+import android.telephony.ims.ImsReasonInfo;
 import android.test.suitebuilder.annotation.SmallTest;
 
-import android.telephony.ims.ImsCallProfile;
 import com.android.ims.ImsEcbmStateListener;
 import com.android.ims.ImsManager;
-import android.telephony.ims.ImsReasonInfo;
 import com.android.ims.ImsUtInterface;
 import com.android.internal.telephony.Call;
+import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
@@ -192,7 +195,7 @@ public class ImsPhoneTest extends TelephonyTest {
         doReturn(Call.State.IDLE).when(mForegroundCall).getState();
         doReturn(Call.State.INCOMING).when(mRingingCall).getState();
         assertEquals(true, mImsPhoneUT.handleInCallMmiCommands("1"));
-        verify(mImsCT).switchWaitingOrHoldingAndActive();
+        verify(mImsCT).holdActiveCallForWaitingCall();
     }
 
     @Test
@@ -213,7 +216,7 @@ public class ImsPhoneTest extends TelephonyTest {
 
         // ringing call is idle
         assertEquals(true, mImsPhoneUT.handleInCallMmiCommands("2"));
-        verify(mImsCT).switchWaitingOrHoldingAndActive();
+        verify(mImsCT).holdActiveCall();
 
         // ringing call is not idle
         doReturn(Call.State.INCOMING).when(mRingingCall).getState();
@@ -298,18 +301,16 @@ public class ImsPhoneTest extends TelephonyTest {
         mImsPhoneUT.rejectCall();
         verify(mImsCT).rejectCall();
 
-        mImsPhoneUT.switchHoldingAndActive();
-        verify(mImsCT).switchWaitingOrHoldingAndActive();
-
         assertEquals(false, mImsPhoneUT.canConference());
         doReturn(true).when(mImsCT).canConference();
         assertEquals(true, mImsPhoneUT.canConference());
         verify(mImsCT, times(2)).canConference();
 
-        assertEquals(false, mImsPhoneUT.canDial());
-        doReturn(true).when(mImsCT).canDial();
+        doNothing().when(mImsCT).checkForDialIssues();
         assertEquals(true, mImsPhoneUT.canDial());
-        verify(mImsCT, times(2)).canDial();
+        doThrow(CallStateException.class).when(mImsCT).checkForDialIssues();
+        assertEquals(false, mImsPhoneUT.canDial());
+        verify(mImsCT, times(2)).checkForDialIssues();
 
         mImsPhoneUT.conference();
         verify(mImsCT).conference();
