@@ -296,6 +296,10 @@ public class ImsPhoneConnection extends Connection implements
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
                 break;
+            case ImsCallProfile.CALL_TYPE_UNKNOWN:
+                capabilities = removeCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
+                break;
         }
         return capabilities;
     }
@@ -311,6 +315,10 @@ public class ImsPhoneConnection extends Connection implements
             case ImsCallProfile.CALL_TYPE_VIDEO_N_VOICE:
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
+                break;
+            case ImsCallProfile.CALL_TYPE_UNKNOWN:
+                capabilities = removeCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
                 break;
         }
 

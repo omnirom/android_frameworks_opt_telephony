@@ -1469,8 +1469,18 @@ public class DcTracker extends Handler {
             apnContext.setConcurrentVoiceAndDataAllowed(mPhone.getServiceStateTracker()
                     .isConcurrentVoiceAndDataAllowed());
             if (apnContext.getState() == DctConstants.State.IDLE) {
+                String requestedApnType = apnContext.getApnType();
+                /*when UICC card is not present, add default emergency apn to apnsettings
+                  only if emergency apn is not present.
+                */
+                if(requestedApnType.equals(PhoneConstants.APN_TYPE_EMERGENCY)){
+                    if(mAllApnSettings == null){
+                        mAllApnSettings = new ArrayList<ApnSetting>();
+                    }
+                    addEmergencyApnSetting();
+                }
                 ArrayList<ApnSetting> waitingApns =
-                        buildWaitingApns(apnContext.getApnType(), radioTech);
+                        buildWaitingApns(requestedApnType, radioTech);
                 if (waitingApns.isEmpty()) {
                     notifyNoData(DcFailCause.MISSING_UNKNOWN_APN, apnContext);
                     notifyOffApnsOfAvailability(apnContext.getReason());
@@ -2060,10 +2070,19 @@ public class DcTracker extends Handler {
         if (initialAttachApnSetting == null) {
             if (DBG) log("setInitialAttachApn: X There in no available apn");
         } else {
-            if (DBG) log("setInitialAttachApn: X selected Apn=" + initialAttachApnSetting);
+            String numeric = mPhone.getOperatorNumeric();
+            if (numeric != null &&
+                    !numeric.equalsIgnoreCase(initialAttachApnSetting.numeric)) {
+                if (DBG) log("setInitialAttachApn: use empty apn");
+                //Add empty apn and send attach request
+                initialAttachApnSetting = new ApnSetting(-1, numeric, "", "", "", "",
+                        "", "", "", "", "", 0, new String[]{"ia"}, "IPV4V6", "IPV4V6",
+                        true, 0, 0, 0, false, 0, 0, 0, 0, "", "");
+             }
 
-            mDataServiceManager.setInitialAttachApn(createDataProfile(initialAttachApnSetting),
-                    mPhone.getServiceState().getDataRoamingFromRegistration(), null);
+             if (DBG) log("setInitialAttachApn: X selected Apn=" + initialAttachApnSetting);
+             mDataServiceManager.setInitialAttachApn(createDataProfile(initialAttachApnSetting),
+                      mPhone.getServiceState().getDataRoamingFromRegistration(), null);
         }
     }
 
