@@ -30,6 +30,7 @@ import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.GsmAlphabet;
 import com.android.internal.telephony.MccTable;
@@ -208,15 +209,11 @@ public class RuimRecords extends IccRecords {
 
     private int decodeImsiDigits(int digits, int length) {
         // Per C.S0005 section 2.3.1.
-        int constant = 0;
-        for (int i = 0; i < length; i++ ) {
-            constant = (constant * 10) + 1;
-        }
-
-        digits += constant;
-
         for (int i = 0, denominator = 1; i < length; i++) {
-            digits = ((digits / denominator) % 10 == 0) ? (digits - (10 * denominator)) : digits;
+            digits += denominator;
+            if ((digits / denominator) % 10 == 0) {
+                digits = digits - (10 * denominator);
+            }
             denominator *= 10;
         }
         return digits;
@@ -246,18 +243,18 @@ public class RuimRecords extends IccRecords {
         second3digits = decodeImsiDigits(second3digits, 3);
         last3digits = decodeImsiDigits(last3digits, 3);
 
-        StringBuilder builder = new StringBuilder();
-        builder.append(String.format(Locale.US, "%03d", mcc));
-        builder.append(String.format(Locale.US, "%02d", digits_11_12));
-        builder.append(String.format(Locale.US, "%03d", first3digits));
-        builder.append(String.format(Locale.US, "%03d", second3digits));
-        builder.append(String.format(Locale.US, "%d", digit7));
-        builder.append(String.format(Locale.US, "%03d", last3digits));
-        return  builder.toString();
+        return new StringBuilder()
+                .append(String.format(Locale.US, "%03d", mcc))
+                .append(String.format(Locale.US, "%02d", digits_11_12))
+                .append(String.format(Locale.US, "%03d", first3digits))
+                .append(String.format(Locale.US, "%03d", second3digits))
+                .append(String.format(Locale.US, "%d", digit7))
+                .append(String.format(Locale.US, "%03d", last3digits))
+                .toString();
     }
 
      /**
-     * Introduce Genreic API returns the 5 or 6 digit MCC/MNC
+     * Introduce Generic API returns the 5 or 6 digit MCC/MNC
      * of the operator that provided the RUIM card.
      * Returns null of RUIM is not yet ready
      */
@@ -277,13 +274,16 @@ public class RuimRecords extends IccRecords {
             return null;
         }
 
+        int mncLen = 0;
         if (mMncLength != UNINITIALIZED && mMncLength != UNKNOWN) {
             // Length = length of MCC + length of MNC
             // length of mcc = 3 (3GPP2 C.S0005 - Section 2.3)
-            return imsi.substring(0, 3 + mMncLength);
+            mncLen = mMncLength;
+        } else {
+            mncLen = CSIM_IMSI_MNC_LENGTH;
         }
 
-        return imsi.substring(0, 3 + CSIM_IMSI_MNC_LENGTH);
+        return imsi.substring(0, 3 + mncLen);
     }
 
     // Refer to ETSI TS 102.221
@@ -419,7 +419,8 @@ public class RuimRecords extends IccRecords {
         }
     }
 
-    private class EfCsimImsimLoaded implements IccRecordLoaded {
+    @VisibleForTesting
+    public class EfCsimImsimLoaded implements IccRecordLoaded {
         @Override
         public String getEfName() {
             return "EF_CSIM_IMSIM";
@@ -435,7 +436,8 @@ public class RuimRecords extends IccRecords {
                 mMin = null;
                 return;
             }
-            if (DBG) log("CSIM_IMSIM=" + IccUtils.bytesToHexString(data));
+            if (DBG) log("CSIM_IMSIM=" + IccUtils.bytesToHexString(data) +
+                    Rlog.pii(LOG_TAG, IccUtils.bytesToHexString(data)));
 
             // C.S0065 section 5.2.2 for IMSI_M encoding
             // C.S0005 section 2.3.1 for MIN encoding in IMSI_M.
@@ -446,7 +448,8 @@ public class RuimRecords extends IccRecords {
                 if (null != mImsi) {
                     mMin = mImsi.substring(5, 15);
                 }
-                log("IMSI: " + mImsi.substring(0, 5) + "xxxxxxxxx");
+                log("IMSI: " + mImsi.substring(0, 5) + "xxxxxxxxx" +
+                         Rlog.pii(LOG_TAG, mImsi.substring(0, 5)));
 
             } else {
                 if (DBG) log("IMSI not provisioned in card");
