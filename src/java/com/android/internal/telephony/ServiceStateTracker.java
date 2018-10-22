@@ -1042,7 +1042,8 @@ public class ServiceStateTracker extends Handler {
 
             case EVENT_RADIO_POWER_OFF_DONE:
                 if (DBG) log("EVENT_RADIO_POWER_OFF_DONE");
-                if (mDeviceShuttingDown && mCi.getRadioState().isAvailable()) {
+                if (mDeviceShuttingDown && mCi.getRadioState()
+                        != TelephonyManager.RADIO_POWER_UNAVAILABLE) {
                     // during shutdown the modem may not send radio state changed event
                     // as a result of radio power request
                     // Hence, issuing shut down regardless of radio power response
@@ -1066,7 +1067,7 @@ public class ServiceStateTracker extends Handler {
             case EVENT_RADIO_STATE_CHANGED:
             case EVENT_PHONE_TYPE_SWITCHED:
                 if(!mPhone.isPhoneTypeGsm() &&
-                        mCi.getRadioState() == CommandsInterface.RadioState.RADIO_ON) {
+                        mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON) {
                     handleCdmaSubscriptionSource(mCdmaSSM.getCdmaSubscriptionSource());
 
                     // Signal strength polling stops when radio is off.
@@ -1086,7 +1087,7 @@ public class ServiceStateTracker extends Handler {
                 // This callback is called when signal strength is polled
                 // all by itself
 
-                if (!(mCi.getRadioState().isOn())) {
+                if (!(mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON)) {
                     // Polling will continue when radio turns back on
                     return;
                 }
@@ -1880,9 +1881,6 @@ public class ServiceStateTracker extends Handler {
                     mNewReasonDataDenied = networkRegState.getRejectCause();
                     mNewMaxDataCalls = dataSpecificStates.maxDataCalls;
                     mDataRoaming = regCodeIsRoaming(registrationState);
-                    // Save the data roaming state reported by modem registration before resource
-                    // overlay or carrier config possibly overrides it.
-                    mNewSS.setDataRoamingFromRegistration(mDataRoaming);
 
                     if (DBG) {
                         log("handlPollStateResultMessage: GsmSST dataServiceState=" + serviceState
@@ -1893,9 +1891,6 @@ public class ServiceStateTracker extends Handler {
 
                     boolean isDataRoaming = regCodeIsRoaming(registrationState);
                     mNewSS.setDataRoaming(isDataRoaming);
-                    // Save the data roaming state reported by modem registration before resource
-                    // overlay or carrier config possibly overrides it.
-                    mNewSS.setDataRoamingFromRegistration(isDataRoaming);
 
                     if (DBG) {
                         log("handlPollStateResultMessage: cdma dataServiceState=" + serviceState
@@ -1922,9 +1917,6 @@ public class ServiceStateTracker extends Handler {
                     // voice roaming state in done while handling EVENT_POLL_STATE_REGISTRATION_CDMA
                     boolean isDataRoaming = regCodeIsRoaming(registrationState);
                     mNewSS.setDataRoaming(isDataRoaming);
-                    // Save the data roaming state reported by modem registration before resource
-                    // overlay or carrier config possibly overrides it.
-                    mNewSS.setDataRoamingFromRegistration(isDataRoaming);
                     if (DBG) {
                         log("handlPollStateResultMessage: CdmaLteSST dataServiceState="
                                 + serviceState + " registrationState=" + registrationState
@@ -2458,7 +2450,7 @@ public class ServiceStateTracker extends Handler {
 
                 String originalPlmn = plmn.trim();
                 plmn = String.format(wfcVoiceSpnFormat, originalPlmn);
-            } else if (mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
+            } else if (mCi.getRadioState() == TelephonyManager.RADIO_POWER_OFF) {
                 // todo: temporary hack; should have a better fix. This is to avoid using operator
                 // name from ServiceState (populated in resetServiceStateInIwlanMode()) until
                 // wifi calling is actually enabled
@@ -2528,9 +2520,10 @@ public class ServiceStateTracker extends Handler {
 
         // If we want it on and it's off, turn it on
         if (mDesiredPowerState && !mRadioDisabledByCarrier
-                && mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
+                && mCi.getRadioState() == TelephonyManager.RADIO_POWER_OFF) {
             mCi.setRadioPower(true, null);
-        } else if ((!mDesiredPowerState || mRadioDisabledByCarrier) && mCi.getRadioState().isOn()) {
+        } else if ((!mDesiredPowerState || mRadioDisabledByCarrier) && mCi.getRadioState()
+                == TelephonyManager.RADIO_POWER_ON) {
             // If it's on and available and we want it off gracefully
             if (mPhone.isPhoneTypeGsm() && mPowerOffDelayNeed) {
                 if (mImsRegistrationOnOff && !mAlarmSwitch) {
@@ -2553,7 +2546,8 @@ public class ServiceStateTracker extends Handler {
                 DcTracker dcTracker = mPhone.mDcTracker;
                 powerOffRadioSafely(dcTracker);
             }
-        } else if (mDeviceShuttingDown && mCi.getRadioState().isAvailable()) {
+        } else if (mDeviceShuttingDown
+                && (mCi.getRadioState() != TelephonyManager.RADIO_POWER_UNAVAILABLE)) {
             mCi.requestShutdown(null);
         }
     }
@@ -2670,7 +2664,7 @@ public class ServiceStateTracker extends Handler {
     }
 
     public boolean isRadioOn() {
-        return mCi.getRadioState() == CommandsInterface.RadioState.RADIO_ON;
+        return mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON;
     }
 
     /**
@@ -2700,7 +2694,7 @@ public class ServiceStateTracker extends Handler {
         log("pollState: modemTriggered=" + modemTriggered);
 
         switch (mCi.getRadioState()) {
-            case RADIO_UNAVAILABLE:
+            case TelephonyManager.RADIO_POWER_UNAVAILABLE:
                 mNewSS.setStateOutOfService();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
@@ -2708,7 +2702,7 @@ public class ServiceStateTracker extends Handler {
                 pollStateDone();
                 break;
 
-            case RADIO_OFF:
+            case TelephonyManager.RADIO_POWER_OFF:
                 mNewSS.setStateOff();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
@@ -3130,7 +3124,8 @@ public class ServiceStateTracker extends Handler {
 
     private void updateOperatorNameFromEri() {
         if (mPhone.isPhoneTypeCdma()) {
-            if ((mCi.getRadioState().isOn()) && (!mIsSubscriptionFromRuim)) {
+            if ((mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON)
+                    && (!mIsSubscriptionFromRuim)) {
                 String eriText;
                 // Now the Phone sees the new ServiceState so it can get the new ERI text
                 if (mSS.getVoiceRegState() == ServiceState.STATE_IN_SERVICE) {
@@ -3658,7 +3653,7 @@ public class ServiceStateTracker extends Handler {
         CarrierConfigManager configManager = (CarrierConfigManager)
                 context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
         if (configManager != null) {
-            PersistableBundle bundle = configManager.getConfig();
+            PersistableBundle bundle = configManager.getConfigForSubId(mPhone.getSubId());
             if (bundle != null) {
                 boolean disableVoiceBarringNotification = bundle.getBoolean(
                         CarrierConfigManager.KEY_DISABLE_VOICE_BARRING_NOTIFICATION_BOOL, false);
@@ -4038,15 +4033,10 @@ public class ServiceStateTracker extends Handler {
     public void powerOffRadioSafely(DcTracker dcTracker) {
         synchronized (this) {
             if (!mPendingRadioPowerOffAfterDataOff) {
-                int dds = SubscriptionManager.getDefaultDataSubscriptionId();
                 // To minimize race conditions we call cleanUpAllConnections on
                 // both if else paths instead of before this isDisconnected test.
-                if (dcTracker.isDisconnected()
-                        && (dds == mPhone.getSubId()
-                        || (dds != mPhone.getSubId()
-                        && ProxyController.getInstance().isDataDisconnected(dds)))) {
+                if (dcTracker.isDisconnected()) {
                     // To minimize race conditions we do this after isDisconnected
-                    dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
                     if (DBG) log("Data disconnected, turn off radio right away.");
                     hangupAndPowerOff();
                 } else {
@@ -4056,14 +4046,12 @@ public class ServiceStateTracker extends Handler {
                         mPhone.mCT.mBackgroundCall.hangupIfAlive();
                         mPhone.mCT.mForegroundCall.hangupIfAlive();
                     }
-                    if (!ProxyController.getInstance().isDataDisconnected(mPhone.getSubId())) {
-                        if (DBG) log("Wait for all data disconnect");
-                        // Data is not disconnected. Wait for the data disconnect complete
-                        // before sending the RADIO_POWER off.
-                        ProxyController.getInstance().registerForAllDataDisconnected(
-                                mPhone.getSubId(), this, EVENT_ALL_DATA_DISCONNECTED, null);
-                        mPendingRadioPowerOffAfterDataOff = true;
-                    }
+                    if (DBG) log("Wait for all data disconnect");
+                    // Data is not disconnected. Wait for the data disconnect complete
+                    // before sending the RADIO_POWER off.
+                    ProxyController.getInstance().registerForAllDataDisconnected(
+                            mPhone.getSubId(), this, EVENT_ALL_DATA_DISCONNECTED, null);
+                    mPendingRadioPowerOffAfterDataOff = true;
                     dcTracker.cleanUpAllConnections(Phone.REASON_RADIO_TURNED_OFF);
 
                     Message msg = Message.obtain(this);
@@ -4747,7 +4735,7 @@ public class ServiceStateTracker extends Handler {
      * causes state to go to OUT_OF_SERVICE state instead of STATE_OFF
      */
     protected void resetServiceStateInIwlanMode() {
-        if (mCi.getRadioState() == CommandsInterface.RadioState.RADIO_OFF) {
+        if (mCi.getRadioState() == TelephonyManager.RADIO_POWER_OFF) {
             boolean resetIwlanRatVal = false;
             log("set service state as POWER_OFF");
             if (ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN
