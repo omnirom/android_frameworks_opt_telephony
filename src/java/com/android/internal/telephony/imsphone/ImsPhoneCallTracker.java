@@ -2427,9 +2427,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (mRingingCall.getState().isRinging()) {
                     // Drop pending MO. We should address incoming call first
                     mPendingMO = null;
-                } else if (mPendingMO != null && !mPendingMO.getState().isDialing()) {
-                        //Don't re-send a dial request if already in DIALING/ALERTING state.
-                        sendEmptyMessage(EVENT_DIAL_PENDINGMO);
+                } else if (mPendingMO != null) {
+                    sendEmptyMessage(EVENT_DIAL_PENDINGMO);
                 }
             }
 
