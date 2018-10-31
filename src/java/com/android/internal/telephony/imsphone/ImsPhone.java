@@ -1959,7 +1959,8 @@ public class ImsPhone extends ImsPhoneBase {
             return;
         }
 
-        if (!imsCall.isRttCall() || !isFgCallActive()) {
+        if (!imsCall.isRttCall()) {
+            Rlog.d(LOG_TAG, "RTT: imsCall not RTT capable");
             return;
         }
 
@@ -1970,11 +1971,11 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         if (!isRttVtCallAllowed(imsCall)) {
-            Rlog.d(LOG_TAG, "RTT: InCorrect mode");
+            Rlog.d(LOG_TAG, "RTT: VT call is not allowed");
             return;
         }
 
-        Rlog.d(LOG_TAG, "RTT: sendRttMessage");
+        Rlog.d(LOG_TAG, "RTT: sendRttMessage = " + data);
         imsCall.sendRttMessage(data);
     }
 
@@ -2003,7 +2004,7 @@ public class ImsPhone extends ImsPhoneBase {
      *
      * @param data : response for upgrade
      */
-    public void sendRttModifyResponse(int response) {
+    public void sendRttModifyResponse(boolean response) {
         ImsCall imsCall = getForegroundCall().getImsCall();
         if (imsCall == null) {
             Rlog.d(LOG_TAG, "RTT: imsCall null");
@@ -2015,13 +2016,15 @@ public class ImsPhone extends ImsPhoneBase {
             return;
         }
 
-        Rlog.d(LOG_TAG, "RTT: sendRttModifyResponse");
-        imsCall.sendRttModifyResponse(mapRequestToResponse(response));
+        Rlog.d(LOG_TAG, "RTT: sendRttModifyResponse = " + (response ? "ACCEPTED" : "REJECTED"));
+        imsCall.sendRttModifyResponse(response);
     }
 
     // Utility to check if the value coming in intent is for upgrade initiate or upgrade response
     private void checkIfModifyRequestOrResponse(int data) {
-        if (!(isRttSupported() && (isRttOn() || isInEmergencyCall())) || !isFgCallActive()) {
+        if (!(isRttSupported() && (isRttOn() || isInEmergencyCall())) ||
+                   (ImsPhoneCall.State.ACTIVE != getForegroundCall().getState())) {
+            Rlog.d(LOG_TAG, "RTT: Request or Response not allowed");
             return;
         }
 
@@ -2036,14 +2039,16 @@ public class ImsPhone extends ImsPhoneBase {
                 packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_DISABLED);
                 break;
             case QtiCallConstants.RTT_UPGRADE_CONFIRM:
+                sendRttModifyResponse(true);
+                break;
             case QtiCallConstants.RTT_UPGRADE_REJECT:
-                sendRttModifyResponse(data);
+                sendRttModifyResponse(false);
                 break;
         }
     }
 
     private void packRttModifyRequestToProfile(int data) {
-        if (!canSendRttModifyRequest()) {
+        if (getForegroundCall().getImsCall() == null) {
             Rlog.d(LOG_TAG, "RTT: cannot send rtt modify request");
             return;
         }
@@ -2057,51 +2062,6 @@ public class ImsPhone extends ImsPhoneBase {
         sendRttModifyRequest(toProfile);
     }
 
-    private boolean canSendRttModifyRequest() {
-        ImsCall imsCall = getForegroundCall().getImsCall();
-        if (imsCall == null) {
-            Rlog.d(LOG_TAG, "RTT: imsCall null");
-            return false;
-        }
-
-        return true;
-    }
-
-    private boolean mapRequestToResponse(int response) {
-        switch (response) {
-            case QtiCallConstants.RTT_UPGRADE_CONFIRM:
-                return true;
-            case QtiCallConstants.RTT_UPGRADE_REJECT:
-                return false;
-            default:
-                return false;
-        }
-    }
-
-    /*
-     * Returns true if Mode is RTT_FULL, false otherwise
-     */
-    private boolean isInFullRttMode() {
-        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
-        Rlog.d(LOG_TAG, "RTT: isInFullRttMode mode = " + mode);
-        return (mode == QtiCallConstants.RTT_MODE_FULL);
-    }
-
-    /*
-     * Rtt for VT calls is not supported for certain operators
-     * Check the config and process the request
-     */
-    public boolean isRttVtCallAllowed(ImsCall call) {
-        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
-        Rlog.d(LOG_TAG, "RTT: isRttVtCallAllowed mode = " + mode);
-
-        if (call.getCallProfile().isVideoCall() &&
-                !QtiImsExtUtils.isRttSupportedOnVtCalls(mPhoneId, mContext)) {
-            return false;
-        }
-        return true;
-    }
-
     public boolean isRttSupported() {
         if (!QtiImsExtUtils.isRttSupported(mPhoneId, mContext)) {
             Rlog.d(LOG_TAG, "RTT: RTT is not supported");
@@ -2113,21 +2073,21 @@ public class ImsPhone extends ImsPhoneBase {
         return true;
     }
 
+    /*
+     * Rtt for VT calls is not supported for certain operators
+     * Check the config and process the request
+     */
+    public boolean isRttVtCallAllowed(ImsCall call) {
+        return !(call.getCallProfile().isVideoCall() &&
+                 !QtiImsExtUtils.isRttSupportedOnVtCalls(mPhoneId, mContext));
+    }
+
     public boolean isRttOn() {
         if (!QtiImsExtUtils.isRttOn(mContext)) {
             Rlog.d(LOG_TAG, "RTT: RTT is off");
             return false;
         }
         Rlog.d(LOG_TAG, "RTT: Rtt on = " + QtiImsExtUtils.isRttOn(mContext));
-        return true;
-    }
-
-    public boolean isFgCallActive() {
-        // process the request only if foreground is active
-        if (ImsPhoneCall.State.ACTIVE != getForegroundCall().getState()) {
-            Rlog.d(LOG_TAG, "RTT: isFgCallActive fg call not active");
-            return false;
-        }
         return true;
     }
 
