@@ -614,7 +614,7 @@ public class CallManager {
         phone.registerForCdmaOtaStatusChange(handler, EVENT_CDMA_OTA_STATUS_CHANGE, null);
         phone.registerForSubscriptionInfoReady(handler, EVENT_SUBSCRIPTION_INFO_READY, null);
         phone.registerForCallWaiting(handler, EVENT_CALL_WAITING, null);
-        phone.registerForEcmTimerReset(handler, EVENT_ECM_TIMER_RESET, null);
+        EcbmHandler.getInstance().registerForEcmTimerReset(handler, EVENT_ECM_TIMER_RESET, null);
 
         // for events supported only by IMS phone
         phone.registerForOnHoldTone(handler, EVENT_ONHOLD_TONE, null);
@@ -658,7 +658,7 @@ public class CallManager {
         phone.unregisterForCdmaOtaStatusChange(handler);
         phone.unregisterForSubscriptionInfoReady(handler);
         phone.unregisterForCallWaiting(handler);
-        phone.unregisterForEcmTimerReset(handler);
+        EcbmHandler.getInstance().unregisterForEcmTimerReset(handler);
 
         // for events supported only by IMS phone
         phone.unregisterForOnHoldTone(handler);
