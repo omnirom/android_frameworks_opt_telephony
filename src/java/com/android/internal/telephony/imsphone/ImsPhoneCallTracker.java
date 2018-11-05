@@ -2905,7 +2905,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     if (isHandoverToWifi) {
                         removeMessages(EVENT_CHECK_FOR_WIFI_HANDOVER);
                         if (mIsViLteDataMetered) {
-                            conn.setVideoEnabled(true);
+                            conn.setLocalVideoCapable(true);
                         }
 
                         if (mNotifyHandoverVideoFromLTEToWifi && mHasPerformedStartOfCallHandover) {
