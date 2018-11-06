@@ -275,6 +275,7 @@ public class ServiceStateTracker extends Handler {
     private int mPrevSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     private boolean mImsRegistered = false;
+    private boolean mCarrierConfigLoaded = false;
 
     private SubscriptionManager mSubscriptionManager;
     private SubscriptionController mSubscriptionController;
@@ -2272,7 +2273,7 @@ public class ServiceStateTracker extends Handler {
              * The test for the operators is to handle special roaming
              * agreements and MVNO's.
              */
-            boolean roaming = (mGsmRoaming || mDataRoaming);
+            boolean roaming = (mGsmRoaming || mDataRoaming) && mCarrierConfigLoaded;
 
             if (mGsmRoaming && !isOperatorConsideredRoaming(mNewSS)
                     && (isSameNamedOperators(mNewSS) || isOperatorConsideredNonRoaming(mNewSS))) {
@@ -4293,6 +4294,8 @@ public class ServiceStateTracker extends Handler {
         PersistableBundle config = configManager.getConfigForSubId(mPhone.getSubId());
 
         if (config != null) {
+            mCarrierConfigLoaded = true;
+            pollState();
             updateLteEarfcnLists(config);
             updateReportingCriteria(config);
         }
