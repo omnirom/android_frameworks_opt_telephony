@@ -1704,6 +1704,11 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
+    public boolean isImsCapabilityAvailable(int capability, int regTech) {
+        return mCT.isImsCapabilityAvailable(capability, regTech);
+    }
+
+    @Override
     public boolean isVolteEnabled() {
         return mCT.isVolteEnabled();
     }
