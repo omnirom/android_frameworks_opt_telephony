@@ -268,6 +268,7 @@ public class GsmCdmaPhone extends Phone {
         mCi.registerForAvailable(this, EVENT_RADIO_AVAILABLE, null);
         mCi.registerForOffOrNotAvailable(this, EVENT_RADIO_OFF_OR_NOT_AVAILABLE, null);
         mCi.registerForOn(this, EVENT_RADIO_ON, null);
+        mCi.registerForRadioStateChanged(this, EVENT_RADIO_STATE_CHANGED, null);
         mCi.setOnSuppServiceNotification(this, EVENT_SSN, null);
 
         //GSM
@@ -403,14 +404,14 @@ public class GsmCdmaPhone extends Phone {
         onUpdateIccAvailability();
         mCT.updatePhoneType();
 
-        CommandsInterface.RadioState radioState = mCi.getRadioState();
-        if (radioState.isAvailable()) {
+        int radioState = mCi.getRadioState();
+        if (radioState != TelephonyManager.RADIO_POWER_UNAVAILABLE) {
             handleRadioAvailable();
-            if (radioState.isOn()) {
+            if (radioState == TelephonyManager.RADIO_POWER_ON) {
                 handleRadioOn();
             }
         }
-        if (!radioState.isAvailable() || !radioState.isOn()) {
+        if (radioState != TelephonyManager.RADIO_POWER_ON) {
             handleRadioOffOrNotAvailable();
         }
     }
@@ -1436,7 +1437,7 @@ public class GsmCdmaPhone extends Phone {
         if (TextUtils.isEmpty(number)) {
             CarrierConfigManager configManager = (CarrierConfigManager)
                     getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            PersistableBundle b = configManager.getConfig();
+            PersistableBundle b = configManager.getConfigForSubId(getSubId());
             if (b != null) {
                 String defaultVmNumber =
                         b.getString(CarrierConfigManager.KEY_DEFAULT_VM_NUMBER_STRING);
@@ -1454,7 +1455,7 @@ public class GsmCdmaPhone extends Phone {
             // Read platform settings for dynamic voicemail number
             CarrierConfigManager configManager = (CarrierConfigManager)
                     getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            PersistableBundle b = configManager.getConfig();
+            PersistableBundle b = configManager.getConfigForSubId(getSubId());
             if (b != null && b.getBoolean(
                     CarrierConfigManager.KEY_CONFIG_TELEPHONY_USE_OWN_NUMBER_FOR_VOICEMAIL_BOOL)) {
                 number = getLine1Number();
@@ -2162,7 +2163,7 @@ public class GsmCdmaPhone extends Phone {
     public boolean supports3gppCallForwardingWhileRoaming() {
         CarrierConfigManager configManager = (CarrierConfigManager)
                 getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        PersistableBundle b = configManager.getConfig();
+        PersistableBundle b = configManager.getConfigForSubId(getSubId());
         if (b != null) {
             return b.getBoolean(
                     CarrierConfigManager.KEY_SUPPORT_3GPP_CALL_FORWARDING_WHILE_ROAMING_BOOL, true);
@@ -2280,6 +2281,11 @@ public class GsmCdmaPhone extends Phone {
             }
         }
         mRadioOffOrNotAvailableRegistrants.notifyRegistrants();
+    }
+
+    private void handleRadioPowerStateChange() {
+        Rlog.d(LOG_TAG, "handleRadioPowerStateChange, state= " + mCi.getRadioState());
+        mNotifier.notifyRadioPowerStateChanged(mCi.getRadioState());
     }
 
     @Override
@@ -2533,6 +2539,12 @@ public class GsmCdmaPhone extends Phone {
             case EVENT_RADIO_OFF_OR_NOT_AVAILABLE: {
                 logd("Event EVENT_RADIO_OFF_OR_NOT_AVAILABLE Received");
                 handleRadioOffOrNotAvailable();
+                break;
+            }
+
+            case EVENT_RADIO_STATE_CHANGED: {
+                logd("EVENT EVENT_RADIO_STATE_CHANGED");
+                handleRadioPowerStateChange();
                 break;
             }
 
@@ -3378,9 +3390,9 @@ public class GsmCdmaPhone extends Phone {
                         b.getInt(CarrierConfigManager.KEY_VOLTE_REPLACEMENT_RAT_INT);
                 logd("phoneObjectUpdater: volteReplacementRat=" + volteReplacementRat);
                 if (volteReplacementRat != ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN &&
-                         //In cdma case, replace rat only if csim or ruim app present
-                        (ServiceState.isGsm(volteReplacementRat) ||
-                        isCdmaSubscriptionAppPresent())) {
+                           //In cdma case, replace rat only if csim or ruim app present
+                           (ServiceState.isGsm(volteReplacementRat) ||
+                           isCdmaSubscriptionAppPresent())) {
                     newVoiceRadioTech = volteReplacementRat;
                 }
             } else {
@@ -3440,7 +3452,7 @@ public class GsmCdmaPhone extends Phone {
 
         boolean oldPowerState = false; // old power state to off
         if (mResetModemOnRadioTechnologyChange) {
-            if (mCi.getRadioState().isOn()) {
+            if (mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON) {
                 oldPowerState = true;
                 logd("phoneObjectUpdater: Setting Radio Power to Off");
                 mCi.setRadioPower(false, null);

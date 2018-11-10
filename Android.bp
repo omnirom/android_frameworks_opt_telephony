@@ -45,7 +45,6 @@ java_library {
         "ims-common",
         "telephony-ext",
         "services",
-        "bouncycastle",
     ],
     static_libs: [
         "telephony-protos",
