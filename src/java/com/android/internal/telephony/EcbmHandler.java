@@ -99,6 +99,7 @@ public class EcbmHandler extends Handler {
         for (int i = 0; i < mNumPhones; i++) {
             trackers[i] = new ECBMTracker();
         }
+        mIsPhoneInEcmState = getInEcmMode();
     }
 
     public static EcbmHandler getInstance () {
@@ -271,9 +272,8 @@ public class EcbmHandler extends Handler {
         if (mEcmExitRespRegistrant != null) {
             mEcmExitRespRegistrant.notifyRegistrant();
         }
-        if (isInEcm()) {
-            setIsInEcm(false);
-        }
+
+        setIsInEcm(false);
 
         // release wakeLock
         if (mWakeLock.isHeld()) {
@@ -349,6 +349,10 @@ public class EcbmHandler extends Handler {
         TelephonyManager.setTelephonyProperty(TelephonyProperties.PROPERTY_INECM_MODE,
                 String.valueOf(isInEcm));
         mIsPhoneInEcmState = isInEcm;
+    }
+
+    public static boolean getInEcmMode() {
+        return SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false);
     }
 
     private void logd(String s) {
