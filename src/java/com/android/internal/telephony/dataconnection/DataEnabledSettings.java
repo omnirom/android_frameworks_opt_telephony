@@ -22,6 +22,7 @@ import android.os.Handler;
 import android.os.RegistrantList;
 import android.os.SystemProperties;
 import android.provider.Settings;
+import android.provider.Settings.SettingNotFoundException;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -129,6 +130,28 @@ public class DataEnabledSettings {
             return Settings.Global.MOBILE_DATA;
         } else {
             return Settings.Global.MOBILE_DATA + mPhone.getSubId();
+        }
+    }
+
+    /**
+     * Set default value for {@link android.provider.Settings.Global#MOBILE_DATA}
+     */
+    public void setDefaultMobileDataEnabled() {
+        // For single SIM phones, this is a per phone property.
+        String setting = getMobileDataSettingName();
+        boolean useDefaultValue = false;
+        try {
+            Settings.Global.getInt(mResolver, setting);
+        } catch (SettingNotFoundException ex) {
+            //Update to carrier default if uninitialized.
+            useDefaultValue = true;
+        }
+
+        if (useDefaultValue) {
+            boolean defaultVal = "true".equalsIgnoreCase(SystemProperties.get(
+                   "ro.com.android.mobiledata", "true"));
+            log("etDefaultMobileDataEnabled " + setting + "default value: " + defaultVal);
+            Settings.Global.putInt(mResolver, setting, defaultVal ? 1 : 0);
         }
     }
 

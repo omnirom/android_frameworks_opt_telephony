@@ -382,7 +382,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
 
         // Global settings should be all set.
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.ENHANCED_4G_MODE_ENABLED));
+                Settings.Global.ENHANCED_4G_MODE_ENABLED + subID));
 
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.VT_IMS_ENABLED));

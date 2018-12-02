@@ -33,7 +33,6 @@ import android.telephony.CellLocation;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
-import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.telephony.cdma.CdmaCellLocation;
 import android.telephony.gsm.GsmCellLocation;
@@ -197,6 +196,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (mPendingMO != null) {
+            mPendingMO.onDisconnect(DisconnectCause.ERROR_UNSPECIFIED);
             mPendingMO.dispose();
         }
 
@@ -613,30 +613,28 @@ public class GsmCdmaCallTracker extends CallTracker {
 
     private boolean canDial() {
         boolean ret;
-        int serviceState = mPhone.getServiceState().getState();
         String disableCall = SystemProperties.get(
                 TelephonyProperties.PROPERTY_DISABLE_CALL, "false");
 
-        ret = (serviceState != ServiceState.STATE_POWER_OFF)
+        ret = mCi.getRadioState().isOn()
                 && mPendingMO == null
                 && !mRingingCall.isRinging()
                 && !disableCall.equals("true")
                 && (!mForegroundCall.getState().isAlive()
-                    || !mBackgroundCall.getState().isAlive()
-                    || (!isPhoneTypeGsm()
-                        && mForegroundCall.getState() == GsmCdmaCall.State.ACTIVE));
+                || !mBackgroundCall.getState().isAlive()
+                || (!isPhoneTypeGsm()
+                && mForegroundCall.getState() == GsmCdmaCall.State.ACTIVE));
 
         if (!ret) {
             log(String.format("canDial is false\n" +
-                            "((serviceState=%d) != ServiceState.STATE_POWER_OFF)::=%s\n" +
+                            "(radio isOn ::=%s\n" +
                             "&& pendingMO == null::=%s\n" +
                             "&& !ringingCall.isRinging()::=%s\n" +
                             "&& !disableCall.equals(\"true\")::=%s\n" +
                             "&& (!foregroundCall.getState().isAlive()::=%s\n" +
                             "   || foregroundCall.getState() == GsmCdmaCall.State.ACTIVE::=%s\n" +
                             "   ||!backgroundCall.getState().isAlive())::=%s)",
-                    serviceState,
-                    serviceState != ServiceState.STATE_POWER_OFF,
+                    mCi.getRadioState().isOn(),
                     mPendingMO == null,
                     !mRingingCall.isRinging(),
                     !disableCall.equals("true"),
@@ -845,6 +843,9 @@ public class GsmCdmaCallTracker extends CallTracker {
                                 hoConnection.mPreHandoverState != GsmCdmaCall.State.HOLDING &&
                                 dc.state == DriverCall.State.ACTIVE) {
                             mConnections[i].onConnectedInOrOut();
+                        } else if (dc.state == DriverCall.State.ACTIVE
+                                || dc.state == DriverCall.State.HOLDING) {
+                            mConnections[i].releaseWakeLock();
                         }
 
                         mHandoverConnections.remove(hoConnection);
@@ -1157,11 +1158,14 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (conn == mPendingMO) {
-            // We're hanging up an outgoing call that doesn't have it's
-            // GsmCdma index assigned yet
+            // Re-start Ecm timer when an uncompleted emergency call ends
+            if (mIsEcmTimerCanceled) {
+                handleEcmTimer(GsmCdmaPhone.RESTART_ECM_TIMER);
+            }
 
-            if (Phone.DEBUG_PHONE) log("hangup: set hangupPendingMO to true");
-            mHangupPendingMO = true;
+            // Allow HANGUP to RIL during pending MO is present
+            log("hangup conn with callId '-1' as there is no DIAL response yet ");
+            mCi.hangupConnection(-1, obtainCompleteMessage());
         } else if (!isPhoneTypeGsm()
                 && conn.getCall() == mRingingCall
                 && mRingingCall.getState() == GsmCdmaCall.State.WAITING) {

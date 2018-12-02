@@ -71,6 +71,19 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
     }
 
     @Test @SmallTest
+    public void testOriginalDialString(){
+        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
+        connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
+                false /*isEmergencyCall*/);
+        assertEquals("+8610000", connection.getOrigDialString());
+
+        doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
+        connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
+                false /*isEmergencyCall*/);
+        assertEquals("+8610000", connection.getOrigDialString());
+    }
+
+    @Test @SmallTest
     public void testSanityGSM() {
         connection = new GsmCdmaConnection(mPhone, String.format(
                 "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
@@ -103,7 +116,7 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
         assertFalse(connection.isMultiparty());
         assertNotNull(connection.getRemainingPostDialString());
         /* CDMA phone type dont have origDialString */
-        assertNull(connection.getOrigDialString());
+        assertEquals("+1 (700).555-41NN,1234", connection.getOrigDialString());
     }
 
     @Test @SmallTest

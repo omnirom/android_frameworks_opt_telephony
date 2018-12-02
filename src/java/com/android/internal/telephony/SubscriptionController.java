@@ -85,8 +85,8 @@ import java.util.stream.Collectors;
  */
 public class SubscriptionController extends ISub.Stub {
     static final String LOG_TAG = "SubscriptionController";
-    static final boolean DBG = true;
-    static final boolean VDBG = false;
+    protected static final boolean DBG = true;
+    protected static final boolean VDBG = false;
     static final boolean DBG_CACHE = false;
     static final int MAX_LOCAL_LOG_LINES = 500; // TODO: Reduce to 100 when 17678050 is fixed
     private static final int DEPRECATED_SETTING = -1;
@@ -147,7 +147,7 @@ public class SubscriptionController extends ISub.Stub {
     protected final Object mLock = new Object();
 
     /** The singleton instance. */
-    private static SubscriptionController sInstance = null;
+    protected static SubscriptionController sInstance = null;
     protected static Phone[] sPhones;
     protected Context mContext;
     protected TelephonyManager mTelephonyManager;
@@ -158,8 +158,8 @@ public class SubscriptionController extends ISub.Stub {
     // FIXME: Does not allow for multiple subs in a slot and change to SparseArray
     private static Map<Integer, Integer> sSlotIndexToSubId =
             new ConcurrentHashMap<Integer, Integer>();
-    private static int mDefaultFallbackSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
-    private static int mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
+    protected static int mDefaultFallbackSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    protected static int mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
 
     private int[] colorArr;
     private long mLastISubServiceRegTime;
@@ -233,7 +233,33 @@ public class SubscriptionController extends ISub.Stub {
         if (DBG) logdl("[SubscriptionController] init by Phone");
     }
 
-    private void enforceModifyPhoneState(String message) {
+    /**
+     * Make sure the caller can read phone state which requires holding the
+     * READ_PHONE_STATE permission and the OP_READ_PHONE_STATE app op being
+     * set to MODE_ALLOWED.
+     *
+     * @param callingPackage The package claiming to make the IPC.
+     * @param message The name of the access protected method.
+     *
+     * @throws SecurityException if the caller does not have READ_PHONE_STATE permission.
+     */
+    private boolean canReadPhoneState(String callingPackage, String message) {
+        try {
+            mContext.enforceCallingOrSelfPermission(
+                    android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE, message);
+
+            // SKIP checking run-time permission since self or using PRIVILEDGED permission
+            return true;
+        } catch (SecurityException e) {
+            mContext.enforceCallingOrSelfPermission(android.Manifest.permission.READ_PHONE_STATE,
+                    message);
+        }
+
+        return mAppOps.noteOp(AppOpsManager.OP_READ_PHONE_STATE, Binder.getCallingUid(),
+                callingPackage) == AppOpsManager.MODE_ALLOWED;
+    }
+
+    protected void enforceModifyPhoneState(String message) {
         mContext.enforceCallingOrSelfPermission(
                 android.Manifest.permission.MODIFY_PHONE_STATE, message);
     }
@@ -895,6 +921,19 @@ public class SubscriptionController extends ISub.Stub {
      */
     @Override
     public int addSubInfoRecord(String iccId, int slotIndex) {
+        String fullIccId;
+        Phone phone = PhoneFactory.getPhone(slotIndex);
+        UiccCard uiccCard = UiccController.getInstance().getUiccCardForSlot(slotIndex);
+        if (phone != null && uiccCard != null) {
+            fullIccId = phone.getFullIccSerialNumber();
+            if (TextUtils.isEmpty(fullIccId)) {
+                fullIccId = iccId;
+            }
+        } else {
+            if (DBG) logdl("[addSubInfoRecord]- null fullIccId");
+            return -1;
+        }
+
         if (DBG) logdl("[addSubInfoRecord]+ iccId:" + SubscriptionInfo.givePrintableIccid(iccId) +
                 " slotIndex:" + slotIndex);
 
@@ -913,8 +952,10 @@ public class SubscriptionController extends ISub.Stub {
                     new String[]{SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID,
                             SubscriptionManager.SIM_SLOT_INDEX, SubscriptionManager.NAME_SOURCE,
                             SubscriptionManager.ICC_ID, SubscriptionManager.CARD_ID},
-                    SubscriptionManager.ICC_ID + "=?" + " OR " + SubscriptionManager.ICC_ID + "=?",
-                            new String[]{iccId, IccUtils.getDecimalSubstring(iccId)}, null);
+                    SubscriptionManager.ICC_ID + "=?" + " OR " + SubscriptionManager.ICC_ID + "=?"
+                             + " OR " + SubscriptionManager.ICC_ID + "=?" + " collate nocase",
+                            new String[]{iccId, IccUtils.getDecimalSubstring(iccId), fullIccId},
+                            null);
 
             boolean setDisplayName = false;
             try {
@@ -938,8 +979,9 @@ public class SubscriptionController extends ISub.Stub {
                         setDisplayName = true;
                     }
 
-                    if (oldIccId != null && oldIccId.length() < iccId.length()
-                            && (oldIccId.equals(IccUtils.getDecimalSubstring(iccId)))) {
+                    if (oldIccId != null && oldIccId.length() != iccId.length()
+                           && (oldIccId.equals(IccUtils.getDecimalSubstring(iccId))
+                           || iccId.equalsIgnoreCase(IccUtils.stripTrailingFs(oldIccId)))) {
                         value.put(SubscriptionManager.ICC_ID, iccId);
                     }
 
@@ -955,9 +997,6 @@ public class SubscriptionController extends ISub.Stub {
                         resolver.update(SubscriptionManager.CONTENT_URI, value,
                                 SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID +
                                         "=" + Long.toString(subId), null);
-
-                        // Refresh the Cache of Active Subscription Info List
-                        refreshCachedActiveSubscriptionInfoList();
                     }
 
                     if (DBG) logdl("[addSubInfoRecord] Record already exists");
@@ -1000,7 +1039,7 @@ public class SubscriptionController extends ISub.Stub {
 
                             // Set the default sub if not set or if single sim device
                             if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)
-                                    || subIdCountMax == 1) {
+                                    || (subIdCountMax == 1) || (!isActiveSubId(defaultSubId))) {
                                 setDefaultFallbackSubId(subId);
                             }
                             // If single sim device, set this subscription as the default for everything
@@ -1051,11 +1090,11 @@ public class SubscriptionController extends ISub.Stub {
                         SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID +
                                 "=" + Long.toString(subId), null);
 
-                // Refresh the Cache of Active Subscription Info List
-                refreshCachedActiveSubscriptionInfoList();
-
                 if (DBG) logdl("[addSubInfoRecord] sim name = " + nameToSet);
             }
+
+            // Refresh the Cache of Active Subscription Info List
+            refreshCachedActiveSubscriptionInfoList();
 
             // Once the records are loaded, notify DcTracker
             sPhones[slotIndex].updateDataConnectionTracker();
@@ -1099,9 +1138,6 @@ public class SubscriptionController extends ISub.Stub {
         }
 
         Uri uri = resolver.insert(SubscriptionManager.CONTENT_URI, value);
-
-        // Refresh the Cache of Active Subscription Info List
-        refreshCachedActiveSubscriptionInfoList();
 
         return uri;
     }
@@ -1536,7 +1572,7 @@ public class SubscriptionController extends ISub.Stub {
 
     }
 
-    private int[] getDummySubIds(int slotIndex) {
+    protected int[] getDummySubIds(int slotIndex) {
         // FIXME: Remove notion of Dummy SUBSCRIPTION_ID.
         // I tested this returning null as no one appears to care,
         // but no connection came up on sprout with two sims.
@@ -1582,21 +1618,21 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private void logvl(String msg) {
+    protected void logvl(String msg) {
         logv(msg);
         mLocalLog.log(msg);
     }
 
-    private void logv(String msg) {
+    protected void logv(String msg) {
         Rlog.v(LOG_TAG, msg);
     }
 
-    private void logdl(String msg) {
+    protected void logdl(String msg) {
         logd(msg);
         mLocalLog.log(msg);
     }
 
-    private static void slogd(String msg) {
+    protected static void slogd(String msg) {
         Rlog.d(LOG_TAG, msg);
     }
 
@@ -1604,7 +1640,7 @@ public class SubscriptionController extends ISub.Stub {
         Rlog.d(LOG_TAG, msg);
     }
 
-    private void logel(String msg) {
+    protected void logel(String msg) {
         loge(msg);
         mLocalLog.log(msg);
     }
@@ -1758,7 +1794,7 @@ public class SubscriptionController extends ISub.Stub {
         broadcastDefaultDataSubIdChanged(subId);
     }
 
-    private void updateAllDataConnectionTrackers() {
+    protected void updateAllDataConnectionTrackers() {
         // Tell Phone Proxies to update data connection tracker
         int len = sPhones.length;
         if (DBG) logdl("[updateAllDataConnectionTrackers] sPhones.length=" + len);
@@ -1768,7 +1804,7 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private void broadcastDefaultDataSubIdChanged(int subId) {
+    protected void broadcastDefaultDataSubIdChanged(int subId) {
         // Broadcast an Intent for default data sub change
         if (DBG) logdl("[broadcastDefaultDataSubIdChanged] subId=" + subId);
         Intent intent = new Intent(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED);
@@ -1782,7 +1818,7 @@ public class SubscriptionController extends ISub.Stub {
      * sub is set as default subId. If two or more  sub's are active
      * the first sub is set as default subscription
      */
-    private void setDefaultFallbackSubId(int subId) {
+    protected void setDefaultFallbackSubId(int subId) {
         if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
             throw new RuntimeException("setDefaultSubId called with DEFAULT_SUB_ID");
         }
@@ -1843,7 +1879,7 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private boolean shouldDefaultBeCleared(List<SubscriptionInfo> records, int subId) {
+    protected boolean shouldDefaultBeCleared(List<SubscriptionInfo> records, int subId) {
         if (DBG) logdl("[shouldDefaultBeCleared: subId] " + subId);
         if (records == null) {
             if (DBG) logdl("[shouldDefaultBeCleared] return true no records subId=" + subId);
@@ -2116,7 +2152,7 @@ public class SubscriptionController extends ISub.Stub {
         return resultValue;
     }
 
-    private static void printStackTrace(String msg) {
+    protected static void printStackTrace(String msg) {
         RuntimeException re = new RuntimeException();
         slogd("StackTrace - " + msg);
         StackTraceElement[] st = re.getStackTrace();
@@ -2195,35 +2231,45 @@ public class SubscriptionController extends ISub.Stub {
      */
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     public void migrateImsSettings() {
-        migrateImsSettingHelper(
-                Settings.Global.ENHANCED_4G_MODE_ENABLED,
-                SubscriptionManager.ENHANCED_4G_MODE_ENABLED);
-        migrateImsSettingHelper(
-                Settings.Global.VT_IMS_ENABLED,
-                SubscriptionManager.VT_IMS_ENABLED);
-        migrateImsSettingHelper(
-                Settings.Global.WFC_IMS_ENABLED,
-                SubscriptionManager.WFC_IMS_ENABLED);
-        migrateImsSettingHelper(
-                Settings.Global.WFC_IMS_MODE,
-                SubscriptionManager.WFC_IMS_MODE);
-        migrateImsSettingHelper(
-                Settings.Global.WFC_IMS_ROAMING_MODE,
-                SubscriptionManager.WFC_IMS_ROAMING_MODE);
-        migrateImsSettingHelper(
-                Settings.Global.WFC_IMS_ROAMING_ENABLED,
-                SubscriptionManager.WFC_IMS_ROAMING_ENABLED);
+        SubscriptionManager sm = SubscriptionManager.from(mContext);
+        if (sm != null) {
+            List<SubscriptionInfo> subInfoList = sm.getAllSubscriptionInfoList();
+            for (SubscriptionInfo si : subInfoList) {
+                int subId = si.getSubscriptionId();
+                if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                    continue;
+                }
+                migrateImsSettingHelper(
+                        Settings.Global.ENHANCED_4G_MODE_ENABLED + subId,
+                        SubscriptionManager.ENHANCED_4G_MODE_ENABLED, subId);
+                migrateImsSettingHelper(
+                        Settings.Global.VT_IMS_ENABLED + subId,
+                        SubscriptionManager.VT_IMS_ENABLED, subId);
+                migrateImsSettingHelper(
+                        Settings.Global.WFC_IMS_ENABLED + subId,
+                        SubscriptionManager.WFC_IMS_ENABLED, subId);
+                migrateImsSettingHelper(
+                        Settings.Global.WFC_IMS_MODE + subId,
+                        SubscriptionManager.WFC_IMS_MODE, subId);
+                migrateImsSettingHelper(
+                        Settings.Global.WFC_IMS_ROAMING_MODE + subId,
+                        SubscriptionManager.WFC_IMS_ROAMING_MODE, subId);
+                migrateImsSettingHelper(
+                        Settings.Global.WFC_IMS_ROAMING_ENABLED + subId,
+                        SubscriptionManager.WFC_IMS_ROAMING_ENABLED, subId);
+            }
+        }
     }
 
-    private void migrateImsSettingHelper(String settingGlobal, String subscriptionProperty) {
+    private void migrateImsSettingHelper(String settingGlobal, String subscriptionProperty,
+                int subId) {
         ContentResolver resolver = mContext.getContentResolver();
-        int defaultSubId = getDefaultVoiceSubId();
         try {
             int prevSetting = Settings.Global.getInt(resolver, settingGlobal);
 
             if (prevSetting != DEPRECATED_SETTING) {
                 // Write previous setting into Subscription DB.
-                setSubscriptionPropertyIntoContentResolver(defaultSubId, subscriptionProperty,
+                setSubscriptionPropertyIntoContentResolver(subId, subscriptionProperty,
                         Integer.toString(prevSetting), resolver);
                 // Write global setting value with DEPRECATED_SETTING making sure
                 // migration only happen once.

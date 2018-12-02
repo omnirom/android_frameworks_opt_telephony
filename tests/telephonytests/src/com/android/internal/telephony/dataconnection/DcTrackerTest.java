@@ -416,11 +416,13 @@ public class DcTrackerTest extends TelephonyTest {
         logd("DcTrackerTest +Setup!");
         super.setUp(getClass().getSimpleName());
 
+        doReturn(mSimRecords).when(mPhone).getIccRecords();
         doReturn("fake.action_detached").when(mPhone).getActionDetached();
         doReturn("fake.action_attached").when(mPhone).getActionAttached();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
         doReturn("44010").when(mSimRecords).getOperatorNumeric();
+        doReturn("44010").when(mPhone).getOperatorNumeric();
 
         mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
                 sNetworkAttributes);
@@ -443,6 +445,7 @@ public class DcTrackerTest extends TelephonyTest {
         ((MockContentResolver) mContext.getContentResolver()).addProvider(
                 Telephony.Carriers.CONTENT_URI.getAuthority(), mApnSettingContentProvider);
 
+        doReturn(true).when(mSubscriptionManager).isActiveSubId(anyInt());
         doReturn(true).when(mSimRecords).getRecordsLoaded();
         doReturn(PhoneConstants.State.IDLE).when(mCT).getState();
         doReturn(true).when(mSST).getDesiredPowerState();
@@ -569,6 +572,7 @@ public class DcTrackerTest extends TelephonyTest {
     @MediumTest
     public void testDataSetup() throws Exception {
 
+        doReturn(true).when(mSubscriptionManager).isActiveSubId(anyInt());
         mDct.setUserDataEnabled(true);
 
         mSimulatedCommands.setDataCallResult(true, createSetupDataCallResult());

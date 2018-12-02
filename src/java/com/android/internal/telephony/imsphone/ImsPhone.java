@@ -34,7 +34,9 @@ import static com.android.internal.telephony.CommandsInterface.CF_REASON_BUSY;
 import static com.android.internal.telephony.CommandsInterface.CF_REASON_NOT_REACHABLE;
 import static com.android.internal.telephony.CommandsInterface.CF_REASON_NO_REPLY;
 import static com.android.internal.telephony.CommandsInterface.CF_REASON_UNCONDITIONAL;
+import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_DATA_SYNC;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
+import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
 
 import android.app.Activity;
@@ -46,6 +48,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.NetworkStats;
+import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Bundle;
@@ -69,9 +72,11 @@ import android.telephony.UssdResponse;
 import android.telephony.ims.ImsCallForwardInfo;
 import android.telephony.ims.ImsCallProfile;
 import android.telephony.ims.ImsReasonInfo;
+import android.telephony.ims.ImsStreamMediaProfile;
 import android.telephony.ims.ImsSsInfo;
 import android.text.TextUtils;
 
+import com.android.ims.ImsCall;
 import com.android.ims.ImsEcbm;
 import com.android.ims.ImsEcbmStateListener;
 import com.android.ims.ImsException;
@@ -102,6 +107,9 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.codeaurora.ims.QtiCallConstants;
+import org.codeaurora.ims.utils.QtiImsExtUtils;
 
 /**
  * {@hide}
@@ -232,11 +240,13 @@ public class ImsPhone extends ImsPhoneBase {
         final String mSetCfNumber;
         final Message mOnComplete;
         final boolean mIsCfu;
+        final int mServiceClass;
 
-        Cf(String cfNumber, boolean isCfu, Message onComplete) {
+        Cf(String cfNumber, boolean isCfu, Message onComplete, int serviceClass) {
             mSetCfNumber = cfNumber;
             mIsCfu = isCfu;
             mOnComplete = onComplete;
+            mServiceClass = serviceClass;
         }
     }
 
@@ -282,6 +292,14 @@ public class ImsPhone extends ImsPhoneBase {
         mDefaultPhone.registerForServiceStateChanged(this, EVENT_SERVICE_STATE_CHANGED, null);
         // Force initial roaming state update later, on EVENT_CARRIER_CONFIG_CHANGED.
         // Settings provider or CarrierConfig may not be loaded now.
+
+        // Register receiver for sending RTT text message and
+        // for receving RTT Operation
+        // .i.e.Upgrade Initiate, Upgrade accept, Upgrade reject
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(QtiCallConstants.ACTION_SEND_RTT_TEXT);
+        filter.addAction(QtiCallConstants.ACTION_RTT_OPERATION);
+        mDefaultPhone.getContext().registerReceiver(mRttReceiver, filter);
     }
 
     //todo: get rid of this function. It is not needed since parentPhone obj never changes
@@ -301,6 +319,7 @@ public class ImsPhone extends ImsPhoneBase {
             mDefaultPhone.getServiceStateTracker().
                     unregisterForDataRegStateOrRatChanged(this);
             mDefaultPhone.unregisterForServiceStateChanged(this);
+            mDefaultPhone.getContext().unregisterReceiver(mRttReceiver);
         }
     }
 
@@ -329,6 +348,13 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public CallTracker getCallTracker() {
         return mCT;
+    }
+
+    public void setVoiceCallForwardingFlag(int line, boolean enable, String number) {
+        IccRecords r = mDefaultPhone.getIccRecords();
+        if (r != null) {
+            setVoiceCallForwardingFlag(r, line, enable, number);
+        }
     }
 
     public ImsExternalCallTracker getExternalCallTracker() {
@@ -663,9 +689,19 @@ public class ImsPhone extends ImsPhoneBase {
     private Connection dialInternal(String dialString, DialArgs dialArgs,
                                     ResultReceiver wrappedCallback)
             throws CallStateException {
-
-        // Need to make sure dialString gets parsed properly
-        String newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        boolean isConferenceUri = false;
+        boolean isSkipSchemaParsing = false;
+        if (dialArgs.intentExtras != null) {
+            isConferenceUri = dialArgs.intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+            isSkipSchemaParsing = dialArgs.intentExtras.getBoolean(
+                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        }
+        String newDialString = dialString;
+        // Need to make sure dialString gets parsed properly.
+        if (!isConferenceUri && !isSkipSchemaParsing) {
+            newDialString = PhoneNumberUtils.stripSeparators(dialString);
+        }
 
         // handle in-call MMI first if applicable
         if (handleInCallMmiCommands(newDialString)) {
@@ -722,6 +758,11 @@ public class ImsPhone extends ImsPhoneBase {
 
             return null;
         }
+    }
+
+    @Override
+    public void addParticipant(String dialString) throws CallStateException {
+        mCT.addParticipant(dialString);
     }
 
     @Override
@@ -889,15 +930,24 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public void getCallForwardingOption(int commandInterfaceCFReason,
             Message onComplete) {
-        if (DBG) logd("getCallForwardingOption reason=" + commandInterfaceCFReason);
+        getCallForwardingOption(commandInterfaceCFReason,
+            SERVICE_CLASS_VOICE, onComplete);
+    }
+
+    @Override
+    public void getCallForwardingOption(int commandInterfaceCFReason,
+            int commandInterfaceServiceClass, Message onComplete) {
+        if (DBG) Rlog.d(LOG_TAG, "getCallForwardingOption reason=" + commandInterfaceCFReason +
+                "serviceclass =" + commandInterfaceServiceClass);
         if (isValidCommandInterfaceCFReason(commandInterfaceCFReason)) {
-            if (DBG) logd("requesting call forwarding query.");
+            if (DBG) Rlog.d(LOG_TAG, "requesting call forwarding query.");
             Message resp;
             resp = obtainMessage(EVENT_GET_CALL_FORWARD_DONE, onComplete);
 
             try {
                 ImsUtInterface ut = mCT.getUtInterface();
-                ut.queryCallForward(getConditionFromCFReason(commandInterfaceCFReason), null, resp);
+                ut.queryCallForward(getConditionFromCFReason(commandInterfaceCFReason), null,
+                        commandInterfaceServiceClass, resp);
             } catch (ImsException e) {
                 sendErrorResponse(onComplete, e);
             }
@@ -916,6 +966,7 @@ public class ImsPhone extends ImsPhoneBase {
                 CommandsInterface.SERVICE_CLASS_VOICE, timerSeconds, onComplete);
     }
 
+    @Override
     public void setCallForwardingOption(int commandInterfaceCFAction,
             int commandInterfaceCFReason,
             String dialingNumber,
@@ -930,7 +981,7 @@ public class ImsPhone extends ImsPhoneBase {
                 (isValidCommandInterfaceCFReason(commandInterfaceCFReason))) {
             Message resp;
             Cf cf = new Cf(dialingNumber, GsmMmiCode.isVoiceUnconditionalForwarding(
-                    commandInterfaceCFReason, serviceClass), onComplete);
+                    commandInterfaceCFReason, serviceClass), onComplete, serviceClass);
             resp = obtainMessage(EVENT_SET_CALL_FORWARD_DONE,
                     isCfEnable(commandInterfaceCFAction) ? 1 : 0, 0, cf);
 
@@ -1266,11 +1317,17 @@ public class ImsPhone extends ImsPhoneBase {
     @Override
     public void registerForSuppServiceNotification(Handler h, int what, Object obj) {
         mSsnRegistrants.addUnique(h, what, obj);
+        if (mSsnRegistrants.size() == 1) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(true, null);
+        }
     }
 
     @Override
     public void unregisterForSuppServiceNotification(Handler h) {
         mSsnRegistrants.remove(h);
+        if (mSsnRegistrants.size() == 0) {
+            mDefaultPhone.mCi.setSuppServiceNotifications(false, null);
+        }
     }
 
     @Override
@@ -1283,14 +1340,27 @@ public class ImsPhone extends ImsPhoneBase {
         return mDefaultPhone.getPhoneId();
     }
 
+    public IccRecords getIccRecords() {
+        return mDefaultPhone.getIccRecords();
+    }
+
     private CallForwardInfo getCallForwardInfo(ImsCallForwardInfo info) {
         CallForwardInfo cfInfo = new CallForwardInfo();
         cfInfo.status = info.getStatus();
         cfInfo.reason = getCFReasonFromCondition(info.getCondition());
-        cfInfo.serviceClass = SERVICE_CLASS_VOICE;
         cfInfo.toa = info.getToA();
         cfInfo.number = info.getNumber();
         cfInfo.timeSeconds = info.getTimeSeconds();
+        //Check if the service class signifies Video call forward
+        //As per 3GPP TS 29002 MAP Specification : Section 17.7.10, the BearerServiceCode for
+        //"allDataCircuitAsynchronous" is '01010000' ( i.e. 80).
+        //Hence, SERVICE_CLASS_DATA_SYNC (1<<4) and SERVICE_CLASS_PACKET (1<<6)
+        //together make video service class.
+        if(info.mServiceClass == (SERVICE_CLASS_DATA_SYNC + SERVICE_CLASS_PACKET)) {
+            cfInfo.serviceClass = info.getServiceClass();
+        } else {
+            cfInfo.serviceClass = SERVICE_CLASS_VOICE;
+        }
         return cfInfo;
     }
 
@@ -1315,7 +1385,12 @@ public class ImsPhone extends ImsPhoneBase {
         } else {
             for (int i = 0, s = infos.length; i < s; i++) {
                 if (infos[i].getCondition() == ImsUtInterface.CDIV_CF_UNCONDITIONAL) {
-                    if (r != null) {
+                    //Check if the service class signifies Video call forward
+                    if (infos[i].mServiceClass == (SERVICE_CLASS_DATA_SYNC +
+                                SERVICE_CLASS_PACKET)) {
+                        setVideoCallForwardingPreference(infos[i].getStatus() == 1);
+                        notifyCallForwardingIndicator();
+                    } else if (r != null) {
                         setVoiceCallForwardingFlag(r, 1, (infos[i].getStatus() == 1),
                                 infos[i].getNumber());
                     }
@@ -1381,8 +1456,13 @@ public class ImsPhone extends ImsPhoneBase {
             case EVENT_SET_CALL_FORWARD_DONE:
                 IccRecords r = mDefaultPhone.getIccRecords();
                 Cf cf = (Cf) ar.userObj;
-                if (cf.mIsCfu && ar.exception == null && r != null) {
-                    setVoiceCallForwardingFlag(r, 1, msg.arg1 == 1, cf.mSetCfNumber);
+                if (cf.mIsCfu && ar.exception == null) {
+                    if (cf.mServiceClass == (SERVICE_CLASS_DATA_SYNC + SERVICE_CLASS_PACKET)) {
+                        setVideoCallForwardingPreference(msg.arg1 == 1);
+                        notifyCallForwardingIndicator();
+                    } else if (r != null && cf.mServiceClass == SERVICE_CLASS_VOICE) {
+                        setVoiceCallForwardingFlag(r, 1, msg.arg1 == 1, cf.mSetCfNumber);
+                    }
                 }
                 sendResponse(cf.mOnComplete, null, ar.exception);
                 break;
@@ -1436,9 +1516,13 @@ public class ImsPhone extends ImsPhoneBase {
                 if (VDBG) logd("EVENT_SERVICE_STATE_CHANGED");
                 ar = (AsyncResult) msg.obj;
                 ServiceState newServiceState = (ServiceState) ar.result;
-                // only update if roaming status changed
-                if (mRoaming != newServiceState.getRoaming()) {
-                    if (DBG) logd("Roaming state changed");
+                // only update if roaming status changed and voice or data is in service.
+                // The STATE_IN_SERVICE is checked to prevent wifi calling mode change when phone
+                // moves from roaming to no service.
+                if (mRoaming != newServiceState.getRoaming() &&
+                           (newServiceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE ||
+                           newServiceState.getDataRegState() == ServiceState.STATE_IN_SERVICE)) {
+                    if (DBG) logd("Roaming state changed- " + mRoaming);
                     updateRoamingState(newServiceState.getRoaming());
                 }
                 break;
@@ -1800,6 +1884,11 @@ public class ImsPhone extends ImsPhoneBase {
         mDefaultPhone.setBroadcastEmergencyCallStateChanges(broadcast);
     }
 
+    @Override
+    public void notifyCallForwardingIndicator() {
+        mDefaultPhone.notifyCallForwardingIndicator();
+    }
+
     @VisibleForTesting
     public PowerManager.WakeLock getWakeLock() {
         return mWakeLock;
@@ -1827,6 +1916,209 @@ public class ImsPhone extends ImsPhoneBase {
         TelephonyManager tm = (TelephonyManager) mContext
                 .getSystemService(Context.TELEPHONY_SERVICE);
         return tm.isNetworkRoaming();
+    }
+
+    private BroadcastReceiver mRttReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (QtiCallConstants.ACTION_SEND_RTT_TEXT.equals(intent.getAction())) {
+                Rlog.d(LOG_TAG, "RTT: Received ACTION_SEND_RTT_TEXT");
+                String data = intent.getStringExtra(QtiCallConstants.RTT_TEXT_VALUE);
+                sendRttMessage(data);
+            } else if (QtiCallConstants.ACTION_RTT_OPERATION.equals(intent.getAction())) {
+                Rlog.d(LOG_TAG, "RTT: Received ACTION_RTT_OPERATION");
+                int data = intent.getIntExtra(QtiCallConstants.RTT_OPERATION_TYPE, 0);
+                checkIfModifyRequestOrResponse(data);
+            } else {
+                Rlog.d(LOG_TAG, "RTT: unknown intent");
+            }
+        }
+    };
+
+    /**
+     * Sends Rtt message
+     * Rtt Message can be sent only when -
+     * operating mode is RTT_FULL and for non-VT calls only based on config
+     *
+     * @param data The Rtt text to be sent
+     */
+    public void sendRttMessage(String data) {
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        if (!imsCall.isRttCall() || !isFgCallActive()) {
+            return;
+        }
+
+        // Check for empty message
+        if (TextUtils.isEmpty(data)) {
+            Rlog.d(LOG_TAG, "RTT: Text null");
+            return;
+        }
+
+        if (!isRttVtCallAllowed(imsCall)) {
+            Rlog.d(LOG_TAG, "RTT: InCorrect mode");
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: sendRttMessage");
+        imsCall.sendRttMessage(data);
+    }
+
+    /**
+     * Sends RTT Upgrade request
+     *
+     * @param to: expected profile
+     */
+    public void sendRttModifyRequest(ImsCallProfile to) {
+        Rlog.d(LOG_TAG, "RTT: sendRttModifyRequest");
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        try {
+            imsCall.sendRttModifyRequest(to);
+        } catch (ImsException e) {
+            Rlog.e(LOG_TAG, "RTT: sendRttModifyRequest exception = " + e);
+        }
+    }
+
+    /**
+     * Sends RTT Upgrade response
+     *
+     * @param data : response for upgrade
+     */
+    public void sendRttModifyResponse(int response) {
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return;
+        }
+
+        if (!isRttVtCallAllowed(imsCall)) {
+            Rlog.d(LOG_TAG, "RTT: Not allowed for VT");
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: sendRttModifyResponse");
+        imsCall.sendRttModifyResponse(mapRequestToResponse(response));
+    }
+
+    // Utility to check if the value coming in intent is for upgrade initiate or upgrade response
+    private void checkIfModifyRequestOrResponse(int data) {
+        if (!(isRttSupported() && (isRttOn() || isInEmergencyCall())) || !isFgCallActive()) {
+            return;
+        }
+
+        Rlog.d(LOG_TAG, "RTT: checkIfModifyRequestOrResponse data =  " + data);
+        switch (data) {
+            case QtiCallConstants.RTT_UPGRADE_INITIATE:
+                // Rtt Upgrade means enable Rtt
+                packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_FULL);
+                break;
+            case QtiCallConstants.RTT_DOWNGRADE_INITIATE:
+                // Rtt downrade means disable Rtt
+                packRttModifyRequestToProfile(ImsStreamMediaProfile.RTT_MODE_DISABLED);
+                break;
+            case QtiCallConstants.RTT_UPGRADE_CONFIRM:
+            case QtiCallConstants.RTT_UPGRADE_REJECT:
+                sendRttModifyResponse(data);
+                break;
+        }
+    }
+
+    private void packRttModifyRequestToProfile(int data) {
+        if (!canSendRttModifyRequest()) {
+            Rlog.d(LOG_TAG, "RTT: cannot send rtt modify request");
+            return;
+        }
+
+        ImsCallProfile fromProfile = getForegroundCall().getImsCall().getCallProfile();
+        ImsCallProfile toProfile = new ImsCallProfile(fromProfile.mServiceType,
+                fromProfile.mCallType);
+        toProfile.mMediaProfile.setRttMode(data);
+
+        Rlog.d(LOG_TAG, "RTT: packRttModifyRequestToProfile");
+        sendRttModifyRequest(toProfile);
+    }
+
+    private boolean canSendRttModifyRequest() {
+        ImsCall imsCall = getForegroundCall().getImsCall();
+        if (imsCall == null) {
+            Rlog.d(LOG_TAG, "RTT: imsCall null");
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean mapRequestToResponse(int response) {
+        switch (response) {
+            case QtiCallConstants.RTT_UPGRADE_CONFIRM:
+                return true;
+            case QtiCallConstants.RTT_UPGRADE_REJECT:
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /*
+     * Returns true if Mode is RTT_FULL, false otherwise
+     */
+    private boolean isInFullRttMode() {
+        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
+        Rlog.d(LOG_TAG, "RTT: isInFullRttMode mode = " + mode);
+        return (mode == QtiCallConstants.RTT_MODE_FULL);
+    }
+
+    /*
+     * Rtt for VT calls is not supported for certain operators
+     * Check the config and process the request
+     */
+    public boolean isRttVtCallAllowed(ImsCall call) {
+        int mode = QtiImsExtUtils.getRttOperatingMode(mContext);
+        Rlog.d(LOG_TAG, "RTT: isRttVtCallAllowed mode = " + mode);
+
+        if (call.getCallProfile().isVideoCall() &&
+                !QtiImsExtUtils.isRttSupportedOnVtCalls(mPhoneId, mContext)) {
+            return false;
+        }
+        return true;
+    }
+
+    public boolean isRttSupported() {
+        if (!QtiImsExtUtils.isRttSupported(mPhoneId, mContext)) {
+            Rlog.d(LOG_TAG, "RTT: RTT is not supported");
+            return false;
+        }
+        Rlog.d(LOG_TAG, "RTT: rtt supported = " +
+                QtiImsExtUtils.isRttSupported(mPhoneId, mContext) + ", Rtt mode = " +
+                QtiImsExtUtils.getRttOperatingMode(mContext));
+        return true;
+    }
+
+    public boolean isRttOn() {
+        if (!QtiImsExtUtils.isRttOn(mContext)) {
+            Rlog.d(LOG_TAG, "RTT: RTT is off");
+            return false;
+        }
+        Rlog.d(LOG_TAG, "RTT: Rtt on = " + QtiImsExtUtils.isRttOn(mContext));
+        return true;
+    }
+
+    public boolean isFgCallActive() {
+        // process the request only if foreground is active
+        if (ImsPhoneCall.State.ACTIVE != getForegroundCall().getState()) {
+            Rlog.d(LOG_TAG, "RTT: isFgCallActive fg call not active");
+            return false;
+        }
+        return true;
     }
 
     @Override

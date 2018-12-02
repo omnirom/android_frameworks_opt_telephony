@@ -27,8 +27,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.telephony.Rlog;
+import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 
+import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.PhoneSwitcher;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.SubscriptionMonitor;
@@ -56,6 +58,7 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private boolean mIsActive;
     private boolean mIsDefault;
     private int mSubscriptionId;
+    private Context mContext;
 
     private final static int TELEPHONY_NETWORK_SCORE = 50;
 
@@ -66,10 +69,14 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private static final int EVENT_NETWORK_REQUEST              = 4;
     private static final int EVENT_NETWORK_RELEASE              = 5;
 
+    private static final int PRIMARY_SLOT = 0;
+    private static final int SECONDARY_SLOT = 1;
+
     public TelephonyNetworkFactory(PhoneSwitcher phoneSwitcher,
             SubscriptionController subscriptionController, SubscriptionMonitor subscriptionMonitor,
             Looper looper, Context context, int phoneId, DcTracker dcTracker) {
         super(looper, context, "TelephonyNetworkFactory[" + phoneId + "]", null);
+        mContext = context;
         mInternalHandler = new InternalHandler(looper);
 
         setCapabilityFilter(makeNetworkFilter(subscriptionController, phoneId));
@@ -174,15 +181,13 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     // apply or revoke requests if our active-ness changes
     private void onActivePhoneSwitch() {
         final boolean newIsActive = mPhoneSwitcher.isPhoneActive(mPhoneId);
-        if (mIsActive != newIsActive) {
-            mIsActive = newIsActive;
-            String logString = "onActivePhoneSwitch(" + mIsActive + ", " + mIsDefault + ")";
-            if (DBG) log(logString);
-            if (mIsDefault) {
-                applyRequests(mDefaultRequests, (mIsActive ? REQUEST : RELEASE), logString);
-            }
-            applyRequests(mSpecificRequests, (mIsActive ? REQUEST : RELEASE), logString);
+        mIsActive = newIsActive;
+        String logString = "onActivePhoneSwitch(" + mIsActive + ", " + mIsDefault + ")";
+        if (DBG) log(logString);
+        if (mIsDefault) {
+            applyRequests(mDefaultRequests, (mIsActive ? REQUEST : RELEASE), logString);
         }
+        applyRequests(mSpecificRequests, (mIsActive ? REQUEST : RELEASE), logString);
     }
 
     // watch for phone->subId changes, reapply new filter and let
@@ -207,7 +212,11 @@ public class TelephonyNetworkFactory extends NetworkFactory {
             String logString = "onDefaultChange(" + mIsActive + "," + mIsDefault + ")";
             if (DBG) log(logString);
             if (mIsActive == false) return;
-            applyRequests(mDefaultRequests, (mIsDefault ? REQUEST : RELEASE), logString);
+            if (mSubscriptionController.getActiveSubInfoCount(mContext.getOpPackageName()) == 1) {
+                applyRequests(mDefaultRequests, (mIsDefault ? REQUEST : RELEASE), logString);
+            } else if (!mIsDefault) {
+                applyRequests(mDefaultRequests, RELEASE, logString);
+            }
         }
     }
 
@@ -216,6 +225,15 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         Message msg = mInternalHandler.obtainMessage(EVENT_NETWORK_REQUEST);
         msg.obj = networkRequest;
         msg.sendToTarget();
+    }
+
+    private boolean isNetworkCapabilityEims(NetworkRequest networkRequest) {
+        return networkRequest.networkCapabilities.hasCapability(
+            android.net.NetworkCapabilities.NET_CAPABILITY_EIMS);
+    }
+
+    private boolean isSimPresentInSecondarySlot() {
+        return TelephonyManager.getDefault().hasIccCard(SECONDARY_SLOT);
     }
 
     private void onNeedNetworkFor(Message msg) {
@@ -239,7 +257,11 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                 isApplicable = true;
             }
         }
-        if (mIsActive && isApplicable) {
+
+        //Allow EIMS networkrequest on default slot in SIM less case.
+        if ((mIsActive && isApplicable) || (isNetworkCapabilityEims(networkRequest) &&
+                PhoneFactory.getDefaultPhone().getPhoneId() == mPhoneId &&
+                !isSimPresentInSecondarySlot())) {
             String s = "onNeedNetworkFor";
             localLog.log(s);
             log(s + " " + networkRequest);
