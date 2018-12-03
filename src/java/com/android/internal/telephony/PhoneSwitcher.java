@@ -90,7 +90,7 @@ public class PhoneSwitcher extends Handler {
     // 1. In modem layer, which subscription is preferred to have data traffic on.
     // 2. In TelephonyNetworkFactory, which subscription will apply default network requets, which
     //    are requests without specifying a subId.
-    private int mPreferredDataSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    protected int mPreferredDataSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
     @VisibleForTesting
     // Corresponding phoneId after considerting mPreferredDataSubId and mDefaultDataSubId above.
@@ -537,7 +537,7 @@ public class PhoneSwitcher extends Handler {
 
     // This updates mPreferredDataPhoneId which decides which phone should
     // handle default network requests.
-    private void updatePhoneIdForDefaultNetworkRequests() {
+    protected void updatePhoneIdForDefaultNetworkRequests() {
         int subId = getSubIdForDefaultNetworkRequests();
         int phoneId = SubscriptionManager.INVALID_PHONE_INDEX;
 
