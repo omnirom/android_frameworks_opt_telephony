@@ -201,8 +201,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
     protected static final int EVENT_MODEM_RESET                    = 45;
     protected static final int EVENT_VRS_OR_RAT_CHANGED             = 46;
+    // Radio state change
+    protected static final int EVENT_RADIO_STATE_CHANGED            = 47;
 
-    protected static final int EVENT_LAST                       = EVENT_VRS_OR_RAT_CHANGED;
+    protected static final int EVENT_LAST                       = EVENT_RADIO_STATE_CHANGED;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -608,7 +610,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public boolean supportsConversionOfCdmaCallerIdMmiCodesWhileRoaming() {
         CarrierConfigManager configManager = (CarrierConfigManager)
                 getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        PersistableBundle b = configManager.getConfig();
+        PersistableBundle b = configManager.getConfigForSubId(getSubId());
         if (b != null) {
             return b.getBoolean(
                     CarrierConfigManager
@@ -1726,7 +1728,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param workSource calling WorkSource
      * @param rspMsg the response message containing the cell info
      */
-    public void getAllCellInfo(WorkSource workSource, Message rspMsg) {
+    public void requestCellInfoUpdate(WorkSource workSource, Message rspMsg) {
         getServiceStateTracker().requestAllCellInfo(workSource, rspMsg);
     }
 
@@ -3322,6 +3324,20 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * @return true if the IMS capability for the registration technology specified is available,
+     * false otherwise.
+     */
+    public boolean isImsCapabilityAvailable(int capability, int regTech) {
+        Phone imsPhone = mImsPhone;
+        boolean isAvailable = false;
+        if (imsPhone != null) {
+            isAvailable = imsPhone.isImsCapabilityAvailable(capability, regTech);
+        }
+        Rlog.d(LOG_TAG, "isImsRegistered =" + isAvailable);
+        return isAvailable;
+    }
+
+    /**
      * Get Volte Feature Availability
      */
     public boolean isVolteEnabled() {
@@ -3363,17 +3379,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * @return returns the latest radio state from the modem
+     */
+    public int getRadioPowerState() {
+        return mCi.getRadioState();
+    }
+
+    /**
      * Is Radio Present on the device and is it accessible
      */
     public boolean isRadioAvailable() {
-        return mCi.getRadioState().isAvailable();
+        return mCi.getRadioState() != TelephonyManager.RADIO_POWER_UNAVAILABLE;
     }
 
     /**
      * Is Radio turned on
      */
     public boolean isRadioOn() {
-        return mCi.getRadioState().isOn();
+        return mCi.getRadioState() == TelephonyManager.RADIO_POWER_ON;
     }
 
     /**
