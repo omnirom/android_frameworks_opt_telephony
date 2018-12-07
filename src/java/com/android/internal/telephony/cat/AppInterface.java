@@ -39,6 +39,7 @@ public interface AppInterface {
     //This is used to send ALPHA string from card to STK App.
     public static final String ALPHA_STRING = "alpha_string";
 
+    public static final String AID = "aid";
     // This is used to send refresh-result when MSG_ID_ICC_REFRESH is received.
     public static final String REFRESH_RESULT = "refresh_result";
     //This is used to send card status from card to STK App.
@@ -78,6 +79,7 @@ public interface AppInterface {
         SEND_SS(0x11),
         SEND_USSD(0x12),
         SEND_SMS(0x13),
+        RUN_AT(0x34),
         SEND_DTMF(0x14),
         SET_UP_EVENT_LIST(0x05),
         SET_UP_IDLE_MODE_TEXT(0x28),

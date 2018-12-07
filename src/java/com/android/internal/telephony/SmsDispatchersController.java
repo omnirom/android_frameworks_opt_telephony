@@ -255,17 +255,26 @@ public class SmsDispatchersController extends Handler {
         String newFormat =
                 (PhoneConstants.PHONE_TYPE_CDMA == mPhone.getPhoneType())
                         ? mCdmaDispatcher.getFormat() : mGsmDispatcher.getFormat();
+        if(mImsSmsDispatcher.isAvailable() && !tracker.mIsFallBackRetry) {
+            newFormat = mImsSmsDispatcher.getFormat();
+        }
 
         // was previously sent sms format match with voice tech?
         if (oldFormat.equals(newFormat)) {
-            if (isCdmaFormat(newFormat)) {
-                Rlog.d(TAG, "old format matched new format (cdma)");
-                mCdmaDispatcher.sendSms(tracker);
+            if (mImsSmsDispatcher.isAvailable() && !tracker.mIsFallBackRetry) {
+                Rlog.d(TAG, "old format matched new format processing over IMS");
+                mImsSmsDispatcher.sendSms(tracker);
                 return;
             } else {
-                Rlog.d(TAG, "old format matched new format (gsm)");
-                mGsmDispatcher.sendSms(tracker);
-                return;
+                if (isCdmaFormat(newFormat)) {
+                    Rlog.d(TAG, "old format matched new format (cdma)");
+                    mCdmaDispatcher.sendSms(tracker);
+                    return;
+                } else {
+                    Rlog.d(TAG, "old format matched new format (gsm)");
+                    mGsmDispatcher.sendSms(tracker);
+                    return;
+                }
             }
         }
 
@@ -322,8 +331,12 @@ public class SmsDispatchersController extends Handler {
         // replace old smsc and pdu with newly encoded ones
         map.put("smsc", pdu.encodedScAddress);
         map.put("pdu", pdu.encodedMessage);
-
-        SMSDispatcher dispatcher = (isCdmaFormat(newFormat)) ? mCdmaDispatcher : mGsmDispatcher;
+        SMSDispatcher dispatcher;
+        if (mImsSmsDispatcher.isAvailable() && !tracker.mIsFallBackRetry) {
+            dispatcher = mImsSmsDispatcher;
+        } else {
+            dispatcher = (isCdmaFormat(newFormat)) ? mCdmaDispatcher : mGsmDispatcher;
+        }
 
         tracker.mFormat = dispatcher.getFormat();
         dispatcher.sendSms(tracker);
@@ -449,7 +462,7 @@ public class SmsDispatchersController extends Handler {
                             PendingIntent sentIntent, PendingIntent deliveryIntent, Uri messageUri,
                             String callingPkg, boolean persistMessage, int priority,
                             boolean expectMore, int validityPeriod) {
-        if (mImsSmsDispatcher.isAvailable()) {
+        if (mImsSmsDispatcher.isAvailable() || mImsSmsDispatcher.isEmergencySmsSupport(destAddr)) {
             mImsSmsDispatcher.sendText(destAddr, scAddr, text, sentIntent, deliveryIntent,
                     messageUri, callingPkg, persistMessage, SMS_MESSAGE_PRIORITY_NOT_SPECIFIED,
                     false /*expectMore*/, SMS_MESSAGE_PERIOD_NOT_SPECIFIED);

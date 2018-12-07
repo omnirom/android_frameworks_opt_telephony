@@ -146,6 +146,7 @@ public class SimulatedCommands extends BaseCommands
     private boolean mDcSuccess = true;
     private SetupDataCallResult mSetupDataCallResult;
     private boolean mIsRadioPowerFailResponse = false;
+    private String smscAddress;
 
     //***** Constructor
     public
@@ -1051,6 +1052,7 @@ public class SimulatedCommands extends BaseCommands
      */
     @Override
     public void startDtmf(char c, Message result) {
+        SimulatedCommandsVerifier.getInstance().startDtmf(c, result);
         resultSuccess(result, null);
     }
 
@@ -1212,12 +1214,15 @@ public class SimulatedCommands extends BaseCommands
 
     @Override
     public void getSmscAddress(Message result) {
-        unimplemented(result);
+        resultSuccess(result, smscAddress);
+        SimulatedCommandsVerifier.getInstance().getSmscAddress(result);
     }
 
     @Override
     public void setSmscAddress(String address, Message result) {
-        unimplemented(result);
+        smscAddress = address;
+        resultSuccess(result, null);
+        SimulatedCommandsVerifier.getInstance().setSmscAddress(address, result);
     }
 
     @Override
@@ -1786,6 +1791,13 @@ public class SimulatedCommands extends BaseCommands
     public void sendCdmaSms(byte[] pdu, Message response){
         SimulatedCommandsVerifier.getInstance().sendCdmaSms(pdu, response);
         resultSuccess(response, null);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void sendCdmaSms(byte[] pdu, Message response, boolean  expectMore){
     }
 
     @Override
