@@ -173,7 +173,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             // Prior to phone switch to GSM, if CDMA has any emergency call
             // data will be in disabled state, after switching to GSM enable data.
             if (mIsInEmergencyCall) {
-                mPhone.mDcTracker.setInternalDataEnabled(true);
+                EcbmHandler.getInstance().setInternalDataEnabled(true);
             }
         } else {
             mConnections = new GsmCdmaConnection[MAX_CONNECTIONS_CDMA];
@@ -385,7 +385,7 @@ public class GsmCdmaCallTracker extends CallTracker {
     //CDMA
     public void setIsInEmergencyCall() {
         mIsInEmergencyCall = true;
-        mPhone.mDcTracker.setInternalDataEnabled(false);
+        EcbmHandler.getInstance().setInternalDataEnabled(false);
         mPhone.notifyEmergencyCallRegistrants(true);
         mPhone.sendEmergencyCallStateChange(true);
     }
@@ -1599,7 +1599,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             }
             if (!inEcm) {
                 // Re-initiate data connection
-                mPhone.mDcTracker.setInternalDataEnabled(true);
+                EcbmHandler.getInstance().setInternalDataEnabled(true);
                 mPhone.notifyEmergencyCallRegistrants(false);
             }
             mPhone.sendEmergencyCallStateChange(false);
