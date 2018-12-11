@@ -99,6 +99,7 @@ public class EcbmHandler extends Handler {
         for (int i = 0; i < mNumPhones; i++) {
             trackers[i] = new ECBMTracker();
         }
+        mIsPhoneInEcmState = getInEcmMode();
     }
 
     public static EcbmHandler getInstance () {
@@ -271,9 +272,8 @@ public class EcbmHandler extends Handler {
         if (mEcmExitRespRegistrant != null) {
             mEcmExitRespRegistrant.notifyRegistrant();
         }
-        if (isInEcm()) {
-            setIsInEcm(false);
-        }
+
+        setIsInEcm(false);
 
         // release wakeLock
         if (mWakeLock.isHeld()) {
@@ -283,7 +283,7 @@ public class EcbmHandler extends Handler {
         // send an Intent
         sendEmergencyCallbackModeChange();
         // Re-initiate data connection
-        trackers[phoneId].mPhone.mDcTracker.setInternalDataEnabled(true);
+        setInternalDataEnabled(true);
         trackers[phoneId].mPhone.notifyEmergencyCallRegistrants(false);
     }
 
@@ -321,6 +321,14 @@ public class EcbmHandler extends Handler {
         mEcmTimerResetRegistrants.notifyResult(flag);
     }
 
+    public void setInternalDataEnabled(boolean flag) {
+        for (int i = 0; i < mNumPhones; i++) {
+            if (trackers[i].mPhone != null && trackers[i].mPhone.mDcTracker != null) {
+                trackers[i].mPhone.mDcTracker.setInternalDataEnabled(flag);
+            }
+        }
+    }
+
     /**
      * Registration point for Ecm timer reset
      *
@@ -349,6 +357,10 @@ public class EcbmHandler extends Handler {
         TelephonyManager.setTelephonyProperty(TelephonyProperties.PROPERTY_INECM_MODE,
                 String.valueOf(isInEcm));
         mIsPhoneInEcmState = isInEcm;
+    }
+
+    public static boolean getInEcmMode() {
+        return SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false);
     }
 
     private void logd(String s) {
