@@ -161,6 +161,8 @@ public class RILTest extends TelephonyTest {
     @Mock
     private IOemHook mOemHookProxy;
 
+    private HalVersion mRadioVersion = new HalVersion(1, 0);
+
     private RilHandler mRilHandler;
     private RIL mRILInstance;
     private RIL mRILUnderTest;
@@ -255,6 +257,11 @@ public class RILTest extends TelephonyTest {
             mRILUnderTest = spy(mRILInstance);
             doReturn(mRadioProxy).when(mRILUnderTest).getRadioProxy(any());
             doReturn(mOemHookProxy).when(mRILUnderTest).getOemHookProxy(any());
+
+            try {
+                replaceInstance(RIL.class, "mRadioVersion", mRILUnderTest, mRadioVersion);
+            } catch (Exception e) {
+            }
 
             mRilHandler = mRILUnderTest.getRilHandler();
 
@@ -712,7 +719,7 @@ public class RILTest extends TelephonyTest {
                 mSerialNumberCaptor.capture(),
                 eq((DataProfileInfo) invokeMethod(
                         mRILInstance,
-                        "convertToHalDataProfile",
+                        "convertToHalDataProfile10",
                         new Class<?>[] {DataProfile.class},
                         new Object[] {dataProfile})),
                 eq(dataProfile.isPersistent()),
@@ -1023,7 +1030,7 @@ public class RILTest extends TelephonyTest {
                 mRILInstance,
                 "obtainRequest",
                 new Class<?>[] {Integer.TYPE, Message.class, WorkSource.class},
-                new Object[] {RIL_REQUEST_GET_SIM_STATUS, obtainMessage(), null});
+                new Object[] {RIL_REQUEST_GET_SIM_STATUS, obtainMessage(), new WorkSource()});
 
         // The wake lock should be held when obtain a RIL request.
         assertTrue(mRILInstance.getWakeLock(RIL.FOR_WAKELOCK).isHeld());
@@ -1110,7 +1117,6 @@ public class RILTest extends TelephonyTest {
         CellInfoLte expected = new CellInfoLte();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityLte cil = new CellIdentityLte(CI, PCI, TAC, EARFCN, Integer.MAX_VALUE, MCC_STR,
                 MNC_STR, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthLte css = new CellSignalStrengthLte(
@@ -1118,6 +1124,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(cil);
         expected.setCellSignalStrength(css);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_UNKNOWN);
+        cellInfoLte.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoLte);
     }
 
@@ -1151,7 +1158,6 @@ public class RILTest extends TelephonyTest {
         CellInfoGsm expected = new CellInfoGsm();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityGsm ci = new CellIdentityGsm(
                 LAC, CID, ARFCN, BSIC, MCC_STR, MNC_STR, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthGsm cs = new CellSignalStrengthGsm(
@@ -1159,6 +1165,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_UNKNOWN);
+        cellInfoGsm.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoGsm);
     }
 
@@ -1191,7 +1198,6 @@ public class RILTest extends TelephonyTest {
         CellInfoWcdma expected = new CellInfoWcdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityWcdma ci = new CellIdentityWcdma(
                 LAC, CID, PSC, UARFCN, MCC_STR, MNC_STR, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthWcdma cs = new CellSignalStrengthWcdma(
@@ -1199,6 +1205,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_UNKNOWN);
+        cellInfoWcdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoWcdma);
     }
 
@@ -1232,7 +1239,6 @@ public class RILTest extends TelephonyTest {
         CellInfoTdscdma expected = new CellInfoTdscdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
         CellIdentityTdscdma ci = new CellIdentityTdscdma(
                 MCC_STR, MNC_STR, LAC, CID, PSC, UARFCN, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
@@ -1240,6 +1246,7 @@ public class RILTest extends TelephonyTest {
                 SIGNAL_STRENGTH, BIT_ERROR_RATE, RSCP);
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
+        cellInfoTdscdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoTdscdma);
     }
 
@@ -1274,7 +1281,6 @@ public class RILTest extends TelephonyTest {
         CellInfoCdma expected = new CellInfoCdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityCdma ci = new CellIdentityCdma(
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
@@ -1283,6 +1289,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_UNKNOWN);
+        cellInfoCdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoCdma);
     }
 
@@ -1295,7 +1302,6 @@ public class RILTest extends TelephonyTest {
         CellInfoLte expected = new CellInfoLte();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityLte cil = new CellIdentityLte(
                 CI, PCI, TAC, EARFCN, BANDWIDTH, MCC_STR, MNC_STR, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthLte css = new CellSignalStrengthLte(
@@ -1303,6 +1309,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(cil);
         expected.setCellSignalStrength(css);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoLte.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoLte);
     }
 
@@ -1316,7 +1323,6 @@ public class RILTest extends TelephonyTest {
         CellInfoLte expected = new CellInfoLte();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityLte cil = new CellIdentityLte(CI, PCI, TAC, EARFCN, BANDWIDTH, MCC_STR, MNC_STR,
                 EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthLte css = new CellSignalStrengthLte(
@@ -1324,6 +1330,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(cil);
         expected.setCellSignalStrength(css);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoLte.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoLte);
     }
 
@@ -1339,7 +1346,6 @@ public class RILTest extends TelephonyTest {
         CellInfoLte expected = new CellInfoLte();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityLte cil = new CellIdentityLte(
                 CI, PCI, TAC, EARFCN, BANDWIDTH, null, null, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthLte css = new CellSignalStrengthLte(
@@ -1347,6 +1353,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(cil);
         expected.setCellSignalStrength(css);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoLte.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoLte);
     }
 
@@ -1359,7 +1366,6 @@ public class RILTest extends TelephonyTest {
         CellInfoGsm expected = new CellInfoGsm();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityGsm ci = new CellIdentityGsm(
                 LAC, CID, ARFCN, BSIC, MCC_STR, MNC_STR, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthGsm cs = new CellSignalStrengthGsm(
@@ -1367,6 +1373,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoGsm.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoGsm);
     }
 
@@ -1380,7 +1387,6 @@ public class RILTest extends TelephonyTest {
         CellInfoGsm expected = new CellInfoGsm();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityGsm ci = new CellIdentityGsm(
                 LAC, CID, ARFCN, BSIC, MCC_STR, MNC_STR, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthGsm cs = new CellSignalStrengthGsm(
@@ -1388,6 +1394,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoGsm.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoGsm);
     }
 
@@ -1403,7 +1410,6 @@ public class RILTest extends TelephonyTest {
         CellInfoGsm expected = new CellInfoGsm();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityGsm ci = new CellIdentityGsm(
                 LAC, CID, ARFCN, BSIC, null, null, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthGsm cs = new CellSignalStrengthGsm(
@@ -1411,6 +1417,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
         expected.setCellSignalStrength(cs);
+        cellInfoGsm.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoGsm);
     }
 
@@ -1424,7 +1431,6 @@ public class RILTest extends TelephonyTest {
         CellInfoWcdma expected = new CellInfoWcdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityWcdma ci = new CellIdentityWcdma(
                 LAC, CID, PSC, UARFCN, MCC_STR, MNC_STR, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthWcdma cs =
@@ -1432,6 +1438,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoWcdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoWcdma);
     }
 
@@ -1445,7 +1452,6 @@ public class RILTest extends TelephonyTest {
         CellInfoWcdma expected = new CellInfoWcdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityWcdma ci = new CellIdentityWcdma(
                 LAC, CID, PSC, UARFCN, MCC_STR, MNC_STR, EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
         CellSignalStrengthWcdma cs = new CellSignalStrengthWcdma(
@@ -1453,6 +1459,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoWcdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoWcdma);
     }
 
@@ -1468,7 +1475,6 @@ public class RILTest extends TelephonyTest {
         CellInfoWcdma expected = new CellInfoWcdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityWcdma ci = new CellIdentityWcdma(
                 LAC, CID, PSC, UARFCN, null, null, ALPHA_LONG, ALPHA_SHORT);
         CellSignalStrengthWcdma cs = new CellSignalStrengthWcdma(
@@ -1476,6 +1482,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoWcdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoWcdma);
     }
 
@@ -1488,7 +1495,6 @@ public class RILTest extends TelephonyTest {
         CellInfoCdma expected = new CellInfoCdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityCdma ci = new CellIdentityCdma(
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 ALPHA_LONG, ALPHA_SHORT);
@@ -1497,6 +1503,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoCdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoCdma);
     }
 
@@ -1509,7 +1516,6 @@ public class RILTest extends TelephonyTest {
         CellInfoCdma expected = new CellInfoCdma();
         expected.setRegistered(false);
         expected.setTimeStamp(TIMESTAMP);
-        expected.setTimeStampType(RIL_TIMESTAMP_TYPE_OEM_RIL);
         CellIdentityCdma ci = new CellIdentityCdma(
                 NETWORK_ID, SYSTEM_ID, BASESTATION_ID, LONGITUDE, LATITUDE,
                 EMPTY_ALPHA_LONG, EMPTY_ALPHA_SHORT);
@@ -1518,6 +1524,7 @@ public class RILTest extends TelephonyTest {
         expected.setCellIdentity(ci);
         expected.setCellSignalStrength(cs);
         expected.setCellConnectionStatus(CellInfo.CONNECTION_NONE);
+        cellInfoCdma.setTimeStamp(TIMESTAMP); // override the timestamp
         assertEquals(expected, cellInfoCdma);
     }
 

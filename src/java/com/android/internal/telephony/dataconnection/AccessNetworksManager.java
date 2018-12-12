@@ -29,6 +29,7 @@ import android.os.PersistableBundle;
 import android.os.RegistrantList;
 import android.os.RemoteException;
 import android.os.UserHandle;
+import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
 import android.telephony.data.ApnSetting;
@@ -40,8 +41,12 @@ import android.text.TextUtils;
 import android.util.SparseArray;
 
 import com.android.internal.telephony.Phone;
+import com.android.internal.util.IndentingPrintWriter;
 
+import java.io.FileDescriptor;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Access network manager manages the qualified/available networks for mobile data connection.
@@ -51,6 +56,16 @@ import java.util.Arrays;
 public class AccessNetworksManager {
     private static final String TAG = AccessNetworksManager.class.getSimpleName();
     private static final boolean DBG = false;
+
+    private static final int[] SUPPORTED_APN_TYPES = {
+            ApnSetting.TYPE_DEFAULT,
+            ApnSetting.TYPE_MMS,
+            ApnSetting.TYPE_FOTA,
+            ApnSetting.TYPE_IMS,
+            ApnSetting.TYPE_CBS,
+            ApnSetting.TYPE_SUPL,
+            ApnSetting.TYPE_EMERGENCY
+    };
 
     private final Phone mPhone;
 
@@ -88,12 +103,24 @@ public class AccessNetworksManager {
      * Represents qualified network types list on a specific APN type.
      */
     public static class QualifiedNetworks {
-        @ApnType
-        public final int apnType;
+        public final @ApnType int apnType;
         public final int[] qualifiedNetworks;
         public QualifiedNetworks(@ApnType int apnType, int[] qualifiedNetworks) {
             this.apnType = apnType;
             this.qualifiedNetworks = qualifiedNetworks;
+        }
+
+        @Override
+        public String toString() {
+            List<String> accessNetworkStrings = new ArrayList<>();
+            for (int network : qualifiedNetworks) {
+                accessNetworkStrings.add(AccessNetworkType.toString(network));
+            }
+            return "[QualifiedNetworks: apnType="
+                    + ApnSetting.getApnTypeString(apnType)
+                    + ", networks="
+                    + TextUtils.join(", ", accessNetworkStrings)
+                    + "]";
         }
     }
 
@@ -132,24 +159,34 @@ public class AccessNetworksManager {
     private final class QualifiedNetworksServiceCallback extends
             IQualifiedNetworksServiceCallback.Stub {
         @Override
-        public void onQualifiedNetworkTypesChanged(int apnType, int[] qualifiedNetworkTypesList) {
-            log("onQualifiedNetworkTypesChanged. apnType = "
-                    + ApnSetting.getApnTypesStringFromBitmask(apnType)
-                    + ", networks = " + Arrays.toString(qualifiedNetworkTypesList));
-
-            // TODO: Verify the preference from data settings manager to make sure the order
-            // of the networks do not violate users/carrier's preference.
-            if (mAvailableNetworks.get(apnType) != null) {
-                if (Arrays.equals(mAvailableNetworks.get(apnType), qualifiedNetworkTypesList)) {
-                    log("Available networks for "
-                            + ApnSetting.getApnTypesStringFromBitmask(apnType) + " not changed.");
-                    return;
+        public void onQualifiedNetworkTypesChanged(int apnTypes, int[] qualifiedNetworkTypes) {
+            log("onQualifiedNetworkTypesChanged. apnTypes = "
+                    + ApnSetting.getApnTypesStringFromBitmask(apnTypes)
+                    + ", networks = " + Arrays.toString(qualifiedNetworkTypes));
+            List<QualifiedNetworks> qualifiedNetworksList = new ArrayList<>();
+            for (int supportedApnType : SUPPORTED_APN_TYPES) {
+                if ((apnTypes & supportedApnType) == supportedApnType) {
+                    // TODO: Verify the preference from data settings manager to make sure the order
+                    // of the networks do not violate users/carrier's preference.
+                    if (mAvailableNetworks.get(supportedApnType) != null) {
+                        if (Arrays.equals(mAvailableNetworks.get(supportedApnType),
+                                qualifiedNetworkTypes)) {
+                            log("Available networks for "
+                                    + ApnSetting.getApnTypesStringFromBitmask(supportedApnType)
+                                    + " not changed.");
+                            continue;
+                        }
+                    }
+                    mAvailableNetworks.put(supportedApnType, qualifiedNetworkTypes);
+                    qualifiedNetworksList.add(new QualifiedNetworks(supportedApnType,
+                            qualifiedNetworkTypes));
                 }
             }
-            mAvailableNetworks.put(apnType, qualifiedNetworkTypesList);
-            mQualifiedNetworksChangedRegistrants.notifyRegistrants(
-                    new AsyncResult(null,
-                            new QualifiedNetworks(apnType, qualifiedNetworkTypesList), null));
+
+            if (!qualifiedNetworksList.isEmpty()) {
+                mQualifiedNetworksChangedRegistrants.notifyRegistrants(
+                        new AsyncResult(null, qualifiedNetworksList, null));
+            }
         }
     }
 
@@ -266,12 +303,29 @@ public class AccessNetworksManager {
     }
 
     /**
-     * @return True if IWLAN legacy mode is used. No qualified network service there to provide
-     * information for platform to setup data connection. All data connection requests will be
-     * routed to the default (i.e. cellular) data/network service.
+     * Dump the state of transport manager
+     *
+     * @param fd File descriptor
+     * @param pw Print writer
+     * @param args Arguments
      */
-    public boolean isInLegacyMode() {
-        return TextUtils.isEmpty(getQualifiedNetworksServicePackageName());
+    public void dump(FileDescriptor fd, IndentingPrintWriter pw, String[] args) {
+        pw.println("AccessNetworksManager:");
+        pw.increaseIndent();
+        pw.println("Available networks:");
+        pw.increaseIndent();
+
+        for (int i = 0; i < mAvailableNetworks.size(); i++) {
+            pw.print("APN type "
+                    + ApnSetting.getApnTypeString(mAvailableNetworks.keyAt(i)) + ": ");
+            List<String> networksStrings = new ArrayList<>();
+            for (int network : mAvailableNetworks.valueAt(i)) {
+                networksStrings.add(AccessNetworkType.toString(network));
+            }
+            pw.println("[" + TextUtils.join(",", networksStrings) + "]");
+        }
+        pw.decreaseIndent();
+        pw.decreaseIndent();
     }
 
     private void log(String s) {

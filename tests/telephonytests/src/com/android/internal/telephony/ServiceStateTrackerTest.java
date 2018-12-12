@@ -59,6 +59,7 @@ import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.support.test.filters.FlakyTest;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellIdentity;
@@ -190,6 +191,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         int dds = SubscriptionManager.getDefaultDataSubscriptionId();
         doReturn(dds).when(mPhone).getSubId();
+
+        doReturn(new ArrayList<Integer>(Arrays.asList(AccessNetworkConstants.TransportType.WWAN)))
+                .when(mTransportManager).getAvailableTransports();
 
         mSSTTestHandler = new ServiceStateTrackerTestHandler(getClass().getSimpleName());
         mSSTTestHandler.start();
@@ -1652,7 +1656,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     private void changeRegState(int state, CellIdentity cid, int voiceRat, int dataRat) {
         NetworkRegistrationState dataResult = new NetworkRegistrationState(
-                0, 0, state, dataRat, 0, false, null, cid, 1);
+                0, 0, state, dataRat, 0, false, null, cid, 1, false, false);
         sst.mPollingContext[0] = 2;
         // update data reg state to be in service
         sst.sendMessage(sst.obtainMessage(ServiceStateTracker.EVENT_POLL_STATE_GPRS,
@@ -1737,7 +1741,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     private void sendRegStateUpdateForLteCellId(CellIdentityLte cellId) {
         NetworkRegistrationState dataResult = new NetworkRegistrationState(
-                2, 1, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, 1);
+                2, 1, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, 1,
+                false, false);
         NetworkRegistrationState voiceResult = new NetworkRegistrationState(
                 1, 1, 1, TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId,
                 false, 0, 0, 0);
@@ -1800,7 +1805,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthResetsOnOos() throws Exception {
         testPhyChanBandwidthRatchetedOnPhyChanBandwidth();
         NetworkRegistrationState dataResult = new NetworkRegistrationState(
-                2, 1, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, 1);
+                2, 1, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, 1, false,
+                false);
         NetworkRegistrationState voiceResult = new NetworkRegistrationState(
                 1, 1, 0, TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null,
                 false, 0, 0, 0);
@@ -1812,5 +1818,50 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 new AsyncResult(sst.mPollingContext, voiceResult, null)));
         waitForMs(200);
         assertTrue(Arrays.equals(new int[0], sst.mSS.getCellBandwidths()));
+    }
+
+    @Test
+    @SmallTest
+    public void testGetMdn() throws Exception {
+        doReturn(false).when(mPhone).isPhoneTypeGsm();
+        doReturn(false).when(mPhone).isPhoneTypeCdma();
+        doReturn(true).when(mPhone).isPhoneTypeCdmaLte();
+        doReturn(CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM).when(mCdmaSSM)
+                .getCdmaSubscriptionSource();
+
+        logd("Calling updatePhoneType");
+        // switch to CDMA
+        sst.updatePhoneType();
+
+        // trigger RUIM_RECORDS_LOADED
+        ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(mRuimRecords).registerForRecordsLoaded(eq(sst), integerArgumentCaptor.capture(),
+                nullable(Object.class));
+
+        // response for mRuimRecords.registerForRecordsLoaded()
+        Message msg = Message.obtain();
+        msg.what = integerArgumentCaptor.getValue();
+        msg.obj = new AsyncResult(null, null, null);
+        sst.sendMessage(msg);
+
+        // wait for RUIM_RECORDS_LOADED to be handled
+        waitForHandlerAction(sst, 5000);
+
+        // mdn should be null as nothing populated it
+        assertEquals(null, sst.getMdnNumber());
+
+        // if ruim is provisioned, mdn should still be null
+        doReturn(true).when(mRuimRecords).isProvisioned();
+        assertEquals(null, sst.getMdnNumber());
+
+        // if ruim is not provisioned, and mdn is non null, sst should still return null
+        doReturn(false).when(mRuimRecords).isProvisioned();
+        String mockMdn = "mockMdn";
+        doReturn(mockMdn).when(mRuimRecords).getMdn();
+        assertEquals(null, sst.getMdnNumber());
+
+        // if ruim is provisioned, and mdn is non null, sst should also return the correct value
+        doReturn(true).when(mRuimRecords).isProvisioned();
+        assertEquals(mockMdn, sst.getMdnNumber());
     }
 }

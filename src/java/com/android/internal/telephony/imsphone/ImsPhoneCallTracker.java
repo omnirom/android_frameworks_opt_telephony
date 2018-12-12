@@ -53,6 +53,7 @@ import android.telephony.PreciseDisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
+import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.telephony.TelephonyManager;
 import android.telephony.ims.ImsCallProfile;
 import android.telephony.ims.ImsCallSession;
@@ -60,9 +61,9 @@ import android.telephony.ims.ImsMmTelManager;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.ImsStreamMediaProfile;
 import android.telephony.ims.ImsSuppServiceNotification;
+import android.telephony.ims.ProvisioningManager;
 import android.telephony.ims.feature.ImsFeature;
 import android.telephony.ims.feature.MmTelFeature;
-import android.telephony.ims.stub.ImsConfigImplBase;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -267,6 +268,21 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 public void onAvailable(Network network) {
                     Rlog.i(LOG_TAG, "Network available: " + network);
                     scheduleHandoverCheck();
+                }
+            };
+
+    private final OnSubscriptionsChangedListener mOnSubscriptionsChangedListener =
+            new OnSubscriptionsChangedListener() {
+                final AtomicInteger mPreviousSubId =
+                        new AtomicInteger(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+
+                @Override
+                public void onSubscriptionsChanged() {
+                    int subId = mPhone.getSubId();
+                    if (mPreviousSubId.getAndSet(subId) != subId
+                            && SubscriptionController.getInstance().isActiveSubId(subId)) {
+                        cacheCarrierConfiguration(subId);
+                    }
                 }
             };
 
@@ -666,12 +682,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private boolean mNotifyHandoverVideoFromLTEToWifi = false;
 
     /**
-     * When {@code} false, indicates that no handover from LTE to WIFI has occurred during the start
-     * of the call.
+     * When {@code} false, indicates that no handover from LTE to WIFI has been attempted during the
+     * start of the call.
      * When {@code true}, indicates that the start of call handover from LTE to WIFI has been
-     * attempted (it may have suceeded or failed).
+     * attempted (it may have succeeded or failed).
      */
-    private boolean mHasPerformedStartOfCallHandover = false;
+    private boolean mHasAttemptedStartOfCallHandover = false;
 
     /**
      * Carrier configuration option which determines whether the carrier supports the
@@ -732,6 +748,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         intentfilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
         intentfilter.addAction(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER);
         mPhone.getContext().registerReceiver(mReceiver, intentfilter);
+        SubscriptionManager.from(mPhone.getContext())
+            .addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
         cacheCarrierConfiguration(mPhone.getSubId());
 
         mPhone.getDefaultPhone().registerForDataEnabledChanged(
@@ -851,7 +869,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         // Only close on valid session.
         if (mImsManager != null) {
             try {
-                mImsManager.getConfigInterface().removeConfigCallback(mConfigCallback);
+                mImsManager.getConfigInterface().removeConfigCallback(mConfigCallback.getBinder());
             } catch (ImsException e) {
                 Log.w(LOG_TAG, "stopListeningForCalls: unable to remove config callback.");
             }
@@ -873,6 +891,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mPhone.getContext().unregisterReceiver(mReceiver);
         mPhone.getDefaultPhone().unregisterForDataEnabledChanged(this);
         mImsManagerConnector.disconnect();
+        SubscriptionManager.from(mPhone.getContext())
+            .removeOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
     }
 
     @Override
@@ -1196,6 +1216,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         fromCode = Integer.parseInt(values[0]);
                     }
                     String message = values[1];
+                    if (message == null) {
+                        message = "";
+                    }
                     int toCode = Integer.parseInt(values[2]);
 
                     addReasonCodeRemapping(fromCode, message, toCode);
@@ -1954,6 +1977,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     ImsCallProfile.DIALSTRING_USSD);
 
             mUssdSession = mImsManager.makeCall(profile, callees, mImsUssdListener);
+            mPendingUssd = response;
         } catch (ImsException e) {
             loge("sendUSSD : " + e);
             mPhone.sendErrorResponse(response, e);
@@ -1964,11 +1988,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     public void cancelUSSD() {
         if (mUssdSession == null) return;
 
-        try {
-            mUssdSession.terminate(ImsReasonInfo.CODE_USER_TERMINATED);
-        } catch (ImsException e) {
-        }
-
+        mUssdSession.terminate(ImsReasonInfo.CODE_USER_TERMINATED);
     }
 
     private synchronized ImsPhoneConnection findConnection(final ImsCall imsCall) {
@@ -2100,22 +2120,29 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     @VisibleForTesting
     public int maybeRemapReasonCode(ImsReasonInfo reasonInfo) {
         int code = reasonInfo.getCode();
-
-        Pair<Integer, String> toCheck = new Pair<>(code, reasonInfo.getExtraMessage());
-        Pair<Integer, String> wildcardToCheck = new Pair<>(null, reasonInfo.getExtraMessage());
+        String reason = reasonInfo.getExtraMessage();
+        if (reason == null) {
+            reason = "";
+        }
+        log("maybeRemapReasonCode : fromCode = " + reasonInfo.getCode() + " ; message = "
+                + reason);
+        Pair<Integer, String> toCheck = new Pair<>(code, reason);
+        Pair<Integer, String> wildcardToCheck = new Pair<>(null, reason);
         if (mImsReasonCodeMap.containsKey(toCheck)) {
             int toCode = mImsReasonCodeMap.get(toCheck);
 
             log("maybeRemapReasonCode : fromCode = " + reasonInfo.getCode() + " ; message = "
-                    + reasonInfo.getExtraMessage() + " ; toCode = " + toCode);
+                    + reason + " ; toCode = " + toCode);
             return toCode;
-        } else if (mImsReasonCodeMap.containsKey(wildcardToCheck)) {
+        } else if (!reason.isEmpty() && mImsReasonCodeMap.containsKey(wildcardToCheck)) {
             // Handle the case where a wildcard is specified for the fromCode; in this case we will
             // match without caring about the fromCode.
+            // If the reason is empty, we won't do wildcard remapping; otherwise we'd basically be
+            // able to remap all ImsReasonInfo codes to a single code, which is not desirable.
             int toCode = mImsReasonCodeMap.get(wildcardToCheck);
 
             log("maybeRemapReasonCode : fromCode(wildcard) = " + reasonInfo.getCode() +
-                    " ; message = " + reasonInfo.getExtraMessage() + " ; toCode = " + toCode);
+                    " ; message = " + reason + " ; toCode = " + toCode);
             return toCode;
         }
         return code;
@@ -2359,13 +2386,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     // Schedule check to see if handover succeeded.
                     sendMessageDelayed(obtainMessage(EVENT_CHECK_FOR_WIFI_HANDOVER, imsCall),
                             HANDOVER_TO_WIFI_TIMEOUT_MS);
+                    mHasAttemptedStartOfCallHandover = false;
                 } else {
                     // No wifi connectivity, so keep track of network availability for potential
                     // handover.
                     registerForConnectivityChanges();
+                    // No WIFI, so assume we've already attempted a handover.
+                    mHasAttemptedStartOfCallHandover = true;
                 }
             }
-            mHasPerformedStartOfCallHandover = false;
             mMetrics.writeOnImsCallStarted(mPhone.getPhoneId(), imsCall.getCallSession());
         }
 
@@ -2657,6 +2686,16 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     if (mPendingMO != null) {
                         dialPendingMO();
                     }
+                    mHoldSwitchingState = HoldSwapState.INACTIVE;
+                } else if (mPendingMO.isEmergency()) {
+                    // If mPendingMO is an emergency call, disconnect the call that we tried to
+                    // hold.
+                    mBackgroundCall.getImsCall().terminate(ImsReasonInfo.CODE_UNSPECIFIED);
+                    if (imsCall != mCallExpectedToResume) {
+                        mCallExpectedToResume = null;
+                    }
+                    // Leave mHoldSwitchingState as is for now -- we'll reset it
+                    // in onCallTerminated, which will also dial the outgoing emergency call.
                 } else if (bgState == ImsPhoneCall.State.ACTIVE) {
                     mForegroundCall.switchWith(mBackgroundCall);
 
@@ -2667,8 +2706,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     if (imsCall != mCallExpectedToResume) {
                         mCallExpectedToResume = null;
                     }
+                    mHoldSwitchingState = HoldSwapState.INACTIVE;
                 }
-                mHoldSwitchingState = HoldSwapState.INACTIVE;
                 mPhone.notifySuppServiceFailed(Phone.SuppService.HOLD);
             }
             mMetrics.writeOnImsCallHoldFailed(mPhone.getPhoneId(), imsCall.getCallSession(),
@@ -2917,7 +2956,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                             conn.setLocalVideoCapable(true);
                         }
 
-                        if (mNotifyHandoverVideoFromLTEToWifi && mHasPerformedStartOfCallHandover) {
+                        if (mNotifyHandoverVideoFromLTEToWifi && mHasAttemptedStartOfCallHandover) {
                             // This is a handover which happened mid-call (ie not the start of call
                             // handover from LTE to WIFI), so we'll notify the InCall UI.
                             conn.onConnectionEvent(
@@ -2967,9 +3006,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             } else {
                 loge("onCallHandover :: connection null.");
             }
-
-            if (!mHasPerformedStartOfCallHandover) {
-                mHasPerformedStartOfCallHandover = true;
+            // If there's a handover, then we're not in the "start of call" handover phase.
+            if (!mHasAttemptedStartOfCallHandover) {
+                mHasAttemptedStartOfCallHandover = true;
             }
             mMetrics.writeOnImsCallHandoverEvent(mPhone.getPhoneId(),
                     TelephonyCallSession.Event.Type.IMS_CALL_HANDOVER, imsCall.getCallSession(),
@@ -3007,8 +3046,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     conn.onHandoverToWifiFailed();
                 }
             }
-            if (!mHasPerformedStartOfCallHandover) {
-                mHasPerformedStartOfCallHandover = true;
+            if (!mHasAttemptedStartOfCallHandover) {
+                mHasAttemptedStartOfCallHandover = true;
             }
         }
 
@@ -3091,7 +3130,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         public void onCallTerminated(ImsCall imsCall, ImsReasonInfo reasonInfo) {
             if (DBG) log("mImsUssdListener onCallTerminated reasonCode=" + reasonInfo.getCode());
             removeMessages(EVENT_CHECK_FOR_WIFI_HANDOVER);
-            mHasPerformedStartOfCallHandover = false;
+            mHasAttemptedStartOfCallHandover = false;
             unregisterForConnectivityChanges();
 
             if (imsCall == mUssdSession) {
@@ -3200,14 +3239,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
     };
 
-    private final ImsConfigImplBase.Callback mConfigCallback = new ImsConfigImplBase.Callback() {
+    private final ProvisioningManager.Callback mConfigCallback =
+            new ProvisioningManager.Callback() {
         @Override
-        public void onConfigChanged(int item, int value) {
+        public void onProvisioningIntChanged(int item, int value) {
             sendConfigChangedIntent(item, Integer.toString(value));
         }
 
         @Override
-        public void onConfigChanged(int item, String value) {
+        public void onProvisioningStringChanged(int item, String value) {
             sendConfigChangedIntent(item, value);
         }
 
@@ -3390,6 +3430,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         unregisterForConnectivityChanges();
                         // Handover check and its not the foreground call any more.
                         return;
+                    }
+                    if (!mHasAttemptedStartOfCallHandover) {
+                        mHasAttemptedStartOfCallHandover = true;
                     }
                     if (!imsCall.isWifiCall()) {
                         // Call did not handover to wifi, notify of handover failure.
@@ -4094,11 +4137,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 log("downgradeVideoCall :: callId=" + conn.getTelecomCallId()
                         + " Disconnect call.");
                 // At this point the only choice we have is to terminate the call.
-                try {
-                    imsCall.terminate(ImsReasonInfo.CODE_USER_TERMINATED, reasonCode);
-                } catch (ImsException ie) {
-                    loge("Couldn't terminate call " + imsCall);
-                }
+                imsCall.terminate(ImsReasonInfo.CODE_USER_TERMINATED, reasonCode);
             }
         }
     }
