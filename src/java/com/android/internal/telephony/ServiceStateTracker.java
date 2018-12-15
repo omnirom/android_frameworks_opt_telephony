@@ -21,6 +21,7 @@ import static android.provider.Telephony.ServiceStateTable.getUriForSubscription
 
 import static com.android.internal.telephony.CarrierActionAgent.CARRIER_ACTION_SET_RADIO_ENABLED;
 
+import android.Manifest.permission;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -76,7 +77,6 @@ import android.util.LocalLog;
 import android.util.Pair;
 import android.util.SparseArray;
 import android.util.StatsLog;
-import android.util.TimeUtils;
 import android.util.TimestampedValue;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -186,6 +186,10 @@ public class ServiceStateTracker extends Handler {
     private boolean mPendingRadioPowerOffAfterDataOff = false;
     private int mPendingRadioPowerOffAfterDataOffTag = 0;
 
+    // This is a flag for debug purposes only. It it set once the RUIM_RECORDS_LOADED event is
+    // received while the phone type is CDMA-LTE, and is never reset after that.
+    private boolean mRuimRecordsLoaded = false;
+
     /** Signal strength poll rate. */
     private static final int POLL_PERIOD_MILLIS = 20 * 1000;
 
@@ -284,6 +288,7 @@ public class ServiceStateTracker extends Handler {
     private final LocalLog mPhoneTypeLog = new LocalLog(10);
     private final LocalLog mRatLog = new LocalLog(20);
     private final LocalLog mRadioPowerLog = new LocalLog(20);
+    private final LocalLog mMdnLog = new LocalLog(20);
 
     private class SstSubscriptionsChangedListener extends OnSubscriptionsChangedListener {
         public final AtomicInteger mPreviousSubId =
@@ -511,7 +516,7 @@ public class ServiceStateTracker extends Handler {
                 .addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
         mRestrictedState = new RestrictedState();
 
-        mTransportManager = new TransportManager();
+        mTransportManager = mPhone.getTransportManager();
 
         for (int transportType : mTransportManager.getAvailableTransports()) {
             mRegStateManagers.append(transportType, new NetworkRegistrationManager(
@@ -521,7 +526,7 @@ public class ServiceStateTracker extends Handler {
         }
 
         mLocaleTracker = TelephonyComponentFactory.getInstance().makeLocaleTracker(
-                mPhone, getLooper());
+                mPhone, mNitzState, getLooper());
 
         mCi.registerForImsNetworkStateChanged(this, EVENT_IMS_STATE_CHANGED, null);
         mCi.registerForRadioStateChanged(this, EVENT_RADIO_STATE_CHANGED, null);
@@ -605,10 +610,11 @@ public class ServiceStateTracker extends Handler {
         mStartedGprsRegCheck = false;
         mReportedGprsNoReg = false;
         mMdn = null;
+        logMdnChange("updatePhoneType: setting mMdn to null");
         mMin = null;
         mPrlVersion = null;
         mIsMinInfoReady = false;
-        mNitzState.handleNetworkUnavailable();
+        mNitzState.handleNetworkCountryCodeUnavailable();
         mCellIdentity = null;
         mNewCellIdentity = null;
 
@@ -966,6 +972,7 @@ public class ServiceStateTracker extends Handler {
                     cancelAllNotifications();
                     // clear cached values on SIM removal
                     mMdn = null;
+                    logMdnChange("EVENT_ICC_CHANGED: setting mMdn to null");
                     mMin = null;
                     mIsMinInfoReady = false;
                 }
@@ -1314,6 +1321,8 @@ public class ServiceStateTracker extends Handler {
                         String cdmaSubscription[] = (String[]) ar.result;
                         if (cdmaSubscription != null && cdmaSubscription.length >= 5) {
                             mMdn = cdmaSubscription[0];
+                            logMdnChange("EVENT_POLL_STATE_CDMA_SUBSCRIPTION: setting mMdn to "
+                                    + mMdn);
                             parseSidNid(cdmaSubscription[1], cdmaSubscription[2]);
 
                             mMin = cdmaSubscription[3];
@@ -1355,17 +1364,25 @@ public class ServiceStateTracker extends Handler {
                         updateSpnDisplay();
                     } else {
                         RuimRecords ruim = (RuimRecords) mIccRecords;
+                        mRuimRecordsLoaded = true;
                         if (ruim != null) {
                             if (ruim.isProvisioned()) {
                                 mMdn = ruim.getMdn();
+                                logMdnChange("EVENT_RUIM_RECORDS_LOADED: setting mMdn to " + mMdn);
                                 mMin = ruim.getMin();
                                 parseSidNid(ruim.getSid(), ruim.getNid());
                                 mPrlVersion = ruim.getPrlVersion();
                                 mIsMinInfoReady = true;
+                            } else {
+                                logMdnChange("EVENT_RUIM_RECORDS_LOADED: ruim not provisioned; "
+                                        + "not updating mMdn " + mMdn);
                             }
                             updateOtaspState();
                             // Notify apps subscription info is ready
                             notifyCdmaSubscriptionInfoReady();
+                        } else {
+                            logMdnChange("EVENT_RUIM_RECORDS_LOADED: ruim is null; "
+                                    + "not updating mMdn " + mMdn);
                         }
                         // SID/NID/PRL is loaded. Poll service state
                         // again to update to the roaming state with
@@ -1498,6 +1515,28 @@ public class ServiceStateTracker extends Handler {
     }
 
     public String getMdnNumber() {
+        // if for CDMA-LTE phone MDN is null, and it has already been updated from RUIM, in some
+        // unknown error scenario mMdn may still have been updated to null. Detect and fix that case
+        if (mMdn == null && mRuimRecordsLoaded && mPhone.isPhoneTypeCdmaLte()) {
+            // query RuimRecords to see if it's not null and the value from there can be used. This
+            // should never be the case except in certain error scenarios/race conditions.
+            RuimRecords ruim = (RuimRecords) mIccRecords;
+            if (ruim != null) {
+                if (ruim.isProvisioned() && ruim.getMdn() != null) {
+                    logeMdnChange("getMdnNumber: mMdn is null when RuimRecords.getMdn() is not");
+
+                    // broadcast intent to indicate an error related to Line1Number has been
+                    // detected
+                    Intent intent = new Intent(TelephonyIntents.ACTION_LINE1_NUMBER_ERROR_DETECTED);
+                    intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+                    mPhone.getContext().sendBroadcast(intent,
+                            permission.READ_PRIVILEGED_PHONE_STATE);
+
+                    // update mdn
+                    mMdn = ruim.getMdn();
+                }
+            }
+        }
         return mMdn;
     }
 
@@ -2263,6 +2302,7 @@ public class ServiceStateTracker extends Handler {
 
         String wfcVoiceSpnFormat = null;
         String wfcDataSpnFormat = null;
+        String wfcFlightSpnFormat = null;
         int combinedRegState = getCombinedRegState();
         if (mPhone.getImsPhone() != null && mPhone.getImsPhone().isWifiCallingEnabled()
                 && (combinedRegState == ServiceState.STATE_IN_SERVICE)) {
@@ -2275,6 +2315,7 @@ public class ServiceStateTracker extends Handler {
 
             int voiceIdx = 0;
             int dataIdx = 0;
+            int flightModeIdx = -1;
             boolean useRootLocale = false;
             CarrierConfigManager configLoader = (CarrierConfigManager)
                     mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
@@ -2285,6 +2326,8 @@ public class ServiceStateTracker extends Handler {
                         voiceIdx = b.getInt(CarrierConfigManager.KEY_WFC_SPN_FORMAT_IDX_INT);
                         dataIdx = b.getInt(
                                 CarrierConfigManager.KEY_WFC_DATA_SPN_FORMAT_IDX_INT);
+                        flightModeIdx = b.getInt(
+                                CarrierConfigManager.KEY_WFC_FLIGHT_MODE_SPN_FORMAT_IDX_INT);
                         useRootLocale =
                                 b.getBoolean(CarrierConfigManager.KEY_WFC_SPN_USE_ROOT_LOCALE);
                     }
@@ -2305,9 +2348,15 @@ public class ServiceStateTracker extends Handler {
                 loge("updateSpnDisplay: KEY_WFC_DATA_SPN_FORMAT_IDX_INT out of bounds: " + dataIdx);
                 dataIdx = 0;
             }
+            if (flightModeIdx < 0 || flightModeIdx >= wfcSpnFormats.length) {
+                // KEY_WFC_FLIGHT_MODE_SPN_FORMAT_IDX_INT out of bounds. Use the value from
+                // voiceIdx.
+                flightModeIdx = voiceIdx;
+            }
 
             wfcVoiceSpnFormat = wfcSpnFormats[voiceIdx];
             wfcDataSpnFormat = wfcSpnFormats[dataIdx];
+            wfcFlightSpnFormat = wfcSpnFormats[flightModeIdx];
         }
 
         if (mPhone.isPhoneTypeGsm()) {
@@ -2383,6 +2432,11 @@ public class ServiceStateTracker extends Handler {
                     !TextUtils.isEmpty(wfcDataSpnFormat)) {
                 // Show SPN + Wi-Fi Calling If SIM has SPN and SPN display condition
                 // is satisfied or SPN override is enabled for this carrier.
+
+                // Handle Flight Mode
+                if (mSS.getVoiceRegState() == ServiceState.STATE_POWER_OFF) {
+                    wfcVoiceSpnFormat = wfcFlightSpnFormat;
+                }
 
                 String originalSpn = spn.trim();
                 spn = String.format(wfcVoiceSpnFormat, originalSpn);
@@ -2604,6 +2658,16 @@ public class ServiceStateTracker extends Handler {
         mRatLog.log(mSS.toString());
     }
 
+    private void logMdnChange(String msg) {
+        mMdnLog.log(msg);
+        log(msg);
+    }
+
+    private void logeMdnChange(String msg) {
+        mMdnLog.log(msg);
+        loge(msg);
+    }
+
     protected final void log(String s) {
         Rlog.d(LOG_TAG, "[" + mPhone.getPhoneId() + "] " + s);
     }
@@ -2698,7 +2762,7 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.setStateOutOfService();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
-                mNitzState.handleNetworkUnavailable();
+                mNitzState.handleNetworkCountryCodeUnavailable();
                 pollStateDone();
                 break;
 
@@ -2706,7 +2770,7 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.setStateOff();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
-                mNitzState.handleNetworkUnavailable();
+                mNitzState.handleNetworkCountryCodeUnavailable();
                 // don't poll when device is shutting down or the poll was not modemTrigged
                 // (they sent us new radio data) and current network is not IWLAN
                 if (mDeviceShuttingDown ||
@@ -2957,7 +3021,6 @@ public class ServiceStateTracker extends Handler {
 
         if (hasDeregistered) {
             mNetworkDetachedRegistrants.notifyRegistrants();
-            mNitzState.handleNetworkUnavailable();
         }
 
         if (hasRejectCauseChanged) {
@@ -2989,7 +3052,6 @@ public class ServiceStateTracker extends Handler {
                 // operator numeric in locale tracker is null. The async update will allow getting
                 // cell info from the modem instead of using the cached one.
                 mLocaleTracker.updateOperatorNumeric("");
-                mNitzState.handleNetworkUnavailable();
             } else if (mSS.getRilDataRadioTechnology() != ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN) {
                 // If the device is on IWLAN, modems manufacture a ServiceState with the MCC/MNC of
                 // the SIM as if we were talking to towers. Telephony code then uses that with
@@ -3001,28 +3063,6 @@ public class ServiceStateTracker extends Handler {
                 }
 
                 mLocaleTracker.updateOperatorNumeric(operatorNumeric);
-                String countryIsoCode = mLocaleTracker.getCurrentCountry();
-
-                // Update Time Zone.
-                boolean iccCardExists = iccCardExists();
-                boolean networkIsoChanged =
-                        networkCountryIsoChanged(countryIsoCode, prevCountryIsoCode);
-
-                // Determine countryChanged: networkIso is only reliable if there's an ICC card.
-                boolean countryChanged = iccCardExists && networkIsoChanged;
-                if (DBG) {
-                    long ctm = System.currentTimeMillis();
-                    log("Before handleNetworkCountryCodeKnown:"
-                            + " countryChanged=" + countryChanged
-                            + " iccCardExist=" + iccCardExists
-                            + " countryIsoChanged=" + networkIsoChanged
-                            + " operatorNumeric=" + operatorNumeric
-                            + " prevOperatorNumeric=" + prevOperatorNumeric
-                            + " countryIsoCode=" + countryIsoCode
-                            + " prevCountryIsoCode=" + prevCountryIsoCode
-                            + " ltod=" + TimeUtils.logTimeOfDay(ctm));
-                }
-                mNitzState.handleNetworkCountryCodeSet(countryChanged);
             }
 
             tm.setNetworkRoamingForPhone(mPhone.getPhoneId(),
@@ -4556,6 +4596,11 @@ public class ServiceStateTracker extends Handler {
         ipw.println(" Radio power Log:");
         ipw.increaseIndent();
         mRadioPowerLog.dump(fd, ipw, args);
+        ipw.decreaseIndent();
+
+        ipw.println(" mMdn Log:");
+        ipw.increaseIndent();
+        mMdnLog.dump(fd, ipw, args);
 
         mNitzState.dumpLogs(fd, ipw, args);
     }

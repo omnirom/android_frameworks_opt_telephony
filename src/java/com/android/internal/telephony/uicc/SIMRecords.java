@@ -1041,6 +1041,9 @@ public class SIMRecords extends IccRecords {
                                     AsyncResult.forMessage(((Message) ar.userObj)).exception =
                                             new IccVmNotSupportedException(
                                                     "Update SIM voice mailbox error");
+                                } else {
+                                    AsyncResult.forMessage(((Message) ar.userObj))
+                                            .exception = ar.exception;
                                 }
                             } else {
                                 AsyncResult.forMessage(((Message) ar.userObj))
@@ -1405,6 +1408,7 @@ public class SIMRecords extends IccRecords {
 
     private void onLockedAllRecordsLoaded() {
         setSimLanguageFromEF();
+        setVoiceCallForwardingFlagFromSimRecords();
         if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_LOCKED) {
             mLockedRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
         } else if (mLockedRecordsReqReason == LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED) {

@@ -75,6 +75,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaMmiCode;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
+import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -227,6 +228,7 @@ public class GsmCdmaPhone extends Phone {
         // after CarrierActionAgent.
         mCarrierActionAgent = mTelephonyComponentFactory.makeCarrierActionAgent(this);
         mCarrierSignalAgent = mTelephonyComponentFactory.makeCarrierSignalAgent(this);
+        mTransportManager = mTelephonyComponentFactory.makeTransportManager(this);
         mSST = mTelephonyComponentFactory.makeServiceStateTracker(this, this.mCi);
         // DcTracker uses SST so needs to be created after it is instantiated
         mDcTracker = mTelephonyComponentFactory.makeDcTracker(this);
@@ -234,7 +236,6 @@ public class GsmCdmaPhone extends Phone {
 
         mSST.registerForNetworkAttached(this, EVENT_REGISTERED_TO_NETWORK, null);
         mDeviceStateMonitor = mTelephonyComponentFactory.makeDeviceStateMonitor(this);
-        mAccessNetworksManager = mTelephonyComponentFactory.makeAccessNetworksManager(this);
 
         mSST.registerForVoiceRegStateOrRatChanged(this, EVENT_VRS_OR_RAT_CHANGED, null);
         logd("GsmCdmaPhone: constructor: sub = " + mPhoneId);
@@ -479,6 +480,11 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
+    public TransportManager getTransportManager() {
+        return mTransportManager;
+    }
+
+    @Override
     public void updateVoiceMail() {
         if (isPhoneTypeGsm()) {
             int countVoiceMessages = 0;
@@ -632,11 +638,16 @@ public class GsmCdmaPhone extends Phone {
         intent.putExtra(PhoneConstants.PHONE_IN_ECM_STATE, isInEcm());
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, getPhoneId());
         ActivityManager.broadcastStickyIntent(intent, UserHandle.USER_ALL);
-        if (DBG) logd("sendEmergencyCallbackModeChange");
+        logi("sendEmergencyCallbackModeChange");
     }
 
     @Override
     public void sendEmergencyCallStateChange(boolean callActive) {
+        if (!isPhoneTypeCdma()) {
+            // It possible that this method got called from ImsPhoneCallTracker#
+            logi("sendEmergencyCallbackModeChange - skip for non-cdma");
+            return;
+        }
         if (mBroadcastEmergencyCallStateChanges) {
             Intent intent = new Intent(TelephonyIntents.ACTION_EMERGENCY_CALL_STATE_CHANGED);
             intent.putExtra(PhoneConstants.PHONE_IN_EMERGENCY_CALL, callActive);
@@ -1603,6 +1614,21 @@ public class GsmCdmaPhone extends Phone {
     @Override
     public String getCarrierName() {
         return mCarrerResolver.getCarrierName();
+    }
+
+    @Override
+    public int getMNOCarrierId() {
+        return mCarrerResolver.getMnoCarrierId();
+    }
+
+    @Override
+    public int getPreciseCarrierId() {
+        return mCarrerResolver.getPreciseCarrierId();
+    }
+
+    @Override
+    public String getPreciseCarrierName() {
+        return mCarrerResolver.getPreciseCarrierName();
     }
 
     @Override

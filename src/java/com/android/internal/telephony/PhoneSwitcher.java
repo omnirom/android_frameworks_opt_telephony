@@ -66,7 +66,7 @@ public class PhoneSwitcher extends Handler {
     protected final static boolean VDBG = false;
 
     protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<DcRequest>();
-    protected final RegistrantList[] mActivePhoneRegistrants;
+    protected final RegistrantList mActivePhoneRegistrants;
     protected final SubscriptionController mSubscriptionController;
     protected final int[] mPhoneSubscriptions;
     protected final CommandsInterface[] mCommandsInterfaces;
@@ -88,9 +88,9 @@ public class PhoneSwitcher extends Handler {
     // If mPreferredDataSubId is an active subscription, it overrides
     // mDefaultDataSubId and decides:
     // 1. In modem layer, which subscription is preferred to have data traffic on.
-    // 2. In TelephonyNetworkFactory, which subscription will apply default network requets, which
+    // 2. In TelephonyNetworkFactory, which subscription will apply default network requests, which
     //    are requests without specifying a subId.
-    protected int mPreferredDataSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    protected int mPreferredDataSubId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
 
     @VisibleForTesting
     // Corresponding phoneId after considerting mPreferredDataSubId and mDefaultDataSubId above.
@@ -187,10 +187,9 @@ public class PhoneSwitcher extends Handler {
                 (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         telephonyManager.listen(mPhoneStateListener, LISTEN_PHONE_CAPABILITY_CHANGE);
 
-        mActivePhoneRegistrants = new RegistrantList[numPhones];
+        mActivePhoneRegistrants = new RegistrantList();
         mPhoneStates = new PhoneState[numPhones];
         for (int i = 0; i < numPhones; i++) {
-            mActivePhoneRegistrants[i] = new RegistrantList();
             mPhoneStates[i] = new PhoneState();
             if (mPhones[i] != null) {
                 mPhones[i].registerForEmergencyCallToggle(this, EVENT_EMERGENCY_TOGGLE, null);
@@ -393,20 +392,33 @@ public class PhoneSwitcher extends Handler {
             if (mHalCommandToUse == HAL_COMMAND_PREFERRED_DATA) {
                 if (SubscriptionManager.isUsableSubIdValue(mPreferredDataPhoneId)) {
                     mRadioConfig.setPreferredDataModem(mPreferredDataPhoneId, null);
-                    // Notify all registrants.
-                    for (int phoneId = 0; phoneId < mNumPhones; phoneId++) {
-                        mActivePhoneRegistrants[phoneId].notifyRegistrants();
-                    }
                 }
             } else {
                 List<Integer> newActivePhones = new ArrayList<Integer>();
 
-                for (DcRequest dcRequest : mPrioritizedDcRequests) {
-                    int phoneIdForRequest = phoneIdForRequest(dcRequest.networkRequest);
-                    if (phoneIdForRequest == INVALID_PHONE_INDEX) continue;
-                    if (newActivePhones.contains(phoneIdForRequest)) continue;
-                    newActivePhones.add(phoneIdForRequest);
-                    if (newActivePhones.size() >= mMaxActivePhones) break;
+                /**
+                 * If all phones can have PS attached, activate all.
+                 * Otherwise, choose to activate phones according to requests. And
+                 * if list is not full, add mPreferredDataPhoneId.
+                 */
+                if (mMaxActivePhones == mPhones.length) {
+                    for (int i = 0; i < mMaxActivePhones; i++) {
+                        newActivePhones.add(mPhones[i].mPhoneId);
+                    }
+                } else {
+                    for (DcRequest dcRequest : mPrioritizedDcRequests) {
+                        int phoneIdForRequest = phoneIdForRequest(dcRequest.networkRequest);
+                        if (phoneIdForRequest == INVALID_PHONE_INDEX) continue;
+                        if (newActivePhones.contains(phoneIdForRequest)) continue;
+                        newActivePhones.add(phoneIdForRequest);
+                        if (newActivePhones.size() >= mMaxActivePhones) break;
+                    }
+
+                    if (newActivePhones.size() < mMaxActivePhones
+                            && newActivePhones.contains(mPreferredDataPhoneId)
+                            && SubscriptionManager.isUsableSubIdValue(mPreferredDataPhoneId)) {
+                        newActivePhones.add(mPreferredDataPhoneId);
+                    }
                 }
 
                 if (VDBG) {
@@ -430,6 +442,8 @@ public class PhoneSwitcher extends Handler {
                     activate(phoneId);
                 }
             }
+            // Notify all registrants.
+            mActivePhoneRegistrants.notifyRegistrants();
         }
     }
 
@@ -450,7 +464,7 @@ public class PhoneSwitcher extends Handler {
         PhoneState state = mPhoneStates[phoneId];
         if (state.active == active) return;
         state.active = active;
-        log(active ? "activate " : "deactivate " + phoneId);
+        log((active ? "activate " : "deactivate ") + phoneId);
         state.lastRequested = System.currentTimeMillis();
         if (mHalCommandToUse == HAL_COMMAND_ALLOW_DATA || mHalCommandToUse == HAL_COMMAND_UNKNOWN) {
             // Skip ALLOW_DATA for single SIM device
@@ -458,8 +472,6 @@ public class PhoneSwitcher extends Handler {
                 mCommandsInterfaces[phoneId].setDataAllowed(active, null);
             }
         }
-        mActivePhoneRegistrants[phoneId].notifyRegistrants();
-
     }
 
     /**
@@ -577,16 +589,18 @@ public class PhoneSwitcher extends Handler {
         return mHalCommandToUse == HAL_COMMAND_PREFERRED_DATA || mPhoneStates[phoneId].active;
     }
 
-    public void registerForActivePhoneSwitch(int phoneId, Handler h, int what, Object o) {
-        validatePhoneId(phoneId);
+    /**
+     * If preferred phone changes, or phone activation status changes, registrants
+     * will be notified.
+     */
+    public void registerForActivePhoneSwitch(Handler h, int what, Object o) {
         Registrant r = new Registrant(h, what, o);
-        mActivePhoneRegistrants[phoneId].add(r);
+        mActivePhoneRegistrants.add(r);
         r.notifyRegistrant();
     }
 
-    public void unregisterForActivePhoneSwitch(int phoneId, Handler h) {
-        validatePhoneId(phoneId);
-        mActivePhoneRegistrants[phoneId].remove(h);
+    public void unregisterForActivePhoneSwitch(Handler h) {
+        mActivePhoneRegistrants.remove(h);
     }
 
     private void validatePhoneId(int phoneId) {
