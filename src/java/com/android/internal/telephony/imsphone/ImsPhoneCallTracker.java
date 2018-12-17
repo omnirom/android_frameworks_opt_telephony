@@ -46,6 +46,7 @@ import android.provider.Settings;
 import android.telecom.ConferenceParticipant;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
+import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
@@ -53,8 +54,8 @@ import android.telephony.PreciseDisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
-import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.telephony.TelephonyManager;
+import android.telephony.emergency.EmergencyNumber;
 import android.telephony.ims.ImsCallProfile;
 import android.telephony.ims.ImsCallSession;
 import android.telephony.ims.ImsMmTelManager;
@@ -268,21 +269,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 public void onAvailable(Network network) {
                     Rlog.i(LOG_TAG, "Network available: " + network);
                     scheduleHandoverCheck();
-                }
-            };
-
-    private final OnSubscriptionsChangedListener mOnSubscriptionsChangedListener =
-            new OnSubscriptionsChangedListener() {
-                final AtomicInteger mPreviousSubId =
-                        new AtomicInteger(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
-
-                @Override
-                public void onSubscriptionsChanged() {
-                    int subId = mPhone.getSubId();
-                    if (mPreviousSubId.getAndSet(subId) != subId
-                            && SubscriptionController.getInstance().isActiveSubId(subId)) {
-                        cacheCarrierConfiguration(subId);
-                    }
                 }
             };
 
@@ -748,8 +734,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         intentfilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
         intentfilter.addAction(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER);
         mPhone.getContext().registerReceiver(mReceiver, intentfilter);
-        SubscriptionManager.from(mPhone.getContext())
-            .addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
         cacheCarrierConfiguration(mPhone.getSubId());
 
         mPhone.getDefaultPhone().registerForDataEnabledChanged(
@@ -891,8 +875,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mPhone.getContext().unregisterReceiver(mReceiver);
         mPhone.getDefaultPhone().unregisterForDataEnabledChanged(this);
         mImsManagerConnector.disconnect();
-        SubscriptionManager.from(mPhone.getContext())
-            .removeOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
     }
 
     @Override
@@ -1275,8 +1257,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         // Always unmute when initiating a new call
         setMute(false);
-        int serviceType = mPhoneNumberUtilsProxy.isEmergencyNumber(conn.getAddress()) ?
-                ImsCallProfile.SERVICE_TYPE_EMERGENCY : ImsCallProfile.SERVICE_TYPE_NORMAL;
+        boolean isEmergencyCall = mPhoneNumberUtilsProxy.isEmergencyNumber(conn.getAddress());
+        int serviceType = isEmergencyCall
+                ? ImsCallProfile.SERVICE_TYPE_EMERGENCY : ImsCallProfile.SERVICE_TYPE_NORMAL;
         int callType = ImsCallProfile.getCallTypeFromVideoState(videoState);
         //TODO(vt): Is this sufficient?  At what point do we know the video state of the call?
         conn.setVideoState(videoState);
@@ -1287,6 +1270,28 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             profile.setCallExtraInt(ImsCallProfile.EXTRA_OIR, clirMode);
             profile.setCallExtraBoolean(TelephonyProperties.EXTRAS_IS_CONFERENCE_URI,
                     isConferenceUri);
+
+            if (isEmergencyCall) {
+                // Set emergency service categories in ImsCallProfile
+                int emergencyServiceCategories =
+                        EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED;
+                TelephonyManager tm = (TelephonyManager) mPhone.getContext().getSystemService(
+                        Context.TELEPHONY_SERVICE);
+                if (tm.getCurrentEmergencyNumberList() != null) {
+                    for (List<EmergencyNumber> emergencyNumberList :
+                            tm.getCurrentEmergencyNumberList().values()) {
+                        if (emergencyNumberList != null) {
+                            for (EmergencyNumber num : emergencyNumberList) {
+                                if (num.getNumber().equals(conn.getAddress())) {
+                                    emergencyServiceCategories =
+                                            num.getEmergencyServiceCategoryBitmask();
+                                }
+                            }
+                        }
+                    }
+                }
+                profile.setEmergencyServiceCategories(emergencyServiceCategories);
+            }
 
             // Translate call subject intent-extra from Telecom-specific extra key to the
             // ImsCallProfile key.
@@ -2924,7 +2929,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             // Check with the DCTracker to see if data is enabled; there may be a case when
             // ImsPhoneCallTracker isn't being informed of the right data enabled state via its
             // registration, so we'll refresh now.
-            boolean isDataEnabled = mPhone.getDefaultPhone().mDcTracker.isDataEnabled();
+            boolean isDataEnabled = false;
+            if (mPhone.getDefaultPhone().getDcTracker(TransportType.WWAN) != null) {
+                isDataEnabled = mPhone.getDefaultPhone().getDcTracker(TransportType.WWAN)
+                        .isDataEnabled();
+            }
+
             if (DBG) {
                 log("onCallHandover ::  srcAccessTech=" + srcAccessTech + ", targetAccessTech="
                         + targetAccessTech + ", reasonInfo=" + reasonInfo + ", dataEnabled="

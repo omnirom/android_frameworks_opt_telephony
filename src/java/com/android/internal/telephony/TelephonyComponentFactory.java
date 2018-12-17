@@ -22,8 +22,11 @@ import android.os.Handler;
 import android.os.IDeviceIdleController;
 import android.os.Looper;
 import android.os.ServiceManager;
+<<<<<<< HEAD
 import android.telephony.Rlog;
 import android.telephony.AccessNetworkConstants.TransportType;
+=======
+>>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
@@ -126,9 +129,14 @@ public class TelephonyComponentFactory {
         return new SimActivationTracker(phone);
     }
 
+<<<<<<< HEAD
     public DcTracker makeDcTracker(Phone phone) {
         Rlog.d(LOG_TAG, "makeDcTracker");
         return new DcTracker(phone, TransportType.WWAN);
+=======
+    public DcTracker makeDcTracker(Phone phone, int transportType) {
+        return new DcTracker(phone, transportType);
+>>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     }
 
     public CarrierSignalAgent makeCarrierSignalAgent(Phone phone) {

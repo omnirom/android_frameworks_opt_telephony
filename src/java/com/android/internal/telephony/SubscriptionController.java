@@ -1489,10 +1489,10 @@ public class SubscriptionController extends ISub.Stub {
         int size = sSlotIndexToSubId.size();
         if (size == 0) {
             if (VDBG) {
-                logd("[getSubId]- sSlotIndexToSubId.size == 0, return DummySubIds slotIndex="
+                logd("[getSubId]- sSlotIndexToSubId.size == 0, return null slotIndex="
                         + slotIndex);
             }
-            return getDummySubIds(slotIndex);
+            return null;
         }
 
         // Create an array of subIds that are in this slot?
@@ -1515,8 +1515,8 @@ public class SubscriptionController extends ISub.Stub {
             if (VDBG) logd("[getSubId]- subIdArr=" + subIdArr);
             return subIdArr;
         } else {
-            if (DBG) logd("[getSubId]- numSubIds == 0, return DummySubIds slotIndex=" + slotIndex);
-            return getDummySubIds(slotIndex);
+            if (DBG) logd("[getSubId]- numSubIds == 0, return null slotIndex=" + slotIndex);
+            return null;
         }
     }
 
@@ -1564,6 +1564,7 @@ public class SubscriptionController extends ISub.Stub {
 
     }
 
+<<<<<<< HEAD
     protected int[] getDummySubIds(int slotIndex) {
         // FIXME: Remove notion of Dummy SUBSCRIPTION_ID.
         // I tested this returning null as no one appears to care,
@@ -1585,6 +1586,8 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
+=======
+>>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     /**
      * @return the number of records cleared
      */

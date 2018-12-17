@@ -98,8 +98,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class DcTrackerTest extends TelephonyTest {
 
@@ -132,6 +130,7 @@ public class DcTrackerTest extends TelephonyTest {
     private static final Uri PREFERAPN_URI = Uri.parse(
             Telephony.Carriers.CONTENT_URI + "/preferapn");
     private static final int DATA_ENABLED_CHANGED = 0;
+    private static final String FAKE_PLMN = "44010";
 
     @Mock
     ISub mIsub;
@@ -210,18 +209,9 @@ public class DcTrackerTest extends TelephonyTest {
             if (uri.compareTo(Telephony.Carriers.CONTENT_URI) == 0
                     || uri.compareTo(Uri.withAppendedPath(
                             Telephony.Carriers.CONTENT_URI, "filtered")) == 0) {
-                if (projection == null && selectionArgs == null && selection != null) {
+                if (projection == null) {
 
-                    Pattern pattern = Pattern.compile("^numeric = '([0-9]*)'");
-                    Matcher matcher = pattern.matcher(selection);
-                    if (!matcher.find()) {
-                        logd("Cannot find MCC/MNC from " + selection);
-                        return null;
-                    }
-
-                    String plmn = matcher.group(1);
-
-                    logd("Query '" + plmn + "' APN settings");
+                    logd("Query '" + FAKE_PLMN + "' APN settings");
                     MatrixCursor mc = new MatrixCursor(
                             new String[]{Telephony.Carriers._ID, Telephony.Carriers.NUMERIC,
                                     Telephony.Carriers.NAME, Telephony.Carriers.APN,
@@ -241,11 +231,12 @@ public class DcTrackerTest extends TelephonyTest {
                                     Telephony.Carriers.MVNO_TYPE,
                                     Telephony.Carriers.MVNO_MATCH_DATA,
                                     Telephony.Carriers.NETWORK_TYPE_BITMASK,
-                                    Telephony.Carriers.APN_SET_ID});
+                                    Telephony.Carriers.APN_SET_ID,
+                                    Telephony.Carriers.CARRIER_ID});
 
                     mc.addRow(new Object[]{
                             2163,                   // id
-                            plmn,                   // numeric
+                            FAKE_PLMN,              // numeric
                             "sp-mode",              // name
                             FAKE_APN1,              // apn
                             "",                     // proxy
@@ -271,12 +262,13 @@ public class DcTrackerTest extends TelephonyTest {
                             "",                     // mvno_type
                             "",                     // mnvo_match_data
                             NETWORK_TYPE_LTE_BITMASK, // network_type_bitmask
-                            0                       // apn_set_id
+                            0,                      // apn_set_id
+                            -1                      // carrier_id
                     });
 
                     mc.addRow(new Object[]{
                             2164,                   // id
-                            plmn,                   // numeric
+                            FAKE_PLMN,              // numeric
                             "mopera U",             // name
                             FAKE_APN2,              // apn
                             "",                     // proxy
@@ -302,12 +294,13 @@ public class DcTrackerTest extends TelephonyTest {
                             "",                     // mvno_type
                             "",                     // mnvo_match_data
                             NETWORK_TYPE_LTE_BITMASK, // network_type_bitmask
-                            0                       // apn_set_id
+                            0,                      // apn_set_id
+                            -1                      // carrier_id
                     });
 
                     mc.addRow(new Object[]{
                             2165,                   // id
-                            plmn,                   // numeric
+                            FAKE_PLMN,              // numeric
                             "b-mobile for Nexus",   // name
                             FAKE_APN3,              // apn
                             "",                     // proxy
@@ -333,12 +326,13 @@ public class DcTrackerTest extends TelephonyTest {
                             "",                     // mvno_type
                             "",                     // mnvo_match_data
                             0,                      // network_type_bitmask
-                            0                       // apn_set_id
+                            0,                      // apn_set_id
+                            -1                      // carrier_id
                     });
 
                     mc.addRow(new Object[]{
                             2166,                   // id
-                            plmn,                   // numeric
+                            FAKE_PLMN,              // numeric
                             "sp-mode ehrpd",        // name
                             FAKE_APN4,              // apn
                             "",                     // proxy
@@ -364,12 +358,13 @@ public class DcTrackerTest extends TelephonyTest {
                             "",                     // mvno_type
                             "",                     // mnvo_match_data
                             NETWORK_TYPE_EHRPD_BITMASK, // network_type_bitmask
-                            0                       // apn_set_id
+                            0,                      // apn_set_id
+                            -1                      // carrier_id
                     });
 
                     mc.addRow(new Object[]{
                             2166,                   // id
-                            plmn,                   // numeric
+                            FAKE_PLMN,              // numeric
                             "b-mobile for Nexus",   // name
                             FAKE_APN5,              // apn
                             "",                     // proxy
@@ -395,7 +390,8 @@ public class DcTrackerTest extends TelephonyTest {
                             "",                     // mvno_type
                             "",                     // mnvo_match_data
                             0,                      // network_type_bitmask
-                            0                       // apn_set_id
+                            0,                      // apn_set_id
+                            -1                      // carrier_id
                     });
 
                     return mc;
@@ -430,8 +426,11 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn("fake.action_attached").when(mPhone).getActionAttached();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
+<<<<<<< HEAD
         doReturn("44010").when(mSimRecords).getOperatorNumeric();
         doReturn("44010").when(mPhone).getOperatorNumeric();
+=======
+>>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
         mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
                 sNetworkAttributes);
@@ -1030,7 +1029,7 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn(true).when(mApnContext).isEnabled();
         doReturn(true).when(mApnContext).getDependencyMet();
         doReturn(true).when(mApnContext).isReady();
-        doReturn(true).when(mApnContext).hasNoRestrictedRequests(eq(true));
+        doReturn(false).when(mApnContext).hasRestrictedRequests(eq(true));
     }
 
     // Test the emergency APN setup.
@@ -1134,7 +1133,7 @@ public class DcTrackerTest extends TelephonyTest {
     @SmallTest
     public void testTrySetupRestrictedDataDisabled() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
-        doReturn(false).when(mApnContext).hasNoRestrictedRequests(eq(true));
+        doReturn(true).when(mApnContext).hasRestrictedRequests(eq(true));
 
         mDct.setUserDataEnabled(false);
 
@@ -1162,7 +1161,7 @@ public class DcTrackerTest extends TelephonyTest {
     @SmallTest
     public void testTrySetupRestrictedRoamingDisabled() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
-        doReturn(false).when(mApnContext).hasNoRestrictedRequests(eq(true));
+        doReturn(true).when(mApnContext).hasRestrictedRequests(eq(true));
 
         mDct.setUserDataEnabled(true);
         mDct.setDataRoamingEnabledByUser(false);
@@ -1182,8 +1181,7 @@ public class DcTrackerTest extends TelephonyTest {
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_TRY_SETUP_DATA, mApnContext));
         waitForMs(200);
 
-        // expect no restricted data connection
-        verify(mSimulatedCommandsVerifier, times(0)).setupDataCall(anyInt(), any(DataProfile.class),
+        verify(mSimulatedCommandsVerifier, times(1)).setupDataCall(anyInt(), any(DataProfile.class),
                 eq(false), eq(false), eq(DataService.REQUEST_REASON_NORMAL), any(),
                 any(Message.class));
     }
