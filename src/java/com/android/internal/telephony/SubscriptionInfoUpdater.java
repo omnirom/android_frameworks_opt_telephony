@@ -485,8 +485,6 @@ public class SubscriptionInfoUpdater extends Handler {
                 }
             }
         }
-<<<<<<< HEAD
-=======
 
         // Update set of enabled carrier apps now that the privilege rules may have changed.
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(mContext.getOpPackageName(),
@@ -506,7 +504,6 @@ public class SubscriptionInfoUpdater extends Handler {
         broadcastSimApplicationStateChanged(loadedSlotId, TelephonyManager.SIM_STATE_LOADED);
         updateSubscriptionCarrierId(loadedSlotId, IccCardConstants.INTENT_VALUE_ICC_LOADED);
         updateCarrierServices(loadedSlotId, IccCardConstants.INTENT_VALUE_ICC_LOADED);
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     }
 
     private void updateCarrierServices(int slotId, String simState) {
@@ -516,17 +513,13 @@ public class SubscriptionInfoUpdater extends Handler {
         mCarrierServiceBindHelper.updateForPhoneId(slotId, simState);
     }
 
-<<<<<<< HEAD
-    protected void handleSimAbsent(int slotId) {
-=======
     private void updateSubscriptionCarrierId(int slotId, String simState) {
         if (mPhone != null && mPhone[slotId] != null) {
             mPhone[slotId].resolveSubscriptionCarrierId(simState);
         }
     }
 
-    private void handleSimAbsent(int slotId) {
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
+    protected void handleSimAbsent(int slotId) {
         if (mIccId[slotId] != null && !mIccId[slotId].equals(ICCID_STRING_FOR_NO_SIM)) {
             logd("SIM" + (slotId + 1) + " hot plug out or error.");
         }

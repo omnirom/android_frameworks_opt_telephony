@@ -230,16 +230,11 @@ public class DataConnection extends StateMachine {
     static final int EVENT_KEEPALIVE_STOP_REQUEST = BASE + 22;
     static final int EVENT_LINK_CAPACITY_CHANGED = BASE + 23;
     static final int EVENT_RESET = BASE + 24;
-<<<<<<< HEAD
     static final int EVENT_DATA_CONNECTION_DDS_SWITCHED = BASE + 25;
 
-    private static final int CMD_TO_STRING_COUNT =
-            EVENT_DATA_CONNECTION_DDS_SWITCHED - BASE + 1;
-=======
-    static final int EVENT_REEVALUATE_RESTRICTED_STATE = BASE + 25;
+    static final int EVENT_REEVALUATE_RESTRICTED_STATE = BASE + 26;
 
     private static final int CMD_TO_STRING_COUNT = EVENT_REEVALUATE_RESTRICTED_STATE - BASE + 1;
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
     private static String[] sCmdToString = new String[CMD_TO_STRING_COUNT];
     static {
@@ -271,13 +266,10 @@ public class DataConnection extends StateMachine {
         sCmdToString[EVENT_KEEPALIVE_STOP_REQUEST - BASE] = "EVENT_KEEPALIVE_STOP_REQUEST";
         sCmdToString[EVENT_LINK_CAPACITY_CHANGED - BASE] = "EVENT_LINK_CAPACITY_CHANGED";
         sCmdToString[EVENT_RESET - BASE] = "EVENT_RESET";
-<<<<<<< HEAD
         sCmdToString[EVENT_DATA_CONNECTION_DDS_SWITCHED - BASE] =
                 "EVENT_DATA_CONNECTION_DDS_SWITCHED";
-=======
         sCmdToString[EVENT_REEVALUATE_RESTRICTED_STATE - BASE] =
                 "EVENT_REEVALUATE_RESTRICTED_STATE";
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     }
     // Convert cmd to string or null if unknown
     static String cmdToString(int cmd) {

@@ -3892,7 +3892,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             String gid2, String pnn, String spn) {
     }
 
-<<<<<<< HEAD
     @Override
     public void getCallForwardingOption(int commandInterfaceCFReason,
             int commandInterfaceServiceClass, Message onComplete) {
@@ -3902,7 +3901,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void setCallForwardingOption(int commandInterfaceCFReason,
             int commandInterfaceCFAction, String dialingNumber,
             int commandInterfaceServiceClass, int timerSeconds, Message onComplete) {
-=======
+    }
+
     /**
      * Get data connection tracker based on the transport type
      *
@@ -3911,7 +3911,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public @Nullable DcTracker getDcTracker(int transportType) {
         return mDcTrackers.get(transportType);
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {

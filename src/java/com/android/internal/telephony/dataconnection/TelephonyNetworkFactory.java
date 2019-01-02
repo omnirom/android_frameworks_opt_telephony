@@ -30,11 +30,8 @@ import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 
-<<<<<<< HEAD
 import com.android.internal.telephony.PhoneFactory;
-=======
 import com.android.internal.telephony.Phone;
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 import com.android.internal.telephony.PhoneSwitcher;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.SubscriptionMonitor;
@@ -65,7 +62,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     // Default network requests are those that don't specify subscription ID.
     private boolean mIsActiveForDefault;
     private int mSubscriptionId;
-    private Context mContext;
 
     private final static int TELEPHONY_NETWORK_SCORE = 50;
 
@@ -75,22 +71,14 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private static final int EVENT_NETWORK_REQUEST              = 3;
     private static final int EVENT_NETWORK_RELEASE              = 4;
 
-<<<<<<< HEAD
     private static final int PRIMARY_SLOT = 0;
     private static final int SECONDARY_SLOT = 1;
 
-    public TelephonyNetworkFactory(PhoneSwitcher phoneSwitcher,
-            SubscriptionController subscriptionController, SubscriptionMonitor subscriptionMonitor,
-            Looper looper, Context context, int phoneId, DcTracker dcTracker) {
-        super(looper, context, "TelephonyNetworkFactory[" + phoneId + "]", null);
-        mContext = context;
-=======
     public TelephonyNetworkFactory(SubscriptionMonitor subscriptionMonitor, Looper looper,
                                    Phone phone) {
         super(looper, phone.getContext(), "TelephonyNetworkFactory[" + phone.getPhoneId()
                 + "]", null);
         mPhone = phone;
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
         mInternalHandler = new InternalHandler(looper);
 
         mSubscriptionController = SubscriptionController.getInstance();

@@ -68,72 +68,7 @@ public class TelephonyNetworkFactoryTest extends TelephonyTest {
     private Looper mLooper;
     private final ArrayList<NetworkRequest> mNetworkRequestList = new ArrayList<>();
 
-<<<<<<< HEAD
-    private class TestSetup {
-        final TelephonyRegistryMock telephonyRegistryMock;
-        final PhoneSwitcherMock phoneSwitcherMock;
-        final SubscriptionControllerMock subscriptionControllerMock;
-        final SubscriptionMonitorMock subscriptionMonitorMock;
-        final HandlerThread handlerThread;
-        final ConnectivityServiceMock connectivityServiceMock;
-        final Looper looper;
-        DcTrackerMock dcTrackerMock;
-        final Context contextMock;
-        private Object mLock = new Object();
-        private static final int MAX_INIT_WAIT_MS = 30000; // 30 seconds
-
-        TestSetup(int numPhones) throws Exception {
-            MockitoAnnotations.initMocks(TelephonyNetworkFactoryTest.this);
-            mockRadioConfig();
-            handlerThread = new HandlerThread("TelephonyNetworkFactoryTest") {
-                @Override
-                public void onLooperPrepared() {
-                    synchronized (mLock) {
-                        if (dcTrackerMock == null) dcTrackerMock = new DcTrackerMock();
-                        mLock.notifyAll();
-                    }
-                }
-            };
-            handlerThread.start();
-            // wait until dct created
-            synchronized (mLock) {
-                try {
-                    mLock.wait(MAX_INIT_WAIT_MS);
-                } catch (InterruptedException ie) {
-                }
-                if (dcTrackerMock == null) fail("failed to initialize dct");
-            }
-            looper = handlerThread.getLooper();
-
-            final ContextFixture contextFixture = new ContextFixture();
-            String[] networkConfigString = getContext().getResources().getStringArray(
-                    com.android.internal.R.array.networkAttributes);
-            contextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
-                    networkConfigString);
-            contextMock = contextFixture.getTestDouble();
-
-            connectivityServiceMock = new ConnectivityServiceMock(contextMock);
-            ConnectivityManager cm =
-                    new ConnectivityManager(contextMock, connectivityServiceMock);
-            contextFixture.setSystemService(Context.CONNECTIVITY_SERVICE, cm);
-
-            telephonyRegistryMock = new TelephonyRegistryMock();
-            phoneSwitcherMock = new PhoneSwitcherMock(numPhones, looper);
-            subscriptionControllerMock =
-                    new SubscriptionControllerMock(contextMock, telephonyRegistryMock, numPhones);
-            subscriptionMonitorMock = new SubscriptionMonitorMock(numPhones);
-            subscriptionControllerMock.setActiveSubInfoCount(numPhones);
-        }
-
-        void die() {
-            connectivityServiceMock.die();
-            looper.quit();
-            handlerThread.quit();
-        }
-    }
-=======
     private TelephonyNetworkFactory mTelephonyNetworkFactoryUT;
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
     private void log(String str) {
         Rlog.d(LOG_TAG + " " + mTestName, str);
@@ -301,89 +236,6 @@ public class TelephonyNetworkFactoryTest extends TelephonyTest {
         final int altSubId = 1;
         final int unusedSubId = 2;
 
-<<<<<<< HEAD
-        TestSetup ts = new TestSetup(numberOfPhones);
-
-        makeTnf(phoneId, ts);
-
-        ts.phoneSwitcherMock.setPreferredDataPhoneId(phoneId);
-        ts.subscriptionControllerMock.setDefaultDataSubId(subId);
-        ts.subscriptionControllerMock.setSlotSubId(phoneId, subId);
-        ts.subscriptionMonitorMock.notifySubscriptionChanged(phoneId);
-        waitABit();
-
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 0) {
-            fail("test 1, LiveRequests != 0");
-        }
-
-        ts.phoneSwitcherMock.setPhoneActive(phoneId, true);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 0) {
-            fail("test 2, LiveRequests != 0");
-        }
-
-        ts.connectivityServiceMock.addDefaultRequest();
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 1) {
-            fail("test 3, LiveRequests != 1");
-        }
-
-        ts.subscriptionControllerMock.setSlotSubId(altPhoneId, altSubId);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 1) {
-            fail("test 4, LiveRequests != 1");
-        }
-
-        ts.phoneSwitcherMock.setPreferredDataPhoneId(altPhoneId);
-        ts.subscriptionControllerMock.setDefaultDataSubId(altSubId);
-        ts.phoneSwitcherMock.notifyActivePhoneChange(phoneId);
-
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 0) {
-            fail("test 5, LiveRequests != 0");
-        }
-
-        makeSubSpecificMmsRequest(ts, subId);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 1) {
-            fail("test 6,  LiveRequests != 1");
-        }
-
-        ts.subscriptionControllerMock.setSlotSubId(phoneId, unusedSubId);
-        ts.subscriptionMonitorMock.notifySubscriptionChanged(phoneId);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 0) {
-            fail("test 7,  LiveRequests != 0");
-        }
-
-        makeSubSpecificDefaultRequest(ts, subId);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 0) {
-            fail("test 8, LiveRequests != 0");
-        }
-
-        ts.subscriptionControllerMock.setSlotSubId(phoneId, subId);
-        ts.subscriptionMonitorMock.notifySubscriptionChanged(phoneId);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 2) {
-            fail("test 9,  LiveRequests != 2");
-        }
-        ts.phoneSwitcherMock.setPhoneActive(phoneId, false);
-        waitABit();
-
-        ts.subscriptionControllerMock.setDefaultDataSubId(subId);
-        ts.phoneSwitcherMock.setPreferredDataPhoneId(phoneId);
-        ts.phoneSwitcherMock.notifyActivePhoneChange(phoneId);
-        waitABit();
-
-        ts.phoneSwitcherMock.setPhoneActive(phoneId, true);
-        waitABit();
-        if (ts.dcTrackerMock.getNumberOfLiveRequests() != 3) {
-            fail("test 10, LiveRequests != 3");
-        }
-        ts.die();
-    }
-=======
         createMockedTelephonyComponents(numberOfPhones);
 
         mPhoneSwitcherMock.setPreferredDataPhoneId(phoneId);
@@ -425,7 +277,6 @@ public class TelephonyNetworkFactoryTest extends TelephonyTest {
         makeSubSpecificDefaultRequest(subId);
         waitForMs(250);
         assertEquals(0, mNetworkRequestList.size());
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
         mSubscriptionControllerMock.setSlotSubId(phoneId, subId);
         mSubscriptionMonitorMock.notifySubscriptionChanged(phoneId);

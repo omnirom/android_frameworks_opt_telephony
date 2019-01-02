@@ -426,11 +426,6 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn("fake.action_attached").when(mPhone).getActionAttached();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
-<<<<<<< HEAD
-        doReturn("44010").when(mSimRecords).getOperatorNumeric();
-        doReturn("44010").when(mPhone).getOperatorNumeric();
-=======
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
 
         mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
                 sNetworkAttributes);

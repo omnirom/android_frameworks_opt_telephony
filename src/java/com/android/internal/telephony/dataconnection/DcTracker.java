@@ -1720,11 +1720,8 @@ public class DcTracker extends Handler {
             return new ArrayList<ApnSetting>(0);
         }
         int bearer = mPhone.getServiceState().getRilDataRadioTechnology();
-<<<<<<< HEAD
         IccRecords r = mIccRecords.get();
         String operator = mPhone.getOperatorNumeric();
-=======
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
         ArrayList<ApnSetting> dunCandidates = new ArrayList<ApnSetting>();
         ArrayList<ApnSetting> retDunSettings = new ArrayList<ApnSetting>();
 
@@ -3211,32 +3208,7 @@ public class DcTracker extends Handler {
      * Based on the sim operator numeric, create a list for all possible
      * Data Connections and setup the preferredApn.
      */
-<<<<<<< HEAD
     protected void createAllApnList() {
-        mMvnoMatched = false;
-        mAllApnSettings.clear();
-        IccRecords r = mIccRecords.get();
-        String operator = mPhone.getOperatorNumeric();
-        if (operator != null) {
-            String selection = Telephony.Carriers.NUMERIC + " = '" + operator + "'";
-            // query only enabled apn.
-            // carrier_enabled : 1 means enabled apn, 0 disabled apn.
-            // selection += " and carrier_enabled = 1";
-            if (DBG) log("createAllApnList: selection=" + selection);
-
-            // ORDER BY Telephony.Carriers._ID ("_id")
-            Cursor cursor = mPhone.getContext().getContentResolver().query(
-                    Uri.withAppendedPath(Telephony.Carriers.CONTENT_URI, "filtered"),
-                    null, selection, null, Telephony.Carriers._ID);
-
-            if (cursor != null) {
-                if (cursor.getCount() > 0) {
-                    mAllApnSettings = createApnList(cursor);
-                } else {
-                    if (DBG) log("createAllApnList: cursor count is 0");
-                    mApnSettingsInitializationLog.log("no APN in db for carrier: " + operator);
-=======
-    private void createAllApnList() {
         mAllApnSettings.clear();
         IccRecords r = mIccRecords.get();
         String operator = (r != null) ? r.getOperatorNumeric() : "";
@@ -3251,7 +3223,6 @@ public class DcTracker extends Handler {
                 ApnSetting apn = ApnSetting.makeApnSetting(cursor);
                 if (apn == null) {
                     continue;
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
                 }
                 mAllApnSettings.add(apn);
             }

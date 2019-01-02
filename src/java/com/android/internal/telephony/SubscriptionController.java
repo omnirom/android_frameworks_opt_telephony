@@ -1564,30 +1564,6 @@ public class SubscriptionController extends ISub.Stub {
 
     }
 
-<<<<<<< HEAD
-    protected int[] getDummySubIds(int slotIndex) {
-        // FIXME: Remove notion of Dummy SUBSCRIPTION_ID.
-        // I tested this returning null as no one appears to care,
-        // but no connection came up on sprout with two sims.
-        // We need to figure out why and hopefully remove DummySubsIds!!!
-        int numSubs = getActiveSubInfoCountMax();
-        if (numSubs > 0) {
-            int[] dummyValues = new int[numSubs];
-            for (int i = 0; i < numSubs; i++) {
-                dummyValues[i] = SubscriptionManager.DUMMY_SUBSCRIPTION_ID_BASE - slotIndex;
-            }
-            if (VDBG) {
-                logd("getDummySubIds: slotIndex=" + slotIndex
-                    + " return " + numSubs + " DummySubIds with each subId=" + dummyValues[0]);
-            }
-            return dummyValues;
-        } else {
-            return null;
-        }
-    }
-
-=======
->>>>>>> ba995cc191903229b9a880e23bdf2c8a00fa8f51
     /**
      * @return the number of records cleared
      */
