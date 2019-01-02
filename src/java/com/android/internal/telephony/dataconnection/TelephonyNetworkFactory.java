@@ -258,6 +258,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                 isApplicable = mIsActive;
             }
         }
+
+        // TODO(b/121393970): re-implement mPhoneId
+        int mPhoneId = -1;
         //Allow EIMS networkrequest on default slot in SIM less case.
         if (isApplicable || (isNetworkCapabilityEims(networkRequest) &&
                 PhoneFactory.getDefaultPhone().getPhoneId() == mPhoneId &&
