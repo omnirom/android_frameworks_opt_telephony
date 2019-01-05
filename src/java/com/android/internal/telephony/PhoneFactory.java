@@ -247,8 +247,7 @@ public class PhoneFactory {
                 int maxActivePhones = sPhoneConfigurationManager
                         .getNumberOfModemsWithSimultaneousDataConnections();
 
-                sPhoneSwitcher = telephonyComponentFactory.
-                        makePhoneSwitcher(maxActivePhones, numPhones,
+                sPhoneSwitcher = PhoneSwitcher.make(maxActivePhones, numPhones,
                         sContext, sc, Looper.myLooper(), tr, sCommandsInterfaces,
                         sPhones);
 
@@ -262,8 +261,7 @@ public class PhoneFactory {
                 sTelephonyNetworkFactories = new TelephonyNetworkFactory[numPhones];
                 for (int i = 0; i < numPhones; i++) {
                     sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
-                            sPhoneSwitcher, sc, sSubscriptionMonitor, Looper.myLooper(),
-                            sContext, i, sPhones[i].mDcTracker);
+                            sSubscriptionMonitor, Looper.myLooper(), sPhones[i]);
                 }
                 telephonyComponentFactory.makeExtTelephonyClasses(
                         context, sPhones, sCommandsInterfaces);
