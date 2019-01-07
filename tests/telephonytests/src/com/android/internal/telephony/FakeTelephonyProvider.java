@@ -25,10 +25,11 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.BaseColumns;
-import android.support.test.InstrumentationRegistry;
 import android.telephony.SubscriptionManager;
 import android.test.mock.MockContentProvider;
 import android.util.Log;
+
+import androidx.test.InstrumentationRegistry;
 
 public class FakeTelephonyProvider extends MockContentProvider {
     static final String TAG = "FakeTelephonyProvider";
@@ -97,7 +98,10 @@ public class FakeTelephonyProvider extends MockContentProvider {
                     + SubscriptionManager.WFC_IMS_ROAMING_MODE + " INTEGER DEFAULT -1,"
                     + SubscriptionManager.WFC_IMS_ROAMING_ENABLED + " INTEGER DEFAULT -1,"
                     + SubscriptionManager.IS_OPPORTUNISTIC + " INTEGER DEFAULT 0,"
-                    + SubscriptionManager.GROUP_UUID + " TEXT"
+                    + SubscriptionManager.GROUP_UUID + " TEXT,"
+                    + SubscriptionManager.IS_METERED + " INTEGER DEFAULT 1,"
+                    + SubscriptionManager.ISO_COUNTRY_CODE + " TEXT,"
+                    + SubscriptionManager.CARRIER_ID + " INTEGER DEFAULT -1"
                     + ");";
         }
 

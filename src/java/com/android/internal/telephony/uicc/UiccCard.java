@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.TelephonyComponentFactory;
@@ -85,7 +86,8 @@ public class UiccCard {
 
             if (mCardState != CardState.CARDSTATE_ABSENT) {
                 if (mUiccProfile == null) {
-                    mUiccProfile = TelephonyComponentFactory.getInstance().makeUiccProfile(
+                    mUiccProfile = TelephonyComponentFactory.getInstance()
+                            .inject(UiccProfile.class.getName()).makeUiccProfile(
                             mContext, mCi, ics, mPhoneId, this, mLock);
                 } else {
                     mUiccProfile.update(mContext, mCi, ics);
@@ -488,7 +490,7 @@ public class UiccCard {
      * card or the EID of the card for an eUICC card.
      */
     public String getCardId() {
-        if (mCardId != null) {
+        if (!TextUtils.isEmpty(mCardId)) {
             return mCardId;
         } else if (mUiccProfile != null) {
             return mUiccProfile.getIccId();
@@ -509,6 +511,8 @@ public class UiccCard {
         pw.println("UiccCard:");
         pw.println(" mCi=" + mCi);
         pw.println(" mCardState=" + mCardState);
+        pw.println(" mCardId=" + mCardId);
+        pw.println(" mPhoneId=" + mPhoneId);
         pw.println();
         if (mUiccProfile != null) {
             mUiccProfile.dump(fd, pw, args);

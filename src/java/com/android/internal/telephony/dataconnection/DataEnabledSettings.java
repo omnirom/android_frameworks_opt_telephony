@@ -17,6 +17,7 @@
 package com.android.internal.telephony.dataconnection;
 
 
+import android.annotation.IntDef;
 import android.content.ContentResolver;
 import android.os.Handler;
 import android.os.RegistrantList;
@@ -33,6 +34,8 @@ import com.android.internal.telephony.Phone;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 
 /**
  * The class to hold different data enabled/disabled settings. Also it allows clients to register
@@ -42,6 +45,19 @@ import java.io.PrintWriter;
 public class DataEnabledSettings {
 
     private static final String LOG_TAG = "DataEnabledSettings";
+
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(prefix = {"REASON_"},
+            value = {
+                    REASON_REGISTERED,
+                    REASON_INTERNAL_DATA_ENABLED,
+                    REASON_USER_DATA_ENABLED,
+                    REASON_POLICY_DATA_ENABLED,
+                    REASON_DATA_ENABLED_BY_CARRIER,
+                    REASON_PROVISIONED_CHANGED,
+                    REASON_PROVISIONING_DATA_ENABLED_CHANGED
+            })
+    public @interface DataEnabledChangedReason {}
 
     public static final int REASON_REGISTERED = 0;
 
@@ -76,10 +92,11 @@ public class DataEnabledSettings {
 
     private boolean mIsDataEnabled = false;
 
-    private Phone mPhone = null;
+    private final Phone mPhone;
+
     private ContentResolver mResolver = null;
 
-    private final RegistrantList mDataEnabledChangedRegistrants = new RegistrantList();
+    private final RegistrantList mOverallDataEnabledChangedRegistrants = new RegistrantList();
 
     private final LocalLog mSettingChangeLocalLog = new LocalLog(50);
 
@@ -100,9 +117,10 @@ public class DataEnabledSettings {
 
     public synchronized void setInternalDataEnabled(boolean enabled) {
         localLog("InternalDataEnabled", enabled);
-        mInternalDataEnabled = enabled;
-
-        updateDataEnabledAndNotify(REASON_INTERNAL_DATA_ENABLED);
+        if (mInternalDataEnabled != enabled) {
+            mInternalDataEnabled = enabled;
+            updateDataEnabledAndNotify(REASON_INTERNAL_DATA_ENABLED);
+        }
     }
     public synchronized boolean isInternalDataEnabled() {
         return mInternalDataEnabled;
@@ -111,7 +129,7 @@ public class DataEnabledSettings {
     public synchronized void setUserDataEnabled(boolean enabled) {
         localLog("UserDataEnabled", enabled);
         Settings.Global.putInt(mResolver, getMobileDataSettingName(), enabled ? 1 : 0);
-
+        mPhone.notifyUserMobileDataStateChanged(enabled);
         updateDataEnabledAndNotify(REASON_USER_DATA_ENABLED);
     }
 
@@ -159,9 +177,10 @@ public class DataEnabledSettings {
 
     public synchronized void setPolicyDataEnabled(boolean enabled) {
         localLog("PolicyDataEnabled", enabled);
-        mPolicyDataEnabled = enabled;
-
-        updateDataEnabledAndNotify(REASON_POLICY_DATA_ENABLED);
+        if (mPolicyDataEnabled != enabled) {
+            mPolicyDataEnabled = enabled;
+            updateDataEnabledAndNotify(REASON_POLICY_DATA_ENABLED);
+        }
     }
 
     public synchronized boolean isPolicyDataEnabled() {
@@ -170,9 +189,10 @@ public class DataEnabledSettings {
 
     public synchronized void setCarrierDataEnabled(boolean enabled) {
         localLog("CarrierDataEnabled", enabled);
-        mCarrierDataEnabled = enabled;
-
-        updateDataEnabledAndNotify(REASON_DATA_ENABLED_BY_CARRIER);
+        if (mCarrierDataEnabled != enabled) {
+            mCarrierDataEnabled = enabled;
+            updateDataEnabledAndNotify(REASON_DATA_ENABLED_BY_CARRIER);
+        }
     }
 
     public synchronized boolean isCarrierDataEnabled() {
@@ -235,16 +255,16 @@ public class DataEnabledSettings {
     }
 
     private void notifyDataEnabledChanged(boolean enabled, int reason) {
-        mDataEnabledChangedRegistrants.notifyResult(new Pair<>(enabled, reason));
+        mOverallDataEnabledChangedRegistrants.notifyResult(new Pair<>(enabled, reason));
     }
 
     public void registerForDataEnabledChanged(Handler h, int what, Object obj) {
-        mDataEnabledChangedRegistrants.addUnique(h, what, obj);
+        mOverallDataEnabledChangedRegistrants.addUnique(h, what, obj);
         notifyDataEnabledChanged(isDataEnabled(), REASON_REGISTERED);
     }
 
     public void unregisterForDataEnabledChanged(Handler h) {
-        mDataEnabledChangedRegistrants.remove(h);
+        mOverallDataEnabledChangedRegistrants.remove(h);
     }
 
     private void log(String s) {

@@ -77,7 +77,10 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaMmiCode;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
+import com.android.internal.telephony.dataconnection.DataEnabledSettings;
+import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
+import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -173,6 +176,7 @@ public class GsmCdmaPhone extends Phone {
     private IsimUiccRecords mIsimUiccRecords;
     public GsmCdmaCallTracker mCT;
     public ServiceStateTracker mSST;
+    public EmergencyNumberTracker mEmergencyNumberTracker;
     private ArrayList <MmiCode> mPendingMMIs = new ArrayList<MmiCode>();
     private IccPhoneBookInterfaceManager mIccPhoneBookIntManager;
     // Used for identify the carrier of current subscription
@@ -209,6 +213,8 @@ public class GsmCdmaPhone extends Phone {
     private CarrierKeyDownloadManager mCDM;
     private CarrierInfoManager mCIM;
 
+    private final SettingsObserver mSettingsObserver;
+
     // Constructors
 
     public GsmCdmaPhone(Context context, CommandsInterface ci, PhoneNotifier notifier, int phoneId,
@@ -228,22 +234,46 @@ public class GsmCdmaPhone extends Phone {
         initRatSpecific(precisePhoneType);
         // CarrierSignalAgent uses CarrierActionAgent in construction so it needs to be created
         // after CarrierActionAgent.
-        mCarrierActionAgent = mTelephonyComponentFactory.makeCarrierActionAgent(this);
-        mCarrierSignalAgent = mTelephonyComponentFactory.makeCarrierSignalAgent(this);
-        mTransportManager = mTelephonyComponentFactory.makeTransportManager(this);
-        mSST = mTelephonyComponentFactory.makeServiceStateTracker(this, this.mCi);
+        mCarrierActionAgent = mTelephonyComponentFactory.inject(CarrierActionAgent.class.getName())
+                .makeCarrierActionAgent(this);
+        mCarrierSignalAgent = mTelephonyComponentFactory.inject(CarrierSignalAgent.class.getName())
+                .makeCarrierSignalAgent(this);
+        mTransportManager = mTelephonyComponentFactory.inject(TransportManager.class.getName())
+                .makeTransportManager(this);
+        mSST = mTelephonyComponentFactory.inject(ServiceStateTracker.class.getName())
+                .makeServiceStateTracker(this, this.mCi);
+        mEmergencyNumberTracker = mTelephonyComponentFactory
+                .inject(EmergencyNumberTracker.class.getName()).makeEmergencyNumberTracker(
+                this, this.mCi);
+        mDataEnabledSettings = mTelephonyComponentFactory
+                .inject(DataEnabledSettings.class.getName()).makeDataEnabledSettings(this);
+
         // DcTracker uses SST so needs to be created after it is instantiated
         for (int transport : mTransportManager.getAvailableTransports()) {
-            mDcTrackers.put(transport, mTelephonyComponentFactory.makeDcTracker(this,
-                    transport));
+            mDcTrackers.put(transport, mTelephonyComponentFactory.inject(DcTracker.class.getName())
+                    .makeDcTracker(this, transport));
         }
 
-        mCarrierResolver = mTelephonyComponentFactory.makeCarrierResolver(this);
+        mCarrierResolver = mTelephonyComponentFactory.inject(CarrierResolver.class.getName())
+                .makeCarrierResolver(this);
+
+        getCarrierActionAgent().registerForCarrierAction(
+                CarrierActionAgent.CARRIER_ACTION_SET_METERED_APNS_ENABLED, this,
+                EVENT_SET_CARRIER_DATA_ENABLED, null, false);
 
         mSST.registerForNetworkAttached(this, EVENT_REGISTERED_TO_NETWORK, null);
-        mDeviceStateMonitor = mTelephonyComponentFactory.makeDeviceStateMonitor(this);
+        mDeviceStateMonitor = mTelephonyComponentFactory.inject(DeviceStateMonitor.class.getName())
+                .makeDeviceStateMonitor(this);
 
         mSST.registerForVoiceRegStateOrRatChanged(this, EVENT_VRS_OR_RAT_CHANGED, null);
+
+        mSettingsObserver = new SettingsObserver(context, this);
+        mSettingsObserver.observe(
+                Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED),
+                EVENT_DEVICE_PROVISIONED_CHANGE);
+        mSettingsObserver.observe(
+                Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONING_MOBILE_DATA_ENABLED),
+                EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE);
         logd("GsmCdmaPhone: constructor: sub = " + mPhoneId);
     }
 
@@ -265,12 +295,17 @@ public class GsmCdmaPhone extends Phone {
             mSimulatedRadioControl = (SimulatedRadioControl) ci;
         }
 
-        mCT = mTelephonyComponentFactory.makeGsmCdmaCallTracker(this);
-        mIccPhoneBookIntManager = mTelephonyComponentFactory.makeIccPhoneBookInterfaceManager(this);
+        mCT = mTelephonyComponentFactory.inject(GsmCdmaCallTracker.class.getName())
+                .makeGsmCdmaCallTracker(this);
+        mIccPhoneBookIntManager = mTelephonyComponentFactory
+                .inject(IccPhoneBookInterfaceManager.class.getName())
+                .makeIccPhoneBookInterfaceManager(this);
         PowerManager pm
                 = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, LOG_TAG);
-        mIccSmsInterfaceManager = mTelephonyComponentFactory.makeIccSmsInterfaceManager(this);
+        mIccSmsInterfaceManager = mTelephonyComponentFactory
+                .inject(IccSmsInterfaceManager.class.getName())
+                .makeIccSmsInterfaceManager(this);
 
         mCi.registerForAvailable(this, EVENT_RADIO_AVAILABLE, null);
         mCi.registerForOffOrNotAvailable(this, EVENT_RADIO_OFF_OR_NOT_AVAILABLE, null);
@@ -283,10 +318,11 @@ public class GsmCdmaPhone extends Phone {
         mCi.setOnSs(this, EVENT_SS, null);
 
         //CDMA
-        mCdmaSSM = mTelephonyComponentFactory.getCdmaSubscriptionSourceManagerInstance(mContext,
+        mCdmaSSM = mTelephonyComponentFactory.inject(CdmaSubscriptionSourceManager.class.getName())
+                .getCdmaSubscriptionSourceManagerInstance(mContext,
                 mCi, this, EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED, null);
-        mEriManager = mTelephonyComponentFactory.makeEriManager(this, mContext,
-                EriManager.ERI_FROM_XML);
+        mEriManager = mTelephonyComponentFactory.inject(EriManager.class.getName())
+                .makeEriManager(this, mContext, EriManager.ERI_FROM_XML);
         mCi.setEmergencyCallbackMode(this, EVENT_EMERGENCY_CALLBACK_MODE_ENTER, null);
         mCi.registerForExitEmergencyCallbackMode(this, EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE,
                 null);
@@ -376,6 +412,7 @@ public class GsmCdmaPhone extends Phone {
         if (TextUtils.isEmpty(operatorNumeric)) {
             logd("setIsoCountryProperty: clear 'gsm.sim.operator.iso-country'");
             tm.setSimCountryIsoForPhone(mPhoneId, "");
+            SubscriptionController.getInstance().setCountryIso("", getSubId());
         } else {
             String iso = "";
             try {
@@ -386,6 +423,7 @@ public class GsmCdmaPhone extends Phone {
 
             logd("setIsoCountryProperty: set 'gsm.sim.operator.iso-country' to iso=" + iso);
             tm.setSimCountryIsoForPhone(mPhoneId, iso);
+            SubscriptionController.getInstance().setCountryIso(iso, getSubId());
         }
     }
 
@@ -478,6 +516,11 @@ public class GsmCdmaPhone extends Phone {
     @Override
     public ServiceStateTracker getServiceStateTracker() {
         return mSST;
+    }
+
+    @Override
+    public EmergencyNumberTracker getEmergencyNumberTracker() {
+        return mEmergencyNumberTracker;
     }
 
     @Override
@@ -1467,13 +1510,13 @@ public class GsmCdmaPhone extends Phone {
                         b.getString(CarrierConfigManager.KEY_DEFAULT_VM_NUMBER_ROAMING_STRING);
                 if (!TextUtils.isEmpty(defaultVmNumberRoaming) && mSST.mSS.getRoaming()) {
                     number = defaultVmNumberRoaming;
-                } else {
+                } else if (!TextUtils.isEmpty(defaultVmNumber)) {
                     number = defaultVmNumber;
                 }
             }
         }
 
-        if (!isPhoneTypeGsm() && TextUtils.isEmpty(number)) {
+        if (TextUtils.isEmpty(number)) {
             // Read platform settings for dynamic voicemail number
             CarrierConfigManager configManager = (CarrierConfigManager)
                     getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
@@ -1481,8 +1524,6 @@ public class GsmCdmaPhone extends Phone {
             if (b != null && b.getBoolean(
                     CarrierConfigManager.KEY_CONFIG_TELEPHONY_USE_OWN_NUMBER_FOR_VOICEMAIL_BOOL)) {
                 number = getLine1Number();
-            } else {
-                number = "*86";
             }
         }
 
@@ -2168,26 +2209,17 @@ public class GsmCdmaPhone extends Phone {
         mCT.unregisterForCallWaiting(h);
     }
 
+    /**
+     * Whether data is enabled by user. Unlike isDataEnabled, this only
+     * checks user setting stored in {@link android.provider.Settings.Global#MOBILE_DATA}
+     * if not provisioning, or isProvisioningDataEnabled if provisioning.
+     */
     @Override
     public boolean isUserDataEnabled() {
-        if (getDcTracker(TransportType.WWAN) != null) {
-            return getDcTracker(TransportType.WWAN).isUserDataEnabled();
-        }
-        return false;
-    }
-
-    @Override
-    public boolean isDataEnabled() {
-        if (getDcTracker(TransportType.WWAN) != null) {
-            return getDcTracker(TransportType.WWAN).isDataEnabled();
-        }
-        return false;
-    }
-
-    @Override
-    public void setUserDataEnabled(boolean enable) {
-        if (getDcTracker(TransportType.WWAN) != null) {
-            getDcTracker(TransportType.WWAN).setUserDataEnabled(enable);
+        if (mDataEnabledSettings.isProvisioning()) {
+            return mDataEnabledSettings.isProvisioningDataEnabled();
+        } else {
+            return mDataEnabledSettings.isUserDataEnabled();
         }
     }
 
@@ -2717,6 +2749,17 @@ public class GsmCdmaPhone extends Phone {
                 onVoiceRegStateOrRatChanged(vrsRatPair.first, vrsRatPair.second);
                 break;
 
+            case EVENT_SET_CARRIER_DATA_ENABLED:
+                ar = (AsyncResult) msg.obj;
+                boolean enabled = (boolean) ar.result;
+                mDataEnabledSettings.setCarrierDataEnabled(enabled);
+                break;
+            case EVENT_DEVICE_PROVISIONED_CHANGE:
+                mDataEnabledSettings.updateProvisionedChanged();
+                break;
+            case EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE:
+                mDataEnabledSettings.updateProvisioningDataEnabled();
+                break;
             default:
                 super.handleMessage(msg);
         }
@@ -3164,9 +3207,7 @@ public class GsmCdmaPhone extends Phone {
             // send an Intent
             sendEmergencyCallbackModeChange();
             // Re-initiate data connection
-            if (getDcTracker(TransportType.WWAN) != null) {
-                getDcTracker(TransportType.WWAN).setInternalDataEnabled(true);
-            }
+            mDataEnabledSettings.setInternalDataEnabled(true);
             notifyEmergencyCallRegistrants(false);
         }
     }

@@ -27,6 +27,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.DataFailCause;
 import android.telephony.PhoneStateListener;
 import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
@@ -34,7 +35,6 @@ import android.telephony.data.DataCallResponse;
 
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.dataconnection.DataConnection.UpdateLinkPropertyResult;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -330,8 +330,8 @@ public class DcController extends StateMachine {
                             apnsToCleanup.addAll(apnContexts);
                             mDct.isCleanupRequired.set(false);
                         } else {
-                            DcFailCause failCause = DcFailCause.fromInt(newState.getStatus());
-                            if (failCause.isRadioRestartFailure(mPhone.getContext(),
+                            int failCause = DataFailCause.getFailCause(newState.getStatus());
+                            if (DataFailCause.isRadioRestartFailure(mPhone.getContext(), failCause,
                                         mPhone.getSubId())) {
                                 if (DBG) {
                                     log("onDataStateChanged: X restart radio, failCause="
@@ -394,9 +394,7 @@ public class DcController extends StateMachine {
                                         if (DBG) log("onDataStateChanged: simple change");
 
                                         for (ApnContext apnContext : apnContexts) {
-                                             mPhone.notifyDataConnection(
-                                                 PhoneConstants.REASON_LINK_PROPERTIES_CHANGED,
-                                                 apnContext.getApnType());
+                                            mPhone.notifyDataConnection(apnContext.getApnType());
                                         }
                                     }
                                 } else {
@@ -451,7 +449,7 @@ public class DcController extends StateMachine {
 
             // Cleanup connections that have changed
             for (ApnContext apnContext : apnsToCleanup) {
-               mDct.sendCleanUpConnection(true, apnContext);
+                mDct.cleanUpConnection(apnContext);
             }
 
             // Retry connections that have disappeared

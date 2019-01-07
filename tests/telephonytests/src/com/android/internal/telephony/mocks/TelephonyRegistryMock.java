@@ -306,26 +306,26 @@ public class TelephonyRegistryMock extends ITelephonyRegistry.Stub {
 
     @Override
     public void notifyDataConnection(int state, boolean isDataConnectivityPossible,
-            String reason, String apn, String apnType, LinkProperties linkProperties,
+            String apn, String apnType, LinkProperties linkProperties,
             NetworkCapabilities networkCapabilities, int networkType, boolean roaming) {
         throw new RuntimeException("Not implemented");
     }
 
     @Override
     public void notifyDataConnectionForSubscriber(int subId, int state,
-            boolean isDataConnectivityPossible, String reason, String apn, String apnType,
+            boolean isDataConnectivityPossible, String apn, String apnType,
             LinkProperties linkProperties, NetworkCapabilities networkCapabilities,
             int networkType, boolean roaming) {
         throw new RuntimeException("Not implemented");
     }
 
     @Override
-    public void notifyDataConnectionFailed(String reason, String apnType) {
+    public void notifyDataConnectionFailed(String apnType) {
         throw new RuntimeException("Not implemented");
     }
 
     @Override
-    public void notifyDataConnectionFailedForSubscriber(int subId, String reason, String apnType) {
+    public void notifyDataConnectionFailedForSubscriber(int subId, String apnType) {
         throw new RuntimeException("Not implemented");
     }
 
@@ -361,6 +361,11 @@ public class TelephonyRegistryMock extends ITelephonyRegistry.Stub {
     }
 
     @Override
+    public void notifyEmergencyNumberList() {
+        throw new RuntimeException("Not implemented");
+    }
+
+    @Override
     public void notifyPreciseCallState(int ringingCallState, int foregroundCallState,
             int backgroundCallState) {
         throw new RuntimeException("Not implemented");
@@ -372,7 +377,7 @@ public class TelephonyRegistryMock extends ITelephonyRegistry.Stub {
     }
 
     @Override
-    public void notifyPreciseDataConnectionFailed(String reason, String apnType, String apn,
+    public void notifyPreciseDataConnectionFailed(String apnType, String apn,
             String failCause) {
         throw new RuntimeException("Not implemented");
     }
