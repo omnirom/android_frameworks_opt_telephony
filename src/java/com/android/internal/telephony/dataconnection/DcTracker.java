@@ -79,7 +79,6 @@ import android.util.Pair;
 import android.util.SparseArray;
 import android.view.WindowManager;
 
-import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.CarrierActionAgent;
 import com.android.internal.telephony.DctConstants;
@@ -1761,27 +1760,11 @@ public class DcTracker extends Handler {
         ArrayList<ApnSetting> retDunSettings = new ArrayList<ApnSetting>();
 
         // Places to look for tether APN in order: TETHER_DUN_APN setting (to be deprecated soon),
-        // APN database, and config_tether_apndata resource (to be deprecated soon).
+        // APN database
         String apnData = Settings.Global.getString(mResolver, Settings.Global.TETHER_DUN_APN);
         if (!TextUtils.isEmpty(apnData)) {
             dunCandidates.addAll(ApnSetting.arrayFromString(apnData));
             if (VDBG) log("fetchDunApns: dunCandidates from Setting: " + dunCandidates);
-        }
-
-        // todo: remove this and config_tether_apndata after APNs are moved from overlay to apns xml
-        // If TETHER_DUN_APN isn't set or APN database doesn't have dun APN,
-        // try the resource as last resort.
-        if (dunCandidates.isEmpty()) {
-            String[] apnArrayData = mPhone.getContext().getResources()
-                .getStringArray(R.array.config_tether_apndata);
-            if (!ArrayUtils.isEmpty(apnArrayData)) {
-                for (String apnString : apnArrayData) {
-                    ApnSetting apn = ApnSetting.fromString(apnString);
-                    // apn may be null if apnString isn't valid or has error parsing
-                    if (apn != null) dunCandidates.add(apn);
-                }
-                if (VDBG) log("fetchDunApns: dunCandidates from resource: " + dunCandidates);
-            }
         }
 
         if (dunCandidates.isEmpty()) {
@@ -1821,13 +1804,24 @@ public class DcTracker extends Handler {
                 .query(Uri.withAppendedPath(Telephony.Carriers.CONTENT_URI,
                     "preferapnset/subId/" + mPhone.getSubId()),
                         new String[] {Telephony.Carriers.APN_SET_ID}, null, null, null);
+        if (c == null) {
+            loge("getPreferredApnSetId: cursor is null");
+            return Telephony.Carriers.NO_SET_SET;
+        }
+
+        int setId;
         if (c.getCount() < 1) {
             loge("getPreferredApnSetId: no APNs found");
-            return Telephony.Carriers.NO_SET_SET;
+            setId = Telephony.Carriers.NO_SET_SET;
         } else {
             c.moveToFirst();
-            return c.getInt(0 /* index of Telephony.Carriers.APN_SET_ID */);
+            setId = c.getInt(0 /* index of Telephony.Carriers.APN_SET_ID */);
         }
+
+        if (!c.isClosed()) {
+            c.close();
+        }
+        return setId;
     }
 
     public boolean hasMatchedTetherApnSetting() {

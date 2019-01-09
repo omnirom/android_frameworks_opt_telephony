@@ -54,7 +54,6 @@ import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.telephony.VoLteServiceState;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
 
@@ -62,9 +61,9 @@ import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
-import com.android.internal.telephony.dataconnection.AccessNetworksManager;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DcTracker;
+import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -286,7 +285,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private final String mActionDetached;
     private final String mActionAttached;
     protected DeviceStateMonitor mDeviceStateMonitor;
-    protected AccessNetworksManager mAccessNetworksManager;
+    protected TransportManager mTransportManager;
 
     protected int mPhoneId;
 
@@ -746,7 +745,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (ret != null && ret.length != 0) {
             int state = ret[0];
             switch(state) {
-                case VoLteServiceState.HANDOVER_STARTED:
+                case TelephonyManager.SRVCC_STATE_HANDOVER_STARTED:
                     srvccState = Call.SrvccState.STARTED;
                     if (imsPhone != null) {
                         conn = imsPhone.getHandoverConnection();
@@ -755,7 +754,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                         Rlog.d(LOG_TAG, "HANDOVER_STARTED: mImsPhone null");
                     }
                     break;
-                case VoLteServiceState.HANDOVER_COMPLETED:
+                case TelephonyManager.SRVCC_STATE_HANDOVER_COMPLETED:
                     srvccState = Call.SrvccState.COMPLETED;
                     if (imsPhone != null) {
                         imsPhone.notifySrvccState(srvccState);
@@ -763,8 +762,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                         Rlog.d(LOG_TAG, "HANDOVER_COMPLETED: mImsPhone null");
                     }
                     break;
-                case VoLteServiceState.HANDOVER_FAILED:
-                case VoLteServiceState.HANDOVER_CANCELED:
+                case TelephonyManager.SRVCC_STATE_HANDOVER_FAILED:
+                case TelephonyManager.SRVCC_STATE_HANDOVER_CANCELED:
                     srvccState = Call.SrvccState.FAILED;
                     break;
 
@@ -775,8 +774,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
             getCallTracker().notifySrvccState(srvccState, conn);
 
-            VoLteServiceState lteState = new VoLteServiceState(state);
-            notifyVoLteServiceStateChanged(lteState);
+            notifySrvccStateChanged(state);
         }
     }
 
@@ -1638,6 +1636,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * @return The instance of transport manager
+     */
+    public TransportManager getTransportManager() {
+        return null;
+    }
+
+    /**
      * Update voice activation state
      */
     public void setVoiceActivationState(int state) {
@@ -2169,15 +2174,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Perform the specified type of NV config reset. The radio will be taken offline
-     * and the device must be rebooted after erasing the NV. Used for device
+     * Perform the radio modem reboot. The radio will be taken offline. Used for device
      * configuration by some CDMA operators.
+     * TODO: reuse nvResetConfig for now, should move to separate HAL API.
      *
-     * @param resetType reset type: 1: reload NV reset, 2: erase NV reset, 3: factory NV reset
      * @param response Callback message.
      */
-    public void nvResetConfig(int resetType, Message response) {
-        mCi.nvResetConfig(resetType, response);
+    public void rebootModem(Message response) {
+        mCi.nvResetConfig(1 /* 1: reload NV reset, trigger a modem reboot */, response);
+    }
+
+    /**
+     * Perform the modem configuration reset. Used for device configuration by some CDMA operators.
+     * TODO: reuse nvResetConfig for now, should move to separate HAL API.
+     *
+     * @param response Callback message.
+     */
+    public void resetModemConfig(Message response) {
+        mCi.nvResetConfig(3 /* factory NV reset */, response);
     }
 
     public void notifyDataActivity() {
@@ -2241,8 +2255,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyPhysicalChannelConfiguration(this, configs);
     }
 
-    public void notifyVoLteServiceStateChanged(VoLteServiceState lteState) {
-        mNotifier.notifyVoLteServiceStateChanged(this, lteState);
+    /**
+     * Notify listeners that SRVCC state has changed.
+     */
+    public void notifySrvccStateChanged(int state) {
+        mNotifier.notifySrvccStateChanged(this, state);
     }
 
     /**
@@ -2346,6 +2363,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             editor.apply();
         } else {
             Rlog.e(LOG_TAG, "setVoiceMessageCount in sharedPreference: invalid subId " + subId);
+        }
+        // store voice mail count in SIM
+        IccRecords records = UiccController.getInstance().getIccRecords(
+                mPhoneId, UiccController.APP_FAM_3GPP);
+        if (records != null) {
+            Rlog.d(LOG_TAG, "setVoiceMessageCount: updating SIM Records");
+            records.setVoiceMessageWaiting(1, countWaiting);
+        } else {
+            Rlog.d(LOG_TAG, "setVoiceMessageCount: SIM Records not found");
         }
         // notify listeners of voice mail
         notifyMessageWaitingIndicator();
@@ -2852,8 +2878,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Check if TETHER_DUN_APN setting or config_tether_apndata includes APN that matches
-     * current operator.
+     * Check if there are matching tethering (i.e DUN) for the carrier.
      * @return true if there is a matching DUN APN.
      */
     public boolean hasMatchedTetherApnSetting() {
@@ -3131,6 +3156,18 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     public String getCarrierName() {
+        return null;
+    }
+
+    public int getMNOCarrierId() {
+        return TelephonyManager.UNKNOWN_CARRIER_ID;
+    }
+
+    public int getPreciseCarrierId() {
+        return TelephonyManager.UNKNOWN_CARRIER_ID;
+    }
+
+    public String getPreciseCarrierName() {
         return null;
     }
 
@@ -3889,6 +3926,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.println("DeviceStateMonitor:");
             mDeviceStateMonitor.dump(fd, pw, args);
             pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mTransportManager != null) {
+            mTransportManager.dump(fd, pw, args);
         }
 
         if (mCi != null && mCi instanceof RIL) {

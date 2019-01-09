@@ -2307,4 +2307,8 @@ public class SimulatedCommands extends BaseCommands
     public void stopNattKeepalive(int sessionHandle, Message result) {
         SimulatedCommandsVerifier.getInstance().stopNattKeepalive(sessionHandle, result);
     }
+
+    public Handler getHandler() {
+        return mHandlerThread.getThreadHandler();
+    }
 }
