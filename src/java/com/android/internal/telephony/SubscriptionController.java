@@ -964,6 +964,23 @@ public class SubscriptionController extends ISub.Stub {
                     Uri uri = insertEmptySubInfoRecord(iccId, slotIndex);
                     if (DBG) logdl("[addSubInfoRecord] New record created: " + uri);
                 } else {
+                    if (cursor.getCount() > 1) {
+                        String iccId1 = cursor.getString(3);
+                        while(cursor.moveToNext()) {
+                            String iccId2 = cursor.getString(3);
+                            int subId2 = cursor.getInt(0);
+                            if (iccId1.equals(iccId2)) {
+                                resolver.delete(SubscriptionManager.CONTENT_URI,
+                                        SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID +
+                                        "=?",new String[]{Long.toString(subId2)});
+                            } else {
+                                resolver.delete(SubscriptionManager.CONTENT_URI,
+                                        SubscriptionManager.ICC_ID + "=?",new String[]{iccId2});
+                            }
+                        }
+                        cursor.moveToFirst();
+                    }
+
                     int subId = cursor.getInt(0);
                     int oldSimInfoId = cursor.getInt(1);
                     int nameSource = cursor.getInt(2);

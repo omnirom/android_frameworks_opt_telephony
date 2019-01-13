@@ -715,8 +715,9 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         // verify that wakeLock is acquired in ECM
         assertEquals(true, mPhoneUT.getWakeLock().isHeld());
 
-        mPhoneUT.setOnEcbModeExitResponse(mTestHandler, EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
-        mPhoneUT.registerForEmergencyCallToggle(mTestHandler, EVENT_EMERGENCY_CALL_TOGGLE, null);
+        EcbmHandler.getInstance().setOnEcbModeExitResponse(mTestHandler,
+                EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
+         mPhoneUT.registerForEmergencyCallToggle(mTestHandler, EVENT_EMERGENCY_CALL_TOGGLE, null);
 
         // verify handling of emergency callback mode exit
         mSimulatedCommands.notifyExitEmergencyCallbackMode();
@@ -803,7 +804,8 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         // verify that wakeLock is acquired in ECM
         assertEquals(true, mPhoneUT.getWakeLock().isHeld());
 
-        mPhoneUT.setOnEcbModeExitResponse(mTestHandler, EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
+        EcbmHandler.getInstance().setOnEcbModeExitResponse(mTestHandler,
+                EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
         mPhoneUT.registerForEmergencyCallToggle(mTestHandler, EVENT_EMERGENCY_CALL_TOGGLE, null);
 
         // verify handling of emergency callback mode exit when modem resets
