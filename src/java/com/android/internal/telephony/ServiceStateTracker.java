@@ -3104,8 +3104,6 @@ public class ServiceStateTracker extends Handler {
         }
 
         if (hasRilVoiceRadioTechnologyChanged || hasRilDataRadioTechnologyChanged) {
-            // Technology has changed, try to fix signal strength type.
-            mSignalStrength.fixType();
             notifySignalStrength();
         }
 
