@@ -70,7 +70,6 @@ import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Pair;
-import android.util.SparseIntArray;
 
 import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
@@ -98,6 +97,7 @@ import com.android.internal.telephony.PhoneInternalInterface;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
+import com.android.internal.telephony.dataconnection.DataEnabledSettings.DataEnabledChangedReason;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
@@ -421,237 +421,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private boolean mSupportDowngradeVtToAudio = false;
 
     /**
-     * Stores the mapping of {@code ImsReasonInfo#CODE_*} to {@code PreciseDisconnectCause#*}
-     */
-    private static final SparseIntArray PRECISE_CAUSE_MAP = new SparseIntArray();
-    static {
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_ILLEGAL_ARGUMENT,
-                PreciseDisconnectCause.LOCAL_ILLEGAL_ARGUMENT);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_ILLEGAL_STATE,
-                PreciseDisconnectCause.LOCAL_ILLEGAL_STATE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_INTERNAL_ERROR,
-                PreciseDisconnectCause.LOCAL_INTERNAL_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_IMS_SERVICE_DOWN,
-                PreciseDisconnectCause.LOCAL_IMS_SERVICE_DOWN);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NO_PENDING_CALL,
-                PreciseDisconnectCause.LOCAL_NO_PENDING_CALL);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_ENDED_BY_CONFERENCE_MERGE,
-                PreciseDisconnectCause.NORMAL);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_POWER_OFF,
-                PreciseDisconnectCause.LOCAL_POWER_OFF);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_LOW_BATTERY,
-                PreciseDisconnectCause.LOCAL_LOW_BATTERY);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NETWORK_NO_SERVICE,
-                PreciseDisconnectCause.LOCAL_NETWORK_NO_SERVICE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NETWORK_NO_LTE_COVERAGE,
-                PreciseDisconnectCause.LOCAL_NETWORK_NO_LTE_COVERAGE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NETWORK_ROAMING,
-                PreciseDisconnectCause.LOCAL_NETWORK_ROAMING);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NETWORK_IP_CHANGED,
-                PreciseDisconnectCause.LOCAL_NETWORK_IP_CHANGED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_SERVICE_UNAVAILABLE,
-                PreciseDisconnectCause.LOCAL_SERVICE_UNAVAILABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_NOT_REGISTERED,
-                PreciseDisconnectCause.LOCAL_NOT_REGISTERED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_EXCEEDED,
-                PreciseDisconnectCause.LOCAL_MAX_CALL_EXCEEDED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_DECLINE,
-                PreciseDisconnectCause.LOCAL_CALL_DECLINE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_VCC_ON_PROGRESSING,
-                PreciseDisconnectCause.LOCAL_CALL_VCC_ON_PROGRESSING);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_RESOURCE_RESERVATION_FAILED,
-                PreciseDisconnectCause.LOCAL_CALL_RESOURCE_RESERVATION_FAILED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_CS_RETRY_REQUIRED,
-                PreciseDisconnectCause.LOCAL_CALL_CS_RETRY_REQUIRED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_VOLTE_RETRY_REQUIRED,
-                PreciseDisconnectCause.LOCAL_CALL_VOLTE_RETRY_REQUIRED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_CALL_TERMINATED,
-                PreciseDisconnectCause.LOCAL_CALL_TERMINATED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOCAL_HO_NOT_FEASIBLE,
-                PreciseDisconnectCause.LOCAL_HO_NOT_FEASIBLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_TIMEOUT_1XX_WAITING,
-                PreciseDisconnectCause.TIMEOUT_1XX_WAITING);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_TIMEOUT_NO_ANSWER,
-                PreciseDisconnectCause.TIMEOUT_NO_ANSWER);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_TIMEOUT_NO_ANSWER_CALL_UPDATE,
-                PreciseDisconnectCause.TIMEOUT_NO_ANSWER_CALL_UPDATE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_FDN_BLOCKED,
-                PreciseDisconnectCause.FDN_BLOCKED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_REDIRECTED,
-                PreciseDisconnectCause.SIP_REDIRECTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_BAD_REQUEST,
-                PreciseDisconnectCause.SIP_BAD_REQUEST);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_FORBIDDEN,
-                PreciseDisconnectCause.SIP_FORBIDDEN);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_NOT_FOUND,
-                PreciseDisconnectCause.SIP_NOT_FOUND);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_NOT_SUPPORTED,
-                PreciseDisconnectCause.SIP_NOT_SUPPORTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_REQUEST_TIMEOUT,
-                PreciseDisconnectCause.SIP_REQUEST_TIMEOUT);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_TEMPRARILY_UNAVAILABLE,
-                PreciseDisconnectCause.SIP_TEMPRARILY_UNAVAILABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_BAD_ADDRESS,
-                PreciseDisconnectCause.SIP_BAD_ADDRESS);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_BUSY,
-                PreciseDisconnectCause.SIP_BUSY);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_REQUEST_CANCELLED,
-                PreciseDisconnectCause.SIP_REQUEST_CANCELLED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_NOT_ACCEPTABLE,
-                PreciseDisconnectCause.SIP_NOT_ACCEPTABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_NOT_REACHABLE,
-                PreciseDisconnectCause.SIP_NOT_REACHABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_CLIENT_ERROR,
-                PreciseDisconnectCause.SIP_CLIENT_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_TRANSACTION_DOES_NOT_EXIST,
-                PreciseDisconnectCause.SIP_TRANSACTION_DOES_NOT_EXIST);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVER_INTERNAL_ERROR,
-                PreciseDisconnectCause.SIP_SERVER_INTERNAL_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVICE_UNAVAILABLE,
-                PreciseDisconnectCause.SIP_SERVICE_UNAVAILABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVER_TIMEOUT,
-                PreciseDisconnectCause.SIP_SERVER_TIMEOUT);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_SERVER_ERROR,
-                PreciseDisconnectCause.SIP_SERVER_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_USER_REJECTED,
-                PreciseDisconnectCause.SIP_USER_REJECTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SIP_GLOBAL_ERROR,
-                PreciseDisconnectCause.SIP_GLOBAL_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_EMERGENCY_TEMP_FAILURE,
-                PreciseDisconnectCause.EMERGENCY_TEMP_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_EMERGENCY_PERM_FAILURE,
-                PreciseDisconnectCause.EMERGENCY_PERM_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MEDIA_INIT_FAILED,
-                PreciseDisconnectCause.MEDIA_INIT_FAILED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MEDIA_NO_DATA,
-                PreciseDisconnectCause.MEDIA_NO_DATA);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MEDIA_NOT_ACCEPTABLE,
-                PreciseDisconnectCause.MEDIA_NOT_ACCEPTABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MEDIA_UNSPECIFIED,
-                PreciseDisconnectCause.MEDIA_UNSPECIFIED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_USER_TERMINATED,
-                PreciseDisconnectCause.USER_TERMINATED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_USER_NOANSWER,
-                PreciseDisconnectCause.USER_NOANSWER);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_USER_IGNORE,
-                PreciseDisconnectCause.USER_IGNORE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_USER_DECLINE,
-                PreciseDisconnectCause.USER_DECLINE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_LOW_BATTERY,
-                PreciseDisconnectCause.LOW_BATTERY);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_BLACKLISTED_CALL_ID,
-                PreciseDisconnectCause.BLACKLISTED_CALL_ID);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_USER_TERMINATED_BY_REMOTE,
-                PreciseDisconnectCause.USER_TERMINATED_BY_REMOTE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UT_NOT_SUPPORTED,
-                PreciseDisconnectCause.UT_NOT_SUPPORTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UT_SERVICE_UNAVAILABLE,
-                PreciseDisconnectCause.UT_SERVICE_UNAVAILABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UT_OPERATION_NOT_ALLOWED,
-                PreciseDisconnectCause.UT_OPERATION_NOT_ALLOWED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UT_NETWORK_ERROR,
-                PreciseDisconnectCause.UT_NETWORK_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UT_CB_PASSWORD_MISMATCH,
-                PreciseDisconnectCause.UT_CB_PASSWORD_MISMATCH);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_ECBM_NOT_SUPPORTED,
-                PreciseDisconnectCause.ECBM_NOT_SUPPORTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MULTIENDPOINT_NOT_SUPPORTED,
-                PreciseDisconnectCause.MULTIENDPOINT_NOT_SUPPORTED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_CALL_DROP_IWLAN_TO_LTE_UNAVAILABLE,
-                PreciseDisconnectCause.CALL_DROP_IWLAN_TO_LTE_UNAVAILABLE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_ANSWERED_ELSEWHERE,
-                PreciseDisconnectCause.ANSWERED_ELSEWHERE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_CALL_PULL_OUT_OF_SYNC,
-                PreciseDisconnectCause.CALL_PULL_OUT_OF_SYNC);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_CALL_END_CAUSE_CALL_PULL,
-                PreciseDisconnectCause.CALL_PULLED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SUPP_SVC_FAILED,
-                PreciseDisconnectCause.SUPP_SVC_FAILED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SUPP_SVC_CANCELLED,
-                PreciseDisconnectCause.SUPP_SVC_CANCELLED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_SUPP_SVC_REINVITE_COLLISION,
-                PreciseDisconnectCause.SUPP_SVC_REINVITE_COLLISION);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_IWLAN_DPD_FAILURE,
-                PreciseDisconnectCause.IWLAN_DPD_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_EPDG_TUNNEL_ESTABLISH_FAILURE,
-                PreciseDisconnectCause.EPDG_TUNNEL_ESTABLISH_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_EPDG_TUNNEL_REKEY_FAILURE,
-                PreciseDisconnectCause.EPDG_TUNNEL_REKEY_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_EPDG_TUNNEL_LOST_CONNECTION,
-                PreciseDisconnectCause.EPDG_TUNNEL_LOST_CONNECTION);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_MAXIMUM_NUMBER_OF_CALLS_REACHED,
-                PreciseDisconnectCause.MAXIMUM_NUMBER_OF_CALLS_REACHED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_REMOTE_CALL_DECLINE,
-                PreciseDisconnectCause.REMOTE_CALL_DECLINE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_DATA_LIMIT_REACHED,
-                PreciseDisconnectCause.DATA_LIMIT_REACHED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_DATA_DISABLED,
-                PreciseDisconnectCause.DATA_DISABLED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_WIFI_LOST,
-                PreciseDisconnectCause.WIFI_LOST);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_OFF,
-                PreciseDisconnectCause.RADIO_OFF);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_NO_VALID_SIM,
-                PreciseDisconnectCause.NO_VALID_SIM);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_INTERNAL_ERROR,
-                PreciseDisconnectCause.RADIO_INTERNAL_ERROR);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_NETWORK_RESP_TIMEOUT,
-                PreciseDisconnectCause.NETWORK_RESP_TIMEOUT);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_NETWORK_REJECT,
-                PreciseDisconnectCause.NETWORK_REJECT);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_ACCESS_FAILURE,
-                PreciseDisconnectCause.RADIO_ACCESS_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_LINK_FAILURE,
-                PreciseDisconnectCause.RADIO_LINK_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_LINK_LOST,
-                PreciseDisconnectCause.RADIO_LINK_LOST);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_UPLINK_FAILURE,
-                PreciseDisconnectCause.RADIO_UPLINK_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_SETUP_FAILURE,
-                PreciseDisconnectCause.RADIO_SETUP_FAILURE);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_RELEASE_NORMAL,
-                PreciseDisconnectCause.RADIO_RELEASE_NORMAL);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_RADIO_RELEASE_ABNORMAL,
-                PreciseDisconnectCause.RADIO_RELEASE_ABNORMAL);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_ACCESS_CLASS_BLOCKED,
-                PreciseDisconnectCause.ACCESS_CLASS_BLOCKED);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_NETWORK_DETACH,
-                PreciseDisconnectCause.NETWORK_DETACH);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_UNOBTAINABLE_NUMBER,
-                PreciseDisconnectCause.UNOBTAINABLE_NUMBER);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_1,
-                PreciseDisconnectCause.OEM_CAUSE_1);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_2,
-                PreciseDisconnectCause.OEM_CAUSE_2);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_3,
-                PreciseDisconnectCause.OEM_CAUSE_3);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_4,
-                PreciseDisconnectCause.OEM_CAUSE_4);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_5,
-                PreciseDisconnectCause.OEM_CAUSE_5);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_6,
-                PreciseDisconnectCause.OEM_CAUSE_6);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_7,
-                PreciseDisconnectCause.OEM_CAUSE_7);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_8,
-                PreciseDisconnectCause.OEM_CAUSE_8);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_9,
-                PreciseDisconnectCause.OEM_CAUSE_9);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_10,
-                PreciseDisconnectCause.OEM_CAUSE_10);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_11,
-                PreciseDisconnectCause.OEM_CAUSE_11);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_12,
-                PreciseDisconnectCause.OEM_CAUSE_12);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_13,
-                PreciseDisconnectCause.OEM_CAUSE_13);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_14,
-                PreciseDisconnectCause.OEM_CAUSE_14);
-        PRECISE_CAUSE_MAP.append(ImsReasonInfo.CODE_OEM_CAUSE_15,
-                PreciseDisconnectCause.OEM_CAUSE_15);
-    }
-
-    /**
      * Carrier configuration option which determines whether the carrier wants to inform the user
      * when a video call is handed over from WIFI to LTE.
      * See {@link CarrierConfigManager#KEY_NOTIFY_HANDOVER_VIDEO_FROM_WIFI_TO_LTE_BOOL} for more
@@ -736,7 +505,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mPhone.getContext().registerReceiver(mReceiver, intentfilter);
         cacheCarrierConfiguration(mPhone.getSubId());
 
-        mPhone.getDefaultPhone().registerForDataEnabledChanged(
+        mPhone.getDefaultPhone().getDataEnabledSettings().registerForDataEnabledChanged(
                 this, EVENT_DATA_ENABLED_CHANGED, null);
 
         final TelecomManager telecomManager =
@@ -873,7 +642,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mUtInterface.unregisterForSuppServiceIndication(this);
         }
         mPhone.getContext().unregisterReceiver(mReceiver);
-        mPhone.getDefaultPhone().unregisterForDataEnabledChanged(this);
+        mPhone.getDefaultPhone().getDataEnabledSettings().unregisterForDataEnabledChanged(this);
         mImsManagerConnector.disconnect();
     }
 
@@ -2198,6 +1967,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 return DisconnectCause.INCOMING_REJECTED;
 
             case ImsReasonInfo.CODE_USER_TERMINATED_BY_REMOTE:
+            case ImsReasonInfo.CODE_SIP_USER_REJECTED:
                 return DisconnectCause.NORMAL;
 
             case ImsReasonInfo.CODE_SIP_FORBIDDEN:
@@ -2206,7 +1976,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             case ImsReasonInfo.CODE_SIP_REDIRECTED:
             case ImsReasonInfo.CODE_SIP_BAD_REQUEST:
             case ImsReasonInfo.CODE_SIP_NOT_ACCEPTABLE:
-            case ImsReasonInfo.CODE_SIP_USER_REJECTED:
             case ImsReasonInfo.CODE_SIP_GLOBAL_ERROR:
                 return DisconnectCause.SERVER_ERROR;
 
@@ -2325,11 +2094,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
 
         return cause;
-    }
-
-    private int getPreciseDisconnectCauseFromReasonInfo(ImsReasonInfo reasonInfo) {
-        return PRECISE_CAUSE_MAP.get(maybeRemapReasonCode(reasonInfo),
-                PreciseDisconnectCause.ERROR_UNSPECIFIED);
     }
 
     /**
@@ -2529,10 +2293,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             mMetrics.writeOnImsCallTerminated(mPhone.getPhoneId(), imsCall.getCallSession(),
                     reasonInfo);
-
-            if(conn != null) {
-                conn.setPreciseDisconnectCause(getPreciseDisconnectCauseFromReasonInfo(reasonInfo));
-            }
 
             if (reasonInfo.getCode() == ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL
                     && mAutoRetryFailedWifiEmergencyCall) {
@@ -2929,11 +2689,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             // Check with the DCTracker to see if data is enabled; there may be a case when
             // ImsPhoneCallTracker isn't being informed of the right data enabled state via its
             // registration, so we'll refresh now.
-            boolean isDataEnabled = false;
-            if (mPhone.getDefaultPhone().getDcTracker(TransportType.WWAN) != null) {
-                isDataEnabled = mPhone.getDefaultPhone().getDcTracker(TransportType.WWAN)
-                        .isDataEnabled();
-            }
+            boolean isDataEnabled = mPhone.getDefaultPhone().getDataEnabledSettings()
+                    .isDataEnabled();
 
             if (DBG) {
                 log("onCallHandover ::  srcAccessTech=" + srcAccessTech + ", targetAccessTech="
@@ -3288,11 +3045,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             callState = Call.State.DIALING;
         }
         int cause = getDisconnectCauseFromReasonInfo(reasonInfo, callState);
-
-        if (conn != null) {
-            conn.setPreciseDisconnectCause(
-                    getPreciseDisconnectCauseFromReasonInfo(reasonInfo));
-        }
 
         processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
     }
@@ -4000,10 +3752,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     /**
      * Handler of data enabled changed event
      * @param enabled True if data is enabled, otherwise disabled.
-     * @param reason Reason for data enabled/disabled (see {@code REASON_*} in
-     *      {@link DataEnabledSettings}.
+     * @param reason Reason for data enabled/disabled. See {@link DataEnabledChangedReason}.
      */
-    private void onDataEnabledChanged(boolean enabled, int reason) {
+    private void onDataEnabledChanged(boolean enabled, @DataEnabledChangedReason int reason) {
 
         log("onDataEnabledChanged: enabled=" + enabled + ", reason=" + reason);
 

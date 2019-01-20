@@ -18,6 +18,7 @@ package com.android.internal.telephony;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.nullable;
 import static org.mockito.Mockito.anyInt;
@@ -59,8 +60,10 @@ import com.android.ims.ImsEcbm;
 import com.android.ims.ImsManager;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
+import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
+import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsExternalCallTracker;
 import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCallTracker;
@@ -103,6 +106,8 @@ public abstract class TelephonyTest {
     protected ImsPhone mImsPhone;
     @Mock
     protected ServiceStateTracker mSST;
+    @Mock
+    protected EmergencyNumberTracker mEmergencyNumberTracker;
     @Mock
     protected GsmCdmaCallTracker mCT;
     @Mock
@@ -205,6 +210,8 @@ public abstract class TelephonyTest {
     protected LocaleTracker mLocaleTracker;
     @Mock
     protected RestrictedState mRestrictedState;
+    @Mock
+    protected DataEnabledSettings mDataEnabledSettings;
 
     protected ImsCallProfile mImsCallProfile;
     protected TelephonyManager mTelephonyManager;
@@ -336,8 +343,12 @@ public abstract class TelephonyTest {
         mPackageManager = mContext.getPackageManager();
 
         //mTelephonyComponentFactory
+        doReturn(mTelephonyComponentFactory).when(mTelephonyComponentFactory).inject(anyString());
         doReturn(mSST).when(mTelephonyComponentFactory)
                 .makeServiceStateTracker(nullable(GsmCdmaPhone.class),
+                        nullable(CommandsInterface.class));
+        doReturn(mEmergencyNumberTracker).when(mTelephonyComponentFactory)
+                .makeEmergencyNumberTracker(nullable(Phone.class),
                         nullable(CommandsInterface.class));
         doReturn(mUiccProfile).when(mTelephonyComponentFactory)
                 .makeUiccProfile(nullable(Context.class), nullable(CommandsInterface.class),
@@ -376,6 +387,8 @@ public abstract class TelephonyTest {
         doReturn(mLocaleTracker).when(mTelephonyComponentFactory)
                 .makeLocaleTracker(nullable(Phone.class), nullable(NitzStateMachine.class),
                         nullable(Looper.class));
+        doReturn(mDataEnabledSettings).when(mTelephonyComponentFactory)
+                .makeDataEnabledSettings(nullable(Phone.class));
 
         //mPhone
         doReturn(mContext).when(mPhone).getContext();
@@ -385,16 +398,17 @@ public abstract class TelephonyTest {
         doReturn(mServiceState).when(mPhone).getServiceState();
         doReturn(mServiceState).when(mImsPhone).getServiceState();
         doReturn(mPhone).when(mImsPhone).getDefaultPhone();
-        doReturn(true).when(mDcTracker).isDataEnabled();
         doReturn(true).when(mPhone).isPhoneTypeGsm();
         doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
         doReturn(mCT).when(mPhone).getCallTracker();
         doReturn(mSST).when(mPhone).getServiceStateTracker();
+        doReturn(mEmergencyNumberTracker).when(mPhone).getEmergencyNumberTracker();
         doReturn(mCarrierSignalAgent).when(mPhone).getCarrierSignalAgent();
         doReturn(mCarrierActionAgent).when(mPhone).getCarrierActionAgent();
         doReturn(mAppSmsManager).when(mPhone).getAppSmsManager();
         doReturn(mIccSmsInterfaceManager).when(mPhone).getIccSmsInterfaceManager();
         doReturn(mTransportManager).when(mPhone).getTransportManager();
+        doReturn(mDataEnabledSettings).when(mPhone).getDataEnabledSettings();
         doReturn(mDcTracker).when(mPhone).getDcTracker(anyInt());
         mIccSmsInterfaceManager.mDispatchersController = mSmsDispatchersController;
         mPhone.mEriManager = mEriManager;
@@ -471,6 +485,8 @@ public abstract class TelephonyTest {
         doReturn(new int[]{TransportType.WWAN, TransportType.WLAN})
                 .when(mTransportManager).getAvailableTransports();
         doReturn(TransportType.WWAN).when(mTransportManager).getCurrentTransport(anyInt());
+        doReturn(true).when(mDataEnabledSettings).isDataEnabled();
+        doReturn(true).when(mDataEnabledSettings).isInternalDataEnabled();
 
         //SIM
         doReturn(1).when(mTelephonyManager).getSimCount();

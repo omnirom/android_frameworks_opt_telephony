@@ -43,6 +43,7 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.DataFailCause;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
@@ -180,14 +181,16 @@ public class DataConnection extends StateMachine {
     private ApnSetting mApnSetting;
     private ConnectionParams mConnectionParams;
     private DisconnectParams mDisconnectParams;
-    private DcFailCause mDcFailCause;
+    @DataFailCause.FailCause
+    private int mDcFailCause;
 
     private Phone mPhone;
     private DataServiceManager mDataServiceManager;
     private LinkProperties mLinkProperties = new LinkProperties();
     private long mCreateTime;
     private long mLastFailTime;
-    private DcFailCause mLastFailCause;
+    @DataFailCause.FailCause
+    private int mLastFailCause;
     private static final String NULL_IP = "0.0.0.0";
     private Object mUserData;
     private int mSubscriptionOverride;
@@ -196,6 +199,7 @@ public class DataConnection extends StateMachine {
     private NetworkInfo mNetworkInfo;
     private DcNetworkAgent mNetworkAgent;
     private LocalLog mNetCapsLocalLog = new LocalLog(50);
+    private int mDisabledApnTypeBitMask = 0;
 
     int mTag;
     public int mCid;
@@ -362,10 +366,10 @@ public class DataConnection extends StateMachine {
         ERROR_STALE,
         ERROR_DATA_SERVICE_SPECIFIC_ERROR;
 
-        public DcFailCause mFailCause;
+        public int mFailCause;
 
         SetupResult() {
-            mFailCause = DcFailCause.fromInt(0);
+            mFailCause = DataFailCause.getFailCause(0);
         }
 
         @Override
@@ -557,7 +561,7 @@ public class DataConnection extends StateMachine {
         // Check if we should fake an error.
         if (mDcTesterFailBringUpAll.getDcFailBringUp().mCounter  > 0) {
             DataCallResponse response = new DataCallResponse(
-                    mDcTesterFailBringUpAll.getDcFailBringUp().mFailCause.getErrorCode(),
+                    mDcTesterFailBringUpAll.getDcFailBringUp().mFailCause,
                     mDcTesterFailBringUpAll.getDcFailBringUp().mSuggestedRetryTime, 0, 0, "", "",
                     null, null, null, null, PhoneConstants.UNSET_MTU);
 
@@ -574,7 +578,7 @@ public class DataConnection extends StateMachine {
 
         mCreateTime = -1;
         mLastFailTime = -1;
-        mLastFailCause = DcFailCause.NONE;
+        mLastFailCause = DataFailCause.NONE;
 
         Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
         msg.obj = cp;
@@ -650,11 +654,9 @@ public class DataConnection extends StateMachine {
         notifyAllWithEvent(null, DctConstants.EVENT_DATA_SETUP_COMPLETE, reason);
     }
 
-    private void notifyAllOfDisconnectDcRetrying(String reason) {
-        notifyAllWithEvent(null, DctConstants.EVENT_DISCONNECT_DC_RETRYING, reason);
-    }
-    private void notifyAllDisconnectCompleted(DcFailCause cause) {
-        notifyAllWithEvent(null, DctConstants.EVENT_DISCONNECT_DONE, cause.toString());
+    private void notifyAllDisconnectCompleted(@DataFailCause.FailCause int cause) {
+        notifyAllWithEvent(null, DctConstants.EVENT_DISCONNECT_DONE,
+                DataFailCause.toString(cause));
     }
 
 
@@ -662,10 +664,11 @@ public class DataConnection extends StateMachine {
      * Send the connectionCompletedMsg.
      *
      * @param cp is the ConnectionParams
-     * @param cause and if no error the cause is DcFailCause.NONE
+     * @param cause and if no error the cause is DataFailCause.NONE
      * @param sendAll is true if all contexts are to be notified
      */
-    private void notifyConnectCompleted(ConnectionParams cp, DcFailCause cause, boolean sendAll) {
+    private void notifyConnectCompleted(ConnectionParams cp, @DataFailCause.FailCause int cause,
+                                        boolean sendAll) {
         ApnContext alreadySent = null;
 
         if (cp != null && cp.mOnCompletedMsg != null) {
@@ -677,7 +680,7 @@ public class DataConnection extends StateMachine {
             long timeStamp = System.currentTimeMillis();
             connectionCompletedMsg.arg1 = mCid;
 
-            if (cause == DcFailCause.NONE) {
+            if (cause == DataFailCause.NONE) {
                 mCreateTime = timeStamp;
                 AsyncResult.forMessage(connectionCompletedMsg);
             } else {
@@ -685,9 +688,9 @@ public class DataConnection extends StateMachine {
                 mLastFailTime = timeStamp;
 
                 // Return message with a Throwable exception to signify an error.
-                if (cause == null) cause = DcFailCause.UNKNOWN;
+                if (cause == DataFailCause.NONE) cause = DataFailCause.UNKNOWN;
                 AsyncResult.forMessage(connectionCompletedMsg, cause,
-                        new Throwable(cause.toString()));
+                        new Throwable(DataFailCause.toString(cause)));
             }
             if (DBG) {
                 log("notifyConnectCompleted at " + timeStamp + " cause=" + cause
@@ -697,9 +700,9 @@ public class DataConnection extends StateMachine {
             connectionCompletedMsg.sendToTarget();
         }
         if (sendAll) {
-            log("Send to all. " + alreadySent + " " + cause.toString());
+            log("Send to all. " + alreadySent + " " + DataFailCause.toString(cause));
             notifyAllWithEvent(alreadySent, DctConstants.EVENT_DATA_SETUP_COMPLETE_ERROR,
-                    cause.toString());
+                    DataFailCause.toString(cause));
         }
     }
 
@@ -731,7 +734,7 @@ public class DataConnection extends StateMachine {
         }
         if (sendAll) {
             if (reason == null) {
-                reason = DcFailCause.UNKNOWN.toString();
+                reason = DataFailCause.toString(DataFailCause.UNKNOWN);
             }
             notifyAllWithEvent(alreadySent, DctConstants.EVENT_DISCONNECT_DONE, reason);
         }
@@ -771,7 +774,7 @@ public class DataConnection extends StateMachine {
 
         mCreateTime = -1;
         mLastFailTime = -1;
-        mLastFailCause = DcFailCause.NONE;
+        mLastFailCause = DataFailCause.NONE;
         mCid = -1;
 
         mPcscfAddr = new String[5];
@@ -781,7 +784,8 @@ public class DataConnection extends StateMachine {
         mApnSetting = null;
         mUnmeteredUseOnly = false;
         mRestrictedNetworkOverride = false;
-        mDcFailCause = null;
+        mDcFailCause = DataFailCause.NONE;
+        mDisabledApnTypeBitMask = 0;
     }
 
     /**
@@ -804,14 +808,14 @@ public class DataConnection extends StateMachine {
             result = SetupResult.ERROR_STALE;
         } else if (resultCode == DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE) {
             result = SetupResult.ERROR_RADIO_NOT_AVAILABLE;
-            result.mFailCause = DcFailCause.RADIO_NOT_AVAILABLE;
+            result.mFailCause = DataFailCause.RADIO_NOT_AVAILABLE;
         } else if (response.getStatus() != 0) {
-            if (response.getStatus() == DcFailCause.RADIO_NOT_AVAILABLE.getErrorCode()) {
+            if (response.getStatus() == DataFailCause.RADIO_NOT_AVAILABLE) {
                 result = SetupResult.ERROR_RADIO_NOT_AVAILABLE;
-                result.mFailCause = DcFailCause.RADIO_NOT_AVAILABLE;
+                result.mFailCause = DataFailCause.RADIO_NOT_AVAILABLE;
             } else {
                 result = SetupResult.ERROR_DATA_SERVICE_SPECIFIC_ERROR;
-                result.mFailCause = DcFailCause.fromInt(response.getStatus());
+                result.mFailCause = DataFailCause.getFailCause(response.getStatus());
             }
         } else {
             if (DBG) log("onSetupConnectionCompleted received successful DataCallResponse");
@@ -994,7 +998,7 @@ public class DataConnection extends StateMachine {
 
         // If the data is disabled, then we need to restrict the network so only privileged apps can
         // use the restricted network while data is disabled.
-        if (!mDct.isDataEnabled()) {
+        if (!mPhone.getDataEnabledSettings().isDataEnabled()) {
             return true;
         }
 
@@ -1025,13 +1029,16 @@ public class DataConnection extends StateMachine {
         return true;
     }
 
-    NetworkCapabilities getNetworkCapabilities() {
+    /**
+     * @return the {@link NetworkCapabilities} of this data connection.
+     */
+    public NetworkCapabilities getNetworkCapabilities() {
         NetworkCapabilities result = new NetworkCapabilities();
         result.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
 
         if (mApnSetting != null) {
             final String[] types = ApnSetting.getApnTypesStringFromBitmask(
-                mApnSetting.getApnTypeBitmask()).split(",");
+                mApnSetting.getApnTypeBitmask() & ~mDisabledApnTypeBitMask).split(",");
             for (String type : types) {
                 if (!mRestrictedNetworkOverride && mUnmeteredUseOnly
                         && ApnSettingUtils.isMeteredApnType(type, mPhone)) {
@@ -1176,7 +1183,7 @@ public class DataConnection extends StateMachine {
         // a failure we'll clear again at the bottom of this code.
         linkProperties.clear();
 
-        if (response.getStatus() == DcFailCause.NONE.getErrorCode()) {
+        if (response.getStatus() == DataFailCause.NONE) {
             try {
                 // set interface name
                 linkProperties.setInterfaceName(response.getIfname());
@@ -1334,7 +1341,7 @@ public class DataConnection extends StateMachine {
             mPhone = null;
             mDataServiceManager = null;
             mLinkProperties = null;
-            mLastFailCause = null;
+            mLastFailCause = DataFailCause.NONE;
             mUserData = null;
             mDcController = null;
             mDcTesterFailBringUpAll = null;
@@ -1356,7 +1363,7 @@ public class DataConnection extends StateMachine {
                 case EVENT_CONNECT:
                     if (DBG) log("DcDefaultState: msg.what=EVENT_CONNECT, fail not expected");
                     ConnectionParams cp = (ConnectionParams) msg.obj;
-                    notifyConnectCompleted(cp, DcFailCause.UNKNOWN, false);
+                    notifyConnectCompleted(cp, DataFailCause.UNKNOWN, false);
                     break;
 
                 case EVENT_DISCONNECT:
@@ -1476,7 +1483,8 @@ public class DataConnection extends StateMachine {
      */
     private class DcInactiveState extends State {
         // Inform all contexts we've failed connecting
-        public void setEnterNotificationParams(ConnectionParams cp, DcFailCause cause) {
+        public void setEnterNotificationParams(ConnectionParams cp,
+                                               @DataFailCause.FailCause int cause) {
             if (VDBG) log("DcInactiveState: setEnterNotificationParams cp,cause");
             mConnectionParams = cp;
             mDisconnectParams = null;
@@ -1488,11 +1496,11 @@ public class DataConnection extends StateMachine {
             if (VDBG) log("DcInactiveState: setEnterNotificationParams dp");
             mConnectionParams = null;
             mDisconnectParams = dp;
-            mDcFailCause = DcFailCause.NONE;
+            mDcFailCause = DataFailCause.NONE;
         }
 
         // Inform all contexts of the failure cause
-        public void setEnterNotificationParams(DcFailCause cause) {
+        public void setEnterNotificationParams(@DataFailCause.FailCause int cause) {
             mConnectionParams = null;
             mDisconnectParams = null;
             mDcFailCause = cause;
@@ -1523,7 +1531,8 @@ public class DataConnection extends StateMachine {
                 }
                 notifyDisconnectCompleted(mDisconnectParams, true);
             }
-            if (mDisconnectParams == null && mConnectionParams == null && mDcFailCause != null) {
+            if (mDisconnectParams == null && mConnectionParams == null
+                    && mDcFailCause != DataFailCause.NONE) {
                 if (DBG) {
                     log("DcInactiveState: enter notifyAllDisconnectCompleted failCause="
                             + mDcFailCause);
@@ -1565,7 +1574,7 @@ public class DataConnection extends StateMachine {
                         if (DBG) {
                             log("DcInactiveState: msg.what=EVENT_CONNECT initConnection failed");
                         }
-                        notifyConnectCompleted(cp, DcFailCause.UNACCEPTABLE_NETWORK_PARAMETER,
+                        notifyConnectCompleted(cp, DataFailCause.UNACCEPTABLE_NETWORK_PARAMETER,
                                 false);
                     }
                     retVal = HANDLED;
@@ -1645,7 +1654,7 @@ public class DataConnection extends StateMachine {
                     switch (result) {
                         case SUCCESS:
                             // All is well
-                            mDcFailCause = DcFailCause.NONE;
+                            mDcFailCause = DataFailCause.NONE;
                             transitionTo(mActiveState);
                             break;
                         case ERROR_RADIO_NOT_AVAILABLE:
@@ -1674,8 +1683,8 @@ public class DataConnection extends StateMachine {
                                     + " delay=" + delay
                                     + " result=" + result
                                     + " result.isRadioRestartFailure="
-                                    + result.mFailCause.isRadioRestartFailure(mPhone.getContext(),
-                                            mPhone.getSubId())
+                                    + DataFailCause.isRadioRestartFailure(mPhone.getContext(),
+                                    result.mFailCause, mPhone.getSubId())
                                     + " isPermanentFailure=" +
                                     mDct.isPermanentFailure(result.mFailCause);
                             if (DBG) log(str);
@@ -1777,8 +1786,8 @@ public class DataConnection extends StateMachine {
                 reason = Phone.REASON_CARRIER_CHANGE;
             } else if (mDisconnectParams != null && mDisconnectParams.mReason != null) {
                 reason = mDisconnectParams.mReason;
-            } else if (mDcFailCause != null) {
-                reason = mDcFailCause.toString();
+            } else {
+                reason = DataFailCause.toString(mDcFailCause);
             }
             mPhone.getCallTracker().unregisterForVoiceCallStarted(getHandler());
             mPhone.getCallTracker().unregisterForVoiceCallEnded(getHandler());
@@ -1806,10 +1815,14 @@ public class DataConnection extends StateMachine {
                     // either add this new apn context to our set or
                     // update the existing cp with the latest connection generation number
                     mApnContexts.put(cp.mApnContext, cp);
+                    // TODO (b/118347948): evaluate if it's still needed after assigning
+                    // different scores to different Cellular network.
+                    mDisabledApnTypeBitMask &= ~cp.mApnContext.getApnTypeBitmask();
+                    mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities());
                     if (DBG) {
                         log("DcActiveState: EVENT_CONNECT cp=" + cp + " dc=" + DataConnection.this);
                     }
-                    notifyConnectCompleted(cp, DcFailCause.NONE, false);
+                    notifyConnectCompleted(cp, DataFailCause.NONE, false);
                     retVal = HANDLED;
                     break;
                 }
@@ -1834,6 +1847,10 @@ public class DataConnection extends StateMachine {
                             transitionTo(mDisconnectingState);
                         } else {
                             mApnContexts.remove(dp.mApnContext);
+                            // TODO (b/118347948): evaluate if it's still needed after assigning
+                            // different scores to different Cellular network.
+                            mDisabledApnTypeBitMask |= dp.mApnContext.getApnTypeBitmask();
+                            mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities());
                             notifyDisconnectCompleted(dp, false);
                         }
                     } else {
@@ -1863,7 +1880,7 @@ public class DataConnection extends StateMachine {
                         log("DcActiveState EVENT_LOST_CONNECTION dc=" + DataConnection.this);
                     }
 
-                    mInactiveState.setEnterNotificationParams(DcFailCause.LOST_CONNECTION);
+                    mInactiveState.setEnterNotificationParams(DataFailCause.LOST_CONNECTION);
                     transitionTo(mInactiveState);
                     retVal = HANDLED;
                     break;
@@ -2151,7 +2168,7 @@ public class DataConnection extends StateMachine {
                         // Transition to inactive but send notifications after
                         // we've entered the mInactive state.
                         mInactiveState.setEnterNotificationParams(cp,
-                                DcFailCause.UNACCEPTABLE_NETWORK_PARAMETER);
+                                DataFailCause.UNACCEPTABLE_NETWORK_PARAMETER);
                         transitionTo(mInactiveState);
                     } else {
                         if (DBG) {
