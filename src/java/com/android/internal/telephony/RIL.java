@@ -26,12 +26,6 @@ import android.hardware.radio.V1_0.CdmaBroadcastSmsConfigInfo;
 import android.hardware.radio.V1_0.CdmaSmsAck;
 import android.hardware.radio.V1_0.CdmaSmsMessage;
 import android.hardware.radio.V1_0.CdmaSmsWriteArgs;
-import android.hardware.radio.V1_0.CellInfoCdma;
-import android.hardware.radio.V1_0.CellInfoGsm;
-import android.hardware.radio.V1_0.CellInfoLte;
-import android.hardware.radio.V1_0.CellInfoTdscdma;
-import android.hardware.radio.V1_0.CellInfoType;
-import android.hardware.radio.V1_0.CellInfoWcdma;
 import android.hardware.radio.V1_0.DataProfileId;
 import android.hardware.radio.V1_0.Dial;
 import android.hardware.radio.V1_0.GsmBroadcastSmsConfigInfo;
@@ -63,7 +57,6 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HwBinder;
 import android.os.Message;
-import android.os.Parcel;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.os.RemoteException;
@@ -72,9 +65,7 @@ import android.os.SystemProperties;
 import android.os.WorkSource;
 import android.service.carrier.CarrierIdentifier;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
-import android.telephony.CellIdentityCdma;
 import android.telephony.CellInfo;
-import android.telephony.CellSignalStrengthCdma;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.ModemActivityInfo;
@@ -85,10 +76,10 @@ import android.telephony.RadioAccessFamily;
 import android.telephony.RadioAccessSpecifier;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
-import android.telephony.SignalStrength;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyHistogram;
 import android.telephony.TelephonyManager;
+import android.telephony.data.ApnSetting;
 import android.telephony.data.DataProfile;
 import android.telephony.data.DataService;
 import android.text.TextUtils;
@@ -135,7 +126,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     // Have a separate wakelock instance for Ack
     static final String RILJ_ACK_WAKELOCK_NAME = "RILJ_ACK_WL";
     static final boolean RILJ_LOGD = true;
-    static final boolean RILJ_LOGV = false; // STOPSHIP if true
+    static final boolean RILJ_LOGV = true; // STOPSHIP if true
     static final int RIL_HISTOGRAM_BUCKET_COUNT = 5;
 
     /**
@@ -866,12 +857,20 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void dial(String address, int clirMode, Message result) {
-        dial(address, clirMode, null, result);
+    public void dial(String address, boolean isEmergencyCall, int emergencyServiceCategories,
+                     int clirMode, Message result) {
+        dial(address, isEmergencyCall, emergencyServiceCategories, clirMode, null, result);
     }
 
     @Override
-    public void dial(String address, int clirMode, UUSInfo uusInfo, Message result) {
+    public void dial(String address, boolean isEmergencyCall, int emergencyServiceCategories,
+                     int clirMode, UUSInfo uusInfo, Message result) {
+        if (isEmergencyCall && mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
+            emergencyDial(address, emergencyServiceCategories, clirMode, uusInfo,
+                    result);
+            return;
+        }
+
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_DIAL, result,
@@ -897,6 +896,39 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 radioProxy.dial(rr.mSerial, dialInfo);
             } catch (RemoteException | RuntimeException e) {
                 handleRadioProxyExceptionForRR(rr, "dial", e);
+            }
+        }
+    }
+
+    private void emergencyDial(String address, int emergencyServiceCategories, int clirMode,
+                              UUSInfo uusInfo, Message result) {
+        IRadio radioProxy = getRadioProxy(result);
+        // IRadio V1.4
+        android.hardware.radio.V1_4.IRadio radioProxy14 =
+                (android.hardware.radio.V1_4.IRadio) radioProxy;
+        if (radioProxy != null) {
+            RILRequest rr = obtainRequest(RIL_REQUEST_EMERGENCY_DIAL, result,
+                    mRILDefaultWorkSource);
+            Dial dialInfo = new Dial();
+            dialInfo.address = convertNullToEmptyString(address);
+            dialInfo.clir = clirMode;
+            if (uusInfo != null) {
+                UusInfo info = new UusInfo();
+                info.uusType = uusInfo.getType();
+                info.uusDcs = uusInfo.getDcs();
+                info.uusData = new String(uusInfo.getUserData());
+                dialInfo.uusInfo.add(info);
+            }
+
+            if (RILJ_LOGD) {
+                // Do not log function arg for privacy
+                riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+            }
+
+            try {
+                radioProxy14.emergencyDial(rr.mSerial, dialInfo, emergencyServiceCategories);
+            } catch (RemoteException | RuntimeException e) {
+                handleRadioProxyExceptionForRR(rr, "emergencyDial", e);
             }
         }
     }
@@ -1262,8 +1294,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 new android.hardware.radio.V1_4.DataProfileInfo();
 
         dpi.apn = dp.getApn();
-        dpi.protocol = dp.getProtocol();
-        dpi.roamingProtocol = dp.getRoamingProtocol();
+        dpi.protocol = ApnSetting.getProtocolIntFromString(dp.getProtocol());
+        dpi.roamingProtocol = ApnSetting.getProtocolIntFromString(dp.getRoamingProtocol());
         dpi.authType = dp.getAuthType();
         dpi.user = dp.getUserName();
         dpi.password = dp.getPassword();
@@ -2426,10 +2458,21 @@ public class RIL extends BaseCommands implements CommandsInterface {
             mPreferredNetworkType = networkType;
             mMetrics.writeSetPreferredNetworkType(mPhoneId, networkType);
 
-            try {
-                radioProxy.setPreferredNetworkType(rr.mSerial, networkType);
-            } catch (RemoteException | RuntimeException e) {
-                handleRadioProxyExceptionForRR(rr, "setPreferredNetworkType", e);
+            if (mRadioVersion.lessOrEqual(RADIO_HAL_VERSION_1_3)) {
+                try {
+                    radioProxy.setPreferredNetworkType(rr.mSerial, networkType);
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "setPreferredNetworkType", e);
+                }
+            } else if (mRadioVersion.equals(RADIO_HAL_VERSION_1_4)) {
+                android.hardware.radio.V1_4.IRadio radioProxy14 =
+                        (android.hardware.radio.V1_4.IRadio) radioProxy;
+                try {
+                    radioProxy14.setPreferredNetworkTypeBitmap(
+                            rr.mSerial, RadioAccessFamily.getRafFromNetworkType(networkType));
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "setPreferredNetworkTypeBitmap", e);
+                }
             }
         }
     }
@@ -2440,13 +2483,21 @@ public class RIL extends BaseCommands implements CommandsInterface {
         if (radioProxy != null) {
             RILRequest rr = obtainRequest(RIL_REQUEST_GET_PREFERRED_NETWORK_TYPE, result,
                     mRILDefaultWorkSource);
-
             if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
-
-            try {
-                radioProxy.getPreferredNetworkType(rr.mSerial);
-            } catch (RemoteException | RuntimeException e) {
-                handleRadioProxyExceptionForRR(rr, "getPreferredNetworkType", e);
+            if (mRadioVersion.lessOrEqual(RADIO_HAL_VERSION_1_3)) {
+                try {
+                    radioProxy.getPreferredNetworkType(rr.mSerial);
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "getPreferredNetworkType", e);
+                }
+            } else if (mRadioVersion.equals(RADIO_HAL_VERSION_1_4)) {
+                android.hardware.radio.V1_4.IRadio radioProxy14 =
+                        (android.hardware.radio.V1_4.IRadio) radioProxy;
+                try {
+                    radioProxy14.getPreferredNetworkTypeBitmap(rr.mSerial);
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "getPreferredNetworkTypeBitmap", e);
+                }
             }
         }
     }
@@ -3147,10 +3198,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 handleRadioProxyExceptionForRR(rr, "setCellInfoListRate", e);
             }
         }
-    }
-
-    void setCellInfoListRate() {
-        setCellInfoListRate(Integer.MAX_VALUE, null, mRILDefaultWorkSource);
     }
 
     @Override
@@ -5427,101 +5474,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return lce;
     }
 
-    // TODO(b/119224773) refactor the converter of CellInfo.
-    private static void writeToParcelForGsm(
-            Parcel p, int lac, int cid, int arfcn, int bsic, String mcc, String mnc,
-            String al, String as, int ss, int ber, int ta) {
-        p.writeInt(CellInfo.TYPE_GSM);
-        p.writeString(mcc);
-        p.writeString(mnc);
-        p.writeString(al);
-        p.writeString(as);
-        p.writeInt(lac);
-        p.writeInt(cid);
-        p.writeInt(arfcn);
-        p.writeInt(bsic);
-        p.writeInt(ss);
-        p.writeInt(ber);
-        p.writeInt(ta);
-    }
-
-    // TODO(b/119224773) refactor the converter of CellInfo.
-    private static void writeToParcelForCdma(
-            Parcel p, int ni, int si, int bsi, int lon, int lat, String al, String as,
-            int dbm, int ecio, int eDbm, int eEcio, int eSnr) {
-        new CellIdentityCdma(ni, si, bsi, lon, lat, al, as).writeToParcel(p, 0);
-        new CellSignalStrengthCdma(dbm, ecio, eDbm, eEcio, eSnr).writeToParcel(p, 0);
-    }
-
-    // TODO(b/119224773) refactor the converter of CellInfo.
-    private static void writeToParcelForLte(
-            Parcel p, int ci, int pci, int tac, int earfcn, int bandwidth, String mcc, String mnc,
-            String al, String as, int ss, int rsrp, int rsrq, int rssnr, int cqi, int ta,
-            boolean isEndcAvailable) {
-
-        // General CellInfo
-        p.writeInt(CellInfo.TYPE_LTE);
-        p.writeString(mcc);
-        p.writeString(mnc);
-        p.writeString(al);
-        p.writeString(as);
-
-        // CellIdentity
-        p.writeInt(ci);
-        p.writeInt(pci);
-        p.writeInt(tac);
-        p.writeInt(earfcn);
-        p.writeInt(bandwidth);
-
-        // CellSignalStrength
-        p.writeInt(ss);
-        p.writeInt(rsrp);
-        p.writeInt(rsrq);
-        p.writeInt(rssnr);
-        p.writeInt(cqi);
-        p.writeInt(ta);
-
-        // CellConfigLte
-        p.writeBoolean(isEndcAvailable);
-    }
-
-    // TODO(b/119224773) refactor the converter of CellInfo.
-    private static void writeToParcelForWcdma(
-            Parcel p, int lac, int cid, int psc, int uarfcn, String mcc, String mnc,
-            String al, String as, int ss, int ber, int rscp, int ecno) {
-        p.writeInt(CellInfo.TYPE_WCDMA);
-        p.writeString(mcc);
-        p.writeString(mnc);
-        p.writeString(al);
-        p.writeString(as);
-        p.writeInt(lac);
-        p.writeInt(cid);
-        p.writeInt(psc);
-        p.writeInt(uarfcn);
-        p.writeInt(ss);
-        p.writeInt(ber);
-        p.writeInt(rscp);
-        p.writeInt(ecno);
-    }
-
-    // TODO(b/119224773) refactor the converter of CellInfo.
-    private static void writeToParcelForTdscdma(
-            Parcel p, int lac, int cid, int cpid, int uarfcn, String mcc, String mnc,
-            String al, String as, int ss, int ber, int rscp) {
-        p.writeInt(CellInfo.TYPE_TDSCDMA);
-        p.writeString(mcc);
-        p.writeString(mnc);
-        p.writeString(al);
-        p.writeString(as);
-        p.writeInt(lac);
-        p.writeInt(cid);
-        p.writeInt(cpid);
-        p.writeInt(uarfcn);
-        p.writeInt(ss);
-        p.writeInt(ber);
-        p.writeInt(rscp);
-    }
-
     /**
      * Convert CellInfo defined in 1.0/types.hal to CellInfo type.
      * @param records List of CellInfo defined in 1.0/types.hal
@@ -5533,117 +5485,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         ArrayList<CellInfo> response = new ArrayList<CellInfo>(records.size());
 
         for (android.hardware.radio.V1_0.CellInfo record : records) {
-            // first convert RIL CellInfo to Parcel
-            Parcel p = Parcel.obtain();
-            p.writeInt(record.cellInfoType);
-            p.writeInt(record.registered ? 1 : 0);
-            p.writeLong(SystemClock.elapsedRealtimeNanos());
-            p.writeInt(CellInfo.CONNECTION_UNKNOWN);
-            switch (record.cellInfoType) {
-                case CellInfoType.GSM: {
-                    CellInfoGsm cellInfoGsm = record.gsm.get(0);
-                    writeToParcelForGsm(
-                            p,
-                            cellInfoGsm.cellIdentityGsm.lac,
-                            cellInfoGsm.cellIdentityGsm.cid,
-                            cellInfoGsm.cellIdentityGsm.arfcn,
-                            Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.bsic),
-                            cellInfoGsm.cellIdentityGsm.mcc,
-                            cellInfoGsm.cellIdentityGsm.mnc,
-                            EMPTY_ALPHA_LONG,
-                            EMPTY_ALPHA_SHORT,
-                            cellInfoGsm.signalStrengthGsm.signalStrength,
-                            cellInfoGsm.signalStrengthGsm.bitErrorRate,
-                            cellInfoGsm.signalStrengthGsm.timingAdvance);
-                    break;
-                }
-
-                case CellInfoType.CDMA: {
-                    CellInfoCdma cellInfoCdma = record.cdma.get(0);
-                    writeToParcelForCdma(
-                            p,
-                            cellInfoCdma.cellIdentityCdma.networkId,
-                            cellInfoCdma.cellIdentityCdma.systemId,
-                            cellInfoCdma.cellIdentityCdma.baseStationId,
-                            cellInfoCdma.cellIdentityCdma.longitude,
-                            cellInfoCdma.cellIdentityCdma.latitude,
-                            EMPTY_ALPHA_LONG,
-                            EMPTY_ALPHA_SHORT,
-                            cellInfoCdma.signalStrengthCdma.dbm,
-                            cellInfoCdma.signalStrengthCdma.ecio,
-                            cellInfoCdma.signalStrengthEvdo.dbm,
-                            cellInfoCdma.signalStrengthEvdo.ecio,
-                            cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
-                    break;
-                }
-
-                case CellInfoType.LTE: {
-                    CellInfoLte cellInfoLte = record.lte.get(0);
-                    writeToParcelForLte(
-                            p,
-                            cellInfoLte.cellIdentityLte.ci,
-                            cellInfoLte.cellIdentityLte.pci,
-                            cellInfoLte.cellIdentityLte.tac,
-                            cellInfoLte.cellIdentityLte.earfcn,
-                            Integer.MAX_VALUE,
-                            cellInfoLte.cellIdentityLte.mcc,
-                            cellInfoLte.cellIdentityLte.mnc,
-                            EMPTY_ALPHA_LONG,
-                            EMPTY_ALPHA_SHORT,
-                            cellInfoLte.signalStrengthLte.signalStrength,
-                            cellInfoLte.signalStrengthLte.rsrp,
-                            cellInfoLte.signalStrengthLte.rsrq,
-                            cellInfoLte.signalStrengthLte.rssnr,
-                            cellInfoLte.signalStrengthLte.cqi,
-                            cellInfoLte.signalStrengthLte.timingAdvance,
-                            false /* isEndcAvailable */);
-                    break;
-                }
-
-                case CellInfoType.WCDMA: {
-                    CellInfoWcdma cellInfoWcdma = record.wcdma.get(0);
-                    writeToParcelForWcdma(
-                            p,
-                            cellInfoWcdma.cellIdentityWcdma.lac,
-                            cellInfoWcdma.cellIdentityWcdma.cid,
-                            cellInfoWcdma.cellIdentityWcdma.psc,
-                            cellInfoWcdma.cellIdentityWcdma.uarfcn,
-                            cellInfoWcdma.cellIdentityWcdma.mcc,
-                            cellInfoWcdma.cellIdentityWcdma.mnc,
-                            EMPTY_ALPHA_LONG,
-                            EMPTY_ALPHA_SHORT,
-                            cellInfoWcdma.signalStrengthWcdma.signalStrength,
-                            cellInfoWcdma.signalStrengthWcdma.bitErrorRate,
-                            Integer.MAX_VALUE,
-                            Integer.MAX_VALUE);
-                    break;
-                }
-
-                case CellInfoType.TD_SCDMA: {
-                    CellInfoTdscdma cellInfoTdscdma = record.tdscdma.get(0);
-                    writeToParcelForTdscdma(
-                            p,
-                            cellInfoTdscdma.cellIdentityTdscdma.lac,
-                            cellInfoTdscdma.cellIdentityTdscdma.cid,
-                            cellInfoTdscdma.cellIdentityTdscdma.cpid,
-                            Integer.MAX_VALUE,
-                            cellInfoTdscdma.cellIdentityTdscdma.mcc,
-                            cellInfoTdscdma.cellIdentityTdscdma.mnc,
-                            EMPTY_ALPHA_LONG,
-                            EMPTY_ALPHA_SHORT,
-                            Integer.MAX_VALUE,
-                            Integer.MAX_VALUE,
-                            convertTdscdmaRscpTo1_2(cellInfoTdscdma.signalStrengthTdscdma.rscp));
-                    break;
-                }
-                default:
-                    throw new RuntimeException("unexpected cellinfotype: " + record.cellInfoType);
-            }
-
-            p.setDataPosition(0);
-            CellInfo InfoRec = CellInfo.CREATOR.createFromParcel(p);
-            p.recycle();
-            response.add(InfoRec);
+            response.add(CellInfo.create(record));
         }
 
         return response;
@@ -5660,176 +5502,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
         ArrayList<CellInfo> response = new ArrayList<CellInfo>(records.size());
 
         for (android.hardware.radio.V1_2.CellInfo record : records) {
-            // first convert RIL CellInfo to Parcel
-            Parcel p = Parcel.obtain();
-            p.writeInt(record.cellInfoType);
-            p.writeInt(record.registered ? 1 : 0);
-            p.writeLong(SystemClock.elapsedRealtimeNanos());
-            p.writeInt(record.connectionStatus);
-            switch (record.cellInfoType) {
-                case CellInfoType.GSM: {
-                    android.hardware.radio.V1_2.CellInfoGsm cellInfoGsm = record.gsm.get(0);
-                    writeToParcelForGsm(
-                            p,
-                            cellInfoGsm.cellIdentityGsm.base.lac,
-                            cellInfoGsm.cellIdentityGsm.base.cid,
-                            cellInfoGsm.cellIdentityGsm.base.arfcn,
-                            Byte.toUnsignedInt(cellInfoGsm.cellIdentityGsm.base.bsic),
-                            cellInfoGsm.cellIdentityGsm.base.mcc,
-                            cellInfoGsm.cellIdentityGsm.base.mnc,
-                            cellInfoGsm.cellIdentityGsm.operatorNames.alphaLong,
-                            cellInfoGsm.cellIdentityGsm.operatorNames.alphaShort,
-                            cellInfoGsm.signalStrengthGsm.signalStrength,
-                            cellInfoGsm.signalStrengthGsm.bitErrorRate,
-                            cellInfoGsm.signalStrengthGsm.timingAdvance);
-                    break;
-                }
-
-                case CellInfoType.CDMA: {
-                    android.hardware.radio.V1_2.CellInfoCdma cellInfoCdma = record.cdma.get(0);
-                    writeToParcelForCdma(
-                            p,
-                            cellInfoCdma.cellIdentityCdma.base.networkId,
-                            cellInfoCdma.cellIdentityCdma.base.systemId,
-                            cellInfoCdma.cellIdentityCdma.base.baseStationId,
-                            cellInfoCdma.cellIdentityCdma.base.longitude,
-                            cellInfoCdma.cellIdentityCdma.base.latitude,
-                            cellInfoCdma.cellIdentityCdma.operatorNames.alphaLong,
-                            cellInfoCdma.cellIdentityCdma.operatorNames.alphaShort,
-                            cellInfoCdma.signalStrengthCdma.dbm,
-                            cellInfoCdma.signalStrengthCdma.ecio,
-                            cellInfoCdma.signalStrengthEvdo.dbm,
-                            cellInfoCdma.signalStrengthEvdo.ecio,
-                            cellInfoCdma.signalStrengthEvdo.signalNoiseRatio);
-                    break;
-                }
-
-                case CellInfoType.LTE: {
-                    android.hardware.radio.V1_2.CellInfoLte cellInfoLte = record.lte.get(0);
-                    writeToParcelForLte(
-                            p,
-                            cellInfoLte.cellIdentityLte.base.ci,
-                            cellInfoLte.cellIdentityLte.base.pci,
-                            cellInfoLte.cellIdentityLte.base.tac,
-                            cellInfoLte.cellIdentityLte.base.earfcn,
-                            cellInfoLte.cellIdentityLte.bandwidth,
-                            cellInfoLte.cellIdentityLte.base.mcc,
-                            cellInfoLte.cellIdentityLte.base.mnc,
-                            cellInfoLte.cellIdentityLte.operatorNames.alphaLong,
-                            cellInfoLte.cellIdentityLte.operatorNames.alphaShort,
-                            cellInfoLte.signalStrengthLte.signalStrength,
-                            cellInfoLte.signalStrengthLte.rsrp,
-                            cellInfoLte.signalStrengthLte.rsrq,
-                            cellInfoLte.signalStrengthLte.rssnr,
-                            cellInfoLte.signalStrengthLte.cqi,
-                            cellInfoLte.signalStrengthLte.timingAdvance,
-                            false /* isEndcAvailable */);
-                    break;
-                }
-
-                case CellInfoType.WCDMA: {
-                    android.hardware.radio.V1_2.CellInfoWcdma cellInfoWcdma = record.wcdma.get(0);
-                    writeToParcelForWcdma(
-                            p,
-                            cellInfoWcdma.cellIdentityWcdma.base.lac,
-                            cellInfoWcdma.cellIdentityWcdma.base.cid,
-                            cellInfoWcdma.cellIdentityWcdma.base.psc,
-                            cellInfoWcdma.cellIdentityWcdma.base.uarfcn,
-                            cellInfoWcdma.cellIdentityWcdma.base.mcc,
-                            cellInfoWcdma.cellIdentityWcdma.base.mnc,
-                            cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaLong,
-                            cellInfoWcdma.cellIdentityWcdma.operatorNames.alphaShort,
-                            cellInfoWcdma.signalStrengthWcdma.base.signalStrength,
-                            cellInfoWcdma.signalStrengthWcdma.base.bitErrorRate,
-                            cellInfoWcdma.signalStrengthWcdma.rscp,
-                            cellInfoWcdma.signalStrengthWcdma.ecno);
-                    break;
-                }
-
-                case CellInfoType.TD_SCDMA: {
-                    android.hardware.radio.V1_2.CellInfoTdscdma cellInfoTdscdma =
-                            record.tdscdma.get(0);
-                    writeToParcelForTdscdma(
-                            p,
-                            cellInfoTdscdma.cellIdentityTdscdma.base.lac,
-                            cellInfoTdscdma.cellIdentityTdscdma.base.cid,
-                            cellInfoTdscdma.cellIdentityTdscdma.base.cpid,
-                            cellInfoTdscdma.cellIdentityTdscdma.uarfcn,
-                            cellInfoTdscdma.cellIdentityTdscdma.base.mcc,
-                            cellInfoTdscdma.cellIdentityTdscdma.base.mnc,
-                            cellInfoTdscdma.cellIdentityTdscdma.operatorNames.alphaLong,
-                            cellInfoTdscdma.cellIdentityTdscdma.operatorNames.alphaShort,
-                            cellInfoTdscdma.signalStrengthTdscdma.signalStrength,
-                            cellInfoTdscdma.signalStrengthTdscdma.bitErrorRate,
-                            cellInfoTdscdma.signalStrengthTdscdma.rscp);
-                    break;
-                }
-
-                default:
-                    throw new RuntimeException("unexpected cellinfotype: " + record.cellInfoType);
-            }
-
-            p.setDataPosition(0);
-            CellInfo InfoRec = CellInfo.CREATOR.createFromParcel(p);
-            p.recycle();
-            response.add(InfoRec);
+            response.add(CellInfo.create(record));
         }
-
         return response;
-    }
-
-    private static int convertTdscdmaRscpTo1_2(int rscp) {
-        // The HAL 1.0 range is 25..120; the ASU/ HAL 1.2 range is 0..96;
-        // yes, this means the range in 1.0 cannot express -24dBm = 96
-        if (rscp >= 25 && rscp <= 120) {
-            // First we flip the sign to convert from the HALs -rscp to the actual RSCP value.
-            int rscpDbm = -rscp;
-            // Then to convert from RSCP to ASU, we apply the offset which aligns 0 ASU to -120dBm.
-            return rscpDbm + 120;
-        }
-        return Integer.MAX_VALUE;
-    }
-
-    /** Convert HAL 1.0 Signal Strength to android SignalStrength */
-    @VisibleForTesting
-    public static SignalStrength convertHalSignalStrength(
-            android.hardware.radio.V1_0.SignalStrength signalStrength) {
-        return new SignalStrength(
-                signalStrength.gw.signalStrength,
-                signalStrength.gw.bitErrorRate,
-                signalStrength.cdma.dbm,
-                signalStrength.cdma.ecio,
-                signalStrength.evdo.dbm,
-                signalStrength.evdo.ecio,
-                signalStrength.evdo.signalNoiseRatio,
-                signalStrength.lte.signalStrength,
-                signalStrength.lte.rsrp,
-                signalStrength.lte.rsrq,
-                signalStrength.lte.rssnr,
-                signalStrength.lte.cqi,
-                convertTdscdmaRscpTo1_2(signalStrength.tdScdma.rscp));
-    }
-
-    /** Convert HAL 1.2 Signal Strength to android SignalStrength */
-    @VisibleForTesting
-    public static SignalStrength convertHalSignalStrength_1_2(
-            android.hardware.radio.V1_2.SignalStrength signalStrength) {
-        return new SignalStrength(
-                signalStrength.gsm.signalStrength,
-                signalStrength.gsm.bitErrorRate,
-                signalStrength.cdma.dbm,
-                signalStrength.cdma.ecio,
-                signalStrength.evdo.dbm,
-                signalStrength.evdo.ecio,
-                signalStrength.evdo.signalNoiseRatio,
-                signalStrength.lte.signalStrength,
-                signalStrength.lte.rsrp,
-                signalStrength.lte.rsrq,
-                signalStrength.lte.rssnr,
-                signalStrength.lte.cqi,
-                signalStrength.tdScdma.rscp,
-                signalStrength.wcdma.base.signalStrength,
-                signalStrength.wcdma.rscp);
     }
 
     /**

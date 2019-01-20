@@ -25,6 +25,7 @@ import static org.mockito.Mockito.doReturn;
 import android.content.Context;
 import android.os.PersistableBundle;
 import android.telephony.CarrierConfigManager;
+import android.telephony.DataFailCause;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.internal.telephony.TelephonyTest;
@@ -36,7 +37,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Random;
 
-public class DcFailCauseTest extends TelephonyTest {
+public class DataFailCauseTest extends TelephonyTest {
 
     private PersistableBundle mPersistableBundle;
 
@@ -161,10 +162,12 @@ public class DcFailCauseTest extends TelephonyTest {
     @SmallTest
     public void testPermanentFailDefault() throws Exception {
         for (DcFailCauseData data : mFailCauseDataList) {
-            assertEquals("cause = " + data.mCause, data.mPermanentFailure, DcFailCause.fromInt(
-                    data.mCause).isPermanentFailure(mContext, mPhone.getSubId()));
+            assertEquals("cause = " + data.mCause, data.mPermanentFailure,
+                    DataFailCause.isPermanentFailure(mContext, DataFailCause.getFailCause(
+                    data.mCause), mPhone.getSubId()));
         }
-        assertFalse(DcFailCause.fromInt(123456).isPermanentFailure(mContext, mPhone.getSubId()));
+        assertFalse(DataFailCause.isPermanentFailure(mContext,
+                DataFailCause.getFailCause(123456), mPhone.getSubId()));
     }
 
     @Test
@@ -180,14 +183,17 @@ public class DcFailCauseTest extends TelephonyTest {
         // Run it twice to make sure the cached carrier config is working as expected.
         for (int i = 0; i < 2; i++) {
             for (DcFailCauseData data : mFailCauseDataList) {
-                if (DcFailCause.fromInt(data.mCause).equals(
-                        DcFailCause.SERVICE_OPTION_NOT_SUBSCRIBED) ||
-                        DcFailCause.fromInt(data.mCause).equals(DcFailCause.TETHERED_CALL_ACTIVE)) {
-                    assertTrue("cause = " + data.mCause, DcFailCause.fromInt(data.mCause).
-                            isPermanentFailure(mContext, mPhone.getSubId()));
+                if (DataFailCause.getFailCause(data.mCause) == (
+                        DataFailCause.SERVICE_OPTION_NOT_SUBSCRIBED) ||
+                        DataFailCause.getFailCause(data.mCause) == (
+                                DataFailCause.TETHERED_CALL_ACTIVE)) {
+                    assertTrue("cause = " + data.mCause,
+                            DataFailCause.isPermanentFailure(mContext,
+                                    DataFailCause.getFailCause(data.mCause), mPhone.getSubId()));
                 } else {
-                    assertFalse("cause = " + data.mCause, DcFailCause.fromInt(data.mCause).
-                            isPermanentFailure(mContext, mPhone.getSubId()));
+                    assertFalse("cause = " + data.mCause,
+                            DataFailCause.isPermanentFailure(mContext,
+                                    DataFailCause.getFailCause(data.mCause), mPhone.getSubId()));
                 }
             }
         }
@@ -198,43 +204,43 @@ public class DcFailCauseTest extends TelephonyTest {
     public void testEventLoggable() throws Exception {
         for (DcFailCauseData data : mFailCauseDataList) {
             assertEquals("cause = " + data.mCause, data.mEventLoggable,
-                    DcFailCause.fromInt(data.mCause).isEventLoggable());
+                    DataFailCause.isEventLoggable(DataFailCause.getFailCause(data.mCause)));
         }
-        assertFalse(DcFailCause.fromInt(123456).isEventLoggable());
+        assertFalse(DataFailCause.isEventLoggable(DataFailCause.getFailCause(123456)));
     }
 
     @Test
     @SmallTest
     public void testGetErrorCode() throws Exception {
         for (DcFailCauseData data : mFailCauseDataList) {
-            assertEquals(data.mCause, DcFailCause.fromInt(data.mCause).getErrorCode());
+            assertEquals(data.mCause, DataFailCause.getFailCause(data.mCause));
         }
-        assertEquals(DcFailCause.UNKNOWN.getErrorCode(),
-                DcFailCause.fromInt(123456).getErrorCode());
+        assertEquals(DataFailCause.UNKNOWN,
+                DataFailCause.getFailCause(123456));
     }
 
     @Test
     public void testIsRadioRestartFailureRegularDeactivation() {
-        assertFalse(DcFailCause.fromInt(DcFailCause.REGULAR_DEACTIVATION.getErrorCode())
-                .isRadioRestartFailure(mContext, mPhone.getSubId()));
+        assertFalse(DataFailCause.isRadioRestartFailure(mContext,
+                DataFailCause.getFailCause(DataFailCause.REGULAR_DEACTIVATION), mPhone.getSubId()));
         mPersistableBundle.putBoolean(CarrierConfigManager
                 .KEY_RESTART_RADIO_ON_PDP_FAIL_REGULAR_DEACTIVATION_BOOL, true);
-        assertTrue(DcFailCause.fromInt(DcFailCause.REGULAR_DEACTIVATION.getErrorCode())
-                .isRadioRestartFailure(mContext, mPhone.getSubId()));
+        assertTrue(DataFailCause.isRadioRestartFailure(mContext,
+                DataFailCause.getFailCause(DataFailCause.REGULAR_DEACTIVATION), mPhone.getSubId()));
     }
 
     @Test
     public void testIsRadioRestartFailureNotRegularDeactivation() {
-        DcFailCause randomCause = DcFailCause.fromInt(mFailCauseDataList
+        int randomCause = DataFailCause.getFailCause(mFailCauseDataList
                 .get(new Random().nextInt(mFailCauseDataList.size())).mCause);
-        while (randomCause == DcFailCause.REGULAR_DEACTIVATION) {
-            randomCause = DcFailCause.fromInt(mFailCauseDataList
+        while (randomCause == DataFailCause.REGULAR_DEACTIVATION) {
+            randomCause = DataFailCause.getFailCause(mFailCauseDataList
                     .get(new Random().nextInt(mFailCauseDataList.size())).mCause);
         }
-        assertFalse(randomCause.isRadioRestartFailure(mContext, mPhone.getSubId()));
-        int [] matchingErrorCodes = {randomCause.getErrorCode()};
+        assertFalse(DataFailCause.isRadioRestartFailure(mContext, randomCause, mPhone.getSubId()));
+        int [] matchingErrorCodes = {randomCause};
         mPersistableBundle.putIntArray(CarrierConfigManager
                 .KEY_RADIO_RESTART_FAILURE_CAUSES_INT_ARRAY, matchingErrorCodes);
-        assertTrue(randomCause.isRadioRestartFailure(mContext, mPhone.getSubId()));
+        assertTrue(DataFailCause.isRadioRestartFailure(mContext, randomCause, mPhone.getSubId()));
     }
 }

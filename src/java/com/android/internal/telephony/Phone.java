@@ -58,6 +58,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
 import android.telephony.data.ApnSetting.ApnType;
+import android.telephony.emergency.EmergencyNumber;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
 import android.util.SparseArray;
@@ -67,8 +68,10 @@ import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
+import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
+import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -209,8 +212,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_VRS_OR_RAT_CHANGED             = 46;
     // Radio state change
     protected static final int EVENT_RADIO_STATE_CHANGED            = 47;
+    protected static final int EVENT_SET_CARRIER_DATA_ENABLED       = 48;
+    protected static final int EVENT_DEVICE_PROVISIONED_CHANGE      = 49;
+    protected static final int EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE = 50;
 
-    protected static final int EVENT_LAST                       = EVENT_RADIO_STATE_CHANGED;
+    protected static final int EVENT_LAST = EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -297,6 +303,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private final String mActionAttached;
     protected DeviceStateMonitor mDeviceStateMonitor;
     protected TransportManager mTransportManager;
+    protected DataEnabledSettings mDataEnabledSettings;
 
     protected int mPhoneId;
 
@@ -488,7 +495,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCi = ci;
         mActionDetached = this.getClass().getPackage().getName() + ".action_detached";
         mActionAttached = this.getClass().getPackage().getName() + ".action_attached";
-        mAppSmsManager = telephonyComponentFactory.makeAppSmsManager(context);
+        mAppSmsManager = telephonyComponentFactory.inject(AppSmsManager.class.getName())
+                .makeAppSmsManager(context);
 
         if (Build.IS_DEBUGGABLE) {
             mTelephonyTester = new TelephonyTester(this);
@@ -550,11 +558,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
         // Initialize device storage and outgoing SMS usage monitors for SMSDispatchers.
         mTelephonyComponentFactory = telephonyComponentFactory;
-        mSmsStorageMonitor = mTelephonyComponentFactory.makeSmsStorageMonitor(this);
-        mSmsUsageMonitor = mTelephonyComponentFactory.makeSmsUsageMonitor(context);
+        mSmsStorageMonitor = mTelephonyComponentFactory.inject(SmsStorageMonitor.class.getName())
+                .makeSmsStorageMonitor(this);
+        mSmsUsageMonitor = mTelephonyComponentFactory.inject(SmsUsageMonitor.class.getName())
+                .makeSmsUsageMonitor(context);
         mUiccController = UiccController.getInstance();
         mUiccController.registerForIccChanged(this, EVENT_ICC_CHANGED, null);
-        mSimActivationTracker = mTelephonyComponentFactory.makeSimActivationTracker(this);
+        mSimActivationTracker = mTelephonyComponentFactory
+                .inject(SimActivationTracker.class.getName())
+                .makeSimActivationTracker(this);
         if (getPhoneType() != PhoneConstants.PHONE_TYPE_SIP) {
             mCi.registerForSrvccStateChanged(this, EVENT_SRVCC_STATE_CHANGED, null);
         }
@@ -1634,6 +1646,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Retrieves the EmergencyNumberTracker of the phone instance.
+     */
+    public EmergencyNumberTracker getEmergencyNumberTracker() {
+        return null;
+    }
+
+    /**
     * Get call tracker
     */
     public CallTracker getCallTracker() {
@@ -1725,6 +1744,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public boolean getIccRecordsLoaded() {
         IccRecords r = mIccRecords.get();
         return (r != null) ? r.getRecordsLoaded() : false;
+    }
+
+    /** Set the minimum interval for CellInfo requests to the modem */
+    public void setCellInfoMinInterval(int interval) {
+        getServiceStateTracker().setCellInfoMinInterval(interval);
     }
 
     /**
@@ -2212,20 +2236,19 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyMessageWaitingChanged(this);
     }
 
-    public void notifyDataConnection(String reason, String apnType,
-            PhoneConstants.DataState state) {
-        mNotifier.notifyDataConnection(this, reason, apnType, state);
+    public void notifyDataConnection(String apnType, PhoneConstants.DataState state) {
+        mNotifier.notifyDataConnection(this, apnType, state);
     }
 
-    public void notifyDataConnection(String reason, String apnType) {
-        mNotifier.notifyDataConnection(this, reason, apnType, getDataConnectionState(apnType));
+    public void notifyDataConnection(String apnType) {
+        mNotifier.notifyDataConnection(this, apnType, getDataConnectionState(apnType));
     }
 
-    public void notifyDataConnection(String reason) {
+    public void notifyDataConnection() {
         String types[] = getActiveApnTypes();
         if (types != null) {
             for (String apnType : types) {
-                mNotifier.notifyDataConnection(this, reason, apnType,
+                mNotifier.notifyDataConnection(this, apnType,
                         getDataConnectionState(apnType));
             }
         }
@@ -2268,6 +2291,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void notifySrvccStateChanged(int state) {
         mNotifier.notifySrvccStateChanged(this, state);
+    }
+
+    /** Notify the {@link EmergencyNumber} changes. */
+    public void notifyEmergencyNumberList() {
+        mNotifier.notifyEmergencyNumberList();
     }
 
     /**
@@ -3000,6 +3028,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Action set from carrier signalling broadcast receivers to reset all carrier actions
+     */
+    public void carrierActionResetAll() {
+        mCarrierActionAgent.carrierActionReset();
+    }
+
+    /**
      * Notify registrants of a new ringing Connection.
      * Subclasses of Phone probably want to replace this with a
      * version scoped to their packages
@@ -3109,13 +3144,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void notifyCallForwardingIndicator() {
     }
 
-    public void notifyDataConnectionFailed(String reason, String apnType) {
-        mNotifier.notifyDataConnectionFailed(this, reason, apnType);
+    public void notifyDataConnectionFailed(String apnType) {
+        mNotifier.notifyDataConnectionFailed(this, apnType);
     }
 
-    public void notifyPreciseDataConnectionFailed(String reason, String apnType, String apn,
+    public void notifyPreciseDataConnectionFailed(String apnType, String apn,
             String failCause) {
-        mNotifier.notifyPreciseDataConnectionFailed(this, reason, apnType, apn, failCause);
+        mNotifier.notifyPreciseDataConnectionFailed(this, apnType, apn, failCause);
     }
 
     /**
@@ -3754,16 +3789,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mAllDataDisconnectedRegistrants.remove(h);
     }
 
-    public void registerForDataEnabledChanged(Handler h, int what, Object obj) {
-        if (getDcTracker(TransportType.WWAN) != null) {
-            getDcTracker(TransportType.WWAN).registerForDataEnabledChanged(h, what, obj);
-        }
-    }
-
-    public void unregisterForDataEnabledChanged(Handler h) {
-        if (getDcTracker(TransportType.WWAN) != null) {
-            getDcTracker(TransportType.WWAN).unregisterForDataEnabledChanged(h);
-        }
+    public DataEnabledSettings getDataEnabledSettings() {
+        return mDataEnabledSettings;
     }
 
     public IccSmsInterfaceManager getIccSmsInterfaceManager(){
@@ -3838,20 +3865,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public NetworkStats getVtDataUsage(boolean perUidStats) {
         if (mImsPhone == null) return null;
         return mImsPhone.getVtDataUsage(perUidStats);
-    }
-
-    /**
-     * Policy control of data connection. Usually used when we hit data limit.
-     * @param enabled True if enabling the data, otherwise disabling.
-     */
-    public void setPolicyDataEnabled(boolean enabled) {
-        if (mTransportManager != null) {
-            for (int transport : mTransportManager.getAvailableTransports()) {
-                if (getDcTracker(transport) != null) {
-                    getDcTracker(transport).setPolicyDataEnabled(enabled);
-                }
-            }
-        }
     }
 
     /**
@@ -3974,6 +3987,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (getServiceStateTracker() != null) {
             try {
                 getServiceStateTracker().dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (getEmergencyNumberTracker() != null) {
+            try {
+                getEmergencyNumberTracker().dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }

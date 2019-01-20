@@ -53,10 +53,13 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.uicc.IccUtils;
+import com.android.internal.telephony.uicc.UiccController;
+import com.android.internal.telephony.uicc.UiccSlot;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -65,6 +68,8 @@ import java.util.List;
 public class SubscriptionInfoUpdater extends Handler {
     private static final String LOG_TAG = "SubscriptionInfoUpdater";
     private static final int PROJECT_SIM_NUM = TelephonyManager.getDefault().getPhoneCount();
+
+    private static final boolean DBG = true;
 
     private static final int EVENT_INVALID = -1;
     private static final int EVENT_GET_NETWORK_SELECTION_MODE_DONE = 2;
@@ -281,19 +286,11 @@ public class SubscriptionInfoUpdater extends Handler {
                 break;
 
             case EVENT_SIM_NOT_READY:
-                broadcastSimStateChanged(msg.arg1, IccCardConstants.INTENT_VALUE_ICC_NOT_READY,
-                        null);
-                broadcastSimCardStateChanged(msg.arg1, TelephonyManager.SIM_STATE_PRESENT);
-                broadcastSimApplicationStateChanged(msg.arg1, TelephonyManager.SIM_STATE_NOT_READY);
+                handleSimNotReady(msg.arg1);
                 // intentional fall through
-                // ICC_NOT_READY is a terminal state for an eSIM on the boot profile. At this
-                // phase, the subscription list is accessible.
-                // TODO(b/64216093): Clean up this special case, likely by treating NOT_READY
-                // as equivalent to ABSENT, once the rest of the system can handle it. Currently
-                // this breaks SystemUI which shows a "No SIM" icon.
 
             case EVENT_REFRESH_EMBEDDED_SUBSCRIPTIONS:
-                if (updateEmbeddedSubscriptions()) {
+                if (updateEmbeddedSubscriptions(msg.arg1)) {
                     SubscriptionController.getInstance().notifySubscriptionInfoChanged();
                 }
                 if (msg.obj != null) {
@@ -306,8 +303,9 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    void requestEmbeddedSubscriptionInfoListRefresh(@Nullable Runnable callback) {
-        sendMessage(obtainMessage(EVENT_REFRESH_EMBEDDED_SUBSCRIPTIONS, callback));
+    void requestEmbeddedSubscriptionInfoListRefresh(int cardId, @Nullable Runnable callback) {
+        sendMessage(obtainMessage(
+                EVENT_REFRESH_EMBEDDED_SUBSCRIPTIONS, cardId, 0 /* arg2 */, callback));
     }
 
     protected void handleSimLocked(int slotId, String reason) {
@@ -364,6 +362,26 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
+    private void handleSimNotReady(int slotId) {
+        logd("handleSimNotReady: slotId: " + slotId);
+
+        IccCard iccCard = mPhone[slotId].getIccCard();
+        if (iccCard.isEmptyProfile()) {
+            // ICC_NOT_READY is a terminal state for an eSIM on the boot profile. At this
+            // phase, the subscription list is accessible. Treating NOT_READY
+            // as equivalent to ABSENT, once the rest of the system can handle it.
+            mIccId[slotId] = ICCID_STRING_FOR_NO_SIM;
+            if (isAllIccIdQueryDone()) {
+                updateSubscriptionInfoByIccId();
+            }
+        }
+
+        broadcastSimStateChanged(slotId, IccCardConstants.INTENT_VALUE_ICC_NOT_READY,
+                null);
+        broadcastSimCardStateChanged(slotId, TelephonyManager.SIM_STATE_PRESENT);
+        broadcastSimApplicationStateChanged(slotId, TelephonyManager.SIM_STATE_NOT_READY);
+    }
+
     protected void handleSimLoaded(int slotId) {
         logd("handleSimLoaded: slotId: " + slotId);
 
@@ -405,6 +423,14 @@ public class SubscriptionInfoUpdater extends Handler {
                 }
 
                 TelephonyManager tm = TelephonyManager.getDefault();
+                String iso = tm.getSimCountryIsoForPhone(slotId);
+
+                if (!TextUtils.isEmpty(iso)) {
+                    SubscriptionController.getInstance().setCountryIso(iso, subId);
+                } else {
+                    logd("EVENT_RECORDS_LOADED sim country iso is null");
+                }
+
                 String msisdn = tm.getLine1Number(subId);
                 ContentResolver contentResolver = mContext.getContentResolver();
 
@@ -666,21 +692,29 @@ public class SubscriptionInfoUpdater extends Handler {
         List<SubscriptionInfo> subInfos = mSubscriptionManager.getActiveSubscriptionInfoList();
         int nSubCount = (subInfos == null) ? 0 : subInfos.size();
         logd("updateSubscriptionInfoByIccId: nSubCount = " + nSubCount);
+        boolean changed = false;
         for (int i=0; i < nSubCount; i++) {
             SubscriptionInfo temp = subInfos.get(i);
+            ContentValues value = new ContentValues(1);
 
             String msisdn = TelephonyManager.getDefault().getLine1Number(
                     temp.getSubscriptionId());
 
-            if (msisdn != null) {
-                ContentValues value = new ContentValues(1);
+            UiccSlot uiccSlot = UiccController.getInstance()
+                    .getUiccSlotForPhone(temp.getSimSlotIndex());
+            boolean isEuicc = (uiccSlot != null && uiccSlot.isEuicc());
+
+            if (isEuicc != temp.isEmbedded() || !TextUtils.equals(msisdn, temp.getNumber())) {
+                value.put(SubscriptionManager.IS_EMBEDDED, isEuicc);
                 value.put(SubscriptionManager.NUMBER, msisdn);
                 contentResolver.update(SubscriptionManager.getUriForSubscriptionId(
                         temp.getSubscriptionId()), value, null, null);
-
-                // refresh Cached Active Subscription Info List
-                SubscriptionController.getInstance().refreshCachedActiveSubscriptionInfoList();
+                changed = true;
             }
+        }
+        if (changed) {
+            // refresh Cached Active Subscription Info List
+            SubscriptionController.getInstance().refreshCachedActiveSubscriptionInfoList();
         }
 
         // Ensure the modems are mapped correctly
@@ -688,21 +722,31 @@ public class SubscriptionInfoUpdater extends Handler {
                 mSubscriptionManager.getDefaultDataSubscriptionId());
 
         // No need to check return value here as we notify for the above changes anyway.
-        updateEmbeddedSubscriptions();
+        UiccController uiccController = UiccController.getInstance();
+        UiccSlot[] uiccSlots = uiccController.getUiccSlots();
+        if (uiccSlots != null) {
+            Arrays.stream(uiccSlots)
+                .filter(uiccSlot -> uiccSlot.isEuicc() && uiccSlot.getUiccCard() != null)
+                .map(uiccSlot -> uiccController.convertToPublicCardId(
+                            uiccSlot.getUiccCard().getCardId()))
+                .forEach(cardId -> updateEmbeddedSubscriptions(cardId));
+        }
 
         SubscriptionController.getInstance().notifySubscriptionInfoChanged();
         logd("updateSubscriptionInfoByIccId:- SubscriptionInfo update complete");
     }
 
     /**
-     * Update the cached list of embedded subscriptions.
+     * Update the cached list of embedded subscription for the eUICC with the given card ID
+     * {@code cardId}.
      *
      * @return true if changes may have been made. This is not a guarantee that changes were made,
      * but notifications about subscription changes may be skipped if this returns false as an
      * optimization to avoid spurious notifications.
      */
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
-    public boolean updateEmbeddedSubscriptions() {
+    public boolean updateEmbeddedSubscriptions(int cardId) {
+        if (DBG) logd("updateEmbeddedSubscriptions");
         // Do nothing if eUICCs are disabled. (Previous entries may remain in the cache, but they
         // are filtered out of list calls as long as EuiccManager.isEnabled returns false).
         if (!mEuiccManager.isEnabled()) {
@@ -710,7 +754,8 @@ public class SubscriptionInfoUpdater extends Handler {
         }
 
         GetEuiccProfileInfoListResult result =
-                EuiccController.get().blockingGetEuiccProfileInfoList();
+                EuiccController.get().blockingGetEuiccProfileInfoList(cardId);
+        if (DBG) logd("blockingGetEuiccProfileInfoList cardId " + cardId);
         if (result == null) {
             // IPC to the eUICC controller failed.
             return false;
@@ -721,6 +766,7 @@ public class SubscriptionInfoUpdater extends Handler {
             List<EuiccProfileInfo> list = result.getProfiles();
             if (list == null || list.size() == 0) {
                 embeddedProfiles = new EuiccProfileInfo[0];
+                if (DBG) logd("blockingGetEuiccProfileInfoList list is empty.");
             } else {
                 embeddedProfiles = list.toArray(new EuiccProfileInfo[list.size()]);
             }
@@ -737,6 +783,8 @@ public class SubscriptionInfoUpdater extends Handler {
         for (int i = 0; i < embeddedProfiles.length; i++) {
             embeddedIccids[i] = embeddedProfiles[i].getIccid();
         }
+
+        if (DBG) logd("Get eUICC profile list of size " + embeddedProfiles.length);
 
         // Note that this only tracks whether we make any writes to the DB. It's possible this will
         // be set to true for an update even when the row contents remain exactly unchanged from
@@ -761,6 +809,12 @@ public class SubscriptionInfoUpdater extends Handler {
             } else {
                 existingSubscriptions.remove(index);
             }
+
+            if (DBG) {
+                logd("embeddedProfile " + embeddedProfile + " existing record "
+                        + (index < 0 ? "not found" : "found"));
+            }
+
             ContentValues values = new ContentValues();
             values.put(SubscriptionManager.IS_EMBEDDED, 1);
             List<UiccAccessRule> ruleList = embeddedProfile.getUiccAccessRules();
@@ -787,10 +841,15 @@ public class SubscriptionInfoUpdater extends Handler {
         // around in case the subscription is added back later, which is equivalent to a removable
         // SIM being removed and reinserted).
         if (!existingSubscriptions.isEmpty()) {
+            if (DBG) {
+                logd("Removing existing embedded subscriptions of size"
+                        + existingSubscriptions.size());
+            }
             List<String> iccidsToRemove = new ArrayList<>();
             for (int i = 0; i < existingSubscriptions.size(); i++) {
                 SubscriptionInfo info = existingSubscriptions.get(i);
                 if (info.isEmbedded()) {
+                    if (DBG) logd("Removing embedded subscription of IccId " + info.getIccId());
                     iccidsToRemove.add("\"" + info.getIccId() + "\"");
                 }
             }
@@ -805,6 +864,7 @@ public class SubscriptionInfoUpdater extends Handler {
             SubscriptionController.getInstance().refreshCachedActiveSubscriptionInfoList();
         }
 
+        if (DBG) logd("updateEmbeddedSubscriptions done hasChanges=" + hasChanges);
         return hasChanges;
     }
 

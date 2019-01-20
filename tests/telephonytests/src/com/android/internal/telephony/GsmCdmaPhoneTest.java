@@ -49,7 +49,6 @@ import android.os.Message;
 import android.os.Process;
 import android.os.WorkSource;
 import android.preference.PreferenceManager;
-import android.support.test.filters.FlakyTest;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellLocation;
 import android.telephony.ServiceState;
@@ -57,6 +56,8 @@ import android.telephony.SubscriptionManager;
 import android.telephony.cdma.CdmaCellLocation;
 import android.telephony.gsm.GsmCellLocation;
 import android.test.suitebuilder.annotation.SmallTest;
+
+import androidx.test.filters.FlakyTest;
 
 import com.android.internal.telephony.test.SimulatedCommands;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus;
@@ -398,6 +399,13 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         // no resource or sharedPreference set -- should be null
         assertEquals(null, mPhoneUT.getVoiceMailNumber());
 
+        // config_telephony_use_own_number_for_voicemail
+        mContextFixture.getCarrierConfigBundle()
+                .putBoolean(CarrierConfigManager
+                        .KEY_CONFIG_TELEPHONY_USE_OWN_NUMBER_FOR_VOICEMAIL_BOOL, true);
+        doReturn(voiceMailNumber).when(mSimRecords).getMsisdnNumber();
+        assertEquals(voiceMailNumber, mPhoneUT.getVoiceMailNumber());
+
         // voicemail number from config
         mContextFixture.getCarrierConfigBundle().
                 putString(CarrierConfigManager.KEY_DEFAULT_VM_NUMBER_STRING, voiceMailNumber);
@@ -433,9 +441,6 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     public void testVoiceMailNumberCdma() {
         switchToCdma();
         String voiceMailNumber = "1234567890";
-
-        // no resource or sharedPreference set -- should be *86
-        assertEquals("*86", mPhoneUT.getVoiceMailNumber());
 
         // config_telephony_use_own_number_for_voicemail
         mContextFixture.getCarrierConfigBundle()
@@ -736,7 +741,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         assertEquals(EVENT_EMERGENCY_CALL_TOGGLE, msgList.get(1).what);
 
         // verify setInternalDataEnabled
-        verify(mDcTracker).setInternalDataEnabled(true);
+        verify(mDataEnabledSettings).setInternalDataEnabled(true);
 
         // verify wakeLock released
         assertEquals(false, mPhoneUT.getWakeLock().isHeld());
@@ -824,7 +829,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         assertEquals(EVENT_EMERGENCY_CALL_TOGGLE, msgList.get(1).what);
 
         // verify setInternalDataEnabled
-        verify(mDcTracker).setInternalDataEnabled(true);
+        verify(mDataEnabledSettings).setInternalDataEnabled(true);
 
         // verify wakeLock released
         assertEquals(false, mPhoneUT.getWakeLock().isHeld());
