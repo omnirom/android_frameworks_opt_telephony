@@ -23,6 +23,8 @@ import android.os.SystemProperties;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
 import android.telephony.emergency.EmergencyNumber;
+import android.telephony.emergency.EmergencyNumber.EmergencyCallRouting;
+import android.telephony.emergency.EmergencyNumber.EmergencyServiceCategories;
 import android.text.TextUtils;
 import android.util.LocalLog;
 
@@ -45,9 +47,7 @@ import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
 import libcore.io.IoUtils;
@@ -61,6 +61,12 @@ public class EmergencyNumberTracker extends Handler {
 
     /** @hide */
     public static boolean DBG = false;
+    /** @hide */
+    public static final int ADD_EMERGENCY_NUMBER_TEST_MODE = 1;
+    /** @hide */
+    public static final int REMOVE_EMERGENCY_NUMBER_TEST_MODE = 2;
+    /** @hide */
+    public static final int RESET_EMERGENCY_NUMBER_TEST_MODE = 3;
 
     private final CommandsInterface mCi;
     private final Phone mPhone;
@@ -70,10 +76,12 @@ public class EmergencyNumberTracker extends Handler {
 
     private List<EmergencyNumber> mEmergencyNumberListFromDatabase = new ArrayList<>();
     private List<EmergencyNumber> mEmergencyNumberListFromRadio = new ArrayList<>();
+    private List<EmergencyNumber> mEmergencyNumberListFromTestMode = new ArrayList<>();
     private List<EmergencyNumber> mEmergencyNumberList = new ArrayList<>();
 
     private final LocalLog mEmergencyNumberListDatabaseLocalLog = new LocalLog(20);
     private final LocalLog mEmergencyNumberListRadioLocalLog = new LocalLog(20);
+    private final LocalLog mEmergencyNumberListTestModeLocalLog = new LocalLog(20);
     private final LocalLog mEmergencyNumberListLocalLog = new LocalLog(20);
 
     /** Event indicating the update for the emergency number list from the radio. */
@@ -83,6 +91,8 @@ public class EmergencyNumberTracker extends Handler {
      * change of country code.
      **/
     private static final int EVENT_UPDATE_DB_COUNTRY_ISO_CHANGED = 2;
+    /** Event indicating the update for the emergency number list in the testing mode. */
+    private static final int EVENT_UPDATE_EMERGENCY_NUMBER_TEST_MODE = 3;
 
     public EmergencyNumberTracker(Phone phone, CommandsInterface ci) {
         mPhone = phone;
@@ -118,6 +128,15 @@ public class EmergencyNumberTracker extends Handler {
                             + " null.");
                 } else {
                     updateEmergencyNumberListDatabaseAndNotify((String) msg.obj);
+                }
+                break;
+            case EVENT_UPDATE_EMERGENCY_NUMBER_TEST_MODE:
+                if (msg.obj == null) {
+                    loge("EVENT_UPDATE_EMERGENCY_NUMBER_TEST_MODE: Result from"
+                            + " executeEmergencyNumberTestModeCommand is null.");
+                } else {
+                    updateEmergencyNumberListTestModeAndNotify(
+                            msg.arg1, (EmergencyNumber) msg.obj);
                 }
                 break;
         }
@@ -184,7 +203,8 @@ public class EmergencyNumberTracker extends Handler {
             }
         }
         return new EmergencyNumber(phoneNumber, countryIso, "", emergencyServiceCategoryBitmask,
-                EmergencyNumber.EMERGENCY_NUMBER_SOURCE_DATABASE);
+                new ArrayList<String>(), EmergencyNumber.EMERGENCY_NUMBER_SOURCE_DATABASE,
+                EmergencyNumber.EMERGENCY_CALL_ROUTING_UNKNOWN);
     }
 
     private void cacheEmergencyDatabaseByCountry(String countryIso) {
@@ -242,7 +262,7 @@ public class EmergencyNumberTracker extends Handler {
                     mEmergencyNumberListRadioLocalLog.log("updateRadioEmergencyNumberList:"
                             + emergencyNumberListRadio);
                 }
-                mergeRadioAndDatabaseList();
+                updateEmergencyNumberList();
                 if (!DBG) {
                     mEmergencyNumberListLocalLog.log("updateRadioEmergencyNumberListAndNotify:"
                             + mEmergencyNumberList);
@@ -266,7 +286,7 @@ public class EmergencyNumberTracker extends Handler {
                     "updateEmergencyNumberListDatabaseAndNotify:"
                             + mEmergencyNumberListFromDatabase);
         }
-        mergeRadioAndDatabaseList();
+        updateEmergencyNumberList();
         if (!DBG) {
             mEmergencyNumberListLocalLog.log("updateEmergencyNumberListDatabaseAndNotify:"
                     + mEmergencyNumberList);
@@ -286,15 +306,15 @@ public class EmergencyNumberTracker extends Handler {
     }
 
     /**
-     * Merge emergency numbers from the radio and database list, if they are the same emergency
-     * numbers.
+     * Update emergency numbers based on the radio, database, and test mode, if they are the same
+     * emergency numbers.
      */
-    private void mergeRadioAndDatabaseList() {
+    private void updateEmergencyNumberList() {
         List<EmergencyNumber> mergedEmergencyNumberList =
                 new ArrayList<>(mEmergencyNumberListFromDatabase);
         mergedEmergencyNumberList.addAll(mEmergencyNumberListFromRadio);
+        mergedEmergencyNumberList.addAll(mEmergencyNumberListFromTestMode);
         EmergencyNumber.mergeSameNumbersInEmergencyNumberList(mergedEmergencyNumberList);
-        Collections.sort(mergedEmergencyNumberList);
         mEmergencyNumberList = mergedEmergencyNumberList;
     }
 
@@ -306,9 +326,9 @@ public class EmergencyNumberTracker extends Handler {
      */
     public List<EmergencyNumber> getEmergencyNumberList() {
         if (!mEmergencyNumberListFromRadio.isEmpty()) {
-            return new ArrayList<>(mEmergencyNumberList);
+            return Collections.unmodifiableList(mEmergencyNumberList);
         } else {
-            return getEmergencyNumberListFromEccList();
+            return getEmergencyNumberListFromEccListAndTest();
         }
     }
 
@@ -323,11 +343,13 @@ public class EmergencyNumberTracker extends Handler {
                 // According to com.android.i18n.phonenumbers.ShortNumberInfo, in
                 // these countries, if extra digits are added to an emergency number,
                 // it no longer connects to the emergency service.
-                Set<String> countriesRequiredForExactMatch = new HashSet<>();
-                countriesRequiredForExactMatch.add("br");
-                countriesRequiredForExactMatch.add("cl");
-                countriesRequiredForExactMatch.add("ni");
-                if (exactMatch || countriesRequiredForExactMatch.contains(mCountryIso)) {
+                if (mCountryIso.equals("br") || mCountryIso.equals("cl")
+                        || mCountryIso.equals("ni")) {
+                    exactMatch = true;
+                } else {
+                    exactMatch = false;
+                }
+                if (exactMatch) {
                     if (num.getNumber().equals(number)) {
                         return true;
                     }
@@ -339,8 +361,63 @@ public class EmergencyNumberTracker extends Handler {
             }
             return false;
         } else {
-            return isEmergencyNumberFromEccList(number, exactMatch);
+            return isEmergencyNumberFromEccList(number, exactMatch)
+                    || isEmergencyNumberForTest(number);
         }
+    }
+
+    /**
+     * Get the {@link EmergencyNumber} for the corresponding emergency number address.
+     *
+     * @param emergencyNumber - the supplied emergency number.
+     * @return the {@link EmergencyNumber} for the corresponding emergency number address.
+     */
+    public EmergencyNumber getEmergencyNumber(String emergencyNumber) {
+        for (EmergencyNumber num : getEmergencyNumberList()) {
+            if (num.getNumber().equals(emergencyNumber)) {
+                return num;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get the emergency service categories for the corresponding emergency number. The only
+     * trusted sources for the categories are the
+     * {@link EmergencyNumber#EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING} and
+     * {@link EmergencyNumber#EMERGENCY_NUMBER_SOURCE_SIM}.
+     *
+     * @param emergencyNumber - the supplied emergency number.
+     * @return the emergency service categories for the corresponding emergency number.
+     */
+    public @EmergencyServiceCategories int getEmergencyServiceCategories(String emergencyNumber) {
+        for (EmergencyNumber num : getEmergencyNumberList()) {
+            if (num.getNumber().equals(emergencyNumber)) {
+                if (num.isFromSources(EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING)
+                        || num.isFromSources(EmergencyNumber.EMERGENCY_NUMBER_SOURCE_SIM)) {
+                    return num.getEmergencyServiceCategoryBitmask();
+                }
+            }
+        }
+        return EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED;
+    }
+
+    /**
+     * Get the emergency call routing for the corresponding emergency number. The only trusted
+     * source for the routing is {@link EmergencyNumber#EMERGENCY_NUMBER_SOURCE_DATABASE}.
+     *
+     * @param emergencyNumber - the supplied emergency number.
+     * @return the emergency call routing for the corresponding emergency number.
+     */
+    public @EmergencyCallRouting int getEmergencyCallRouting(String emergencyNumber) {
+        for (EmergencyNumber num : getEmergencyNumberList()) {
+            if (num.getNumber().equals(emergencyNumber)) {
+                if (num.isFromSources(EmergencyNumber.EMERGENCY_NUMBER_SOURCE_DATABASE)) {
+                    return num.getEmergencyCallRouting();
+                }
+            }
+        }
+        return EmergencyNumber.EMERGENCY_CALL_ROUTING_UNKNOWN;
     }
 
     /**
@@ -363,16 +440,29 @@ public class EmergencyNumberTracker extends Handler {
             // return true if one is found.
             for (String emergencyNum : emergencyNumbers.split(",")) {
                 emergencyNumberList.add(new EmergencyNumber(emergencyNum, "", "",
-                        EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED, 0));
+                        EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                        new ArrayList<String>(), 0,
+                        EmergencyNumber.EMERGENCY_CALL_ROUTING_UNKNOWN));
             }
         }
         emergencyNumbers = ((slotId < 0) ? "112,911,000,08,110,118,119,999" : "112,911");
         for (String emergencyNum : emergencyNumbers.split(",")) {
             emergencyNumberList.add(new EmergencyNumber(emergencyNum, "", "",
-                    EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED, 0));
+                    EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                    new ArrayList<String>(), 0,
+                    EmergencyNumber.EMERGENCY_CALL_ROUTING_UNKNOWN));
         }
         EmergencyNumber.mergeSameNumbersInEmergencyNumberList(emergencyNumberList);
         return emergencyNumberList;
+    }
+
+    private boolean isEmergencyNumberForTest(String number) {
+        for (EmergencyNumber num : mEmergencyNumberListFromTestMode) {
+            if (num.getNumber().equals(number)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -468,6 +558,55 @@ public class EmergencyNumberTracker extends Handler {
         return false;
     }
 
+    /**
+     * Execute command for updating emergency number for test mode.
+     */
+    public void executeEmergencyNumberTestModeCommand(int action, EmergencyNumber num) {
+        this.obtainMessage(EVENT_UPDATE_EMERGENCY_NUMBER_TEST_MODE, action, 0, num).sendToTarget();
+    }
+
+    /**
+     * Update emergency number list for test mode.
+     */
+    private void updateEmergencyNumberListTestModeAndNotify(int action, EmergencyNumber num) {
+        if (action == ADD_EMERGENCY_NUMBER_TEST_MODE) {
+            if (!isEmergencyNumber(num.getNumber(), true)) {
+                mEmergencyNumberListFromTestMode.add(num);
+            }
+        } else if (action == RESET_EMERGENCY_NUMBER_TEST_MODE) {
+            mEmergencyNumberListFromTestMode.clear();
+        } else if (action == REMOVE_EMERGENCY_NUMBER_TEST_MODE) {
+            mEmergencyNumberListFromTestMode.remove(num);
+        } else {
+            loge("updateEmergencyNumberListTestModeAndNotify: Unexpected action in test mode.");
+            return;
+        }
+        if (!DBG) {
+            mEmergencyNumberListTestModeLocalLog.log(
+                    "updateEmergencyNumberListTestModeAndNotify:"
+                            + mEmergencyNumberListFromTestMode);
+        }
+        updateEmergencyNumberList();
+        if (!DBG) {
+            mEmergencyNumberListLocalLog.log(
+                    "updateEmergencyNumberListTestModeAndNotify:"
+                            + mEmergencyNumberList);
+        }
+        notifyEmergencyNumberList();
+    }
+
+    private List<EmergencyNumber> getEmergencyNumberListFromEccListAndTest() {
+        List<EmergencyNumber> mergedEmergencyNumberList = getEmergencyNumberListFromEccList();
+        mergedEmergencyNumberList.addAll(getEmergencyNumberListTestMode());
+        return mergedEmergencyNumberList;
+    }
+
+    /**
+     * Get emergency number list for test.
+     */
+    public List<EmergencyNumber> getEmergencyNumberListTestMode() {
+        return Collections.unmodifiableList(mEmergencyNumberListFromTestMode);
+    }
 
     @VisibleForTesting
     public List<EmergencyNumber> getRadioEmergencyNumberList() {
@@ -500,6 +639,12 @@ public class EmergencyNumberTracker extends Handler {
         ipw.println("mEmergencyNumberListRadioLocalLog:");
         ipw.increaseIndent();
         mEmergencyNumberListRadioLocalLog.dump(fd, pw, args);
+        ipw.decreaseIndent();
+        ipw.println("   -   -   -   -   -   -   -   -");
+
+        ipw.println("mEmergencyNumberListTestModeLocalLog:");
+        ipw.increaseIndent();
+        mEmergencyNumberListTestModeLocalLog.dump(fd, pw, args);
         ipw.decreaseIndent();
         ipw.println("   -   -   -   -   -   -   -   -");
 

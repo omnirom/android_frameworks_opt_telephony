@@ -173,7 +173,7 @@ public class SubscriptionController extends ISub.Stub {
 
     private int[] colorArr;
     private long mLastISubServiceRegTime;
-    private int mPreferredDataSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    private int mPreferredDataSubId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
 
     public static SubscriptionController init(Phone phone) {
         synchronized (SubscriptionController.class) {
@@ -273,6 +273,11 @@ public class SubscriptionController extends ISub.Stub {
                 android.Manifest.permission.MODIFY_PHONE_STATE, message);
     }
 
+    private void enforceReadPrivilegedPhoneState(String message) {
+        mContext.enforceCallingOrSelfPermission(
+                Manifest.permission.READ_PRIVILEGED_PHONE_STATE, message);
+    }
+
     /**
      * Broadcast when SubscriptionInfo has changed
      * FIXME: Hopefully removed if the API council accepts SubscriptionInfoListener
@@ -353,6 +358,8 @@ public class SubscriptionController extends ISub.Stub {
                 SubscriptionManager.GROUP_UUID));
         boolean isMetered = cursor.getInt(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.IS_METERED)) == 1;
+        int profileClass = cursor.getInt(cursor.getColumnIndexOrThrow(
+                SubscriptionManager.PROFILE_CLASS));
 
         if (VDBG) {
             String iccIdToPrint = SubscriptionInfo.givePrintableIccid(iccId);
@@ -365,7 +372,7 @@ public class SubscriptionController extends ISub.Stub {
                     + isEmbedded + " accessRules:" + Arrays.toString(accessRules)
                     + " cardId:" + cardIdToPrint + " publicCardId:" + publicCardId
                     + " isOpportunistic:" + isOpportunistic + " groupUUID:" + groupUUID
-                    + " isMetered:" + isMetered);
+                    + " isMetered:" + isMetered + " profileClass:" + profileClass);
         }
 
         // If line1number has been set to a different number, use it instead.
@@ -374,9 +381,9 @@ public class SubscriptionController extends ISub.Stub {
             number = line1Number;
         }
         return new SubscriptionInfo(id, iccId, simSlotIndex, displayName, carrierName,
-                nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc, countryIso,
-                isEmbedded, accessRules, cardId, publicCardId, isOpportunistic, groupUUID,
-                isMetered, false /* isGroupDisabled */, carrierId);
+            nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc, countryIso,
+            isEmbedded, accessRules, cardId, publicCardId, isOpportunistic, groupUUID,
+            isMetered, false /* isGroupDisabled */, carrierId, profileClass);
     }
 
     /**
@@ -1111,6 +1118,35 @@ public class SubscriptionController extends ISub.Stub {
             Binder.restoreCallingIdentity(identity);
         }
         return 0;
+    }
+
+    /**
+     * Clear an subscriptionInfo to subinfo database if needed by updating slot index to invalid.
+     * @param slotIndex the slot which the SIM is removed
+     */
+    public void clearSubInfoRecord(int slotIndex) {
+        if (DBG) logdl("[clearSubInfoRecord]+ iccId:" + " slotIndex:" + slotIndex);
+
+        // update simInfo db with invalid slot index
+        List<SubscriptionInfo> oldSubInfo = getSubInfoUsingSlotIndexPrivileged(slotIndex,
+                false);
+        ContentResolver resolver = mContext.getContentResolver();
+        ContentValues value = new ContentValues(1);
+        value.put(SubscriptionManager.SIM_SLOT_INDEX,
+                SubscriptionManager.INVALID_SIM_SLOT_INDEX);
+        if (oldSubInfo != null) {
+            for (int i = 0; i < oldSubInfo.size(); i++) {
+                resolver.update(SubscriptionManager.getUriForSubscriptionId(
+                        oldSubInfo.get(i).getSubscriptionId()), value, null, null);
+            }
+        }
+        // Refresh the Cache of Active Subscription Info List
+        refreshCachedActiveSubscriptionInfoList();
+
+        sSlotIndexToSubId.remove(slotIndex);
+
+        // update default subId
+        clearDefaultsForInactiveSubIds();
     }
 
     /**
@@ -2362,8 +2398,12 @@ public class SubscriptionController extends ISub.Stub {
 
         long token = Binder.clearCallingIdentity();
         try {
-            return setSubscriptionProperty(subId, SubscriptionManager.IS_OPPORTUNISTIC,
+            int ret = setSubscriptionProperty(subId, SubscriptionManager.IS_OPPORTUNISTIC,
                     String.valueOf(opportunistic ? 1 : 0));
+
+            if (ret != 0) notifySubscriptionInfoChanged();
+
+            return ret;
         } finally {
             Binder.restoreCallingIdentity(token);
         }
@@ -2393,8 +2433,12 @@ public class SubscriptionController extends ISub.Stub {
 
         long token = Binder.clearCallingIdentity();
         try {
-            return setSubscriptionProperty(subId, SubscriptionManager.IS_METERED,
+            int ret = setSubscriptionProperty(subId, SubscriptionManager.IS_METERED,
                     String.valueOf(isMetered ? 1 : 0));
+
+            if (ret != 0) notifySubscriptionInfoChanged();
+
+            return ret;
         } finally {
             Binder.restoreCallingIdentity(token);
         }
@@ -2428,14 +2472,14 @@ public class SubscriptionController extends ISub.Stub {
     }
 
     @Override
-    public int setPreferredData(int subId) {
-        enforceModifyPhoneState("setPreferredData");
+    public int setPreferredDataSubscriptionId(int subId) {
+        enforceModifyPhoneState("setPreferredDataSubscriptionId");
         final long token = Binder.clearCallingIdentity();
 
         try {
             if (mPreferredDataSubId != subId) {
                 mPreferredDataSubId = subId;
-                PhoneSwitcher.getInstance().setPreferredData(subId);
+                PhoneSwitcher.getInstance().setPreferredDataSubscriptionId(subId);
                 notifyPreferredDataSubIdChanged();
             }
 
@@ -2443,6 +2487,12 @@ public class SubscriptionController extends ISub.Stub {
         } finally {
             Binder.restoreCallingIdentity(token);
         }
+    }
+
+    @Override
+    public int getPreferredDataSubscriptionId() {
+        enforceReadPrivilegedPhoneState("getPreferredDataSubscriptionId");
+        return mPreferredDataSubId;
     }
 
     private void notifyPreferredDataSubIdChanged() {

@@ -46,11 +46,10 @@ import android.provider.Settings;
 import android.telecom.ConferenceParticipant;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
-import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.CallQuality;
 import android.telephony.CarrierConfigManager;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
-import android.telephony.PreciseDisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
@@ -1041,25 +1040,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     isConferenceUri);
 
             if (isEmergencyCall) {
-                // Set emergency service categories in ImsCallProfile
-                int emergencyServiceCategories =
-                        EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED;
-                TelephonyManager tm = (TelephonyManager) mPhone.getContext().getSystemService(
-                        Context.TELEPHONY_SERVICE);
-                if (tm.getCurrentEmergencyNumberList() != null) {
-                    for (List<EmergencyNumber> emergencyNumberList :
-                            tm.getCurrentEmergencyNumberList().values()) {
-                        if (emergencyNumberList != null) {
-                            for (EmergencyNumber num : emergencyNumberList) {
-                                if (num.getNumber().equals(conn.getAddress())) {
-                                    emergencyServiceCategories =
-                                            num.getEmergencyServiceCategoryBitmask();
-                                }
-                            }
-                        }
-                    }
-                }
-                profile.setEmergencyServiceCategories(emergencyServiceCategories);
+                // Set emergency call information in ImsCallProfile
+                setEmergencyCallInfo(profile, conn);
             }
 
             // Translate call subject intent-extra from Telecom-specific extra key to the
@@ -1199,6 +1181,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
     }
 
+    /**
+     * Set the emergency call information if it is an emergency call.
+     */
+    private void setEmergencyCallInfo(ImsCallProfile profile, Connection conn) {
+        EmergencyNumber num = conn.getEmergencyNumberInfo();
+        if (num != null) {
+            profile.setEmergencyCallInfo(num);
+        }
+    }
 
     private void switchAfterConferenceSuccess() {
         if (DBG) log("switchAfterConferenceSuccess fg =" + mForegroundCall.getState() +
@@ -2452,7 +2443,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         dialPendingMO();
                     }
                     mHoldSwitchingState = HoldSwapState.INACTIVE;
-                } else if (mPendingMO.isEmergency()) {
+                } else if (mPendingMO != null && mPendingMO.isEmergency()) {
                     // If mPendingMO is an emergency call, disconnect the call that we tried to
                     // hold.
                     mBackgroundCall.getImsCall().terminate(ImsReasonInfo.CODE_UNSPECIFIED);
@@ -2850,6 +2841,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             }
         }
 
+        @Override
+        public void onRttAudioIndicatorChanged(ImsCall imsCall, ImsStreamMediaProfile profile) {
+          ImsPhoneConnection conn = findConnection(imsCall);
+            if (conn != null) {
+                conn.onRttAudioIndicatorChanged(profile);
+            }
+        }
+
         /**
          * Handles a change to the multiparty state for an {@code ImsCall}.  Notifies the associated
          * {@link ImsPhoneConnection} of the change.
@@ -2866,6 +2865,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (conn != null) {
                 conn.updateMultipartyState(isMultiParty);
             }
+        }
+
+        /**
+         * Handles a change to the call quality for an {@code ImsCall}.
+         * Notifies apps through the System API {@link PhoneStateListener#onCallAttributesChanged}.
+         */
+        @Override
+        public void onCallQualityChanged(ImsCall imsCall, CallQuality callQuality) {
+            mPhone.onCallQualityChanged(callQuality);
         }
     };
 
