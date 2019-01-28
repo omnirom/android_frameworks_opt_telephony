@@ -344,7 +344,6 @@ public class ApnContext {
      */
     public boolean isConnectable() {
         return isReady() && ((mState == DctConstants.State.IDLE)
-                                || (mState == DctConstants.State.SCANNING)
                                 || (mState == DctConstants.State.RETRYING)
                                 || (mState == DctConstants.State.FAILED));
     }
@@ -364,7 +363,6 @@ public class ApnContext {
     public boolean isConnectedOrConnecting() {
         return isReady() && ((mState == DctConstants.State.CONNECTED)
                                 || (mState == DctConstants.State.CONNECTING)
-                                || (mState == DctConstants.State.SCANNING)
                                 || (mState == DctConstants.State.RETRYING));
     }
 
@@ -460,7 +458,11 @@ public class ApnContext {
         }
     }
 
-    public boolean hasNoRestrictedRequests(boolean excludeDun) {
+    /**
+     * @param excludeDun True if excluding requests that have DUN capability
+     * @return True if the attached network requests contain restricted capability.
+     */
+    public boolean hasRestrictedRequests(boolean excludeDun) {
         synchronized (mRefCountLock) {
             for (NetworkRequest nr : mNetworkRequests) {
                 if (excludeDun &&
@@ -468,13 +470,13 @@ public class ApnContext {
                         NetworkCapabilities.NET_CAPABILITY_DUN)) {
                     continue;
                 }
-                if (nr.networkCapabilities.hasCapability(
-                        NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED) == false) {
-                    return false;
+                if (!nr.networkCapabilities.hasCapability(
+                        NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)) {
+                    return true;
                 }
             }
         }
-        return true;
+        return false;
     }
 
     private final SparseIntArray mRetriesLeftPerErrorCode = new SparseIntArray();

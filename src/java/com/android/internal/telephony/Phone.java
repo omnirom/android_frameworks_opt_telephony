@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony;
 
+import android.annotation.Nullable;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -40,6 +41,7 @@ import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.service.carrier.CarrierIdentifier;
 import android.telecom.VideoProfile;
+import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellInfo;
 import android.telephony.CellLocation;
@@ -54,16 +56,22 @@ import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.data.ApnSetting;
+import android.telephony.data.ApnSetting.ApnType;
+import android.telephony.emergency.EmergencyNumber;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
+import android.util.SparseArray;
 
 import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
 import com.android.internal.R;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
+import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
+import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
@@ -79,6 +87,7 @@ import com.android.internal.telephony.uicc.UsimServiceTable;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -162,6 +171,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_GET_CALL_FORWARD_DONE       = 13;
     protected static final int EVENT_CALL_RING                   = 14;
     private static final int EVENT_CALL_RING_CONTINUE            = 15;
+    private static final int EVENT_ALL_DATA_DISCONNECTED         = 16;
 
     // Used to intercept the carrier selection calls so that
     // we can save the values.
@@ -202,8 +212,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_VRS_OR_RAT_CHANGED             = 46;
     // Radio state change
     protected static final int EVENT_RADIO_STATE_CHANGED            = 47;
+    protected static final int EVENT_SET_CARRIER_DATA_ENABLED       = 48;
+    protected static final int EVENT_DEVICE_PROVISIONED_CHANGE      = 49;
+    protected static final int EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE = 50;
 
-    protected static final int EVENT_LAST                       = EVENT_RADIO_STATE_CHANGED;
+    protected static final int EVENT_LAST = EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -256,7 +269,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public CommandsInterface mCi;
     protected int mVmCount = 0;
     private boolean mDnsCheckDisabled;
-    public DcTracker mDcTracker;
+    // Data connection trackers. For each transport type (e.g. WWAN, WLAN), there will be a
+    // corresponding DcTracker. The WWAN DcTracker is for cellular data connections while
+    // WLAN DcTracker is for IWLAN data connection. For IWLAN legacy mode, only one (WWAN) DcTracker
+    // will be created.
+    protected final SparseArray<DcTracker> mDcTrackers = new SparseArray<>();
     /* Used for dispatching signals to configured carrier apps */
     protected CarrierSignalAgent mCarrierSignalAgent;
     /* Used for dispatching carrier action from carrier apps */
@@ -286,6 +303,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private final String mActionAttached;
     protected DeviceStateMonitor mDeviceStateMonitor;
     protected TransportManager mTransportManager;
+    protected DataEnabledSettings mDataEnabledSettings;
 
     protected int mPhoneId;
 
@@ -312,47 +330,35 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public static final String EXTRA_KEY_ALERT_SHOW = "alertShow";
     public static final String EXTRA_KEY_NOTIFICATION_MESSAGE = "notificationMessage";
 
-    private final RegistrantList mPreciseCallStateRegistrants
-            = new RegistrantList();
+    private final RegistrantList mPreciseCallStateRegistrants = new RegistrantList();
 
-    private final RegistrantList mHandoverRegistrants
-            = new RegistrantList();
+    private final RegistrantList mHandoverRegistrants = new RegistrantList();
 
-    private final RegistrantList mNewRingingConnectionRegistrants
-            = new RegistrantList();
+    private final RegistrantList mNewRingingConnectionRegistrants = new RegistrantList();
 
-    private final RegistrantList mIncomingRingRegistrants
-            = new RegistrantList();
+    private final RegistrantList mIncomingRingRegistrants = new RegistrantList();
 
-    protected final RegistrantList mDisconnectRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mDisconnectRegistrants = new RegistrantList();
 
-    private final RegistrantList mServiceStateRegistrants
-            = new RegistrantList();
+    private final RegistrantList mServiceStateRegistrants = new RegistrantList();
 
-    protected final RegistrantList mMmiCompleteRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mMmiCompleteRegistrants = new RegistrantList();
 
-    protected final RegistrantList mMmiRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mMmiRegistrants = new RegistrantList();
 
-    protected final RegistrantList mUnknownConnectionRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mUnknownConnectionRegistrants = new RegistrantList();
 
-    protected final RegistrantList mSuppServiceFailedRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mSuppServiceFailedRegistrants = new RegistrantList();
 
-    protected final RegistrantList mRadioOffOrNotAvailableRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mRadioOffOrNotAvailableRegistrants = new RegistrantList();
 
-    protected final RegistrantList mSimRecordsLoadedRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mSimRecordsLoadedRegistrants = new RegistrantList();
 
-    private final RegistrantList mVideoCapabilityChangedRegistrants
-            = new RegistrantList();
+    private final RegistrantList mVideoCapabilityChangedRegistrants = new RegistrantList();
 
-    protected final RegistrantList mEmergencyCallToggledRegistrants
-            = new RegistrantList();
+    protected final RegistrantList mEmergencyCallToggledRegistrants = new RegistrantList();
+
+    private final RegistrantList mAllDataDisconnectedRegistrants = new RegistrantList();
 
     private final RegistrantList mCellInfoRegistrants = new RegistrantList();
 
@@ -489,7 +495,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCi = ci;
         mActionDetached = this.getClass().getPackage().getName() + ".action_detached";
         mActionAttached = this.getClass().getPackage().getName() + ".action_attached";
-        mAppSmsManager = telephonyComponentFactory.makeAppSmsManager(context);
+        mAppSmsManager = telephonyComponentFactory.inject(AppSmsManager.class.getName())
+                .makeAppSmsManager(context);
 
         if (Build.IS_DEBUGGABLE) {
             mTelephonyTester = new TelephonyTester(this);
@@ -551,11 +558,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
         // Initialize device storage and outgoing SMS usage monitors for SMSDispatchers.
         mTelephonyComponentFactory = telephonyComponentFactory;
-        mSmsStorageMonitor = mTelephonyComponentFactory.makeSmsStorageMonitor(this);
-        mSmsUsageMonitor = mTelephonyComponentFactory.makeSmsUsageMonitor(context);
+        mSmsStorageMonitor = mTelephonyComponentFactory.inject(SmsStorageMonitor.class.getName())
+                .makeSmsStorageMonitor(this);
+        mSmsUsageMonitor = mTelephonyComponentFactory.inject(SmsUsageMonitor.class.getName())
+                .makeSmsUsageMonitor(context);
         mUiccController = UiccController.getInstance();
         mUiccController.registerForIccChanged(this, EVENT_ICC_CHANGED, null);
-        mSimActivationTracker = mTelephonyComponentFactory.makeSimActivationTracker(this);
+        mSimActivationTracker = mTelephonyComponentFactory
+                .inject(SimActivationTracker.class.getName())
+                .makeSimActivationTracker(this);
         if (getPhoneType() != PhoneConstants.PHONE_TYPE_SIP) {
             mCi.registerForSrvccStateChanged(this, EVENT_SRVCC_STATE_CHANGED, null);
         }
@@ -718,6 +729,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 onCheckForNetworkSelectionModeAutomatic(msg);
                 break;
             }
+
+            case EVENT_ALL_DATA_DISCONNECTED:
+                if (areAllDataDisconnected()) {
+                    mAllDataDisconnectedRegistrants.notifyRegistrants();
+                }
+                break;
             default:
                 throw new RuntimeException("unexpected event not handled");
         }
@@ -1629,6 +1646,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Retrieves the EmergencyNumberTracker of the phone instance.
+     */
+    public EmergencyNumberTracker getEmergencyNumberTracker() {
+        return null;
+    }
+
+    /**
     * Get call tracker
     */
     public CallTracker getCallTracker() {
@@ -1720,6 +1744,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public boolean getIccRecordsLoaded() {
         IccRecords r = mIccRecords.get();
         return (r != null) ? r.getRecordsLoaded() : false;
+    }
+
+    /** Set the minimum interval for CellInfo requests to the modem */
+    public void setCellInfoMinInterval(int interval) {
+        getServiceStateTracker().setCellInfoMinInterval(interval);
     }
 
     /**
@@ -2207,19 +2236,21 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyMessageWaitingChanged(this);
     }
 
-    public void notifyDataConnection(String reason, String apnType,
-            PhoneConstants.DataState state) {
-        mNotifier.notifyDataConnection(this, reason, apnType, state);
+    public void notifyDataConnection(String apnType, PhoneConstants.DataState state) {
+        mNotifier.notifyDataConnection(this, apnType, state);
     }
 
-    public void notifyDataConnection(String reason, String apnType) {
-        mNotifier.notifyDataConnection(this, reason, apnType, getDataConnectionState(apnType));
+    public void notifyDataConnection(String apnType) {
+        mNotifier.notifyDataConnection(this, apnType, getDataConnectionState(apnType));
     }
 
-    public void notifyDataConnection(String reason) {
+    public void notifyDataConnection() {
         String types[] = getActiveApnTypes();
-        for (String apnType : types) {
-            mNotifier.notifyDataConnection(this, reason, apnType, getDataConnectionState(apnType));
+        if (types != null) {
+            for (String apnType : types) {
+                mNotifier.notifyDataConnection(this, apnType,
+                        getDataConnectionState(apnType));
+            }
         }
     }
 
@@ -2260,6 +2291,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void notifySrvccStateChanged(int state) {
         mNotifier.notifySrvccStateChanged(this, state);
+    }
+
+    /** Notify the {@link EmergencyNumber} changes. */
+    public void notifyEmergencyNumberList() {
+        mNotifier.notifyEmergencyNumberList();
     }
 
     /**
@@ -2866,15 +2902,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Returns an array of string identifiers for the APN types serviced by the
      * currently active.
-     *  @return The string array will always return at least one entry, Phone.APN_TYPE_DEFAULT.
-     * TODO: Revisit if we always should return at least one entry.
+     *
+     * @return The string array of APN types. Return null if no active APN types.
      */
+    @Nullable
     public String[] getActiveApnTypes() {
-        if (mDcTracker == null) {
-            return null;
+        if (mTransportManager != null) {
+            List<String> typesList = new ArrayList<>();
+            for (int transportType : mTransportManager.getAvailableTransports()) {
+                if (getDcTracker(transportType) != null) {
+                    typesList.addAll(Arrays.asList(
+                            getDcTracker(transportType).getActiveApnTypes()));
+                }
+            }
+
+            return typesList.toArray(new String[typesList.size()]);
         }
 
-        return mDcTracker.getActiveApnTypes();
+        return null;
     }
 
     /**
@@ -2882,7 +2927,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @return true if there is a matching DUN APN.
      */
     public boolean hasMatchedTetherApnSetting() {
-        return mDcTracker.hasMatchedTetherApnSetting();
+        if (getDcTracker(TransportType.WWAN) != null) {
+            return getDcTracker(TransportType.WWAN).hasMatchedTetherApnSetting();
+        }
+        return false;
     }
 
     /**
@@ -2890,40 +2938,71 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      *  @return type as a string or null if none.
      */
     public String getActiveApnHost(String apnType) {
-        return mDcTracker.getActiveApnString(apnType);
+        if (mTransportManager != null) {
+            int transportType = mTransportManager.getCurrentTransport(
+                    ApnSetting.getApnTypesBitmaskFromString(apnType));
+            if (getDcTracker(transportType) != null) {
+                return getDcTracker(transportType).getActiveApnString(apnType);
+            }
+        }
+
+        return null;
     }
 
     /**
      * Return the LinkProperties for the named apn or null if not available
      */
     public LinkProperties getLinkProperties(String apnType) {
-        return mDcTracker.getLinkProperties(apnType);
+        if (mTransportManager != null) {
+            int transport = mTransportManager.getCurrentTransport(
+                    ApnSetting.getApnTypesBitmaskFromString(apnType));
+            if (getDcTracker(transport) != null) {
+                return getDcTracker(transport).getLinkProperties(apnType);
+            }
+        }
+        return null;
     }
 
     /**
      * Return the NetworkCapabilities
      */
     public NetworkCapabilities getNetworkCapabilities(String apnType) {
-        return mDcTracker.getNetworkCapabilities(apnType);
+        if (mTransportManager != null) {
+            int transportType = mTransportManager.getCurrentTransport(
+                    ApnSetting.getApnTypesBitmaskFromString(apnType));
+            if (getDcTracker(transportType) != null) {
+                return getDcTracker(transportType).getNetworkCapabilities(apnType);
+            }
+        }
+        return null;
     }
 
     /**
-     * Report on whether data connectivity is allowed.
+     * Report on whether data connectivity is allowed for given APN type.
+     *
+     * @param apnType APN type
      *
      * @return True if data is allowed to be established.
      */
-    public boolean isDataAllowed() {
-        return ((mDcTracker != null) && (mDcTracker.isDataAllowed(null)));
+    public boolean isDataAllowed(@ApnType int apnType) {
+        return isDataAllowed(apnType, null);
     }
 
     /**
      * Report on whether data connectivity is allowed.
      *
+     * @param apnType APN type
      * @param reasons The reasons that data can/can't be established. This is an output param.
      * @return True if data is allowed to be established
      */
-    public boolean isDataAllowed(DataConnectionReasons reasons) {
-        return ((mDcTracker != null) && (mDcTracker.isDataAllowed(reasons)));
+    public boolean isDataAllowed(@ApnType int apnType, DataConnectionReasons reasons) {
+        if (mTransportManager != null) {
+            int transport = mTransportManager.getCurrentTransport(apnType);
+            if (getDcTracker(transport) != null) {
+                return getDcTracker(transport).isDataAllowed(reasons);
+            }
+        }
+        return false;
     }
 
 
@@ -2946,6 +3025,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void carrierActionReportDefaultNetworkStatus(boolean report) {
         mCarrierActionAgent.carrierActionReportDefaultNetworkStatus(report);
+    }
+
+    /**
+     * Action set from carrier signalling broadcast receivers to reset all carrier actions
+     */
+    public void carrierActionResetAll() {
+        mCarrierActionAgent.carrierActionReset();
     }
 
     /**
@@ -3058,13 +3144,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void notifyCallForwardingIndicator() {
     }
 
-    public void notifyDataConnectionFailed(String reason, String apnType) {
-        mNotifier.notifyDataConnectionFailed(this, reason, apnType);
+    public void notifyDataConnectionFailed(String apnType) {
+        mNotifier.notifyDataConnectionFailed(this, apnType);
     }
 
-    public void notifyPreciseDataConnectionFailed(String reason, String apnType, String apn,
+    public void notifyPreciseDataConnectionFailed(String apnType, String apn,
             String failCause) {
-        mNotifier.notifyPreciseDataConnectionFailed(this, reason, apnType, apn, failCause);
+        mNotifier.notifyPreciseDataConnectionFailed(this, apnType, apn, failCause);
     }
 
     /**
@@ -3113,7 +3199,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param apnType the apnType, "ims" for IMS APN, "emergency" for EMERGENCY APN
      */
     public String[] getPcscfAddress(String apnType) {
-        return mDcTracker.getPcscfAddress(apnType);
+        if (mTransportManager != null) {
+            int transportType = mTransportManager.getCurrentTransport(
+                    ApnSetting.getApnTypesBitmaskFromString(apnType));
+            if (getDcTracker(transportType) != null) {
+                return getDcTracker(transportType).getPcscfAddress(apnType);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -3173,6 +3267,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     public int getCarrierIdListVersion() {
         return TelephonyManager.UNKNOWN_CARRIER_ID_LIST_VERSION;
+    }
+
+    public void resolveSubscriptionCarrierId(String simState) {
     }
 
     /**
@@ -3649,31 +3746,51 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     public void updateDataConnectionTracker() {
-        mDcTracker.update();
-    }
-
-    public void setInternalDataEnabled(boolean enable, Message onCompleteMsg) {
-        mDcTracker.setInternalDataEnabled(enable, onCompleteMsg);
+        if (mTransportManager != null) {
+            for (int transport : mTransportManager.getAvailableTransports()) {
+                if (getDcTracker(transport) != null) {
+                    getDcTracker(transport).update();
+                }
+            }
+        }
     }
 
     public boolean updateCurrentCarrierInProvider() {
         return false;
     }
 
-    public void registerForAllDataDisconnected(Handler h, int what, Object obj) {
-        mDcTracker.registerForAllDataDisconnected(h, what, obj);
+    /**
+     * @return True if all data connections are disconnected.
+     */
+    public boolean areAllDataDisconnected() {
+        if (mTransportManager != null) {
+            for (int transport : mTransportManager.getAvailableTransports()) {
+                if (getDcTracker(transport) != null && !getDcTracker(transport).isDisconnected()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public void registerForAllDataDisconnected(Handler h, int what) {
+        mAllDataDisconnectedRegistrants.addUnique(h, what, null);
+        if (mTransportManager != null) {
+            for (int transport : mTransportManager.getAvailableTransports()) {
+                if (getDcTracker(transport) != null && !getDcTracker(transport).isDisconnected()) {
+                    getDcTracker(transport).registerForAllDataDisconnected(
+                            this, EVENT_ALL_DATA_DISCONNECTED);
+                }
+            }
+        }
     }
 
     public void unregisterForAllDataDisconnected(Handler h) {
-        mDcTracker.unregisterForAllDataDisconnected(h);
+        mAllDataDisconnectedRegistrants.remove(h);
     }
 
-    public void registerForDataEnabledChanged(Handler h, int what, Object obj) {
-        mDcTracker.registerForDataEnabledChanged(h, what, obj);
-    }
-
-    public void unregisterForDataEnabledChanged(Handler h) {
-        mDcTracker.unregisterForDataEnabledChanged(h);
+    public DataEnabledSettings getDataEnabledSettings() {
+        return mDataEnabledSettings;
     }
 
     public IccSmsInterfaceManager getIccSmsInterfaceManager(){
@@ -3751,14 +3868,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Policy control of data connection. Usually used when we hit data limit.
-     * @param enabled True if enabling the data, otherwise disabling.
-     */
-    public void setPolicyDataEnabled(boolean enabled) {
-        mDcTracker.setPolicyDataEnabled(enabled);
-    }
-
-    /**
      * SIP URIs aliased to the current subscriber given by the IMS implementation.
      * Applicable only on IMS; used in absence of line1number.
      * @return array of SIP URIs aliased to the current subscriber
@@ -3807,12 +3916,21 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             int commandInterfaceServiceClass, int timerSeconds, Message onComplete) {
     }
 
+    /**
+     * Get data connection tracker based on the transport type
+     *
+     * @param transportType Transport type defined in AccessNetworkConstants.TransportType
+     * @return The data connection tracker. Null if not found.
+     */
+    public @Nullable DcTracker getDcTracker(int transportType) {
+        return mDcTrackers.get(transportType);
+    }
+
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Phone: subId=" + getSubId());
         pw.println(" mPhoneId=" + mPhoneId);
         pw.println(" mCi=" + mCi);
         pw.println(" mDnsCheckDisabled=" + mDnsCheckDisabled);
-        pw.println(" mDcTracker=" + mDcTracker);
         pw.println(" mDoesRilSendMultipleCallRing=" + mDoesRilSendMultipleCallRing);
         pw.println(" mCallRingContinueToken=" + mCallRingContinueToken);
         pw.println(" mCallRingDelay=" + mCallRingDelay);
@@ -3856,9 +3974,19 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.println("++++++++++++++++++++++++++++++++");
         }
 
-        if (mDcTracker != null) {
+        if (mTransportManager != null) {
+            for (int transport : mTransportManager.getAvailableTransports()) {
+                if (getDcTracker(transport) != null) {
+                    getDcTracker(transport).dump(fd, pw, args);
+                    pw.flush();
+                    pw.println("++++++++++++++++++++++++++++++++");
+                }
+            }
+        }
+
+        if (getServiceStateTracker() != null) {
             try {
-                mDcTracker.dump(fd, pw, args);
+                getServiceStateTracker().dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -3867,9 +3995,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             pw.println("++++++++++++++++++++++++++++++++");
         }
 
-        if (getServiceStateTracker() != null) {
+        if (getEmergencyNumberTracker() != null) {
             try {
-                getServiceStateTracker().dump(fd, pw, args);
+                getEmergencyNumberTracker().dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }

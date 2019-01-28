@@ -26,11 +26,15 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
-import android.support.test.filters.SmallTest;
 import android.telephony.TelephonyManager;
+import android.telephony.UiccCardInfo;
+
+import androidx.test.InstrumentationRegistry;
+import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.TelephonyTest;
@@ -41,15 +45,23 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
+import java.util.ArrayList;
+
 public class UiccControllerTest extends TelephonyTest {
     private UiccController mUiccControllerUT;
     private UiccControllerHandlerThread mUiccControllerHandlerThread;
     private static final int PHONE_COUNT = 1;
-    private static int ICC_CHANGED_EVENT = 0;
+    private static final int ICC_CHANGED_EVENT = 0;
+    private static final int EVENT_GET_ICC_STATUS_DONE = 3;
+    private static final int EVENT_GET_SLOT_STATUS_DONE = 4;
     @Mock
     private Handler mMockedHandler;
     @Mock
     private IccCardStatus mIccCardStatus;
+    @Mock
+    private UiccSlot mMockSlot;
+    @Mock
+    private UiccCard mMockCard;
 
     private class UiccControllerHandlerThread extends HandlerThread {
 
@@ -147,7 +159,7 @@ public class UiccControllerTest extends TelephonyTest {
         assertEquals(TelephonyManager.RADIO_POWER_UNAVAILABLE, mSimulatedCommands.getRadioState());
     }
 
-    @Test@SmallTest
+    @Test @SmallTest
     public void testPowerOn() {
         mSimulatedCommands.setRadioPower(true, null);
         waitForMs(500);
@@ -199,5 +211,112 @@ public class UiccControllerTest extends TelephonyTest {
         verify(mMockedHandler, atLeast(1)).sendMessageDelayed(mCaptorMessage.capture(),
                 mCaptorLong.capture());
         assertEquals(ICC_CHANGED_EVENT, mCaptorMessage.getValue().what);
+    }
+
+    @Test
+    public void testCardIdFromIccStatus() {
+        // Give UiccController a real context so it can use shared preferences
+        mUiccControllerUT.mContext = InstrumentationRegistry.getContext();
+
+        // Mock out UiccSlots
+        mUiccControllerUT.mUiccSlots[0] = mMockSlot;
+        doReturn(mMockCard).when(mMockSlot).getUiccCard();
+        doReturn("A1B2C3D4").when(mMockCard).getCardId();
+        doReturn(IccCardStatus.CardState.CARDSTATE_PRESENT).when(mMockCard).getCardState();
+
+        // simulate card status loaded so that the UiccController sets the card ID
+        IccCardStatus ics = new IccCardStatus();
+        ics.setCardState(1 /* present */);
+        ics.setUniversalPinState(3 /* disabled */);
+        ics.atr = "abcdef0123456789abcdef";
+        ics.iccid = "123451234567890";
+        ics.eid = "A1B2C3D4";
+        AsyncResult ar = new AsyncResult(null, ics, null);
+        Message msg = Message.obtain(mUiccControllerUT, EVENT_GET_ICC_STATUS_DONE, ar);
+        mUiccControllerUT.handleMessage(msg);
+
+        // assert that the card ID was created
+        assertEquals(0, mUiccControllerUT.convertToPublicCardId(ics.eid));
+    }
+
+    @Test
+    public void testCardIdFromSlotStatus() {
+        // Give UiccController a real context so it can use shared preferences
+        mUiccControllerUT.mContext = InstrumentationRegistry.getContext();
+
+        // Mock out UiccSlots
+        mUiccControllerUT.mUiccSlots[0] = mMockSlot;
+        doReturn(true).when(mMockSlot).isEuicc();
+
+        // simulate slot status loaded so that the UiccController sets the card ID
+        IccSlotStatus iss = new IccSlotStatus();
+        iss.setSlotState(1 /* active */);
+        iss.eid = "ABADACB";
+        ArrayList<IccSlotStatus> status = new ArrayList<IccSlotStatus>();
+        status.add(iss);
+        AsyncResult ar = new AsyncResult(null, status, null);
+        Message msg = Message.obtain(mUiccControllerUT, EVENT_GET_SLOT_STATUS_DONE, ar);
+        mUiccControllerUT.handleMessage(msg);
+
+        // assert that the card ID was created
+        assertEquals(0, mUiccControllerUT.convertToPublicCardId(iss.eid));
+    }
+
+    @Test
+    public void testCardIdForDefaultEuicc() {
+        // Give UiccController a real context so it can use shared preferences
+        mUiccControllerUT.mContext = InstrumentationRegistry.getContext();
+
+        // Mock out UiccSlots
+        mUiccControllerUT.mUiccSlots[0] = mMockSlot;
+        doReturn(true).when(mMockSlot).isEuicc();
+
+        // simulate slot status loaded so that the UiccController sets the card ID
+        IccSlotStatus iss = new IccSlotStatus();
+        iss.setSlotState(1 /* active */);
+        iss.eid = "ABADACB";
+        ArrayList<IccSlotStatus> status = new ArrayList<IccSlotStatus>();
+        status.add(iss);
+        AsyncResult ar = new AsyncResult(null, status, null);
+        Message msg = Message.obtain(mUiccControllerUT, EVENT_GET_SLOT_STATUS_DONE, ar);
+        mUiccControllerUT.handleMessage(msg);
+
+        // assert that the default cardId is the slot with the lowest slot index, even if inactive
+        assertEquals(mUiccControllerUT.convertToPublicCardId(iss.eid),
+                mUiccControllerUT.getCardIdForDefaultEuicc());
+    }
+
+    @Test
+    public void testGetAllUiccCardInfos() {
+        // Give UiccController a real context so it can use shared preferences
+        mUiccControllerUT.mContext = InstrumentationRegistry.getContext();
+
+        // Mock out UiccSlots
+        mUiccControllerUT.mUiccSlots[0] = mMockSlot;
+        doReturn(true).when(mMockSlot).isEuicc();
+        doReturn(mMockCard).when(mMockSlot).getUiccCard();
+        doReturn("A1B2C3D4").when(mMockCard).getCardId();
+        doReturn("123451234567890").when(mMockCard).getIccId();
+        doReturn(IccCardStatus.CardState.CARDSTATE_PRESENT).when(mMockCard).getCardState();
+
+        // simulate card status loaded so that the UiccController sets the card ID
+        IccCardStatus ics = new IccCardStatus();
+        ics.setCardState(1 /* present */);
+        ics.setUniversalPinState(3 /* disabled */);
+        ics.atr = "abcdef0123456789abcdef";
+        ics.iccid = "123451234567890";
+        ics.eid = "A1B2C3D4";
+        AsyncResult ar = new AsyncResult(null, ics, null);
+        Message msg = Message.obtain(mUiccControllerUT, EVENT_GET_ICC_STATUS_DONE, ar);
+        mUiccControllerUT.handleMessage(msg);
+
+        // assert that the default cardId is the slot with the lowest slot index, even if inactive
+        UiccCardInfo uiccCardInfo = new UiccCardInfo(
+                true,      // isEuicc
+                0,         // cardId
+                ics.eid,   // eid
+                ics.iccid, // iccid is unknown
+                0);        // slotIndex
+        assertEquals(uiccCardInfo, mUiccControllerUT.getAllUiccCardInfos().get(0));
     }
 }

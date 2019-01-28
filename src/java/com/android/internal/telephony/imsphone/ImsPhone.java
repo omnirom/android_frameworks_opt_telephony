@@ -266,8 +266,11 @@ public class ImsPhone extends ImsPhoneBase {
         // setting the multiendpoint listener on the external call tracker.  So we need to ensure
         // the external call tracker is available first to avoid potential timing issues.
         mExternalCallTracker =
-                TelephonyComponentFactory.getInstance().makeImsExternalCallTracker(this);
-        mCT = TelephonyComponentFactory.getInstance().makeImsPhoneCallTracker(this);
+                TelephonyComponentFactory.getInstance()
+                        .inject(ImsExternalCallTracker.class.getName())
+                        .makeImsExternalCallTracker(this);
+        mCT = TelephonyComponentFactory.getInstance().inject(ImsPhoneCallTracker.class.getName())
+                .makeImsPhoneCallTracker(this);
         mCT.registerPhoneStateListener(mExternalCallTracker);
         mExternalCallTracker.setCallPuller(mCT);
 
@@ -1039,7 +1042,15 @@ public class ImsPhone extends ImsPhoneBase {
 
     @Override
     public void setCallWaiting(boolean enable, Message onComplete) {
-        setCallWaiting(enable, CommandsInterface.SERVICE_CLASS_VOICE, onComplete);
+        int serviceClass = CommandsInterface.SERVICE_CLASS_VOICE;
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        PersistableBundle b = configManager.getConfigForSubId(getSubId());
+        if (b != null) {
+            serviceClass = b.getInt(CarrierConfigManager.KEY_CALL_WAITING_SERVICE_CLASS_INT,
+                    CommandsInterface.SERVICE_CLASS_VOICE);
+        }
+        setCallWaiting(enable, serviceClass, onComplete);
     }
 
     public void setCallWaiting(boolean enable, int serviceClass, Message onComplete) {

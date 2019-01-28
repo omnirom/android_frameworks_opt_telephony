@@ -27,6 +27,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.DataFailCause;
 import android.telephony.PhoneStateListener;
 import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
@@ -34,7 +35,6 @@ import android.telephony.data.DataCallResponse;
 
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.dataconnection.DataConnection.UpdateLinkPropertyResult;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -43,6 +43,7 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * Data Connection Controller which is a package visible class and controls
@@ -314,7 +315,8 @@ public class DcController extends StateMachine {
                     continue;
                 }
 
-                if (dc.mApnContexts.size() == 0) {
+                List<ApnContext> apnContexts = dc.getApnContexts();
+                if (apnContexts.size() == 0) {
                     if (DBG) loge("onDataStateChanged: no connected apns, ignore");
                 } else {
                     // Determine if the connection/apnContext should be cleaned up
@@ -325,11 +327,11 @@ public class DcController extends StateMachine {
                     }
                     if (newState.getActive() == DATA_CONNECTION_ACTIVE_PH_LINK_INACTIVE) {
                         if (mDct.isCleanupRequired.get()) {
-                            apnsToCleanup.addAll(dc.mApnContexts.keySet());
+                            apnsToCleanup.addAll(apnContexts);
                             mDct.isCleanupRequired.set(false);
                         } else {
-                            DcFailCause failCause = DcFailCause.fromInt(newState.getStatus());
-                            if (failCause.isRadioRestartFailure(mPhone.getContext(),
+                            int failCause = DataFailCause.getFailCause(newState.getStatus());
+                            if (DataFailCause.isRadioRestartFailure(mPhone.getContext(), failCause,
                                         mPhone.getSubId())) {
                                 if (DBG) {
                                     log("onDataStateChanged: X restart radio, failCause="
@@ -341,7 +343,7 @@ public class DcController extends StateMachine {
                                     log("onDataStateChanged: inactive, add to cleanup list. "
                                             + "failCause=" + failCause);
                                 }
-                                apnsToCleanup.addAll(dc.mApnContexts.keySet());
+                                apnsToCleanup.addAll(apnContexts);
                             } else {
                                 if (DBG) {
                                     log("onDataStateChanged: inactive, add to retry list. "
@@ -382,19 +384,17 @@ public class DcController extends StateMachine {
                                     }
                                     if (needToClean) {
                                         if (DBG) {
-                                            log("onDataStateChanged: addr change," +
-                                                    " cleanup apns=" + dc.mApnContexts +
-                                                    " oldLp=" + result.oldLp +
-                                                    " newLp=" + result.newLp);
+                                            log("onDataStateChanged: addr change,"
+                                                    + " cleanup apns=" + apnContexts
+                                                    + " oldLp=" + result.oldLp
+                                                    + " newLp=" + result.newLp);
                                         }
-                                        apnsToCleanup.addAll(dc.mApnContexts.keySet());
+                                        apnsToCleanup.addAll(apnContexts);
                                     } else {
                                         if (DBG) log("onDataStateChanged: simple change");
 
-                                        for (ApnContext apnContext : dc.mApnContexts.keySet()) {
-                                             mPhone.notifyDataConnection(
-                                                 PhoneConstants.REASON_LINK_PROPERTIES_CHANGED,
-                                                 apnContext.getApnType());
+                                        for (ApnContext apnContext : apnContexts) {
+                                            mPhone.notifyDataConnection(apnContext.getApnType());
                                         }
                                     }
                                 } else {
@@ -403,10 +403,10 @@ public class DcController extends StateMachine {
                                     }
                                 }
                             } else {
-                                apnsToCleanup.addAll(dc.mApnContexts.keySet());
+                                apnsToCleanup.addAll(apnContexts);
                                 if (DBG) {
                                     log("onDataStateChanged: interface change, cleanup apns="
-                                            + dc.mApnContexts);
+                                            + apnContexts);
                                 }
                             }
                         }
@@ -449,7 +449,7 @@ public class DcController extends StateMachine {
 
             // Cleanup connections that have changed
             for (ApnContext apnContext : apnsToCleanup) {
-               mDct.sendCleanUpConnection(true, apnContext);
+                mDct.cleanUpConnection(apnContext);
             }
 
             // Retry connections that have disappeared

@@ -112,7 +112,6 @@ public class EuiccCard extends UiccCard {
     }
 
     private final ApduSender mApduSender;
-    private final Object mLock = new Object();
     private RegistrantList mEidReadyRegistrants;
     private EuiccSpecVersion mSpecVersion;
     private volatile String mEid;
@@ -122,7 +121,13 @@ public class EuiccCard extends UiccCard {
         // TODO: Set supportExtendedApdu based on ATR.
         mApduSender = new ApduSender(ci, ISD_R_AID, false /* supportExtendedApdu */);
 
-        loadEidAndNotifyRegistrants();
+        if (TextUtils.isEmpty(ics.eid)) {
+            loge("no eid given in constructor for phone " + phoneId);
+            loadEidAndNotifyRegistrants();
+        } else {
+            mEid = ics.eid;
+            mCardId = ics.eid;
+        }
     }
 
     /**
@@ -150,6 +155,8 @@ public class EuiccCard extends UiccCard {
         }
     }
 
+    // For RadioConfig<1.1 we don't know the EID when constructing the EuiccCard, so callers may
+    // need to register to be notified when we have the EID
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     protected void loadEidAndNotifyRegistrants() {
         Handler euiccMainThreadHandler = new Handler();
@@ -187,6 +194,16 @@ public class EuiccCard extends UiccCard {
 
         sendApdu(newRequestProvider((RequestBuilder requestBuilder) -> { /* Do nothing */ }),
                 (byte[] response) -> mSpecVersion, callback, handler);
+    }
+
+    @Override
+    public void update(Context c, CommandsInterface ci, IccCardStatus ics) {
+        synchronized (mLock) {
+            if (!TextUtils.isEmpty(ics.eid)) {
+                mEid = ics.eid;
+            }
+            super.update(c, ci, ics);
+        }
     }
 
     @Override
@@ -549,14 +566,16 @@ public class EuiccCard extends UiccCard {
                     int size = nodes.size();
                     for (int i = 0; i < size; i++) {
                         Asn1Node node = nodes.get(i);
-                        List<Asn1Node> opIdNodes = node.getChild(Tags.TAG_CTX_COMP_1).getChildren();
+                        List<Asn1Node> opIdNodes =
+                                node.getChild(Tags.TAG_SEQUENCE, Tags.TAG_CTX_COMP_1).getChildren();
                         int opIdSize = opIdNodes.size();
                         CarrierIdentifier[] opIds = new CarrierIdentifier[opIdSize];
                         for (int j = 0; j < opIdSize; j++) {
                             opIds[j] = buildCarrierIdentifier(opIdNodes.get(j));
                         }
-                        builder.add(node.getChild(Tags.TAG_CTX_0).asBits(), Arrays.asList(opIds),
-                                node.getChild(Tags.TAG_CTX_2).asBits());
+                        builder.add(node.getChild(Tags.TAG_SEQUENCE, Tags.TAG_CTX_0).asBits(),
+                                Arrays.asList(opIds), node.getChild(Tags.TAG_SEQUENCE,
+                                Tags.TAG_CTX_2).asBits());
                     }
                     return builder.build();
                 },

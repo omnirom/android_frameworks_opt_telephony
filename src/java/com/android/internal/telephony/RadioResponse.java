@@ -42,6 +42,7 @@ import android.telephony.CellInfo;
 import android.telephony.ModemActivityInfo;
 import android.telephony.NeighboringCellInfo;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.RadioAccessFamily;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -113,11 +114,11 @@ public class RadioResponse extends IRadioResponse.Stub {
 
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
-     * @param cardStatus ICC card status as defined by CardStatus in 1.3/types.hal
+     * @param cardStatus ICC card status as defined by CardStatus in 1.4/types.hal
      */
-    public void getIccCardStatusResponse_1_3(RadioResponseInfo responseInfo,
-                                             android.hardware.radio.V1_3.CardStatus cardStatus) {
-        responseIccCardStatus_1_3(responseInfo, cardStatus);
+    public void getIccCardStatusResponse_1_4(RadioResponseInfo responseInfo,
+                                             android.hardware.radio.V1_4.CardStatus cardStatus) {
+        responseIccCardStatus_1_4(responseInfo, cardStatus);
     }
 
     /**
@@ -727,6 +728,14 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     /**
+     * Callback of setPreferredNetworkTypeBitmap defined in IRadio.hal.
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     */
+    public void setPreferredNetworkTypeBitmapResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
+
+    /**
      *
      * @param responseInfo Response info struct containing response type, serial no. and error
      * @param nwType RadioPreferredNetworkType defined in types.hal
@@ -734,6 +743,19 @@ public class RadioResponse extends IRadioResponse.Stub {
     public void getPreferredNetworkTypeResponse(RadioResponseInfo responseInfo, int nwType) {
         mRil.mPreferredNetworkType = nwType;
         responseInts(responseInfo, nwType);
+    }
+
+    /**
+     * Callback of the getPreferredNetworkTypeBitmap defined in the IRadio.hal.
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param networkTypeBitmap a 32-bit bitmap of
+     * {@link android.telephony.TelephonyManager.NetworkTypeBitMask}.
+     */
+    public void getPreferredNetworkTypeBitmapResponse(
+            RadioResponseInfo responseInfo, int networkTypeBitmap) {
+        int networkType = RadioAccessFamily.getNetworkTypeFromRaf(networkTypeBitmap);
+        mRil.mPreferredNetworkType = networkType;
+        responseInts(responseInfo, networkType);
     }
 
     /**
@@ -1450,8 +1472,8 @@ public class RadioResponse extends IRadioResponse.Stub {
         }
     }
 
-    private void responseIccCardStatus_1_3(RadioResponseInfo responseInfo,
-                                           android.hardware.radio.V1_3.CardStatus cardStatus) {
+    private void responseIccCardStatus_1_4(RadioResponseInfo responseInfo,
+                                           android.hardware.radio.V1_4.CardStatus cardStatus) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
@@ -1466,6 +1488,13 @@ public class RadioResponse extends IRadioResponse.Stub {
             }
             mRil.processResponseDone(rr, responseInfo, iccCardStatus);
         }
+    }
+
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     */
+    public void emergencyDialResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
     }
 
     private void responseInts(RadioResponseInfo responseInfo, int ...var) {
@@ -1720,7 +1749,7 @@ public class RadioResponse extends IRadioResponse.Stub {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
-            SignalStrength ret = RIL.convertHalSignalStrength(signalStrength);
+            SignalStrength ret = new SignalStrength(signalStrength);
             if (responseInfo.error == RadioError.NONE) {
                 sendMessageResponse(rr.mResult, ret);
             }
@@ -1734,7 +1763,7 @@ public class RadioResponse extends IRadioResponse.Stub {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
-            SignalStrength ret = RIL.convertHalSignalStrength_1_2(signalStrength);
+            SignalStrength ret = new SignalStrength(signalStrength);
             if (responseInfo.error == RadioError.NONE) {
                 sendMessageResponse(rr.mResult, ret);
             }

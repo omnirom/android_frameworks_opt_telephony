@@ -17,24 +17,31 @@
 package com.android.internal.telephony.dataconnection;
 
 import android.annotation.IntDef;
+import android.annotation.NonNull;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
+import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
-import android.text.TextUtils;
+import android.telephony.data.ApnSetting.ApnType;
 
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.dataconnection.AccessNetworksManager.QualifiedNetworks;
+import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * This class represents the transport manager which manages available transports (i.e. WWAN or
@@ -44,7 +51,17 @@ import java.util.List;
 public class TransportManager extends Handler {
     private static final String TAG = TransportManager.class.getSimpleName();
 
-    private static final boolean DBG = true;
+    private static final Map<Integer, Integer> ACCESS_NETWORK_TRANSPORT_TYPE_MAP;
+
+    static {
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP = new HashMap<>();
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.UNKNOWN, TransportType.WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.GERAN, TransportType.WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.UTRAN, TransportType.WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.EUTRAN, TransportType.WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.CDMA2000, TransportType.WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.IWLAN, TransportType.WLAN);
+    }
 
     private static final int EVENT_QUALIFIED_NETWORKS_CHANGED = 1;
 
@@ -80,9 +97,16 @@ public class TransportManager extends Handler {
 
     private final Phone mPhone;
 
-    private final List<Integer> mAvailableTransports = new ArrayList<>();
+    /** The available transports. Must be one or more of AccessNetworkConstants.TransportType.XXX */
+    private final int[] mAvailableTransports;
 
     private final AccessNetworksManager mAccessNetworksManager;
+
+    /**
+     * Available networks. The key is the APN type, and the value is the available network list in
+     * the preferred order.
+     */
+    private final Map<Integer, int[]> mCurrentAvailableNetworks;
 
     public TransportManager(Phone phone) {
         mPhone = phone;
@@ -91,13 +115,14 @@ public class TransportManager extends Handler {
         mAccessNetworksManager.registerForQualifiedNetworksChanged(this,
                 EVENT_QUALIFIED_NETWORKS_CHANGED);
 
-        // WWAN should be always available.
-        mAvailableTransports.add(TransportType.WWAN);
+        mCurrentAvailableNetworks = new ConcurrentHashMap<>();
 
-        // TODO: Add more logic to check whether we should add WLAN as a transport. For now, if
-        // the device operate in non-legacy mode, then we always add WLAN as a transport.
-        if (!isInLegacyMode()) {
-            mAvailableTransports.add(TransportType.WLAN);
+        if (isInLegacyMode()) {
+            // For legacy mode, WWAN is the only transport to handle all data connections, even
+            // the IWLAN ones.
+            mAvailableTransports = new int[]{TransportType.WWAN};
+        } else {
+            mAvailableTransports = new int[]{TransportType.WWAN, TransportType.WLAN};
         }
     }
 
@@ -115,13 +140,21 @@ public class TransportManager extends Handler {
         }
     }
 
-    private synchronized void updateAvailableNetworks(List<QualifiedNetworks> networks) {
-        log("updateAvailableNetworks: " + networks);
-        //TODO: Update available networks and transports.
+    private synchronized void updateAvailableNetworks(List<QualifiedNetworks> networksList) {
+        log("updateAvailableNetworks: " + networksList);
+        for (QualifiedNetworks networks : networksList) {
+            mCurrentAvailableNetworks.put(networks.apnType, networks.qualifiedNetworks);
+        }
     }
 
-    public synchronized List<Integer> getAvailableTransports() {
-        return new ArrayList<>(mAvailableTransports);
+    /**
+     * @return The available transports. Note that on legacy devices, the only available transport
+     * would be WWAN only. If the device is configured as AP-assisted mode, the available transport
+     * will always be WWAN and WLAN (even if the device is not camped on IWLAN).
+     * See {@link #isInLegacyMode()} for mode details.
+     */
+    public synchronized @NonNull int[] getAvailableTransports() {
+        return mAvailableTransports;
     }
 
     /**
@@ -142,6 +175,36 @@ public class TransportManager extends Handler {
     }
 
     /**
+     * Get the transport based on the APN type
+     *
+     * @param apnType APN type
+     * @return The transport type
+     */
+    public int getCurrentTransport(@ApnType int apnType) {
+        // In legacy mode, always route to cellular.
+        if (isInLegacyMode()) {
+            return TransportType.WWAN;
+        }
+
+        // If we can't find the available networks, always route to cellular.
+        if (!mCurrentAvailableNetworks.containsKey(apnType)) {
+            return TransportType.WWAN;
+        }
+
+        int[] availableNetworks = mCurrentAvailableNetworks.get(apnType);
+
+        // If the available networks list is empty, route to cellular.
+        if (ArrayUtils.isEmpty(availableNetworks)) {
+            return TransportType.WWAN;
+        }
+
+        // TODO: For now we choose the first network because it's the most preferred one. In the
+        // the future we should validate it to make sure this network does not violate carrier
+        // preference and user preference.
+        return ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(availableNetworks[0]);
+    }
+
+    /**
      * Dump the state of transport manager
      *
      * @param fd File descriptor
@@ -152,12 +215,11 @@ public class TransportManager extends Handler {
         IndentingPrintWriter pw = new IndentingPrintWriter(printwriter, "  ");
         pw.println("TransportManager:");
         pw.increaseIndent();
-        pw.print("mAvailableTransports=");
-        List<String> transportsStrings = new ArrayList<>();
-        for (int i = 0; i < mAvailableTransports.size(); i++) {
-            transportsStrings.add(TransportType.toString(mAvailableTransports.get(i)));
-        }
-        pw.println("[" + TextUtils.join(",", transportsStrings) + "]");
+        pw.println("mAvailableTransports=[" + Arrays.stream(mAvailableTransports)
+                .mapToObj(type -> TransportType.toString(type))
+                .collect(Collectors.joining(",")) + "]");
+        pw.println("isInLegacy=" + isInLegacyMode());
+        pw.println("IWLAN operation mode=" + mPhone.mCi.getIwlanOperationMode());
         mAccessNetworksManager.dump(fd, pw, args);
         pw.decreaseIndent();
         pw.flush();
