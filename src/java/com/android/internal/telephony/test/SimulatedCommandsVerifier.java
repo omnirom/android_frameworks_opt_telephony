@@ -1465,4 +1465,13 @@ public class SimulatedCommandsVerifier implements CommandsInterface {
     @Override
     public void stopNattKeepalive(int sessionHandle, Message result)  {
     }
+
+    @Override
+    public void registerForArfcnChange(Handler h, int what, Object obj) {
+    }
+
+    @Override
+    public void unregisterForArfcnChange(Handler h) {
+    }
+
 }
