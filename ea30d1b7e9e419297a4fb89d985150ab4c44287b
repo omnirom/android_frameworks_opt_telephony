@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "ff58f8ab_ca082f48",
+        "filename": "src/java/com/android/internal/telephony/BaseCommands.java",
+        "patchSetId": 3
+      },
+      "lineNbr": 81,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2019-02-05T12:58:18Z",
+      "side": 1,
+      "message": "this for sure does not need to be public",
+      "revId": "ea30d1b7e9e419297a4fb89d985150ab4c44287b",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "055e7806_2f80e194",
+        "filename": "src/java/com/android/internal/telephony/test/SimulatedCommandsVerifier.java",
+        "patchSetId": 3
+      },
+      "lineNbr": 1470,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2019-02-05T12:58:18Z",
+      "side": 1,
+      "message": "missing @hide",
+      "revId": "ea30d1b7e9e419297a4fb89d985150ab4c44287b",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": true
+    }
+  ]
+}
