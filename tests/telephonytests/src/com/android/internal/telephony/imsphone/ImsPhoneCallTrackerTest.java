@@ -862,6 +862,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                         new ImsReasonInfo(ImsReasonInfo.CODE_RADIO_INTERNAL_ERROR, 0),
                         Call.State.ACTIVE));
     }
+
+    @Test
+    @SmallTest
+    public void testSipNotFoundRemap() {
+        assertEquals(DisconnectCause.INVALID_NUMBER,
+                mCTUT.getDisconnectCauseFromReasonInfo(
+                        new ImsReasonInfo(ImsReasonInfo.CODE_SIP_NOT_FOUND, 0), Call.State.ACTIVE));
+    }
 }
 
 
