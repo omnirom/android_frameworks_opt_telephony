@@ -77,7 +77,7 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private static final int SECONDARY_SLOT = 1;
 
     public TelephonyNetworkFactory(SubscriptionMonitor subscriptionMonitor, Looper looper,
-                                   Phone phone) {
+                                   Phone phone, PhoneSwitcher phoneSwitcher) {
         super(looper, phone.getContext(), "TelephonyNetworkFactory[" + phone.getPhoneId()
                 + "]", null);
         mPhone = phone;
@@ -89,7 +89,7 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         setCapabilityFilter(makeNetworkFilter(mSubscriptionController, mPhone.getPhoneId()));
         setScoreFilter(TELEPHONY_NETWORK_SCORE);
 
-        mPhoneSwitcher = PhoneSwitcher.getInstance();
+        mPhoneSwitcher = phoneSwitcher;
         mSubscriptionMonitor = subscriptionMonitor;
         LOG_TAG = "TelephonyNetworkFactory[" + mPhone.getPhoneId() + "]";
 
