@@ -303,7 +303,8 @@ public class RadioIndication extends IRadioIndication.Stub {
                 : emergencyNumberList) {
             EmergencyNumber emergencyNumber = new EmergencyNumber(emergencyNumberHal.number,
                     MccTable.countryCodeForMcc(emergencyNumberHal.mcc), emergencyNumberHal.mnc,
-                    emergencyNumberHal.categories, emergencyNumberHal.sources);
+                    emergencyNumberHal.categories, emergencyNumberHal.urns,
+                    emergencyNumberHal.sources, EmergencyNumber.EMERGENCY_CALL_ROUTING_UNKNOWN);
             response.add(emergencyNumber);
         }
 
@@ -710,10 +711,22 @@ public class RadioIndication extends IRadioIndication.Stub {
 
     /** Get unsolicited message for cellInfoList using HAL V1_2 */
     public void cellInfoList_1_2(int indicationType,
-                             ArrayList<android.hardware.radio.V1_2.CellInfo> records) {
+                                 ArrayList<android.hardware.radio.V1_2.CellInfo> records) {
         mRil.processIndication(indicationType);
 
         ArrayList<CellInfo> response = RIL.convertHalCellInfoList_1_2(records);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_CELL_INFO_LIST, response);
+
+        mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
+    }
+
+    /** Get unsolicited message for cellInfoList using HAL V1_4 */
+    public void cellInfoList_1_4(int indicationType,
+                                 ArrayList<android.hardware.radio.V1_4.CellInfo> records) {
+        mRil.processIndication(indicationType);
+
+        ArrayList<CellInfo> response = RIL.convertHalCellInfoList_1_4(records);
 
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_CELL_INFO_LIST, response);
 

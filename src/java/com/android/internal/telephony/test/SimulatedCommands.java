@@ -29,7 +29,7 @@ import android.os.Message;
 import android.os.Parcel;
 import android.os.SystemClock;
 import android.os.WorkSource;
-import android.service.carrier.CarrierIdentifier;
+import android.telephony.CarrierRestrictionRules;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoGsm;
 import android.telephony.CellSignalStrengthCdma;
@@ -45,8 +45,8 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
-import android.telephony.data.DataCallResponse;
 import android.telephony.data.DataProfile;
+import android.telephony.emergency.EmergencyNumber;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.BaseCommands;
@@ -540,7 +540,12 @@ public class SimulatedCommands extends BaseCommands
      */
     @Override
     public void getDataCallList(Message result) {
-        resultSuccess(result, new ArrayList<DataCallResponse>(0));
+        ArrayList<SetupDataCallResult> dcCallList = new ArrayList<SetupDataCallResult>(0);
+        SimulatedCommandsVerifier.getInstance().getDataCallList(result);
+        if (mSetupDataCallResult != null) {
+            dcCallList.add(mSetupDataCallResult);
+        }
+        resultSuccess(result, dcCallList);
     }
 
     /**
@@ -555,10 +560,10 @@ public class SimulatedCommands extends BaseCommands
      * CLIR_INVOCATION  == on "CLIR invocation" (restrict CLI presentation)
      */
     @Override
-    public void dial(String address, boolean isEmergencyCall, int emergencyServiceCategories,
-                      int clirMode, Message result) {
+    public void dial(String address, boolean isEmergencyCall, EmergencyNumber emergencyNumberInfo,
+                     int clirMode, Message result) {
         SimulatedCommandsVerifier.getInstance().dial(address, isEmergencyCall,
-                emergencyServiceCategories, clirMode, result);
+                emergencyNumberInfo, clirMode, result);
         simulatedCallState.onDial(address);
 
         resultSuccess(result, null);
@@ -576,10 +581,10 @@ public class SimulatedCommands extends BaseCommands
      * CLIR_INVOCATION  == on "CLIR invocation" (restrict CLI presentation)
      */
     @Override
-    public void dial(String address, boolean isEmergencyCall, int emergencyServiceCategories,
+    public void dial(String address, boolean isEmergencyCall, EmergencyNumber emergencyNumberInfo,
                      int clirMode, UUSInfo uusInfo, Message result) {
         SimulatedCommandsVerifier.getInstance().dial(address, isEmergencyCall,
-                emergencyServiceCategories, clirMode, uusInfo, result);
+                emergencyNumberInfo, clirMode, uusInfo, result);
         simulatedCallState.onDial(address);
 
         resultSuccess(result, null);
@@ -2070,8 +2075,8 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
-    public void setAllowedCarriers(List<CarrierIdentifier> carriers, Message result,
-            WorkSource workSource) {
+    public void setAllowedCarriers(CarrierRestrictionRules carrierRestrictionRules,
+            Message result, WorkSource workSource) {
         unimplemented(result);
     }
 
