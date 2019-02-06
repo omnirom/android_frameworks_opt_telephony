@@ -129,7 +129,8 @@ public class UiccController extends Handler {
     // considered sensetive information.
     private ArrayList<String> mCardStrings;
 
-    // This is the card ID of the default eUICC. It is set to the first ever seen eUICC
+    // This is the card ID of the default eUICC. Whenever we receive slot status, we set it to the
+    // eUICC with the lowest slot index
     private int mDefaultEuiccCardId;
 
     private static final int INVALID_CARD_ID = TelephonyManager.INVALID_CARD_ID;
@@ -199,7 +200,7 @@ public class UiccController extends Handler {
 
         mLauncher = new UiccStateChangedLauncher(c, this);
         mCardStrings = loadCardStrings();
-        mDefaultEuiccCardId = loadDefaultEuiccCardId();
+        mDefaultEuiccCardId = INVALID_CARD_ID;
     }
 
     private int getSlotIdFromPhoneId(int phoneId) {
@@ -590,10 +591,14 @@ public class UiccController extends Handler {
             final UiccSlot slot = mUiccSlots[slotIndex];
             boolean isEuicc = slot.isEuicc();
             String eid = null;
-            String iccid = slot.getUiccCard().getIccId();
+            UiccCard card = slot.getUiccCard();
+            if (card == null) {
+                continue;
+            }
+            String iccid = card.getIccId();
             int cardId = INVALID_CARD_ID;
             if (isEuicc) {
-                eid = slot.getUiccCard().getCardId();
+                eid = card.getCardId();
                 cardId = convertToPublicCardId(eid);
             } else {
                 // leave eid null if the UICC is not embedded
@@ -626,19 +631,6 @@ public class UiccController extends Handler {
         SharedPreferences.Editor editor =
                 PreferenceManager.getDefaultSharedPreferences(mContext).edit();
         editor.putString(CARD_STRINGS, TextUtils.join(",", mCardStrings));
-        editor.commit();
-    }
-
-    private int loadDefaultEuiccCardId() {
-        return PreferenceManager.getDefaultSharedPreferences(mContext)
-                .getInt(DEFAULT_CARD, INVALID_CARD_ID);
-    }
-
-    private void setDefaultEuiccCardId(int cardId) {
-        mDefaultEuiccCardId = cardId;
-        SharedPreferences.Editor editor =
-                PreferenceManager.getDefaultSharedPreferences(mContext).edit();
-        editor.putInt(DEFAULT_CARD, mDefaultEuiccCardId);
         editor.commit();
     }
 
@@ -678,6 +670,7 @@ public class UiccController extends Handler {
         sLastSlotStatus = status;
 
         int numActiveSlots = 0;
+        mDefaultEuiccCardId = INVALID_CARD_ID;
         for (int i = 0; i < status.size(); i++) {
             IccSlotStatus iss = status.get(i);
             boolean isActive = (iss.slotState == IccSlotStatus.SlotState.SLOTSTATE_ACTIVE);
@@ -686,10 +679,12 @@ public class UiccController extends Handler {
 
                 // sanity check: logicalSlotIndex should be valid for an active slot
                 if (!isValidPhoneIndex(iss.logicalSlotIndex)) {
-                    throw new RuntimeException("Logical slot index " + iss.logicalSlotIndex
-                            + " invalid for physical slot " + i);
+                    Rlog.e(LOG_TAG, "Skipping slot " + i + " as phone " + iss.logicalSlotIndex
+                               + " is not available to communicate with this slot");
+
+                } else {
+                    mPhoneIdToSlotId[iss.logicalSlotIndex] = i;
                 }
-                mPhoneIdToSlotId[iss.logicalSlotIndex] = i;
             }
 
             if (mUiccSlots[i] == null) {
@@ -699,16 +694,20 @@ public class UiccController extends Handler {
                 mUiccSlots[i] = new UiccSlot(mContext, isActive);
             }
 
-            mUiccSlots[i].update(isActive ? mCis[iss.logicalSlotIndex] : null, iss);
+            if (!isValidPhoneIndex(iss.logicalSlotIndex)) {
+                mUiccSlots[i].update(null, iss);
+            } else {
+                mUiccSlots[i].update(isActive ? mCis[iss.logicalSlotIndex] : null, iss);
+            }
 
             if (mUiccSlots[i].isEuicc()) {
                 String eid = iss.eid;
                 addCardId(eid);
 
-                // If default eUICC card ID is unset, set it to the card ID of the eUICC with the
+                // whenever slot status is received, set default card to the eUICC with the
                 // lowest slot index.
                 if (mDefaultEuiccCardId == INVALID_CARD_ID) {
-                    setDefaultEuiccCardId(convertToPublicCardId(eid));
+                    mDefaultEuiccCardId = convertToPublicCardId(eid);
                 }
             }
         }
@@ -717,8 +716,8 @@ public class UiccController extends Handler {
 
         // sanity check: number of active slots should be valid
         if (numActiveSlots != mPhoneIdToSlotId.length) {
-            throw new RuntimeException("Number of active slots " + numActiveSlots
-                    + " does not match the expected value " + mPhoneIdToSlotId.length);
+            Rlog.e(LOG_TAG, "Number of active slots " + numActiveSlots
+                       + " does not match the number of Phones" + mPhoneIdToSlotId.length);
         }
 
         // sanity check: slotIds should be unique in mPhoneIdToSlotId

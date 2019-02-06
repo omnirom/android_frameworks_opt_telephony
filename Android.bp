@@ -60,6 +60,7 @@ java_library {
         "android.hardware.radio.deprecated-V1.0-java",
         "android.hidl.base-V1.0-java",
         "ims-ext-common",
+	"android-support-annotations",
     ],
 
     product_variables: {

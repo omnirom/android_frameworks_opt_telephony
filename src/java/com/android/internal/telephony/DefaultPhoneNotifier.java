@@ -21,8 +21,10 @@ import android.net.NetworkCapabilities;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.telephony.CallQuality;
 import android.telephony.CellInfo;
 import android.telephony.CellLocation;
+import android.telephony.DataFailCause;
 import android.telephony.PhoneCapability;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.PreciseCallState;
@@ -269,7 +271,8 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
                 mRegistry.notifyPreciseCallState(
                         convertPreciseCallState(ringingCall.getState()),
                         convertPreciseCallState(foregroundCall.getState()),
-                        convertPreciseCallState(backgroundCall.getState()));
+                        convertPreciseCallState(backgroundCall.getState()),
+                        sender.getPhoneId());
             } catch (RemoteException ex) {
                 // system process is dead
             }
@@ -286,7 +289,7 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     }
 
     public void notifyPreciseDataConnectionFailed(Phone sender, String apnType,
-            String apn, String failCause) {
+            String apn, @DataFailCause.FailCause int failCause) {
         // FIXME: subId?
         try {
             mRegistry.notifyPreciseDataConnectionFailed(apnType, apn, failCause);
@@ -366,6 +369,17 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
         try {
             if (mRegistry != null) {
                 mRegistry.notifyEmergencyNumberList();
+            }
+        } catch (RemoteException ex) {
+            // system process is dead
+        }
+    }
+
+    @Override
+    public void notifyCallQualityChanged(Phone sender, CallQuality callQuality) {
+        try {
+            if (mRegistry != null) {
+                mRegistry.notifyCallQualityChanged(callQuality, sender.getPhoneId());
             }
         } catch (RemoteException ex) {
             // system process is dead
