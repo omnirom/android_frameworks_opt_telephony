@@ -102,6 +102,7 @@ import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyCallSession;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyCallSession.Event.ImsCommand;
+import com.android.internal.telephony.util.QtiImsUtils;
 import com.android.server.net.NetworkStatsService;
 
 import java.io.FileDescriptor;
@@ -112,9 +113,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
-
-import org.codeaurora.ims.QtiCallConstants;
-import org.codeaurora.ims.utils.QtiImsExtUtils;
 
 /**
  * {@hide}
@@ -1076,11 +1074,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // being sent to the lower layers/to the network.
             }
 
-            int mode = QtiImsExtUtils.getRttOperatingMode(mPhone.getContext());
+            int mode = QtiImsUtils.getRttOperatingMode(mPhone.getContext());
             if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
 
             if (mPhone.isRttSupported() && mPhone.isRttOn()) {
-                if (!profile.isVideoCall() || QtiImsExtUtils.isRttSupportedOnVtCalls(
+                if (!profile.isVideoCall() || QtiImsUtils.isRttSupportedOnVtCalls(
                         mPhone.getPhoneId(),mPhone.getContext())) {
                     profile.getMediaProfile().setRttMode(mode);
                 }
