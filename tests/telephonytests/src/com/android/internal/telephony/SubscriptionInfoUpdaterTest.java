@@ -36,6 +36,7 @@ import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.IPackageManager;
 import android.content.pm.UserInfo;
 import android.net.Uri;
 import android.os.HandlerThread;
@@ -90,6 +91,8 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
     private EuiccController mEuiccController;
     @Mock
     private IntentBroadcaster mIntentBroadcaster;
+    @Mock
+    private IPackageManager mPackageManager;
 
     @Mock
     GsmCdmaPhone mSecondPhone;
@@ -111,7 +114,7 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         @Override
         public void onLooperPrepared() {
             mUpdater = new SubscriptionInfoUpdater(getLooper(), mContext, new Phone[]{mPhone},
-                    new CommandsInterface[]{mSimulatedCommands});
+                    new CommandsInterface[]{mSimulatedCommands}, mPackageManager);
             setReady(true);
         }
     }
