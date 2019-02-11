@@ -32,10 +32,9 @@ import android.hardware.radio.V1_0.NeighboringCell;
 import android.hardware.radio.V1_0.RadioError;
 import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.SendSmsResult;
-import android.hardware.radio.V1_0.SetupDataCallResult;
 import android.hardware.radio.V1_0.VoiceRegStateResult;
-import android.hardware.radio.V1_2.IRadioResponse;
 import android.hardware.radio.V1_4.CarrierRestrictionsWithPriority;
+import android.hardware.radio.V1_4.IRadioResponse;
 import android.hardware.radio.V1_4.SimLockMultiSimPolicy;
 import android.os.AsyncResult;
 import android.os.Message;
@@ -50,6 +49,7 @@ import android.telephony.RadioAccessFamily;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.data.DataCallResponse;
 import android.text.TextUtils;
 
 import com.android.internal.telephony.dataconnection.KeepaliveStatus;
@@ -283,6 +283,15 @@ public class RadioResponse extends IRadioResponse.Stub {
             android.hardware.radio.V1_2.SignalStrength signalStrength) {
         responseSignalStrength_1_2(responseInfo, signalStrength);
     }
+     /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param signalStrength Current signal strength of camped/connected cells
+     */
+    public void getSignalStrengthResponse_1_4(
+            RadioResponseInfo responseInfo,
+            android.hardware.radio.V1_4.SignalStrength signalStrength) {
+        responseSignalStrength_1_4(responseInfo, signalStrength);
+    }
 
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
@@ -421,7 +430,17 @@ public class RadioResponse extends IRadioResponse.Stub {
      *                            types.hal
      */
     public void setupDataCallResponse(RadioResponseInfo responseInfo,
-                                      SetupDataCallResult setupDataCallResult) {
+            android.hardware.radio.V1_0.SetupDataCallResult setupDataCallResult) {
+        responseSetupDataCall(responseInfo, setupDataCallResult);
+    }
+
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param setupDataCallResult Response to data call setup as defined by setupDataCallResult in
+     *                            1.4/types.hal
+     */
+    public void setupDataCallResponse_1_4(RadioResponseInfo responseInfo,
+            android.hardware.radio.V1_4.SetupDataCallResult setupDataCallResult) {
         responseSetupDataCall(responseInfo, setupDataCallResult);
     }
 
@@ -597,6 +616,16 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     /**
+     * The same method as startNetworkScanResponse, except disallowing error codes
+     * OPERATION_NOT_ALLOWED and REQUEST_NOT_SUPPORTED.
+     *
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     */
+    public void startNetworkScanResponse_1_4(RadioResponseInfo responseInfo) {
+        responseScanStatus(responseInfo);
+    }
+
+    /**
      *
      * @param responseInfo Response info struct containing response type, serial no. and error
      */
@@ -665,7 +694,17 @@ public class RadioResponse extends IRadioResponse.Stub {
      *                           types.hal
      */
     public void getDataCallListResponse(RadioResponseInfo responseInfo,
-                                        ArrayList<SetupDataCallResult> dataCallResultList) {
+            ArrayList<android.hardware.radio.V1_0.SetupDataCallResult> dataCallResultList) {
+        responseDataCallList(responseInfo, dataCallResultList);
+    }
+
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param dataCallResultList Response to get data call list as defined by setupDataCallResult in
+     *                           1.4/types.hal
+     */
+    public void getDataCallListResponse_1_4(RadioResponseInfo responseInfo,
+            ArrayList<android.hardware.radio.V1_4.SetupDataCallResult> dataCallResultList) {
         responseDataCallList(responseInfo, dataCallResultList);
     }
 
@@ -1858,6 +1897,20 @@ public class RadioResponse extends IRadioResponse.Stub {
         }
     }
 
+    private void responseSignalStrength_1_4(
+            RadioResponseInfo responseInfo,
+            android.hardware.radio.V1_4.SignalStrength signalStrength) {
+        RILRequest rr = mRil.processResponse(responseInfo);
+
+        if (rr != null) {
+            SignalStrength ret = new SignalStrength(signalStrength);
+            if (responseInfo.error == RadioError.NONE) {
+                sendMessageResponse(rr.mResult, ret);
+            }
+            mRil.processResponseDone(rr, responseInfo, ret);
+        }
+    }
+
     private void responseSms(RadioResponseInfo responseInfo, SendSmsResult sms) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
@@ -1871,14 +1924,15 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     private void responseSetupDataCall(RadioResponseInfo responseInfo,
-                                       SetupDataCallResult setupDataCallResult) {
+                                       Object setupDataCallResult) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
+            DataCallResponse response = RIL.convertDataCallResult(setupDataCallResult);
             if (responseInfo.error == RadioError.NONE) {
-                sendMessageResponse(rr.mResult, setupDataCallResult);
+                sendMessageResponse(rr.mResult, response);
             }
-            mRil.processResponseDone(rr, responseInfo, setupDataCallResult);
+            mRil.processResponseDone(rr, responseInfo, response);
         }
     }
 
@@ -1965,14 +2019,16 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     private void responseDataCallList(RadioResponseInfo responseInfo,
-                                      ArrayList<SetupDataCallResult> dataCallResultList) {
+                                      List<? extends Object> dataCallResultList) {
         RILRequest rr = mRil.processResponse(responseInfo);
 
         if (rr != null) {
+            ArrayList<DataCallResponse> response =
+                    RIL.convertDataCallResultList(dataCallResultList);
             if (responseInfo.error == RadioError.NONE) {
-                sendMessageResponse(rr.mResult, dataCallResultList);
+                sendMessageResponse(rr.mResult, response);
             }
-            mRil.processResponseDone(rr, responseInfo, dataCallResultList);
+            mRil.processResponseDone(rr, responseInfo, response);
         }
     }
 
@@ -2271,9 +2327,31 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     /**
-     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param responseInfo Response info struct containing response type, serial number and error.
      */
     public void enableModemResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
+
+    /**
+     * @param responseInfo Response info struct containing response type, serial no. and error
+     * @param isEnabled whether the modem stack is enabled.
+     */
+    public void getModemStackStatusResponse(RadioResponseInfo responseInfo, boolean isEnabled) {
+        RILRequest rr = mRil.processResponse(responseInfo);
+
+        if (rr != null) {
+            if (responseInfo.error == RadioError.NONE) {
+                sendMessageResponse(rr.mResult, isEnabled);
+            }
+            mRil.processResponseDone(rr, responseInfo, isEnabled);
+        }
+    }
+
+    /**
+     * @param responseInfo Response info struct containing response type, serial number and error.
+     */
+    public void setSystemSelectionChannelsResponse(RadioResponseInfo responseInfo) {
         responseVoid(responseInfo);
     }
 }

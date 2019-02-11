@@ -35,6 +35,7 @@ import android.telephony.CellInfoGsm;
 import android.telephony.CellSignalStrengthCdma;
 import android.telephony.CellSignalStrengthGsm;
 import android.telephony.CellSignalStrengthLte;
+import android.telephony.CellSignalStrengthNr;
 import android.telephony.CellSignalStrengthTdscdma;
 import android.telephony.CellSignalStrengthWcdma;
 import android.telephony.IccOpenLogicalChannelResponse;
@@ -45,6 +46,7 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
+import android.telephony.data.DataCallResponse;
 import android.telephony.data.DataProfile;
 import android.telephony.emergency.EmergencyNumber;
 
@@ -56,6 +58,7 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.LastCallFailCause;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.RIL;
 import com.android.internal.telephony.RadioCapability;
 import com.android.internal.telephony.SmsResponse;
 import com.android.internal.telephony.UUSInfo;
@@ -879,7 +882,8 @@ public class SimulatedCommands extends BaseCommands
                     new CellSignalStrengthGsm(20, 0, CellInfo.UNAVAILABLE),
                     new CellSignalStrengthWcdma(),
                     new CellSignalStrengthTdscdma(),
-                    new CellSignalStrengthLte());
+                    new CellSignalStrengthLte(),
+                    new CellSignalStrengthNr());
         }
         resultSuccess(result, mSignalStrength);
     }
@@ -1170,11 +1174,11 @@ public class SimulatedCommands extends BaseCommands
             }
         }
 
+        DataCallResponse response = RIL.convertDataCallResult(mSetupDataCallResult);
         if (mDcSuccess) {
-            resultSuccess(result, mSetupDataCallResult);
+            resultSuccess(result, response);
         } else {
-            resultFail(result, mSetupDataCallResult,
-                    new RuntimeException("Setup data call failed!"));
+            resultFail(result, response, new RuntimeException("Setup data call failed!"));
         }
     }
 
@@ -2170,7 +2174,8 @@ public class SimulatedCommands extends BaseCommands
                     new CellSignalStrengthGsm(20, 0, CellInfo.UNAVAILABLE),
                     new CellSignalStrengthWcdma(),
                     new CellSignalStrengthTdscdma(),
-                    new CellSignalStrengthLte());
+                    new CellSignalStrengthLte(),
+                    new CellSignalStrengthNr());
         }
 
         if (mSignalStrengthRegistrant != null) {

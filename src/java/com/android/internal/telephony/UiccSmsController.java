@@ -26,8 +26,10 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Binder;
+import android.os.Bundle;
 import android.os.ServiceManager;
 import android.provider.Telephony.Sms.Intents;
+import android.telephony.IFinancialSmsCallback;
 import android.telephony.Rlog;
 import android.telephony.SmsManager;
 import android.telephony.SubscriptionInfo;
@@ -396,8 +398,22 @@ public class UiccSmsController extends ISmsImplBase {
     }
 
     @Override
+    public String createAppSpecificSmsTokenWithPackageInfo(
+            int subId, String callingPkg, String prefixes, PendingIntent intent) {
+        return getPhone(subId).getAppSmsManager().createAppSpecificSmsTokenWithPackageInfo(
+                subId, callingPkg, prefixes, intent);
+    }
+
+    @Override
     public String createAppSpecificSmsToken(int subId, String callingPkg, PendingIntent intent) {
         return getPhone(subId).getAppSmsManager().createAppSpecificSmsToken(callingPkg, intent);
+    }
+
+    @Override
+    public void getSmsMessagesForFinancialApp(
+            int subId, String callingPkg, Bundle params, IFinancialSmsCallback callback) {
+        getPhone(subId).getAppSmsManager().getSmsMessagesForFinancialApp(
+                callingPkg, params, callback);
     }
 
     @Override
