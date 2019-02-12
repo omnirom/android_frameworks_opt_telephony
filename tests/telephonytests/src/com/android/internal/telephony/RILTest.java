@@ -106,6 +106,8 @@ import android.hardware.radio.V1_0.RadioResponseType;
 import android.hardware.radio.V1_0.SmsWriteArgs;
 import android.hardware.radio.deprecated.V1_0.IOemHook;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.NetworkUtils;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IPowerManager;
@@ -133,6 +135,7 @@ import android.telephony.CellSignalStrengthWcdma;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
+import android.telephony.data.DataCallResponse;
 import android.telephony.data.DataProfile;
 
 import androidx.test.filters.FlakyTest;
@@ -226,7 +229,7 @@ public class RILTest extends TelephonyTest {
 
     private static final int PROFILE_ID = 0;
     private static final String APN = "apn";
-    private static final String PROTOCOL = "IPV6";
+    private static final int PROTOCOL = ApnSetting.PROTOCOL_IPV6;
     private static final int AUTH_TYPE = 0;
     private static final String USER_NAME = "username";
     private static final String PASSWORD = "password";
@@ -236,11 +239,9 @@ public class RILTest extends TelephonyTest {
     private static final int WAIT_TIME = 10;
     private static final boolean APN_ENABLED = true;
     private static final int SUPPORTED_APNT_YPES_BITMAP = 123456;
-    private static final String ROAMING_PROTOCOL = "IPV6";
+    private static final int ROAMING_PROTOCOL = ApnSetting.PROTOCOL_IPV6;
     private static final int BEARER_BITMAP = 123123;
     private static final int MTU = 1234;
-    private static final String MVNO_TYPE = "";
-    private static final String MVNO_MATCH_DATA = "";
     private static final boolean PERSISTENT = true;
 
     private class RILTestHandler extends HandlerThread {
@@ -1586,6 +1587,57 @@ public class RILTest extends TelephonyTest {
     }
 
     @Test
+    public void testConvertDataCallResult() throws Exception {
+        // Test V1.0 SetupDataCallResult
+        android.hardware.radio.V1_0.SetupDataCallResult result10 =
+                new android.hardware.radio.V1_0.SetupDataCallResult();
+        result10.status = android.hardware.radio.V1_0.DataCallFailCause.NONE;
+        result10.suggestedRetryTime = -1;
+        result10.cid = 0;
+        result10.active = 2;
+        result10.type = "IPV4V6";
+        result10.ifname = "ifname";
+        result10.addresses = "10.0.2.15 2607:fb90:a620:651d:eabe:f8da:c107:44be/64";
+        result10.dnses = "10.0.2.3 fd00:976a::9";
+        result10.gateways = "10.0.2.15 fe80::2";
+        result10.pcscf = "fd00:976a:c206:20::6   fd00:976a:c206:20::9    fd00:976a:c202:1d::9";
+        result10.mtu = 1500;
+
+        DataCallResponse response = new DataCallResponse(0, -1, 0, 2, ApnSetting.PROTOCOL_IPV4V6,
+                "ifname",
+                Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress("10.0.2.15"), 32),
+                        new LinkAddress("2607:fb90:a620:651d:eabe:f8da:c107:44be/64")),
+                Arrays.asList(NetworkUtils.numericToInetAddress("10.0.2.3"),
+                        NetworkUtils.numericToInetAddress("fd00:976a::9")),
+                Arrays.asList(NetworkUtils.numericToInetAddress("10.0.2.15"),
+                        NetworkUtils.numericToInetAddress("fe80::2")),
+                Arrays.asList("fd00:976a:c206:20::6", "fd00:976a:c206:20::9",
+                        "fd00:976a:c202:1d::9"),
+                1500);
+
+        assertEquals(response, RIL.convertDataCallResult(result10));
+
+        // Test V1.4 SetupDataCallResult
+        android.hardware.radio.V1_4.SetupDataCallResult result14 =
+                new android.hardware.radio.V1_4.SetupDataCallResult();
+        result14.cause = android.hardware.radio.V1_4.DataCallFailCause.NONE;
+        result14.suggestedRetryTime = -1;
+        result14.cid = 0;
+        result14.active = android.hardware.radio.V1_4.DataConnActiveStatus.ACTIVE;
+        result14.type = android.hardware.radio.V1_4.PdpProtocolType.IPV4V6;
+        result14.ifname = "ifname";
+        result14.addresses = new ArrayList<>(
+                Arrays.asList("10.0.2.15", "2607:fb90:a620:651d:eabe:f8da:c107:44be/64"));
+        result14.dnses = new ArrayList<>(Arrays.asList("10.0.2.3", "fd00:976a::9"));
+        result14.gateways = new ArrayList<>(Arrays.asList("10.0.2.15", "fe80::2"));
+        result14.pcscf = new ArrayList<>(Arrays.asList(
+                "fd00:976a:c206:20::6", "fd00:976a:c206:20::9", "fd00:976a:c202:1d::9"));
+        result14.mtu = 1500;
+
+        assertEquals(response, RIL.convertDataCallResult(result14));
+    }
+
+    @Test
     public void testGetWorksourceClientId() {
         RILRequest request = RILRequest.obtain(0, null, null);
         assertEquals(null, request.getWorkSourceClientId());
@@ -1746,7 +1798,7 @@ public class RILTest extends TelephonyTest {
         DataProfileInfo dpi = dpiCaptor.getValue();
         assertEquals(PROFILE_ID, dpi.profileId);
         assertEquals(APN, dpi.apn);
-        assertEquals(PROTOCOL, dpi.protocol);
+        assertEquals(PROTOCOL, ApnSetting.getProtocolIntFromString(dpi.protocol));
         assertEquals(AUTH_TYPE, dpi.authType);
         assertEquals(USER_NAME, dpi.user);
         assertEquals(PASSWORD, dpi.password);
@@ -1756,7 +1808,7 @@ public class RILTest extends TelephonyTest {
         assertEquals(WAIT_TIME, dpi.waitTime);
         assertEquals(APN_ENABLED, dpi.enabled);
         assertEquals(SUPPORTED_APNT_YPES_BITMAP, dpi.supportedApnTypesBitmap);
-        assertEquals(ROAMING_PROTOCOL, dpi.protocol);
+        assertEquals(ROAMING_PROTOCOL, ApnSetting.getProtocolIntFromString(dpi.protocol));
         assertEquals(BEARER_BITMAP, dpi.bearerBitmap);
         assertEquals(MTU, dpi.mtu);
     }

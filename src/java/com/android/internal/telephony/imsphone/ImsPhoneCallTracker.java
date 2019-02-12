@@ -1078,8 +1078,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
 
             if (mPhone.isRttSupported() && mPhone.isRttOn()) {
-                if (!profile.isVideoCall() || QtiImsUtils.isRttSupportedOnVtCalls(
-                        mPhone.getPhoneId(),mPhone.getContext())) {
+                boolean isStartRttCall = true;
+                if (intentExtras != null) {
+                    isStartRttCall = intentExtras.getBoolean(
+                        android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, true);
+                }
+                if (isStartRttCall &&
+                        (!profile.isVideoCall() || QtiImsUtils.isRttSupportedOnVtCalls(
+                        mPhone.getPhoneId(),mPhone.getContext()))) {
                     profile.getMediaProfile().setRttMode(mode);
                 }
             }
@@ -2282,6 +2288,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             mMetrics.writeOnImsCallTerminated(mPhone.getPhoneId(), imsCall.getCallSession(),
                     reasonInfo);
+            mPhone.notifyImsReason(reasonInfo);
 
             if (reasonInfo.getCode() == ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL
                     && mAutoRetryFailedWifiEmergencyCall) {
@@ -3053,6 +3060,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         int cause = getDisconnectCauseFromReasonInfo(reasonInfo, callState);
 
         processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
+        mPhone.notifyImsReason(reasonInfo);
     }
 
     public ImsUtInterface getUtInterface() throws ImsException {
