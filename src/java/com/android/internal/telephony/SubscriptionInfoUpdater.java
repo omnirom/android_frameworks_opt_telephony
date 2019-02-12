@@ -610,6 +610,9 @@ public class SubscriptionInfoUpdater extends Handler {
             }
         }
 
+        // update default subId
+        SubscriptionController.getInstance().clearDefaultsForInactiveSubIds();
+
         SubscriptionController.getInstance().notifySubscriptionInfoChanged();
         logd("updateSubscriptionInfoByIccId:- SubscriptionInfo update complete");
     }
