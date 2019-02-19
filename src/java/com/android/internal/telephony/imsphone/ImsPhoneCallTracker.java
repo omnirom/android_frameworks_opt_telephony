@@ -2072,7 +2072,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             case ImsReasonInfo.CODE_UNOBTAINABLE_NUMBER:
                 return DisconnectCause.UNOBTAINABLE_NUMBER;
 
-            case ImsReasonInfo.CODE_UNSPECIFIED:
+            case ImsReasonInfo.CODE_RADIO_INTERNAL_ERROR:
                 if (mPhone.getDefaultPhone().getServiceStateTracker().mRestrictedState
                         .isCsRestricted()) {
                     return DisconnectCause.CS_RESTRICTED;
