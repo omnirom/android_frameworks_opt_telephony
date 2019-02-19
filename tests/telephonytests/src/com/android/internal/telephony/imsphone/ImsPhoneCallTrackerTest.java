@@ -827,6 +827,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testSipNotFoundRemap() {
+        assertEquals(DisconnectCause.INVALID_NUMBER,
+                mCTUT.getDisconnectCauseFromReasonInfo(
+                        new ImsReasonInfo(ImsReasonInfo.CODE_SIP_NOT_FOUND, 0), Call.State.ACTIVE));
+    }
+
+    @Test
+    @SmallTest
     public void testCallResumeStateNotResetByHoldFailure() throws ImsException {
         mCTUT.setSwitchingFgAndBgCallsValue(true);
         if (mImsCallListener != null) {
