@@ -611,6 +611,7 @@ public class ServiceStateTracker extends Handler {
         mNewSS = new ServiceState();
         mNewSS.setStateOutOfService();
         mLastCellInfoReqTime = 0;
+        mNewSS.setStateOutOfService();
         mLastCellInfoList = null;
         mSignalStrength = new SignalStrength();
         mStartedGprsRegCheck = false;

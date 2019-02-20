@@ -1143,7 +1143,7 @@ public class GsmCdmaConnection extends Connection {
         }
     }
 
-    private void releaseWakeLock() {
+    void releaseWakeLock() {
         if (mPartialWakeLock != null) {
             synchronized (mPartialWakeLock) {
                 if (mPartialWakeLock.isHeld()) {
