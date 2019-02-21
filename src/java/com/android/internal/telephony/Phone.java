@@ -305,6 +305,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected DeviceStateMonitor mDeviceStateMonitor;
     protected TransportManager mTransportManager;
     protected DataEnabledSettings mDataEnabledSettings;
+    // Used for identify the carrier of current subscription
+    protected CarrierResolver mCarrierResolver;
 
     protected int mPhoneId;
 
@@ -4011,6 +4013,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (getEmergencyNumberTracker() != null) {
             try {
                 getEmergencyNumberTracker().dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mCarrierResolver != null) {
+            try {
+                mCarrierResolver.dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }

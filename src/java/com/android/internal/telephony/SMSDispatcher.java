@@ -64,6 +64,7 @@ import android.service.carrier.ICarrierMessagingCallback;
 import android.service.carrier.ICarrierMessagingService;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CarrierMessagingServiceManager;
+import android.telephony.CarrierConfigManager;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -2015,7 +2016,8 @@ public abstract class SMSDispatcher extends Handler {
             Binder.restoreCallingIdentity(ident);
         }
         if (pb != null) {
-            return pb.getBoolean("ascii_7_bit_support_for_long_message");
+            return pb.getBoolean(CarrierConfigManager
+                    .KEY_ASCII_7_BIT_SUPPORT_FOR_LONG_MESSAGE_BOOL);
         }
         return false;
     }

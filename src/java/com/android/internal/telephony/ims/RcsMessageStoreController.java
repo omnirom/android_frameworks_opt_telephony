@@ -63,6 +63,7 @@ import static android.provider.Telephony.RcsColumns.RcsThreadColumns.RCS_THREAD_
 import static android.provider.Telephony.RcsColumns.RcsThreadEventColumns.DESTINATION_PARTICIPANT_ID_COLUMN;
 import static android.provider.Telephony.RcsColumns.RcsThreadEventColumns.NEW_ICON_URI_COLUMN;
 import static android.provider.Telephony.RcsColumns.RcsThreadEventColumns.NEW_NAME_COLUMN;
+import static android.provider.Telephony.RcsColumns.RcsThreadEventColumns.SOURCE_PARTICIPANT_ID_COLUMN;
 import static android.provider.Telephony.RcsColumns.RcsThreadEventColumns.TIMESTAMP_COLUMN;
 import static android.provider.Telephony.RcsColumns.RcsUnifiedThreadColumns.THREAD_TYPE_GROUP;
 import static android.provider.Telephony.RcsColumns.TRANSACTION_FAILED;
@@ -87,7 +88,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.provider.BaseColumns;
 import android.provider.Telephony;
 import android.telephony.Rlog;
 import android.telephony.ims.RcsEventQueryParams;
@@ -211,10 +211,10 @@ public class RcsMessageStoreController extends IRcs.Stub {
     }
 
     @Override
-    public RcsMessageQueryResult getMessages(RcsMessageQueryParams queryParameters)
+    public RcsMessageQueryResult getMessages(RcsMessageQueryParams queryParams)
             throws RemoteException {
         Bundle bundle = new Bundle();
-        bundle.putParcelable(MESSAGE_QUERY_PARAMETERS_KEY, queryParameters);
+        bundle.putParcelable(MESSAGE_QUERY_PARAMETERS_KEY, queryParams);
         return mMessageQueryHelper.performMessageQuery(bundle);
     }
 
@@ -302,51 +302,28 @@ public class RcsMessageStoreController extends IRcs.Stub {
      */
     @Override
     public int createRcsParticipant(String canonicalAddress, String alias) throws RemoteException {
-        // Lookup the participant in RcsProvider to get the canonical row id in MmsSmsProvider
-        int rowInCanonicalAddressesTable = Integer.MIN_VALUE;
-        try (Cursor cursor = mContentResolver.query(
-                RcsParticipantQueryHelper.CANONICAL_ADDRESSES_URI,
-                new String[]{BaseColumns._ID}, Telephony.CanonicalAddressesColumns.ADDRESS + "=?",
-                new String[]{canonicalAddress}, null)) {
-            if (cursor != null && cursor.getCount() == 1 && cursor.moveToNext()) {
-                rowInCanonicalAddressesTable = cursor.getInt(0);
-            }
-        }
-
         ContentValues contentValues = new ContentValues();
-        contentValues.put(Telephony.CanonicalAddressesColumns.ADDRESS, canonicalAddress);
 
-        if (rowInCanonicalAddressesTable == Integer.MIN_VALUE) {
-            // We couldn't find any existing canonical addresses. Add a new one.
-            Uri newCanonicalAddress = mContentResolver.insert(
-                    RcsParticipantQueryHelper.CANONICAL_ADDRESSES_URI, contentValues);
-            if (newCanonicalAddress != null) {
-                try {
-                    rowInCanonicalAddressesTable = Integer.parseInt(
-                            newCanonicalAddress.getLastPathSegment());
-                } catch (NumberFormatException e) {
-                    throw new RemoteException(
-                            "Uri returned after canonical address insertion is malformed: "
-                                    + newCanonicalAddress);
-                }
-            }
+        long canonicalAddressId = Telephony.RcsColumns.RcsCanonicalAddressHelper
+                .getOrCreateCanonicalAddressId(mContentResolver, canonicalAddress);
+
+        if (canonicalAddressId == TRANSACTION_FAILED) {
+            throw new RemoteException("Could not create or make canonical address entry");
         }
 
-        // Now we have a row in canonical_addresses table, and its value is in
-        // rowInCanonicalAddressesTable. Put this row id in RCS participants table.
-        contentValues.clear();
-        contentValues.put(CANONICAL_ADDRESS_ID_COLUMN, rowInCanonicalAddressesTable);
+        contentValues.put(CANONICAL_ADDRESS_ID_COLUMN, canonicalAddressId);
+        contentValues.put(RCS_ALIAS_COLUMN, alias);
 
+        // TODO (123719857) - Disallow creation of duplicate participants
         Uri newParticipantUri = mContentResolver.insert(RCS_PARTICIPANT_URI, contentValues);
         int newParticipantRowId;
 
+        if (newParticipantUri == null) {
+            throw new RemoteException("Error inserting new participant into RcsProvider");
+        }
+
         try {
-            if (newParticipantUri != null) {
-                newParticipantRowId = Integer.parseInt(newParticipantUri.getLastPathSegment());
-            } else {
-                // TODO (123719857) - Disallow creation of duplicate participants
-                throw new RemoteException("Error inserting new participant into RcsProvider");
-            }
+            newParticipantRowId = Integer.parseInt(newParticipantUri.getLastPathSegment());
         } catch (NumberFormatException e) {
             throw new RemoteException(
                     "Uri returned after creating a participant is malformed: " + newParticipantUri);
@@ -934,7 +911,7 @@ public class RcsMessageStoreController extends IRcs.Stub {
             String newAlias) throws RemoteException {
         ContentValues contentValues = new ContentValues(4);
         contentValues.put(TIMESTAMP_COLUMN, timestamp);
-        contentValues.put(RCS_PARTICIPANT_ID_COLUMN, participantId);
+        contentValues.put(SOURCE_PARTICIPANT_ID_COLUMN, participantId);
         contentValues.put(NEW_ALIAS_COLUMN, newAlias);
 
         Uri uri = mContentResolver.insert(
