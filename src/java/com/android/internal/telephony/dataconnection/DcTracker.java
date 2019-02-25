@@ -3619,7 +3619,8 @@ public class DcTracker extends Handler {
             ApnContext apnContext = mApnContextsById.get(DctConstants.APN_DEFAULT_ID);
             // If restored to default APN, the APN ID might be changed.
             // Here reset with the same APN added newly.
-            if (apnContext != null && apnContext.getApnSetting() != null) {
+            if (apnContext != null && apnContext.getApnSetting() != null
+                    && apnContext.getState() == DctConstants.State.CONNECTED) {
                 for (ApnSetting apnSetting : apnList) {
                     if (apnSetting.equals(apnContext.getApnSetting(),
                             mPhone.getServiceState().getDataRoamingFromRegistration())) {
