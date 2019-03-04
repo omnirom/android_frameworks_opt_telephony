@@ -347,8 +347,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private boolean mIgnoreDataEnabledChangedForVideoCalls = false;
     private boolean mIsViLteDataMetered = false;
     private boolean mAlwaysPlayRemoteHoldTone = false;
-    private boolean mAutoRetryFailedWifiEmergencyCall = false;
     private boolean mIgnoreResetUtCapability = false;
+    private boolean mAutoRetryFailedWifiEmergencyCall = false;
 
     private String mLastDialString = null;
     private PhoneInternalInterface.DialArgs mLastDialArgs = null;
@@ -1162,10 +1162,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 CarrierConfigManager.KEY_SUPPORT_PAUSE_IMS_VIDEO_CALLS_BOOL);
         mAlwaysPlayRemoteHoldTone = carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_ALWAYS_PLAY_REMOTE_HOLD_TONE_BOOL);
-        mAutoRetryFailedWifiEmergencyCall = carrierConfig.getBoolean(
-                CarrierConfigManager.KEY_AUTO_RETRY_FAILED_WIFI_EMERGENCY_CALL);
         mIgnoreResetUtCapability =  carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_IGNORE_RESET_UT_CAPABILITY_BOOL);
+        mAutoRetryFailedWifiEmergencyCall = carrierConfig.getBoolean(
+                CarrierConfigManager.KEY_AUTO_RETRY_FAILED_WIFI_EMERGENCY_CALL);
 
         String[] mappings = carrierConfig
                 .getStringArray(CarrierConfigManager.KEY_IMS_REASONINFO_MAPPING_STRING_ARRAY);
