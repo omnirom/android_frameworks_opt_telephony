@@ -263,6 +263,9 @@ public class ImsPhoneConnection extends Connection implements
         parent.attachFake(this, ImsPhoneCall.State.DIALING);
 
         mIsEmergency = isEmergency;
+        if (isEmergency) {
+            setEmergencyCallInfo();
+        }
 
         fetchDtmfToneDelay(phone);
 
