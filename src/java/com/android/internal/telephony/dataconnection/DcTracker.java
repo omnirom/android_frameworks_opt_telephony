@@ -1517,8 +1517,7 @@ public class DcTracker extends Handler {
         for (ApnContext apnContext : mApnContexts.values()) {
             if (!mAttached.get() || !apnContext.isReady()) {
                 if (DBG) log("notifyOffApnOfAvailability type:" + apnContext.getApnType());
-                mPhone.notifyDataConnection(apnContext.getApnType(),
-                                            PhoneConstants.DataState.DISCONNECTED);
+                mPhone.notifyDataConnection(apnContext.getApnType());
             } else {
                 if (VDBG) {
                     log("notifyOffApnsOfAvailability skipped apn due to attached && isReady " +
