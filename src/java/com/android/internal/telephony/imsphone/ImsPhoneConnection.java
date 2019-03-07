@@ -1088,12 +1088,6 @@ public class ImsPhoneConnection extends Connection implements
         mRttTextHandler.sendToInCall(message);
     }
 
-    public void onCallSessionPropertyChanged(int property) {
-        Bundle extras = new Bundle();
-        extras.putInt(android.telecom.Connection.EXTRA_CALL_PROPERTY, property);
-        onConnectionEvent(android.telecom.Connection.EVENT_CALL_PROPERTY_CHANGED, extras);
-    }
-
     public void onRttAudioIndicatorChanged(ImsStreamMediaProfile profile) {
         Bundle extras = new Bundle();
         extras.putBoolean(android.telecom.Connection.EXTRA_IS_RTT_AUDIO_PRESENT,
