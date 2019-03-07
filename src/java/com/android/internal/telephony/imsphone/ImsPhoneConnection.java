@@ -301,7 +301,7 @@ public class ImsPhoneConnection extends Connection implements
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
                 break;
-            case ImsCallProfile.CALL_TYPE_UNKNOWN:
+            case ImsCallProfile.CALL_TYPE_VT_NODIR:
                 capabilities = removeCapability(capabilities,
                         Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
                 break;
@@ -321,7 +321,7 @@ public class ImsPhoneConnection extends Connection implements
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
                 break;
-            case ImsCallProfile.CALL_TYPE_UNKNOWN:
+            case ImsCallProfile.CALL_TYPE_VT_NODIR:
                 capabilities = removeCapability(capabilities,
                         Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
                 break;

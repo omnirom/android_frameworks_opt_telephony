@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import android.content.Context;
+import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
@@ -97,11 +98,12 @@ public class PhoneConfigurationManager {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case EVENT_SWITCH_DSDS_CONFIG_DONE:
-                    if (msg.obj != null) {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    if (ar != null && ar.exception == null) {
                         int numOfLiveModems = msg.arg1;
                         setMultiSimProperties(numOfLiveModems);
                     } else {
-                        log(msg.what + " failure. Not switching multi-sim config.");
+                        log(msg.what + " failure. Not switching multi-sim config." + ar.exception);
                     }
                     break;
             }
@@ -167,7 +169,7 @@ public class PhoneConfigurationManager {
         }
         if (getPhoneCount() != numOfSims) {
             Message callback = Message.obtain(
-                    mHandler, EVENT_SWITCH_DSDS_CONFIG_DONE, numOfSims);
+                    mHandler, EVENT_SWITCH_DSDS_CONFIG_DONE, numOfSims, 0 /**dummy arg*/);
             mRadioConfig.setModemsConfig(numOfSims, callback);
         } else {
             log("switchMultiSimConfig: No need to switch. getNumOfActiveSims is already "
@@ -177,12 +179,12 @@ public class PhoneConfigurationManager {
 
     /**
      * Get whether reboot is required or not after making changes to modem configurations.
-     * Return value defaults to false
+     * Return value defaults to true
      */
     public boolean isRebootRequiredForModemConfigChange() {
         String rebootRequired = SystemProperties.get(
                 TelephonyProperties.PROPERTY_REBOOT_REQUIRED_ON_MODEM_CHANGE);
-        return rebootRequired.equals("true");
+        return !rebootRequired.equals("false");
     }
 
     /**
