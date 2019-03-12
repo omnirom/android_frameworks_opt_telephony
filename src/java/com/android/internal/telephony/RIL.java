@@ -134,7 +134,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     // Have a separate wakelock instance for Ack
     static final String RILJ_ACK_WAKELOCK_NAME = "RILJ_ACK_WL";
     static final boolean RILJ_LOGD = true;
-    static final boolean RILJ_LOGV = true; // STOPSHIP if true
+    static final boolean RILJ_LOGV = false; // STOPSHIP if true
     static final int RIL_HISTOGRAM_BUCKET_COUNT = 5;
 
     /**
@@ -155,7 +155,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     private final ClientWakelockTracker mClientWakelockTracker = new ClientWakelockTracker();
 
     /** @hide */
-    public static final HalVersion RADIO_HAL_VERSION_UNKNOWN = new HalVersion(-1, -1);
+    public static final HalVersion RADIO_HAL_VERSION_UNKNOWN = HalVersion.UNKNOWN;
 
     /** @hide */
     public static final HalVersion RADIO_HAL_VERSION_1_0 = new HalVersion(1, 0);
