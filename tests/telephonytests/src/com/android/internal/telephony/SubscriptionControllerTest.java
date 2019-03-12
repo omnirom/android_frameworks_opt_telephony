@@ -149,7 +149,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
 
         testInsertSim();
         /* Get SUB ID */
-        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList();
+        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(subIds != null && subIds.length != 0);
         int subID = subIds[0];
 
@@ -190,7 +190,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         testInsertSim();
 
         /* Get SUB ID */
-        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList();
+        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(subIds != null && subIds.length != 0);
         int subID = subIds[0];
 
@@ -301,7 +301,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testMigrateImsSettings() throws Exception {
         testInsertSim();
-        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList();
+        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(subIds != null && subIds.length != 0);
         int subID = subIds[0];
 
@@ -555,7 +555,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         /* insert some sims */
         testInsertMultipleRemoteSims();
         assertEquals(1, mSubscriptionControllerUT.getDefaultSubId());
-        int[] subIdsArray = mSubscriptionControllerUT.getActiveSubIdList();
+        int[] subIdsArray = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(subIdsArray.length > 0);
         int len = subIdsArray.length;
 
@@ -565,7 +565,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
 
         assertTrue(result > 0);
         // now check the number of subs left. should be one less than earlier
-        int[] newSubIdsArray = mSubscriptionControllerUT.getActiveSubIdList();
+        int[] newSubIdsArray = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(newSubIdsArray.length > 0);
         assertEquals(len - 1, newSubIdsArray.length);
 
@@ -780,7 +780,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
     public void testEnableDisableSubscriptionSingleSim() throws Exception {
         testInsertSim();
         // UiccSlotInfo that maps logicalSlotIndex 0 to physicalSlotIndex 0.
-        UiccSlotInfo slotInfo = new UiccSlotInfo(true, false, "", 0, 0, false);
+        UiccSlotInfo slotInfo = new UiccSlotInfo(true, false, "", 0, 0, false, false);
         UiccSlotInfo[] slotInfos = new UiccSlotInfo[] {slotInfo};
         doReturn(slotInfos).when(mTelephonyManager).getUiccSlotsInfo();
 
@@ -803,8 +803,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mSubscriptionControllerUT.addSubInfoRecord("123", 1);   // sub 1
         mSubscriptionControllerUT.addSubInfoRecord("456", 0);   // sub 2
 
+        int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         // Make sure the return sub ids are sorted by slot index
-        assertTrue("active sub ids = " + mSubscriptionControllerUT.getActiveSubIdList(),
-                Arrays.equals(mSubscriptionControllerUT.getActiveSubIdList(), new int[]{2, 1}));
+        assertTrue("active sub ids = " + subIds, Arrays.equals(subIds, new int[]{2, 1}));
     }
 }

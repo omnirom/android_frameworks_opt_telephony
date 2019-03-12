@@ -16,6 +16,10 @@
 
 package com.android.internal.telephony.uicc;
 
+import static android.telephony.TelephonyManager.UNINITIALIZED_CARD_ID;
+import static android.telephony.TelephonyManager.UNSUPPORTED_CARD_ID;
+
+import android.app.BroadcastOptions;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -128,6 +132,8 @@ public class UiccController extends Handler {
     // The array index is the card ID (int).
     // This mapping exists to expose card-based functionality without exposing the EID, which is
     // considered sensetive information.
+    // mCardStrings is populated using values from the IccSlotStatus and IccCardStatus. For
+    // HAL < 1.2, these do not contain the EID or the ICCID, so mCardStrings will be empty
     private ArrayList<String> mCardStrings;
 
     // This is the card ID of the default eUICC. It starts as UNINITIALIZED_CARD_ID.
@@ -204,7 +210,7 @@ public class UiccController extends Handler {
 
         mLauncher = new UiccStateChangedLauncher(c, this);
         mCardStrings = loadCardStrings();
-        mDefaultEuiccCardId = TelephonyManager.UNINITIALIZED_CARD_ID;
+        mDefaultEuiccCardId = UNINITIALIZED_CARD_ID;
     }
 
     private int getSlotIdFromPhoneId(int phoneId) {
@@ -546,7 +552,8 @@ public class UiccController extends Handler {
 
         if (eidIsNotSupported(status)) {
             // we will never get EID from the HAL, so set mDefaultEuiccCardId to UNSUPPORTED_CARD_ID
-            mDefaultEuiccCardId = TelephonyManager.UNSUPPORTED_CARD_ID;
+            if (DBG) log("eid is not supported");
+            mDefaultEuiccCardId = UNSUPPORTED_CARD_ID;
         }
         mPhoneIdToSlotId[index] = slotId;
 
@@ -560,7 +567,7 @@ public class UiccController extends Handler {
             mUiccSlots[slotId] = new UiccSlot(mContext, true);
         }
 
-        mUiccSlots[slotId].update(mCis[index], status, index);
+        mUiccSlots[slotId].update(mCis[index], status, index, slotId);
 
         UiccCard card = mUiccSlots[slotId].getUiccCard();
         if (card == null) {
@@ -580,7 +587,7 @@ public class UiccController extends Handler {
         // EID may be unpopulated if RadioConfig<1.2
         // If so, just register for EID loaded and skip this stuff
         if (isEuicc && cardString == null
-                && mDefaultEuiccCardId != TelephonyManager.UNSUPPORTED_CARD_ID) {
+                && mDefaultEuiccCardId != UNSUPPORTED_CARD_ID) {
             ((EuiccCard) card).registerForEidReady(this, EVENT_EID_READY, index);
         }
 
@@ -624,18 +631,24 @@ public class UiccController extends Handler {
      * to match to a card ID.
      *
      * @return the matching cardId, or UNINITIALIZED_CARD_ID if the card string does not map to a
-     * currently loaded cardId
+     * currently loaded cardId, or UNSUPPORTED_CARD_ID if the device does not support card IDs
      */
     public int convertToPublicCardId(String cardString) {
-        if (TextUtils.isEmpty(cardString)) {
-            return TelephonyManager.UNINITIALIZED_CARD_ID;
+        if (mDefaultEuiccCardId == UNSUPPORTED_CARD_ID) {
+            // even if cardString is not an EID, if EID is not supported (e.g. HAL < 1.2) we can't
+            // guarentee a working card ID implementation, so return UNSUPPORTED_CARD_ID
+            return UNSUPPORTED_CARD_ID;
         }
+        if (TextUtils.isEmpty(cardString)) {
+            return UNINITIALIZED_CARD_ID;
+        }
+
         if (cardString.length() < EID_LENGTH) {
             cardString = IccUtils.stripTrailingFs(cardString);
         }
         int id = mCardStrings.indexOf(cardString);
         if (id == -1) {
-            return TelephonyManager.UNINITIALIZED_CARD_ID;
+            return UNINITIALIZED_CARD_ID;
         } else {
             return id;
         }
@@ -656,6 +669,7 @@ public class UiccController extends Handler {
             }
             String iccid = card.getIccId();
             int cardId;
+            boolean isRemovable = slot.isRemovable();
             if (isEuicc) {
                 eid = card.getCardId();
                 cardId = convertToPublicCardId(eid);
@@ -663,7 +677,8 @@ public class UiccController extends Handler {
                 // leave eid null if the UICC is not embedded
                 cardId = convertToPublicCardId(iccid);
             }
-            UiccCardInfo info = new UiccCardInfo(isEuicc, cardId, eid, iccid, slotIndex);
+            UiccCardInfo info = new UiccCardInfo(isEuicc, cardId, eid, iccid, slotIndex,
+                    isRemovable);
             infos.add(info);
         }
         return infos;
@@ -754,9 +769,10 @@ public class UiccController extends Handler {
             }
 
             if (!isValidPhoneIndex(iss.logicalSlotIndex)) {
-                mUiccSlots[i].update(null, iss);
+                mUiccSlots[i].update(null, iss, i /* slotIndex */);
             } else {
-                mUiccSlots[i].update(isActive ? mCis[iss.logicalSlotIndex] : null, iss);
+                mUiccSlots[i].update(isActive ? mCis[iss.logicalSlotIndex] : null, iss,
+                        i /* slotIndex */);
             }
 
             if (mUiccSlots[i].isEuicc()) {
@@ -798,10 +814,13 @@ public class UiccController extends Handler {
         }
 
         // broadcast slot status changed
+        final BroadcastOptions options = BroadcastOptions.makeBasic();
+        options.setAllowBackgroundActivityStarts(true);
         Intent intent = new Intent(TelephonyManager.ACTION_SIM_SLOT_STATUS_CHANGED);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-        mContext.sendBroadcast(intent, android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE);
+        mContext.sendBroadcast(intent, android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE,
+                options.toBundle());
     }
 
     private boolean slotStatusChanged(ArrayList<IccSlotStatus> slotStatusList) {
@@ -904,7 +923,7 @@ public class UiccController extends Handler {
         // set mCardStrings and the defaultEuiccCardId using the now available EID
         String eid = ((EuiccCard) card).getEid();
         addCardId(eid);
-        if (mDefaultEuiccCardId == TelephonyManager.UNINITIALIZED_CARD_ID) {
+        if (mDefaultEuiccCardId == UNINITIALIZED_CARD_ID) {
             // TODO(b/122738148) the default eUICC should not be removable
             mDefaultEuiccCardId = convertToPublicCardId(eid);
             log("onEidReady: eid=" + eid + " slot=" + slotId + " mDefaultEuiccCardId="
