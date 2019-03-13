@@ -3186,10 +3186,6 @@ public class ServiceStateTracker extends Handler {
                             mSS.getRilDataRadioTechnology()), mPhone.getPhoneId());
         }
 
-        if (hasRilVoiceRadioTechnologyChanged || hasRilDataRadioTechnologyChanged) {
-            notifySignalStrength();
-        }
-
         if (hasRegistered) {
             mNetworkAttachedRegistrants.notifyRegistrants();
             mNitzState.handleNetworkAvailable();
