@@ -24,12 +24,7 @@ import android.os.Handler;
 import android.os.IDeviceIdleController;
 import android.os.Looper;
 import android.os.ServiceManager;
-import android.system.ErrnoException;
-import android.system.Os;
-import android.system.OsConstants;
-import android.system.StructStatVfs;
 import android.telephony.Rlog;
-import android.text.TextUtils;
 
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
@@ -77,37 +72,23 @@ public class TelephonyComponentFactory {
         private static final String TAG_INJECTION = "injection";
         private static final String TAG_COMPONENTS = "components";
         private static final String TAG_COMPONENT = "component";
-        private static final String SYSTEM = "/system/";
 
         private final Set<String> mComponentNames = new HashSet<>();
         private TelephonyComponentFactory mInjectedInstance;
         private String mPackageName;
         private String mJarPath;
 
-        /**
-         * @return if jar path is correctly configured to inject.
-         * 1) PackageName and JarPath mustn't be empty.
-         * 2) JarPath is restricted under /system only
-         */
-        private boolean isConfigValid() {
-            return !TextUtils.isEmpty(mPackageName) && !TextUtils.isEmpty(mJarPath)
-                    && mJarPath.startsWith(SYSTEM);
+        private boolean isInjected() {
+            return mPackageName != null && mJarPath != null;
         }
 
         private void makeInjectedInstance() {
-            if (isConfigValid()) {
+            if (isInjected()) {
+                PathClassLoader classLoader = new PathClassLoader(mJarPath,
+                        ClassLoader.getSystemClassLoader());
                 try {
-                    StructStatVfs vfs = Os.statvfs(mJarPath);
-                    if ((vfs.f_flag & OsConstants.ST_RDONLY) != 0) {
-                        PathClassLoader classLoader = new PathClassLoader(mJarPath,
-                                ClassLoader.getSystemClassLoader());
-                        Class<?> cls = classLoader.loadClass(mPackageName);
-                        mInjectedInstance = (TelephonyComponentFactory) cls.newInstance();
-                    } else {
-                        Rlog.w(TAG, "Injection jar is not protected");
-                    }
-                } catch (ErrnoException e) {
-                    Rlog.e(TAG, "failed file mount, " + e.getMessage());
+                    Class<?> cls = classLoader.loadClass(mPackageName);
+                    mInjectedInstance = (TelephonyComponentFactory) cls.newInstance();
                 } catch (ClassNotFoundException e) {
                     Rlog.e(TAG, "failed: " + e.getMessage());
                 } catch (IllegalAccessException | InstantiationException e) {
@@ -226,7 +207,7 @@ public class TelephonyComponentFactory {
      */
     public void injectTheComponentFactory(XmlResourceParser parser) {
         if (mInjectedComponents != null) {
-            Rlog.d(TAG, "Already injected.");
+            Rlog.i(TAG, "Already injected.");
             return;
         }
 
@@ -234,8 +215,8 @@ public class TelephonyComponentFactory {
             mInjectedComponents = new InjectedComponents();
             mInjectedComponents.parseXml(parser);
             mInjectedComponents.makeInjectedInstance();
-            Rlog.d(TAG, "Total components injected: " + (mInjectedComponents.isConfigValid()
-                    ? mInjectedComponents.mComponentNames.size() : 0));
+            Rlog.i(TAG, "Total components injected: "
+                    + mInjectedComponents.mComponentNames.size());
         }
     }
 
