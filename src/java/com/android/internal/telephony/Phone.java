@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import android.annotation.Nullable;
+import android.app.BroadcastOptions;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -305,6 +306,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected DeviceStateMonitor mDeviceStateMonitor;
     protected TransportManager mTransportManager;
     protected DataEnabledSettings mDataEnabledSettings;
+    // Used for identify the carrier of current subscription
+    protected CarrierResolver mCarrierResolver;
 
     protected int mPhoneId;
 
@@ -2237,10 +2240,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyMessageWaitingChanged(this);
     }
 
-    public void notifyDataConnection(String apnType, PhoneConstants.DataState state) {
-        mNotifier.notifyDataConnection(this, apnType, state);
-    }
-
     public void notifyDataConnection(String apnType) {
         mNotifier.notifyDataConnection(this, apnType, getDataConnectionState(apnType));
     }
@@ -2273,6 +2272,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     public void notifySignalStrength() {
         mNotifier.notifySignalStrength(this);
+    }
+
+    public PhoneConstants.DataState getDataConnectionState(String apnType) {
+        return PhoneConstants.DataState.DISCONNECTED;
     }
 
     public void notifyCellInfo(List<CellInfo> cellInfo) {
@@ -2465,10 +2468,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void sendDialerSpecialCode(String code) {
         if (!TextUtils.isEmpty(code)) {
+            final BroadcastOptions options = BroadcastOptions.makeBasic();
+            options.setAllowBackgroundActivityStarts(true);
             Intent intent = new Intent(TelephonyIntents.SECRET_CODE_ACTION,
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-            mContext.sendBroadcast(intent);
+            mContext.sendBroadcast(intent, null, options.toBundle());
 
             // {@link TelephonyManager.ACTION_SECRET_CODE} will replace {@link
             // TelephonyIntents#SECRET_CODE_ACTION} in the next Android version. Before
@@ -2476,7 +2481,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-            mContext.sendBroadcast(secrectCodeIntent);
+            mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
         }
     }
 
@@ -4011,6 +4016,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (getEmergencyNumberTracker() != null) {
             try {
                 getEmergencyNumberTracker().dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (mCarrierResolver != null) {
+            try {
+                mCarrierResolver.dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }
