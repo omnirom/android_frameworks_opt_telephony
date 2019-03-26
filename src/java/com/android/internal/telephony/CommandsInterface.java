@@ -2267,6 +2267,13 @@ public interface CommandsInterface {
      */
     default void enableModem(boolean enable, Message result) {};
 
+    /**
+     * Query whether logical modem is enabled or disabled
+     *
+     * @param result a Message to return to the requester
+     */
+    default void getModemStatus(Message result) {};
+
     default List<ClientRequestStats> getClientRequestStats() {
         return null;
     }
