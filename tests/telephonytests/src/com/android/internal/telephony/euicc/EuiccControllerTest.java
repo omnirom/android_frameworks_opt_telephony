@@ -958,7 +958,7 @@ public class EuiccControllerTest extends TelephonyTest {
         doReturn(hasPhoneStatePrivileged
                 ? PackageManager.PERMISSION_GRANTED : PackageManager.PERMISSION_DENIED)
                 .when(mContext)
-                .checkCallingPermission(Manifest.permission.READ_PRIVILEGED_PHONE_STATE);
+                .checkCallingOrSelfPermission(Manifest.permission.READ_PRIVILEGED_PHONE_STATE);
         when(mTelephonyManager.getPhoneCount()).thenReturn(1);
         setHasCarrierPrivilegesOnActiveSubscription(hasCarrierPrivileges);
     }
@@ -967,7 +967,7 @@ public class EuiccControllerTest extends TelephonyTest {
         doReturn(hasPermission
                 ? PackageManager.PERMISSION_GRANTED : PackageManager.PERMISSION_DENIED)
                 .when(mContext)
-                .checkCallingPermission(Manifest.permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
+                .checkCallingOrSelfPermission(Manifest.permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
     }
 
     private void setHasMasterClearPermission(boolean hasPermission) {
@@ -981,7 +981,7 @@ public class EuiccControllerTest extends TelephonyTest {
         SubscriptionInfo subInfo = new SubscriptionInfo(
                 0, "", 0, "", "", 0, 0, "", 0, null, "", "", "", true /* isEmbedded */,
                 hasPrivileges ? new UiccAccessRule[] { ACCESS_RULE } : null, "", CARD_ID,
-                false, "", false, false, 0, 0, 0);
+                false, null, false, 0, 0, 0);
         when(mSubscriptionManager.canManageSubscription(subInfo, PACKAGE_NAME)).thenReturn(
                 hasPrivileges);
         when(mSubscriptionManager.getActiveSubscriptionInfoList(anyBoolean())).thenReturn(
@@ -1002,11 +1002,11 @@ public class EuiccControllerTest extends TelephonyTest {
         SubscriptionInfo subInfo1 = new SubscriptionInfo(
                 0, "", 0, "", "", 0, 0, "", 0, null, "", "", "", true /* isEmbedded */,
                 hasPrivileges ? new UiccAccessRule[] { ACCESS_RULE } : null, "", CARD_ID,
-                false, "", false, false, 0, 0, 0);
+                false, null, false, 0, 0, 0);
         SubscriptionInfo subInfo2 = new SubscriptionInfo(
                 0, "", 0, "", "", 0, 0, "", 0, null, "", "", "", true /* isEmbedded */,
                 hasPrivileges ? new UiccAccessRule[] { ACCESS_RULE } : null, "",
-                1 /* cardId */, false, "", false, false, 0, 0, 0);
+                1 /* cardId */, false, null, false, 0, 0, 0);
         when(mSubscriptionManager.canManageSubscription(subInfo1, PACKAGE_NAME)).thenReturn(
                 hasPrivileges);
         when(mSubscriptionManager.canManageSubscription(subInfo2, PACKAGE_NAME)).thenReturn(
