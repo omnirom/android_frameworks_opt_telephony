@@ -115,6 +115,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -514,8 +515,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
 
     //***** Constructors
-
     public ImsPhoneCallTracker(ImsPhone phone) {
+        this(phone, phone.getContext().getMainExecutor());
+    }
+
+    @VisibleForTesting
+    public ImsPhoneCallTracker(ImsPhone phone, Executor executor) {
         this.mPhone = phone;
 
         mMetrics = TelephonyMetrics.getInstance();
@@ -538,6 +543,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mVtDataUsageSnapshot = new NetworkStats(currentTime, 1);
         mVtDataUsageUidSnapshot = new NetworkStats(currentTime, 1);
 
+        // Allow the executor to be specified for testing.
         mImsManagerConnector = new ImsManager.Connector(phone.getContext(), phone.getPhoneId(),
                 new ImsManager.Connector.Listener() {
                     @Override
@@ -550,7 +556,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     public void connectionUnavailable() {
                         stopListeningForCalls();
                     }
-                });
+                }, executor);
         mImsManagerConnector.connect();
     }
 
@@ -2850,6 +2856,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             ImsPhoneConnection conn = findConnection(imsCall);
             if (conn != null) {
+                ImsPhoneCall imsPhoneCall = conn.getCall();
+                if (imsPhoneCall != null) {
+                    // We might be playing ringback on the handover connection; we should stop
+                    // playing it at this point (otherwise it could play indefinitely).
+                    imsPhoneCall.maybeStopRingback();
+                }
                 if (conn.getDisconnectCause() == DisconnectCause.NOT_DISCONNECTED) {
                     if (isHandoverToWifi) {
                         removeMessages(EVENT_CHECK_FOR_WIFI_HANDOVER);
@@ -3101,7 +3113,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 }
 
                 @Override
-                public void onDeregistered(ImsReasonInfo imsReasonInfo) {
+                public void onUnregistered(ImsReasonInfo imsReasonInfo) {
                     if (DBG) log("onImsDisconnected imsReasonInfo=" + imsReasonInfo);
                     mPhone.setServiceState(ServiceState.STATE_OUT_OF_SERVICE);
                     mPhone.setImsRegistered(false);
@@ -4285,5 +4297,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mediaProfile.setRttMode(ImsStreamMediaProfile.RTT_MODE_FULL);
         }
         return mediaProfile;
+    }
+
+    public ImsPhone getPhone() {
+        return mPhone;
     }
 }
