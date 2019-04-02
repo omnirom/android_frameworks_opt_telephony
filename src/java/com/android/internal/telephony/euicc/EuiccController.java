@@ -584,6 +584,7 @@ public class EuiccController extends IEuiccController.Stub {
         try {
             latch.await();
         } catch (InterruptedException e) {
+            Log.e(TAG, "blockingGetEuiccInfoFromEuiccService got InterruptedException e: " + e);
             Thread.currentThread().interrupt();
         }
         return resultRef.get();
@@ -1258,12 +1259,14 @@ public class EuiccController extends IEuiccController.Stub {
     }
 
     private boolean callerCanReadPhoneStatePrivileged() {
-        return mContext.checkCallingPermission(Manifest.permission.READ_PRIVILEGED_PHONE_STATE)
+        return mContext.checkCallingOrSelfPermission(
+                Manifest.permission.READ_PRIVILEGED_PHONE_STATE)
                 == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean callerCanWriteEmbeddedSubscriptions() {
-        return mContext.checkCallingPermission(Manifest.permission.WRITE_EMBEDDED_SUBSCRIPTIONS)
+        return mContext.checkCallingOrSelfPermission(
+                Manifest.permission.WRITE_EMBEDDED_SUBSCRIPTIONS)
                 == PackageManager.PERMISSION_GRANTED;
     }
 }

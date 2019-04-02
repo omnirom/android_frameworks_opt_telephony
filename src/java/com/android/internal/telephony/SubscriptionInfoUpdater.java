@@ -18,6 +18,7 @@ package com.android.internal.telephony;
 
 import android.Manifest;
 import android.annotation.Nullable;
+import android.annotation.UnsupportedAppUsage;
 import android.app.ActivityManager;
 import android.app.UserSwitchObserver;
 import android.content.ContentResolver;
@@ -69,6 +70,7 @@ import java.util.List;
  */
 public class SubscriptionInfoUpdater extends Handler {
     private static final String LOG_TAG = "SubscriptionInfoUpdater";
+    @UnsupportedAppUsage
     private static final int PROJECT_SIM_NUM = TelephonyManager.getDefault().getPhoneCount();
 
     private static final boolean DBG = true;
@@ -91,17 +93,22 @@ public class SubscriptionInfoUpdater extends Handler {
     // Key used to read/write the current IMSI. Updated on SIM_STATE_CHANGED - LOADED.
     public static final String CURR_SUBID = "curr_subid";
 
+    @UnsupportedAppUsage
     private static Phone[] mPhone;
+    @UnsupportedAppUsage
     private static Context mContext = null;
+    @UnsupportedAppUsage
     protected static String mIccId[] = new String[PROJECT_SIM_NUM];
     private static int[] sSimCardState = new int[PROJECT_SIM_NUM];
     private static int[] sSimApplicationState = new int[PROJECT_SIM_NUM];
     private boolean[] mIsRecordLoaded = new boolean[PROJECT_SIM_NUM];
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
+    @UnsupportedAppUsage
     private IPackageManager mPackageManager;
 
     // The current foreground user ID.
+    @UnsupportedAppUsage
     private int mCurrentlyActiveUserId;
     private CarrierServiceBindHelper mCarrierServiceBindHelper;
 
@@ -190,6 +197,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
+    @UnsupportedAppUsage
     protected boolean isAllIccIdQueryDone() {
         for (int i = 0; i < PROJECT_SIM_NUM; i++) {
             if (mIccId[i] == null) {
@@ -623,8 +631,7 @@ public class SubscriptionInfoUpdater extends Handler {
                         .forEach(cardId -> updateEmbeddedSubscriptions(cardId));
             }
             // update default subId
-            SubscriptionController.getInstance().clearDefaultsForInactiveSubIds();
-            SubscriptionController.getInstance().updateDataEnabledSettings();
+            MultiSimSettingController.getInstance().onAllSubscriptionsLoaded();
         }
 
         SubscriptionController.getInstance().notifySubscriptionInfoChanged();
@@ -792,6 +799,7 @@ public class SubscriptionInfoUpdater extends Handler {
         return newSim;
     }
 
+    @UnsupportedAppUsage
     private void broadcastSimStateChanged(int slotId, String state, String reason) {
         Intent i = new Intent(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
         // TODO - we'd like this intent to have a single snapshot of all sim state,
@@ -875,6 +883,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
+    @UnsupportedAppUsage
     private void logd(String message) {
         Rlog.d(LOG_TAG, message);
     }

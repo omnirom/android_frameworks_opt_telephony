@@ -27,6 +27,7 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PAD
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_SMS;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
 
+import android.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.content.res.Resources;
 import android.os.AsyncResult;
@@ -158,7 +159,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
     //***** Instance Variables
 
+    @UnsupportedAppUsage
     private ImsPhone mPhone;
+    @UnsupportedAppUsage
     private Context mContext;
     private IccRecords mIccRecords;
 
@@ -228,6 +231,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
      * Please see flow chart in TS 22.030 6.5.3.2
      */
 
+    @UnsupportedAppUsage
     static ImsPhoneMmiCode newFromDialString(String dialString, ImsPhone phone) {
        return newFromDialString(dialString, phone, null);
     }
@@ -365,6 +369,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     }
 
     /** returns true of the string is empty or null */
+    @UnsupportedAppUsage
     private static boolean
     isEmptyOrNull(CharSequence s) {
         return s == null || (s.length() == 0);
@@ -542,6 +547,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
 
     //***** Instance Methods
 
+    @UnsupportedAppUsage
     String getDialingNumber() {
         return mDialingNumber;
     }
@@ -657,6 +663,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
      *  In temporary mode, to invoke CLIR for a single call enter:
      *       " # 31 # [called number] SEND "
      */
+    @UnsupportedAppUsage
     boolean
     isTemporaryModeCLIR() {
         return mSc != null && mSc.equals(SC_CLIR) && mDialingNumber != null
@@ -667,6 +674,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
      * returns CommandsInterface.CLIR_*
      * See also isTemporaryModeCLIR()
      */
+    @UnsupportedAppUsage
     int
     getCLIRMode() {
         if (mSc != null && mSc.equals(SC_CLIR)) {
@@ -680,10 +688,12 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         return CommandsInterface.CLIR_DEFAULT;
     }
 
+    @UnsupportedAppUsage
     boolean isActivate() {
         return mAction != null && mAction.equals(ACTION_ACTIVATE);
     }
 
+    @UnsupportedAppUsage
     boolean isDeactivate() {
         return mAction != null && mAction.equals(ACTION_DEACTIVATE);
     }
@@ -692,10 +702,12 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         return mAction != null && mAction.equals(ACTION_INTERROGATE);
     }
 
+    @UnsupportedAppUsage
     boolean isRegister() {
         return mAction != null && mAction.equals(ACTION_REGISTER);
     }
 
+    @UnsupportedAppUsage
     boolean isErasure() {
         return mAction != null && mAction.equals(ACTION_ERASURE);
     }
@@ -713,6 +725,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         return mIsUssdRequest;
     }
 
+    @UnsupportedAppUsage
     boolean
     isSupportedOverImsPhone() {
         if (isShortCode()) return true;
@@ -772,6 +785,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
     }
 
     /** Process a MMI code or short code...anything that isn't a dialing number */
+    @UnsupportedAppUsage
     public void
     processCode () throws CallStateException {
         try {
@@ -1178,6 +1192,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         }
     }
 
+    @UnsupportedAppUsage
     private CharSequence getErrorMessage(AsyncResult ar) {
         CharSequence errorMessage;
         return ((errorMessage = getMmiErrorMessage(ar)) != null) ? errorMessage :
@@ -1217,6 +1232,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         return null;
     }
 
+    @UnsupportedAppUsage
     private CharSequence getScString() {
         if (mSc != null) {
             if (isServiceCodeCallBarring(mSc)) {
@@ -1315,6 +1331,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
      *        Returns null if unrecognized
      */
 
+    @UnsupportedAppUsage
     private CharSequence
     serviceClassToCFString (int serviceClass) {
         switch (serviceClass) {

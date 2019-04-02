@@ -27,7 +27,7 @@ import android.os.AsyncResult;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
-import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.DataFailCause;
 import android.telephony.PhoneStateListener;
 import android.telephony.Rlog;
@@ -121,9 +121,9 @@ public class DcController extends StateMachine {
     }
 
     public static DcController makeDcc(Phone phone, DcTracker dct,
-                                       DataServiceManager dataServiceManager, Handler handler) {
-        DcController dcc = new DcController("Dcc", phone, dct, dataServiceManager, handler);
-        return dcc;
+                                       DataServiceManager dataServiceManager, Handler handler,
+                                       String tagSuffix) {
+        return new DcController("Dcc" + tagSuffix, phone, dct, dataServiceManager, handler);
     }
 
     void dispose() {
@@ -192,7 +192,7 @@ public class DcController extends StateMachine {
         @Override
         public void enter() {
             if (mPhone != null && mDataServiceManager.getTransportType()
-                    == TransportType.WWAN) {
+                    == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) {
                 mPhone.mCi.registerForRilConnected(getHandler(),
                         DataConnection.EVENT_RIL_CONNECTED, null);
             }
@@ -208,7 +208,7 @@ public class DcController extends StateMachine {
         @Override
         public void exit() {
             if (mPhone != null & mDataServiceManager.getTransportType()
-                    == TransportType.WWAN) {
+                    == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) {
                 mPhone.mCi.unregisterForRilConnected(getHandler());
             }
             mDataServiceManager.unregisterForDataCallListChanged(getHandler());
@@ -275,7 +275,7 @@ public class DcController extends StateMachine {
             HashMap<Integer, DataCallResponse> dataCallResponseListByCid =
                     new HashMap<Integer, DataCallResponse>();
             for (DataCallResponse dcs : dcsList) {
-                dataCallResponseListByCid.put(dcs.getCallId(), dcs);
+                dataCallResponseListByCid.put(dcs.getId(), dcs);
             }
 
             // Add a DC that is active but not in the
@@ -298,7 +298,7 @@ public class DcController extends StateMachine {
 
             for (DataCallResponse newState : dcsList) {
 
-                DataConnection dc = dcListActiveByCid.get(newState.getCallId());
+                DataConnection dc = dcListActiveByCid.get(newState.getId());
                 if (dc == null) {
                     // UNSOL_DATA_CALL_LIST_CHANGED arrived before SETUP_DATA_CALL completed.
                     loge("onDataStateChanged: no associated DC yet, ignore");
@@ -312,15 +312,15 @@ public class DcController extends StateMachine {
                     // Determine if the connection/apnContext should be cleaned up
                     // or just a notification should be sent out.
                     if (DBG) {
-                        log("onDataStateChanged: Found ConnId=" + newState.getCallId()
+                        log("onDataStateChanged: Found ConnId=" + newState.getId()
                                 + " newState=" + newState.toString());
                     }
-                    if (newState.getActive() == DataConnActiveStatus.INACTIVE) {
+                    if (newState.getLinkStatus() == DataConnActiveStatus.INACTIVE) {
                         if (mDct.isCleanupRequired.get()) {
                             apnsToCleanup.addAll(apnContexts);
                             mDct.isCleanupRequired.set(false);
                         } else {
-                            int failCause = DataFailCause.getFailCause(newState.getStatus());
+                            int failCause = DataFailCause.getFailCause(newState.getCause());
                             if (DataFailCause.isRadioRestartFailure(mPhone.getContext(), failCause,
                                         mPhone.getSubId())) {
                                 if (DBG) {
@@ -403,10 +403,10 @@ public class DcController extends StateMachine {
                     }
                 }
 
-                if (newState.getActive() == DataConnActiveStatus.ACTIVE) {
+                if (newState.getLinkStatus() == DataConnActiveStatus.ACTIVE) {
                     isAnyDataCallActive = true;
                 }
-                if (newState.getActive() == DataConnActiveStatus.DORMANT) {
+                if (newState.getLinkStatus() == DataConnActiveStatus.DORMANT) {
                     isAnyDataCallDormant = true;
                 }
             }

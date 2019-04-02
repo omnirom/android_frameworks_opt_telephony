@@ -360,6 +360,33 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testEmergencySmsMode() {
+        String emergencyNumber = "111";
+        String nonEmergencyNumber = "222";
+        mContextFixture.getCarrierConfigBundle().putInt(
+                CarrierConfigManager.KEY_EMERGENCY_SMS_MODE_TIMER_MS_INT, 200);
+        doReturn(true).when(mTelephonyManager).isEmergencyNumber(emergencyNumber);
+
+        mPhoneUT.notifySmsSent(nonEmergencyNumber);
+        waitForMs(50);
+        assertFalse(mPhoneUT.isInEmergencySmsMode());
+
+        mPhoneUT.notifySmsSent(emergencyNumber);
+        waitForMs(50);
+        assertTrue(mPhoneUT.isInEmergencySmsMode());
+        waitForMs(200);
+        assertFalse(mPhoneUT.isInEmergencySmsMode());
+
+        // Feature not supported
+        mContextFixture.getCarrierConfigBundle().putInt(
+                CarrierConfigManager.KEY_EMERGENCY_SMS_MODE_TIMER_MS_INT, 0);
+        mPhoneUT.notifySmsSent(emergencyNumber);
+        waitForMs(50);
+        assertFalse(mPhoneUT.isInEmergencySmsMode());
+    }
+
+    @Test
+    @SmallTest
     public void testSendBurstDtmf() {
         //Should do nothing for GSM
         mPhoneUT.sendBurstDtmf("1234567890", 0, 0, null);
@@ -981,5 +1008,31 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         ss.setVoiceRegState(ServiceState.STATE_IN_SERVICE);
         ss.setRilVoiceRadioTechnology(ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN);
         assertEquals(mPhoneUT.getCsCallRadioTech(), ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
+    }
+
+    @Test
+    @SmallTest
+    public void testGetLine1NumberForGsmPhone() {
+        final String msisdn = "+1234567890";
+        doReturn(msisdn).when(mSimRecords).getMsisdnNumber();
+
+        switchToGsm();
+        assertEquals(msisdn, mPhoneUT.getLine1Number());
+    }
+
+    @Test
+    @SmallTest
+    public void testGetLine1NumberForCdmaPhone() {
+        final String mdn = "1234567890";
+        final String msisdn = "+1234567890";
+        doReturn(mdn).when(mSST).getMdnNumber();
+        doReturn(msisdn).when(mSimRecords).getMsisdnNumber();
+
+        switchToCdma();
+        assertEquals(mdn, mPhoneUT.getLine1Number());
+
+        mContextFixture.getCarrierConfigBundle().putBoolean(
+                CarrierConfigManager.KEY_USE_USIM_BOOL, true);
+        assertEquals(msisdn, mPhoneUT.getLine1Number());
     }
 }

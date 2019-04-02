@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import android.annotation.Nullable;
+import android.annotation.UnsupportedAppUsage;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -27,7 +28,7 @@ import android.os.ServiceManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
-import android.telephony.DebugEventReporter;
+import android.telephony.AnomalyReporter;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -63,7 +64,7 @@ public class PhoneFactory {
 
     //***** Class Variables
 
-    // lock sLockProxyPhones protects both sPhones and sPhone
+    // lock sLockProxyPhones protects sPhones, sPhone and sTelephonyNetworkFactories
     final static Object sLockProxyPhones = new Object();
     static private Phone[] sPhones = null;
     static private Phone sPhone = null;
@@ -76,11 +77,15 @@ public class PhoneFactory {
     private static @Nullable EuiccController sEuiccController;
     private static @Nullable EuiccCardController sEuiccCardController;
 
+    @UnsupportedAppUsage
     static private CommandsInterface sCommandsInterface = null;
     static private SubscriptionInfoUpdater sSubInfoRecordUpdater = null;
 
+    @UnsupportedAppUsage
     static private boolean sMadeDefaults = false;
+    @UnsupportedAppUsage
     static private PhoneNotifier sPhoneNotifier;
+    @UnsupportedAppUsage
     static private Context sContext;
     static private PhoneConfigurationManager sPhoneConfigurationManager;
     static private PhoneSwitcher sPhoneSwitcher;
@@ -102,6 +107,7 @@ public class PhoneFactory {
      * FIXME replace this with some other way of making these
      * instances
      */
+    @UnsupportedAppUsage
     public static void makeDefaultPhone(Context context) {
         synchronized (sLockProxyPhones) {
             if (!sMadeDefaults) {
@@ -145,18 +151,6 @@ public class PhoneFactory {
                    where as in single SIM mode only instance. isMultiSimEnabled() function checks
                    whether it is single SIM or multi SIM mode */
                 int numPhones = TelephonyManager.getDefault().getPhoneCount();
-                // Return whether or not the device should use dynamic binding or the static
-                // implementation (deprecated)
-                boolean isDynamicBinding = sContext.getResources().getBoolean(
-                        com.android.internal.R.bool.config_dynamic_bind_ims);
-                // Get the package name of the default IMS implementation.
-                String defaultImsPackage = sContext.getResources().getString(
-                        com.android.internal.R.string.config_ims_package);
-                // Start ImsResolver and bind to ImsServices.
-                Rlog.i(LOG_TAG, "ImsResolver: defaultImsPackage: " + defaultImsPackage);
-                sImsResolver = new ImsResolver(sContext, defaultImsPackage, numPhones,
-                        isDynamicBinding);
-                sImsResolver.initPopulateCacheAndStartBind();
 
                 int[] networkModes = new int[numPhones];
                 sPhones = new Phone[numPhones];
@@ -235,12 +229,31 @@ public class PhoneFactory {
                         getLooper(), context, sPhones, sCommandsInterfaces);
                 SubscriptionController.getInstance().updatePhonesAvailability(sPhones);
 
-                // Start monitoring after defaults have been made.
-                // Default phone must be ready before ImsPhone is created because ImsService might
-                // need it when it is being opened. This should initialize multiple ImsPhones for
-                // ImsResolver implementations of ImsService.
-                for (int i = 0; i < numPhones; i++) {
-                    sPhones[i].startMonitoringImsService();
+
+                // Only bring up IMS if the device supports having an IMS stack.
+                if (context.getPackageManager().hasSystemFeature(
+                        PackageManager.FEATURE_TELEPHONY_IMS)) {
+                    // Return whether or not the device should use dynamic binding or the static
+                    // implementation (deprecated)
+                    boolean isDynamicBinding = sContext.getResources().getBoolean(
+                            com.android.internal.R.bool.config_dynamic_bind_ims);
+                    // Get the package name of the default IMS implementation.
+                    String defaultImsPackage = sContext.getResources().getString(
+                            com.android.internal.R.string.config_ims_package);
+                    // Start ImsResolver and bind to ImsServices.
+                    Rlog.i(LOG_TAG, "ImsResolver: defaultImsPackage: " + defaultImsPackage);
+                    sImsResolver = new ImsResolver(sContext, defaultImsPackage, numPhones,
+                            isDynamicBinding);
+                    sImsResolver.initPopulateCacheAndStartBind();
+                    // Start monitoring after defaults have been made.
+                    // Default phone must be ready before ImsPhone is created because ImsService
+                    // might need it when it is being opened. This should initialize multiple
+                    // ImsPhones for ImsResolver implementations of ImsService.
+                    for (int i = 0; i < numPhones; i++) {
+                        sPhones[i].startMonitoringImsService();
+                    }
+                } else {
+                    Rlog.i(LOG_TAG, "IMS is not supported on this device, skipping ImsResolver.");
                 }
 
                 ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(
@@ -278,6 +291,7 @@ public class PhoneFactory {
         }
     }
 
+    @UnsupportedAppUsage
     public static Phone getDefaultPhone() {
         synchronized (sLockProxyPhones) {
             if (!sMadeDefaults) {
@@ -287,6 +301,7 @@ public class PhoneFactory {
         }
     }
 
+    @UnsupportedAppUsage
     public static Phone getPhone(int phoneId) {
         Phone phone;
         String dbgInfo = "";
@@ -312,6 +327,7 @@ public class PhoneFactory {
         }
     }
 
+    @UnsupportedAppUsage
     public static Phone[] getPhones() {
         synchronized (sLockProxyPhones) {
             if (!sMadeDefaults) {
@@ -325,8 +341,42 @@ public class PhoneFactory {
         return sSubInfoRecordUpdater;
     }
 
-    public static ImsResolver getImsResolver() {
+    /**
+     * @return The ImsResolver instance or null if IMS is not supported
+     * (FEATURE_TELEPHONY_IMS is not defined).
+     */
+    public static @Nullable ImsResolver getImsResolver() {
         return sImsResolver;
+    }
+
+    /**
+     * Get the network factory associated with a given phone ID.
+     * @param phoneId the phone id
+     * @return a factory for this phone ID, or null if none.
+     */
+    public static TelephonyNetworkFactory getNetworkFactory(int phoneId) {
+        synchronized (sLockProxyPhones) {
+            if (!sMadeDefaults) {
+                throw new IllegalStateException("Default phones haven't been made yet!");
+            }
+            final String dbgInfo;
+            if (phoneId == SubscriptionManager.DEFAULT_PHONE_INDEX) {
+                dbgInfo = "getNetworkFactory with DEFAULT_PHONE_ID => factory for sPhone";
+                phoneId = sPhone.getSubId();
+            } else {
+                dbgInfo = "getNetworkFactory with non-default, return factory for passed id";
+            }
+            // sTelephonyNetworkFactories is null in tests because in tests makeDefaultPhones()
+            // is not called.
+            final TelephonyNetworkFactory factory = (sTelephonyNetworkFactories != null
+                            && (phoneId >= 0 && phoneId < sTelephonyNetworkFactories.length))
+                            ? sTelephonyNetworkFactories[phoneId] : null;
+            if (DBG) {
+                Rlog.d(LOG_TAG, "getNetworkFactory:-" + dbgInfo + " phoneId=" + phoneId
+                        + " factory=" + factory);
+            }
+            return factory;
+        }
     }
 
     /**
@@ -345,6 +395,7 @@ public class PhoneFactory {
      * @return the preferred network mode that should be set.
      */
     // TODO: Fix when we "properly" have TelephonyDevController/SubscriptionController ..
+    @UnsupportedAppUsage
     public static int calculatePreferredNetworkType(Context context, int phoneSubId) {
         int networkType = android.provider.Settings.Global.getInt(context.getContentResolver(),
                 android.provider.Settings.Global.PREFERRED_NETWORK_MODE + phoneSubId,
@@ -368,6 +419,7 @@ public class PhoneFactory {
     }
 
     /* Gets the default subscription */
+    @UnsupportedAppUsage
     public static int getDefaultSubscription() {
         return SubscriptionController.getInstance().getDefaultSubId();
     }
@@ -564,7 +616,7 @@ public class PhoneFactory {
         pw.println("DebugEvents:");
         pw.increaseIndent();
         try {
-            DebugEventReporter.dump(fd, pw, args);
+            AnomalyReporter.dump(fd, pw, args);
         } catch (Exception e) {
             e.printStackTrace();
         }

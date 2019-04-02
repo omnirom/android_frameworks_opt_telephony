@@ -61,9 +61,10 @@ import android.os.Message;
 import android.os.PersistableBundle;
 import android.provider.Settings;
 import android.provider.Telephony;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
-import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -166,7 +167,7 @@ public class DcTrackerTest extends TelephonyTest {
         serviceInfo.permission = "android.permission.BIND_TELEPHONY_DATA_SERVICE";
         IntentFilter filter = new IntentFilter();
         mContextFixture.addService(
-                DataService.DATA_SERVICE_INTERFACE,
+                DataService.SERVICE_INTERFACE,
                 null,
                 "com.android.phone",
                 cellularDataService.mBinder,
@@ -182,7 +183,7 @@ public class DcTrackerTest extends TelephonyTest {
 
         @Override
         public void onLooperPrepared() {
-            mDct = new DcTracker(mPhone, TransportType.WWAN);
+            mDct = new DcTracker(mPhone, AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
             setReady(true);
         }
     }
@@ -430,8 +431,6 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn("fake.action_attached").when(mPhone).getActionAttached();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
-        doReturn(TelephonyManager.NETWORK_TYPE_LTE).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
 
         mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
                 sNetworkAttributes);
@@ -492,6 +491,11 @@ public class DcTrackerTest extends TelephonyTest {
         mDcTrackerTestHandler = new DcTrackerTestHandler(getClass().getSimpleName());
         mDcTrackerTestHandler.start();
         waitUntilReady();
+
+        Intent intent = new Intent(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        intent.putExtra(CarrierConfigManager.EXTRA_SLOT_INDEX, 0);
+        mContext.sendBroadcast(intent);
+
         waitForMs(600);
         logd("DcTrackerTest -Setup!");
     }
@@ -526,16 +530,16 @@ public class DcTrackerTest extends TelephonyTest {
                                    int supportedApnTypesBitmap, int type, int bearerBitmask) {
         assertEquals(profileId, dp.getProfileId());
         assertEquals(apn, dp.getApn());
-        assertEquals(ApnSetting.PROTOCOL_IP, dp.getProtocol());
+        assertEquals(ApnSetting.PROTOCOL_IP, dp.getProtocolType());
         assertEquals(0, dp.getAuthType());
         assertEquals("", dp.getUserName());
         assertEquals("", dp.getPassword());
         assertEquals(type, dp.getType());
         assertEquals(0, dp.getWaitTime());
         assertTrue(dp.isEnabled());
-        assertEquals(supportedApnTypesBitmap, dp.getSupportedApnTypesBitmap());
-        assertEquals(ApnSetting.PROTOCOL_IP, dp.getRoamingProtocol());
-        assertEquals(bearerBitmask, dp.getBearerBitmap());
+        assertEquals(supportedApnTypesBitmap, dp.getSupportedApnTypesBitmask());
+        assertEquals(ApnSetting.PROTOCOL_IP, dp.getRoamingProtocolType());
+        assertEquals(bearerBitmask, dp.getBearerBitmask());
         assertEquals(0, dp.getMtu());
         assertTrue(dp.isPersistent());
         assertFalse(dp.isPreferred());
@@ -670,7 +674,8 @@ public class DcTrackerTest extends TelephonyTest {
         // Simulate the timer expires.
         Intent intent = new Intent("com.android.internal.telephony.data-reconnect.default");
         intent.putExtra("reconnect_alarm_extra_type", PhoneConstants.APN_TYPE_DEFAULT);
-        intent.putExtra("reconnect_alarm_extra_transport_type", TransportType.WWAN);
+        intent.putExtra("reconnect_alarm_extra_transport_type",
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
         intent.putExtra(PhoneConstants.SUBSCRIPTION_KEY, 0);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         mContext.sendBroadcast(intent);
@@ -868,7 +873,8 @@ public class DcTrackerTest extends TelephonyTest {
         mDct.sendMessage(mDct.obtainMessage(intArgumentCaptor.getValue(), null));
         waitForMs(100);
 
-        verify(mSST, times(1)).registerForDataConnectionAttached(eq(TransportType.WWAN), eq(mDct),
+        verify(mSST, times(1)).registerForDataConnectionAttached(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN), eq(mDct),
                 intArgumentCaptor.capture(), eq(null));
         // Ideally this should send EVENT_DATA_CONNECTION_ATTACHED");
         mDct.sendMessage(mDct.obtainMessage(intArgumentCaptor.getValue(), null));
@@ -887,7 +893,8 @@ public class DcTrackerTest extends TelephonyTest {
         // The auto attach flag should be reset after update
         assertFalse(mDct.getAutoAttachEnabled());
 
-        verify(mSST, times(1)).registerForDataConnectionDetached(eq(TransportType.WWAN), eq(mDct),
+        verify(mSST, times(1)).registerForDataConnectionDetached(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN), eq(mDct),
                 intArgumentCaptor.capture(), eq(null));
         // Ideally this should send EVENT_DATA_CONNECTION_DETACHED
         mDct.sendMessage(mDct.obtainMessage(intArgumentCaptor.getValue(), null));
@@ -1141,8 +1148,12 @@ public class DcTrackerTest extends TelephonyTest {
     @SmallTest
     public void testTrySetupDefaultOnIWLAN() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
-        doReturn(TelephonyManager.NETWORK_TYPE_IWLAN).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_IWLAN)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
@@ -1194,8 +1205,12 @@ public class DcTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testUpdateWaitingApnListOnDataRatChange() throws Exception {
-        doReturn(TelephonyManager.NETWORK_TYPE_EHRPD).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_EHRPD)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
         mDct.enableApn(ApnSetting.TYPE_DEFAULT, DcTracker.REQUEST_TYPE_NORMAL, null);
@@ -1220,8 +1235,12 @@ public class DcTrackerTest extends TelephonyTest {
 
         //data rat change from ehrpd to lte
         logd("Sending EVENT_DATA_RAT_CHANGED");
-        doReturn(TelephonyManager.NETWORK_TYPE_LTE).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_LTE)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_DATA_RAT_CHANGED, null));
         waitForMs(200);
 
@@ -1237,7 +1256,8 @@ public class DcTrackerTest extends TelephonyTest {
         Intent intent = new Intent("com.android.internal.telephony.data-reconnect.default");
         intent.putExtra("reconnect_alarm_extra_type", PhoneConstants.APN_TYPE_DEFAULT);
         intent.putExtra(PhoneConstants.SUBSCRIPTION_KEY, 0);
-        intent.putExtra("reconnect_alarm_extra_transport_type", TransportType.WWAN);
+        intent.putExtra("reconnect_alarm_extra_transport_type",
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         mContext.sendBroadcast(intent);
         waitForMs(200);
@@ -1312,8 +1332,13 @@ public class DcTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testDataRatChangeOOS() throws Exception {
-        doReturn(TelephonyManager.NETWORK_TYPE_EHRPD).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_EHRPD)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
+
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT});
         mDct.enableApn(ApnSetting.TYPE_DEFAULT, DcTracker.REQUEST_TYPE_NORMAL, null);
@@ -1338,8 +1363,12 @@ public class DcTrackerTest extends TelephonyTest {
 
         // Data rat change from ehrpd to unknown due to OOS
         logd("Sending EVENT_DATA_RAT_CHANGED");
-        doReturn(TelephonyManager.NETWORK_TYPE_UNKNOWN).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_UNKNOWN)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_DATA_RAT_CHANGED, null));
         waitForMs(200);
 
@@ -1349,8 +1378,12 @@ public class DcTrackerTest extends TelephonyTest {
                 any(Message.class));
 
         // Data rat resume from unknown to ehrpd
-        doReturn(TelephonyManager.NETWORK_TYPE_EHRPD).when(mNetworkRegistrationState)
-                .getAccessNetworkTechnology();
+        mNetworkRegistrationInfo = new NetworkRegistrationInfo.Builder()
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_EHRPD)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+                anyInt(), anyInt());
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_DATA_RAT_CHANGED, null));
         waitForMs(200);
 

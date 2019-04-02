@@ -16,25 +16,29 @@
 
 package com.android.internal.telephony;
 
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.PersistableBundle;
-import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.RemoteException;
+import android.os.UserHandle;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.INetworkService;
 import android.telephony.INetworkServiceCallback;
-import android.telephony.NetworkRegistrationState;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.NetworkService;
 import android.telephony.Rlog;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 
 import java.util.Hashtable;
@@ -44,8 +48,10 @@ import java.util.Map;
  * Class that serves as the layer between NetworkService and ServiceStateTracker. It helps binding,
  * sending request and registering for state change to NetworkService.
  */
-public class NetworkRegistrationManager {
-    private static final String TAG = NetworkRegistrationManager.class.getSimpleName();
+public class NetworkRegistrationManager extends Handler {
+    private final String mTag;
+
+    private static final int EVENT_BIND_NETWORK_SERVICE = 1;
 
     private final int mTransportType;
 
@@ -60,38 +66,85 @@ public class NetworkRegistrationManager {
 
     private RegManagerDeathRecipient mDeathRecipient;
 
-    public NetworkRegistrationManager(int transportType, Phone phone) {
+    private String mTargetBindingPackageName;
+
+    private NetworkServiceConnection mServiceConnection;
+
+    private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+            if (CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED.equals(action)
+                    && mPhone.getPhoneId() == intent.getIntExtra(
+                    CarrierConfigManager.EXTRA_SLOT_INDEX, 0)) {
+                // We should wait for carrier config changed event because the target binding
+                // package name can come from the carrier config. Note that we still get this event
+                // even when SIM is absent.
+                logd("Carrier config changed. Try to bind network service.");
+                sendEmptyMessage(EVENT_BIND_NETWORK_SERVICE);
+            }
+        }
+    };
+
+    public NetworkRegistrationManager(@TransportType int transportType, Phone phone) {
         mTransportType = transportType;
         mPhone = phone;
+
+        String tagSuffix = "-" + ((transportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                ? "C" : "I");
+        if (TelephonyManager.getDefault().getPhoneCount() > 1) {
+            tagSuffix += "-" + mPhone.getPhoneId();
+        }
+        mTag = "NRM" + tagSuffix;
+
         mCarrierConfigManager = (CarrierConfigManager) phone.getContext().getSystemService(
                 Context.CARRIER_CONFIG_SERVICE);
 
-        bindService();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        phone.getContext().registerReceiverAsUser(mBroadcastReceiver, UserHandle.ALL,
+                intentFilter, null, null);
+        sendEmptyMessage(EVENT_BIND_NETWORK_SERVICE);
+    }
+
+    /**
+     * Handle message events
+     *
+     * @param msg The message to handle
+     */
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+            case EVENT_BIND_NETWORK_SERVICE:
+                bindService();
+                break;
+            default:
+                loge("Unhandled event " + msg.what);
+        }
     }
 
     public boolean isServiceConnected() {
         return (mINetworkService != null) && (mINetworkService.asBinder().isBinderAlive());
     }
 
-    public void unregisterForNetworkRegistrationStateChanged(Handler h) {
+    public void unregisterForNetworkRegistrationInfoChanged(Handler h) {
         mRegStateChangeRegistrants.remove(h);
     }
 
-    public void registerForNetworkRegistrationStateChanged(Handler h, int what, Object obj) {
-        logd("registerForNetworkRegistrationStateChanged");
-        Registrant r = new Registrant(h, what, obj);
+    public void registerForNetworkRegistrationInfoChanged(Handler h, int what, Object obj) {
+        logd("registerForNetworkRegistrationInfoChanged");
         mRegStateChangeRegistrants.addUnique(h, what, obj);
     }
 
     private final Map<NetworkRegStateCallback, Message> mCallbackTable = new Hashtable();
 
-    public void getNetworkRegistrationState(@NetworkRegistrationState.Domain int domain,
-                                            Message onCompleteMessage) {
+    public void requestNetworkRegistrationInfo(@NetworkRegistrationInfo.Domain int domain,
+                                               Message onCompleteMessage) {
         if (onCompleteMessage == null) return;
 
         if (!isServiceConnected()) {
             loge("service not connected. Domain = "
-                    + ((domain == NetworkRegistrationState.DOMAIN_CS) ? "CS" : "PS"));
+                    + ((domain == NetworkRegistrationInfo.DOMAIN_CS) ? "CS" : "PS"));
             onCompleteMessage.obj = new AsyncResult(onCompleteMessage.obj, null,
                     new IllegalStateException("Service not connected."));
             onCompleteMessage.sendToTarget();
@@ -101,9 +154,9 @@ public class NetworkRegistrationManager {
         NetworkRegStateCallback callback = new NetworkRegStateCallback();
         try {
             mCallbackTable.put(callback, onCompleteMessage);
-            mINetworkService.getNetworkRegistrationState(mPhone.getPhoneId(), domain, callback);
+            mINetworkService.requestNetworkRegistrationInfo(mPhone.getPhoneId(), domain, callback);
         } catch (RemoteException e) {
-            Rlog.e(TAG, "getNetworkRegistrationState RemoteException " + e);
+            loge("requestNetworkRegistrationInfo RemoteException " + e);
             mCallbackTable.remove(callback);
             onCompleteMessage.obj = new AsyncResult(onCompleteMessage.obj, null, e);
             onCompleteMessage.sendToTarget();
@@ -130,13 +183,14 @@ public class NetworkRegistrationManager {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             logd("service " + name + " for transport "
-                    + TransportType.toString(mTransportType) + " is now connected.");
+                    + AccessNetworkConstants.transportTypeToString(mTransportType)
+                    + " is now connected.");
             mINetworkService = INetworkService.Stub.asInterface(service);
             mDeathRecipient = new RegManagerDeathRecipient(name);
             try {
                 service.linkToDeath(mDeathRecipient, 0);
                 mINetworkService.createNetworkServiceProvider(mPhone.getPhoneId());
-                mINetworkService.registerForNetworkRegistrationStateChanged(mPhone.getPhoneId(),
+                mINetworkService.registerForNetworkRegistrationInfoChanged(mPhone.getPhoneId(),
                         new NetworkRegStateCallback());
             } catch (RemoteException exception) {
                 // Remote exception means that the binder already died.
@@ -148,7 +202,9 @@ public class NetworkRegistrationManager {
         @Override
         public void onServiceDisconnected(ComponentName name) {
             logd("service " + name + " for transport "
-                    + TransportType.toString(mTransportType) + " is now disconnected.");
+                    + AccessNetworkConstants.transportTypeToString(mTransportType)
+                    + " is now disconnected.");
+            mTargetBindingPackageName = null;
             if (mINetworkService != null) {
                 mINetworkService.asBinder().unlinkToDeath(mDeathRecipient, 0);
             }
@@ -157,9 +213,9 @@ public class NetworkRegistrationManager {
 
     private class NetworkRegStateCallback extends INetworkServiceCallback.Stub {
         @Override
-        public void onGetNetworkRegistrationStateComplete(
-                int result, NetworkRegistrationState state) {
-            logd("onGetNetworkRegistrationStateComplete result "
+        public void onRequestNetworkRegistrationInfoComplete(
+                int result, NetworkRegistrationInfo state) {
+            logd("onRequestNetworkRegistrationInfoComplete result "
                     + result + " state " + state);
             Message onCompleteMessage = mCallbackTable.remove(this);
             if (onCompleteMessage != null) {
@@ -178,19 +234,46 @@ public class NetworkRegistrationManager {
         }
     }
 
-    private boolean bindService() {
-        Intent intent = new Intent(NetworkService.NETWORK_SERVICE_INTERFACE);
+    private void bindService() {
+        String packageName = getPackageName();
+        if (TextUtils.isEmpty(packageName)) {
+            loge("Can't find the binding package");
+            return;
+        }
+
+        if (TextUtils.equals(packageName, mTargetBindingPackageName)) {
+            logd("Service " + packageName + " already bound or being bound.");
+            return;
+        }
+
+        if (mINetworkService != null && mINetworkService.asBinder().isBinderAlive()) {
+            // Remove the network availability updater and then unbind the service.
+            try {
+                mINetworkService.removeNetworkServiceProvider(mPhone.getPhoneId());
+            } catch (RemoteException e) {
+                loge("Cannot remove data service provider. " + e);
+            }
+
+            mPhone.getContext().unbindService(mServiceConnection);
+        }
+
+        Intent intent = new Intent(NetworkService.SERVICE_INTERFACE);
         intent.setPackage(getPackageName());
+
         try {
             // We bind this as a foreground service because it is operating directly on the SIM,
             // and we do not want it subjected to power-savings restrictions while doing so.
             logd("Trying to bind " + getPackageName() + " for transport "
-                    + TransportType.toString(mTransportType));
-            return mPhone.getContext().bindService(intent, new NetworkServiceConnection(),
-                    Context.BIND_AUTO_CREATE);
+                    + AccessNetworkConstants.transportTypeToString(mTransportType));
+            mServiceConnection = new NetworkServiceConnection();
+            if (!mPhone.getContext().bindService(intent, mServiceConnection,
+                    Context.BIND_AUTO_CREATE)) {
+                loge("Cannot bind to the data service.");
+                return;
+            }
+            mTargetBindingPackageName = packageName;
         } catch (SecurityException e) {
             loge("bindService failed " + e);
-            return false;
         }
     }
 
@@ -200,12 +283,12 @@ public class NetworkRegistrationManager {
         String carrierConfig;
 
         switch (mTransportType) {
-            case TransportType.WWAN:
+            case AccessNetworkConstants.TRANSPORT_TYPE_WWAN:
                 resourceId = com.android.internal.R.string.config_wwan_network_service_package;
                 carrierConfig = CarrierConfigManager
                         .KEY_CARRIER_NETWORK_SERVICE_WWAN_PACKAGE_OVERRIDE_STRING;
                 break;
-            case TransportType.WLAN:
+            case AccessNetworkConstants.TRANSPORT_TYPE_WLAN:
                 resourceId = com.android.internal.R.string.config_wlan_network_service_package;
                 carrierConfig = CarrierConfigManager
                         .KEY_CARRIER_NETWORK_SERVICE_WLAN_PACKAGE_OVERRIDE_STRING;
@@ -228,11 +311,11 @@ public class NetworkRegistrationManager {
         return packageName;
     }
 
-    private static int logd(String msg) {
-        return Rlog.d(TAG, msg);
+    private void logd(String msg) {
+        Rlog.d(mTag, msg);
     }
 
-    private static int loge(String msg) {
-        return Rlog.e(TAG, msg);
+    private void loge(String msg) {
+        Rlog.e(mTag, msg);
     }
 }
