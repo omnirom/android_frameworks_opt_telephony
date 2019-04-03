@@ -324,7 +324,7 @@ public class RadioConfig extends Handler {
      * Wrapper function for IRadioConfig.getPhoneCapability().
      */
     public void getPhoneCapability(Message result) {
-        IRadioConfig radioConfigProxy = getRadioConfigProxy(result);
+        IRadioConfig radioConfigProxy = getRadioConfigProxy(null);
         if (radioConfigProxy == null || mRadioConfigVersion.less(RADIO_CONFIG_HAL_VERSION_1_1)) {
             if (result != null) {
                 AsyncResult.forMessage(result, null,
@@ -393,14 +393,18 @@ public class RadioConfig extends Handler {
 
     static String requestToString(int request) {
         switch (request) {
+            case RIL_REQUEST_GET_PHONE_CAPABILITY:
+                return "GET_PHONE_CAPABILITY";
             case RIL_REQUEST_GET_SLOT_STATUS:
                 return "GET_SLOT_STATUS";
             case RIL_REQUEST_SET_LOGICAL_TO_PHYSICAL_SLOT_MAPPING:
                 return "SET_LOGICAL_TO_PHYSICAL_SLOT_MAPPING";
+            case RIL_REQUEST_SET_PREFERRED_DATA_MODEM:
+                return "SET_PREFERRED_DATA_MODEM";
             case RIL_REQUEST_SWITCH_DUAL_SIM_CONFIG:
-                return "RIL_REQUEST_SWITCH_DUAL_SIM_CONFIG";
+                return "SWITCH_DUAL_SIM_CONFIG";
             default:
-                return "<unknown request>";
+                return "<unknown request " + request + ">";
         }
     }
 

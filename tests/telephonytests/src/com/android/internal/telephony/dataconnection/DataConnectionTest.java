@@ -52,8 +52,8 @@ import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
-import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.ServiceState;
 import android.telephony.data.ApnSetting;
@@ -254,8 +254,9 @@ public class DataConnectionTest extends TelephonyTest {
         public void onLooperPrepared() {
             Handler h = new Handler();
 
-            DataServiceManager manager = new DataServiceManager(mPhone, TransportType.WWAN);
-            mDcc = DcController.makeDcc(mPhone, mDcTracker, manager, h);
+            DataServiceManager manager = new DataServiceManager(mPhone,
+                    AccessNetworkConstants.TRANSPORT_TYPE_WWAN, "");
+            mDcc = DcController.makeDcc(mPhone, mDcTracker, manager, h, "");
             mDcc.start();
             mDc = DataConnection.makeDataConnection(mPhone, 0, mDcTracker, manager,
                     mDcTesterFailBringUpAll, mDcc);
@@ -269,7 +270,7 @@ public class DataConnectionTest extends TelephonyTest {
         serviceInfo.permission = "android.permission.BIND_TELEPHONY_DATA_SERVICE";
         IntentFilter filter = new IntentFilter();
         mContextFixture.addService(
-                DataService.DATA_SERVICE_INTERFACE,
+                DataService.SERVICE_INTERFACE,
                 null,
                 "com.android.phone",
                 cellularDataService.mBinder,
@@ -387,6 +388,11 @@ public class DataConnectionTest extends TelephonyTest {
         assertEquals("spmode.ne.jp", dpCaptor.getValue().getApn());
 
         assertEquals("DcActiveState", getCurrentState().getName());
+
+        assertEquals(3, mDc.getPcscfAddresses().length);
+        assertTrue(Arrays.stream(mDc.getPcscfAddresses()).anyMatch("fd00:976a:c305:1d::8"::equals));
+        assertTrue(Arrays.stream(mDc.getPcscfAddresses()).anyMatch("fd00:976a:c202:1d::7"::equals));
+        assertTrue(Arrays.stream(mDc.getPcscfAddresses()).anyMatch("fd00:976a:c305:1d::5"::equals));
     }
 
     @Test
@@ -414,7 +420,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
 
         assertEquals(response.getSuggestedRetryTime(), getSuggestedRetryDelay(response));
@@ -424,7 +430,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
         assertEquals(response.getSuggestedRetryTime(), getSuggestedRetryDelay(response));
 
@@ -433,7 +439,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
         assertEquals(response.getSuggestedRetryTime(), getSuggestedRetryDelay(response));
     }
@@ -446,7 +452,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
 
         assertEquals(RetryManager.NO_SUGGESTED_RETRY_DELAY, getSuggestedRetryDelay(response));
@@ -456,7 +462,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
         assertEquals(RetryManager.NO_SUGGESTED_RETRY_DELAY, getSuggestedRetryDelay(response));
 
@@ -465,7 +471,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
         assertEquals(RetryManager.NO_SUGGESTED_RETRY_DELAY, getSuggestedRetryDelay(response));
     }
@@ -478,7 +484,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
         assertEquals(RetryManager.NO_RETRY, getSuggestedRetryDelay(response));
     }
@@ -655,13 +661,13 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
 
         LinkProperties linkProperties = new LinkProperties();
         assertEquals(SetupResult.SUCCESS, setLinkProperties(response, linkProperties));
         logd(linkProperties.toString());
-        assertEquals(response.getIfname(), linkProperties.getInterfaceName());
+        assertEquals(response.getInterfaceName(), linkProperties.getInterfaceName());
         assertEquals(response.getAddresses().size(), linkProperties.getAddresses().size());
         for (int i = 0; i < response.getAddresses().size(); ++i) {
             assertEquals(response.getAddresses().get(i).getAddress(),
@@ -669,17 +675,25 @@ public class DataConnectionTest extends TelephonyTest {
                             .getAddress().getHostAddress()));
         }
 
-        assertEquals(response.getDnses().size(), linkProperties.getDnsServers().size());
-        for (int i = 0; i < response.getDnses().size(); ++i) {
-            assertEquals("i = " + i, response.getDnses().get(i), NetworkUtils.numericToInetAddress(
-                    linkProperties.getDnsServers().get(i).getHostAddress()));
+        assertEquals(response.getDnsAddresses().size(), linkProperties.getDnsServers().size());
+        for (int i = 0; i < response.getDnsAddresses().size(); ++i) {
+            assertEquals("i = " + i, response.getDnsAddresses().get(i),
+                    NetworkUtils.numericToInetAddress(
+                            linkProperties.getDnsServers().get(i).getHostAddress()));
         }
 
-        assertEquals(response.getGateways().size(), linkProperties.getRoutes().size());
-        for (int i = 0; i < response.getGateways().size(); ++i) {
-            assertEquals("i = " + i, response.getGateways().get(i),
+        assertEquals(response.getGatewayAddresses().size(), linkProperties.getRoutes().size());
+        for (int i = 0; i < response.getGatewayAddresses().size(); ++i) {
+            assertEquals("i = " + i, response.getGatewayAddresses().get(i),
                     NetworkUtils.numericToInetAddress(linkProperties.getRoutes().get(i)
                             .getGateway().getHostAddress()));
+        }
+
+        assertEquals(response.getPcscfAddresses().size(), linkProperties.getPcscfServers().size());
+        for (int i = 0; i < response.getPcscfAddresses().size(); ++i) {
+            assertEquals("i = " + i, response.getPcscfAddresses().get(i),
+                    NetworkUtils.numericToInetAddress(linkProperties.getPcscfServers().get(i)
+                            .getHostAddress()));
         }
 
         assertEquals(response.getMtu(), linkProperties.getMtu());
@@ -695,7 +709,7 @@ public class DataConnectionTest extends TelephonyTest {
                 null,
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_DNS)),
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
 
         LinkProperties linkProperties = new LinkProperties();
@@ -713,7 +727,7 @@ public class DataConnectionTest extends TelephonyTest {
                 Arrays.asList(new LinkAddress(NetworkUtils.numericToInetAddress(FAKE_ADDRESS), 0)),
                 null,
                 Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_GATEWAY)),
-                Arrays.asList(FAKE_PCSCF_ADDRESS),
+                Arrays.asList(NetworkUtils.numericToInetAddress(FAKE_PCSCF_ADDRESS)),
                 1440);
 
         // Make sure no exception was thrown
@@ -728,7 +742,7 @@ public class DataConnectionTest extends TelephonyTest {
         waitForMs(200);
 
         DataServiceManager mockDsm = mock(DataServiceManager.class);
-        doReturn(TransportType.WLAN).when(mockDsm).getTransportType();
+        doReturn(AccessNetworkConstants.TRANSPORT_TYPE_WLAN).when(mockDsm).getTransportType();
         replaceInstance(DataConnection.class, "mDataServiceManager", mDc, mockDsm);
 
         final int sessionHandle = 0xF00;
