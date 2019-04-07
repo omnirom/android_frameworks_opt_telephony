@@ -167,6 +167,7 @@ public class SubscriptionController extends ISub.Stub {
     @UnsupportedAppUsage
     protected Context mContext;
     protected TelephonyManager mTelephonyManager;
+    protected UiccController mUiccController;
 
     private AppOpsManager mAppOps;
 
@@ -221,6 +222,13 @@ public class SubscriptionController extends ISub.Stub {
     protected void init(Context c) {
         mContext = c;
         mTelephonyManager = TelephonyManager.from(mContext);
+
+        try {
+            mUiccController = UiccController.getInstance();
+        } catch(RuntimeException ex) {
+            throw new RuntimeException(
+                    "UiccController has to be initialised before SubscriptionController init");
+        }
 
         mAppOps = (AppOpsManager)mContext.getSystemService(Context.APP_OPS_SERVICE);
 
@@ -335,7 +343,8 @@ public class SubscriptionController extends ISub.Stub {
 
         MultiSimSettingController.getInstance().onSubscriptionsChanged();
         TelephonyMetrics metrics = TelephonyMetrics.getInstance();
-        metrics.updateActiveSubscriptionInfoList(mCacheActiveSubInfoList);
+        metrics.updateActiveSubscriptionInfoList(
+                Collections.unmodifiableList(mCacheActiveSubInfoList));
     }
 
     /**
@@ -376,7 +385,7 @@ public class SubscriptionController extends ISub.Stub {
         String countryIso = cursor.getString(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.ISO_COUNTRY_CODE));
         // publicCardId is the publicly exposed int card ID
-        int publicCardId = UiccController.getInstance().convertToPublicCardId(cardId);
+        int publicCardId = mUiccController.convertToPublicCardId(cardId);
         boolean isEmbedded = cursor.getInt(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.IS_EMBEDDED)) == 1;
         int carrierId = cursor.getInt(cursor.getColumnIndexOrThrow(
@@ -1077,17 +1086,13 @@ public class SubscriptionController extends ISub.Stub {
                             value.put(SubscriptionManager.SIM_SLOT_INDEX, slotIndex);
                         }
 
-                        if (nameSource != SubscriptionManager.NAME_SOURCE_USER_INPUT) {
-                            setDisplayName = true;
-                        }
-
                         if (oldIccId != null && oldIccId.length() != uniqueId.length()
                                 && (oldIccId.equals(IccUtils.getDecimalSubstring(uniqueId))
                                 || uniqueId.equalsIgnoreCase(IccUtils.stripTrailingFs(oldIccId)))) {
                             value.put(SubscriptionManager.ICC_ID, uniqueId);
                         }
 
-                        UiccCard card = UiccController.getInstance().getUiccCardForPhone(slotIndex);
+                        UiccCard card = mUiccController.getUiccCardForPhone(slotIndex);
                         if (card != null) {
                             String cardId = card.getCardId();
                             if (cardId != null && cardId != oldCardId) {
@@ -1412,7 +1417,7 @@ public class SubscriptionController extends ISub.Stub {
         if (isSubscriptionForRemoteSim(subscriptionType)) {
             value.put(SubscriptionManager.DISPLAY_NAME, displayName);
         } else {
-            UiccCard card = UiccController.getInstance().getUiccCardForPhone(slotIndex);
+            UiccCard card = mUiccController.getUiccCardForPhone(slotIndex);
             if (card != null) {
                 String cardId = card.getCardId();
                 if (cardId != null) {
@@ -2089,47 +2094,53 @@ public class SubscriptionController extends ISub.Stub {
     public void setDefaultDataSubId(int subId) {
         enforceModifyPhoneState("setDefaultDataSubId");
 
-        if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
-            throw new RuntimeException("setDefaultDataSubId called with DEFAULT_SUB_ID");
-        }
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
+                throw new RuntimeException("setDefaultDataSubId called with DEFAULT_SUB_ID");
+            }
 
-        ProxyController proxyController = ProxyController.getInstance();
-        int len = sPhones.length;
-        logdl("[setDefaultDataSubId] num phones=" + len + ", subId=" + subId);
+            ProxyController proxyController = ProxyController.getInstance();
+            int len = sPhones.length;
+            logdl("[setDefaultDataSubId] num phones=" + len + ", subId=" + subId);
 
-        if (SubscriptionManager.isValidSubscriptionId(subId)) {
-            // Only re-map modems if the new default data sub is valid
-            RadioAccessFamily[] rafs = new RadioAccessFamily[len];
-            boolean atLeastOneMatch = false;
-            for (int phoneId = 0; phoneId < len; phoneId++) {
-                Phone phone = sPhones[phoneId];
-                int raf;
-                int id = phone.getSubId();
-                if (id == subId) {
-                    // TODO Handle the general case of N modems and M subscriptions.
-                    raf = proxyController.getMaxRafSupported();
-                    atLeastOneMatch = true;
-                } else {
-                    // TODO Handle the general case of N modems and M subscriptions.
-                    raf = proxyController.getMinRafSupported();
+            if (SubscriptionManager.isValidSubscriptionId(subId)) {
+                // Only re-map modems if the new default data sub is valid
+                RadioAccessFamily[] rafs = new RadioAccessFamily[len];
+                boolean atLeastOneMatch = false;
+                for (int phoneId = 0; phoneId < len; phoneId++) {
+                    Phone phone = sPhones[phoneId];
+                    int raf;
+                    int id = phone.getSubId();
+                    if (id == subId) {
+                        // TODO Handle the general case of N modems and M subscriptions.
+                        raf = proxyController.getMaxRafSupported();
+                        atLeastOneMatch = true;
+                    } else {
+                        // TODO Handle the general case of N modems and M subscriptions.
+                        raf = proxyController.getMinRafSupported();
+                    }
+                    logdl("[setDefaultDataSubId] phoneId=" + phoneId + " subId=" + id + " RAF="
+                            + raf);
+                    rafs[phoneId] = new RadioAccessFamily(phoneId, raf);
                 }
-                logdl("[setDefaultDataSubId] phoneId=" + phoneId + " subId=" + id + " RAF=" + raf);
-                rafs[phoneId] = new RadioAccessFamily(phoneId, raf);
+                if (atLeastOneMatch) {
+                    proxyController.setRadioCapability(rafs);
+                } else {
+                    if (DBG) logdl("[setDefaultDataSubId] no valid subId's found - not updating.");
+                }
             }
-            if (atLeastOneMatch) {
-                proxyController.setRadioCapability(rafs);
-            } else {
-                if (DBG) logdl("[setDefaultDataSubId] no valid subId's found - not updating.");
-            }
+
+            // FIXME is this still needed?
+            updateAllDataConnectionTrackers();
+
+            Settings.Global.putInt(mContext.getContentResolver(),
+                    Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION, subId);
+            MultiSimSettingController.getInstance().onDefaultDataSettingChanged();
+            broadcastDefaultDataSubIdChanged(subId);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
         }
-
-        // FIXME is this still needed?
-        updateAllDataConnectionTrackers();
-
-        Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION, subId);
-        MultiSimSettingController.getInstance().onDefaultDataSettingChanged();
-        broadcastDefaultDataSubIdChanged(subId);
     }
 
     @UnsupportedAppUsage
@@ -2741,7 +2752,7 @@ public class SubscriptionController extends ISub.Stub {
         final long token = Binder.clearCallingIdentity();
 
         try {
-            PhoneSwitcher.getInstance().trySetPreferredSubscription(
+            PhoneSwitcher.getInstance().trySetOpportunisticDataSubscription(
                     subId, needValidation, callback);
         } finally {
             Binder.restoreCallingIdentity(token);
@@ -2754,7 +2765,7 @@ public class SubscriptionController extends ISub.Stub {
         final long token = Binder.clearCallingIdentity();
 
         try {
-            return PhoneSwitcher.getInstance().getPreferredDataSubscriptionId();
+            return PhoneSwitcher.getInstance().getOpportunisticDataSubscriptionId();
         } finally {
             Binder.restoreCallingIdentity(token);
         }

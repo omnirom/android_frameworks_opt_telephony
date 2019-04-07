@@ -18,7 +18,6 @@ package com.android.internal.telephony.dataconnection;
 
 import static android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_LTE;
-import static android.telephony.TelephonyManager.NETWORK_TYPE_LTE_CA;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_NR;
 
 import static com.android.internal.telephony.RILConstants.DATA_PROFILE_DEFAULT;
@@ -1513,11 +1512,6 @@ public class DcTracker extends Handler {
             if (DBG) log("trySetupData: X retValue=" + retValue);
             return retValue;
         } else {
-            if (!apnContext.getApnType().equals(PhoneConstants.APN_TYPE_DEFAULT)
-                    && apnContext.isConnectable()) {
-                mPhone.notifyDataConnectionFailed(apnContext.getApnType());
-            }
-
             StringBuilder str = new StringBuilder();
 
             str.append("trySetupData failed. apnContext = [type=" + apnContext.getApnType()
@@ -3960,7 +3954,6 @@ public class DcTracker extends Handler {
         mAutoAttachEnabled.set(mPhone.getPhoneId() != phoneSwitcher.getPreferredDataPhoneId()
                 && serviceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE
                 && serviceState.getVoiceNetworkType() != NETWORK_TYPE_LTE
-                && serviceState.getVoiceNetworkType() != NETWORK_TYPE_LTE_CA
                 && serviceState.getVoiceNetworkType() != NETWORK_TYPE_NR);
     }
 

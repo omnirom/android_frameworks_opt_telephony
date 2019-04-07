@@ -2599,7 +2599,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             // that both of these two actions will be broadcast.
             Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
                     Uri.parse("android_secret_code://" + code));
-            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+            secrectCodeIntent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
         }
     }
@@ -3979,7 +3979,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void callEndCleanupHandOverCallIfAny() {
     }
 
-    public void cancelUSSD() {
+    /**
+     * Cancel USSD session.
+     *
+     * @param msg The message to dispatch when the USSD session terminated.
+     */
+    public void cancelUSSD(Message msg) {
     }
 
     public String getOperatorNumeric() {
