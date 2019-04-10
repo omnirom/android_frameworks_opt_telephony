@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony.imsphone;
 
+import android.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.net.Uri;
 import android.os.AsyncResult;
@@ -62,12 +63,15 @@ public class ImsPhoneConnection extends Connection implements
 
     //***** Instance Variables
 
+    @UnsupportedAppUsage
     private ImsPhoneCallTracker mOwner;
+    @UnsupportedAppUsage
     private ImsPhoneCall mParent;
     private ImsCall mImsCall;
     private Bundle mExtras = new Bundle();
     private TelephonyMetrics mMetrics = TelephonyMetrics.getInstance();
 
+    @UnsupportedAppUsage
     private boolean mDisconnected;
 
     /*
@@ -292,22 +296,36 @@ public class ImsPhoneConnection extends Connection implements
         Rlog.i(LOG_TAG, "applyLocalCallCapabilities - localProfile = " + localProfile);
         capabilities = removeCapability(capabilities,
                 Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
+        capabilities = removeCapability(capabilities,
+                Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
 
-        if (!mIsLocalVideoCapable) {
-            Rlog.i(LOG_TAG, "applyLocalCallCapabilities - disabling video (overidden)");
-            return capabilities;
-        }
         switch (localProfile.mCallType) {
-            case ImsCallProfile.CALL_TYPE_VT:
-                // Fall-through
             case ImsCallProfile.CALL_TYPE_VIDEO_N_VOICE:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
                 break;
-            case ImsCallProfile.CALL_TYPE_VT_NODIR:
-                capabilities = removeCapability(capabilities,
+            case ImsCallProfile.CALL_TYPE_VT:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
+                break;
+            case ImsCallProfile.CALL_TYPE_VOICE:
+                capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL);
                 break;
+            case ImsCallProfile.CALL_TYPE_VT_NODIR:
+            default:
+                // SUPPORTS_VT_LOCAL_BIDIRECTIONAL and SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL
+                // are already removed by default in the beginning of this function
+                // hence no extra handling is required here.
+                break;
+        }
+
+        if (!mIsLocalVideoCapable) {
+            Rlog.i(LOG_TAG, "applyLocalCallCapabilities - disabling video (overidden)");
+            capabilities = removeCapability(capabilities,
+                   Connection.Capability.SUPPORTS_VT_LOCAL_BIDIRECTIONAL);
         }
         return capabilities;
     }
@@ -316,17 +334,29 @@ public class ImsPhoneConnection extends Connection implements
         Rlog.w(LOG_TAG, "applyRemoteCallCapabilities - remoteProfile = "+remoteProfile);
         capabilities = removeCapability(capabilities,
                 Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
+        capabilities = removeCapability(capabilities,
+                Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
 
         switch (remoteProfile.mCallType) {
-            case ImsCallProfile.CALL_TYPE_VT:
-                // fall-through
             case ImsCallProfile.CALL_TYPE_VIDEO_N_VOICE:
                 capabilities = addCapability(capabilities,
                         Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
+                break;
+            case ImsCallProfile.CALL_TYPE_VT:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_VT_REMOTE_BIDIRECTIONAL);
+                break;
+            case ImsCallProfile.CALL_TYPE_VOICE:
+                capabilities = addCapability(capabilities,
+                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
                 break;
             case ImsCallProfile.CALL_TYPE_VT_NODIR:
-                capabilities = removeCapability(capabilities,
-                        Connection.Capability.SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE);
+            default:
+                // SUPPORTS_VT_REMOTE_BIDIRECTIONAL and SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE
+                // are already removed by default in the beginning of this function
+                // hence no extra handling is required here.
                 break;
         }
 
@@ -341,6 +371,7 @@ public class ImsPhoneConnection extends Connection implements
         return mDialString;
     }
 
+    @UnsupportedAppUsage
     @Override
     public ImsPhoneCall getCall() {
         return mParent;
@@ -375,6 +406,7 @@ public class ImsPhoneConnection extends Connection implements
       return null;
     }
 
+    @UnsupportedAppUsage
     public ImsPhoneCallTracker getOwner () {
         return mOwner;
     }
@@ -480,6 +512,7 @@ public class ImsPhoneConnection extends Connection implements
         return onDisconnect();
     }
 
+    @UnsupportedAppUsage
     public boolean onDisconnect() {
         boolean changed = false;
 
@@ -654,12 +687,14 @@ public class ImsPhoneConnection extends Connection implements
         notifyPostDialListeners();
     }
 
+    @UnsupportedAppUsage
     private void
     createWakeLock(Context context) {
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         mPartialWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, LOG_TAG);
     }
 
+    @UnsupportedAppUsage
     private void
     acquireWakeLock() {
         Rlog.d(LOG_TAG, "acquireWakeLock");
@@ -702,6 +737,7 @@ public class ImsPhoneConnection extends Connection implements
         return null;
     }
 
+    @UnsupportedAppUsage
     @Override
     public synchronized boolean isMultiparty() {
         return mImsCall != null && mImsCall.isMultiparty();

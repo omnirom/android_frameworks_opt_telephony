@@ -19,6 +19,7 @@ package com.android.internal.telephony.uicc;
 import static android.telephony.TelephonyManager.UNINITIALIZED_CARD_ID;
 import static android.telephony.TelephonyManager.UNSUPPORTED_CARD_ID;
 
+import android.annotation.UnsupportedAppUsage;
 import android.app.BroadcastOptions;
 import android.content.Context;
 import android.content.Intent;
@@ -122,6 +123,7 @@ public class UiccController extends Handler {
     private static final int EVENT_EID_READY = 9;
 
     // this needs to be here, because on bootup we dont know which index maps to which UiccSlot
+    @UnsupportedAppUsage
     private CommandsInterface[] mCis;
     @VisibleForTesting
     public UiccSlot[] mUiccSlots;
@@ -151,10 +153,13 @@ public class UiccController extends Handler {
     // SharedPreferences key for saving the default euicc card ID
     private static final String DEFAULT_CARD = "default_card";
 
+    @UnsupportedAppUsage
     private static final Object mLock = new Object();
+    @UnsupportedAppUsage
     private static UiccController mInstance;
     private static ArrayList<IccSlotStatus> sLastSlotStatus;
 
+    @UnsupportedAppUsage
     @VisibleForTesting
     public Context mContext;
 
@@ -213,10 +218,26 @@ public class UiccController extends Handler {
         mDefaultEuiccCardId = UNINITIALIZED_CARD_ID;
     }
 
+    /**
+     * Given the slot index, return the phone ID, or -1 if no phone is associated with the given
+     * slot.
+     * @param slotId the slot index to check
+     * @return the associated phone ID or -1
+     */
+    public int getPhoneIdFromSlotId(int slotId) {
+        for (int i = 0; i < mPhoneIdToSlotId.length; i++) {
+            if (mPhoneIdToSlotId[i] == slotId) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private int getSlotIdFromPhoneId(int phoneId) {
         return mPhoneIdToSlotId[phoneId];
     }
 
+    @UnsupportedAppUsage
     public static UiccController getInstance() {
         synchronized (mLock) {
             if (mInstance == null) {
@@ -227,6 +248,7 @@ public class UiccController extends Handler {
         }
     }
 
+    @UnsupportedAppUsage
     public UiccCard getUiccCard(int phoneId) {
         synchronized (mLock) {
             return getUiccCardForPhone(phoneId);
@@ -353,6 +375,7 @@ public class UiccController extends Handler {
     }
 
     // Easy to use API
+    @UnsupportedAppUsage
     public IccRecords getIccRecords(int phoneId, int family) {
         synchronized (mLock) {
             UiccCardApplication app = getUiccCardApplication(phoneId, family);
@@ -364,6 +387,7 @@ public class UiccController extends Handler {
     }
 
     // Easy to use API
+    @UnsupportedAppUsage
     public IccFileHandler getIccFileHandler(int phoneId, int family) {
         synchronized (mLock) {
             UiccCardApplication app = getUiccCardApplication(phoneId, family);
@@ -376,6 +400,7 @@ public class UiccController extends Handler {
 
 
     //Notifies when card status changes
+    @UnsupportedAppUsage
     public void registerForIccChanged(Handler h, int what, Object obj) {
         synchronized (mLock) {
             Registrant r = new Registrant (h, what, obj);
@@ -487,6 +512,7 @@ public class UiccController extends Handler {
     }
 
     // Easy to use API
+    @UnsupportedAppUsage
     public UiccCardApplication getUiccCardApplication(int phoneId, int family) {
         synchronized (mLock) {
             UiccCard uiccCard = getUiccCardForPhone(phoneId);
@@ -815,7 +841,7 @@ public class UiccController extends Handler {
 
         // broadcast slot status changed
         final BroadcastOptions options = BroadcastOptions.makeBasic();
-        options.setAllowBackgroundActivityStarts(true);
+        options.setBackgroundActivityStartsAllowed(true);
         Intent intent = new Intent(TelephonyManager.ACTION_SIM_SLOT_STATUS_CHANGED);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
@@ -952,6 +978,7 @@ public class UiccController extends Handler {
         return (index >= 0 && index < mUiccSlots.length);
     }
 
+    @UnsupportedAppUsage
     private void log(String string) {
         Rlog.d(LOG_TAG, string);
     }

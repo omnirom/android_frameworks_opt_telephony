@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.content.Context;
 import android.content.res.XmlResourceParser;
 import android.database.Cursor;
@@ -24,7 +25,13 @@ import android.os.Handler;
 import android.os.IDeviceIdleController;
 import android.os.Looper;
 import android.os.ServiceManager;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStatVfs;
+import android.telephony.AccessNetworkConstants.TransportType;
 import android.telephony.Rlog;
+import android.text.TextUtils;
 
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
@@ -47,10 +54,15 @@ import java.lang.reflect.Constructor;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+
 
 /**
  * This class has one-line methods to instantiate objects only. The purpose is to make code
@@ -72,21 +84,48 @@ public class TelephonyComponentFactory {
         private static final String TAG_INJECTION = "injection";
         private static final String TAG_COMPONENTS = "components";
         private static final String TAG_COMPONENT = "component";
+        private static final String SYSTEM = "/system/";
+        private static final String PRODUCT = "/product/";
 
         private final Set<String> mComponentNames = new HashSet<>();
         private TelephonyComponentFactory mInjectedInstance;
         private String mPackageName;
         private String mJarPath;
 
-        private boolean isInjected() {
-            return mPackageName != null && mJarPath != null;
+        /**
+         * @return paths correctly configured to inject.
+         * 1) PackageName and JarPath mustn't be empty.
+         * 2) JarPath is restricted under /system or /product only.
+         * 3) JarPath is on a READ-ONLY partition.
+         */
+        private @Nullable String getValidatedPaths() {
+            if (TextUtils.isEmpty(mPackageName) || TextUtils.isEmpty(mJarPath)) {
+                return null;
+            }
+            // filter out invalid paths
+            return Arrays.stream(mJarPath.split(File.pathSeparator))
+                    .filter(s -> (s.startsWith(SYSTEM) || s.startsWith(PRODUCT)))
+                    .filter(s -> {
+                        try {
+                            // This will also throw an error if the target doesn't exist.
+                            StructStatVfs vfs = Os.statvfs(s);
+                            return (vfs.f_flag & OsConstants.ST_RDONLY) != 0;
+                        } catch (ErrnoException e) {
+                            Rlog.w(TAG, "Injection jar is not protected , path: " + s
+                                    + e.getMessage());
+                            return false;
+                        }
+                    }).distinct()
+                    .collect(Collectors.joining(File.pathSeparator));
         }
 
         private void makeInjectedInstance() {
-            if (isInjected()) {
-                PathClassLoader classLoader = new PathClassLoader(mJarPath,
-                        ClassLoader.getSystemClassLoader());
+            String validatedPaths = getValidatedPaths();
+            Rlog.d(TAG, "validated paths: " + validatedPaths);
+            if (!TextUtils.isEmpty(validatedPaths)) {
                 try {
+                    PathClassLoader classLoader = new PathClassLoader(validatedPaths,
+                            ClassLoader.getSystemClassLoader());
                     Class<?> cls = classLoader.loadClass(mPackageName);
                     mInjectedInstance = (TelephonyComponentFactory) cls.newInstance();
                 } catch (ClassNotFoundException e) {
@@ -215,8 +254,9 @@ public class TelephonyComponentFactory {
             mInjectedComponents = new InjectedComponents();
             mInjectedComponents.parseXml(parser);
             mInjectedComponents.makeInjectedInstance();
-            Rlog.i(TAG, "Total components injected: "
-                    + mInjectedComponents.mComponentNames.size());
+            boolean injectSuccessful = !TextUtils.isEmpty(mInjectedComponents.getValidatedPaths());
+            Rlog.d(TAG, "Total components injected: " + (injectSuccessful
+                    ? mInjectedComponents.mComponentNames.size() : 0));
         }
     }
 
@@ -279,7 +319,7 @@ public class TelephonyComponentFactory {
         return new SimActivationTracker(phone);
     }
 
-    public DcTracker makeDcTracker(Phone phone, int transportType) {
+    public DcTracker makeDcTracker(Phone phone, @TransportType int transportType) {
         return new DcTracker(phone, transportType);
     }
 

@@ -27,6 +27,13 @@ filegroup {
     ],
 }
 
+filegroup {
+    name: "opt-telephony-common-srcs",
+    srcs: [
+        "src/java/**/*.java",
+    ],
+}
+
 java_library {
     name: "telephony-common",
     installable: true,
@@ -35,10 +42,12 @@ java_library {
         local_include_dirs: ["src/java"],
     },
     srcs: [
-        "src/java/**/*.java",
+        ":opt-telephony-common-srcs",
         "src/java/**/I*.aidl",
         "src/java/**/*.logtags",
     ],
+
+    jarjar_rules: ":framework-jarjar-rules",
 
     libs: [
         "android.hardware.radio-V1.0-java",
@@ -46,19 +55,18 @@ java_library {
         "android.hardware.radio-V1.2-java",
         "android.hardware.radio-V1.3-java",
         "android.hardware.radio-V1.4-java",
-        "android.hardware.radio.config-V1.0-java",
-        "android.hardware.radio.config-V1.1-java",
-        "android.hardware.radio.config-V1.2-java",
-        "android.hardware.radio.deprecated-V1.0-java",
         "voip-common",
         "ims-common",
         "telephony-ext",
         "services",
     ],
     static_libs: [
+        "android.hardware.radio.config-V1.0-java-shallow",
+        "android.hardware.radio.config-V1.1-java-shallow",
+        "android.hardware.radio.config-V1.2-java-shallow",
+        "android.hardware.radio.deprecated-V1.0-java-shallow",
         "telephony-protos",
         "ecc-protos-lite",
-        "android-support-annotations",
     ],
 
     product_variables: {

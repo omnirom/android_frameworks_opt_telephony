@@ -40,7 +40,7 @@ import android.telephony.CellSignalStrengthTdscdma;
 import android.telephony.CellSignalStrengthWcdma;
 import android.telephony.IccOpenLogicalChannelResponse;
 import android.telephony.ImsiEncryptionInfo;
-import android.telephony.NetworkRegistrationState;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.NetworkScanRequest;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
@@ -128,9 +128,9 @@ public class SimulatedCommands extends BaseCommands
     int mNetworkType;
     String mPin2Code;
     boolean mSsnNotifyOn = false;
-    private int mVoiceRegState = NetworkRegistrationState.REG_STATE_HOME;
+    private int mVoiceRegState = NetworkRegistrationInfo.REGISTRATION_STATE_HOME;
     private int mVoiceRadioTech = ServiceState.RIL_RADIO_TECHNOLOGY_UMTS;
-    private int mDataRegState = NetworkRegistrationState.REG_STATE_HOME;
+    private int mDataRegState = NetworkRegistrationInfo.REGISTRATION_STATE_HOME;
     private int mDataRadioTech = ServiceState.RIL_RADIO_TECHNOLOGY_UMTS;
     public boolean mCssSupported;
     public int mRoamingIndicator;
@@ -1168,7 +1168,8 @@ public class SimulatedCommands extends BaseCommands
                 mSetupDataCallResult.addresses = "12.34.56.78";
                 mSetupDataCallResult.dnses = "98.76.54.32";
                 mSetupDataCallResult.gateways = "11.22.33.44";
-                mSetupDataCallResult.pcscf = "";
+                mSetupDataCallResult.pcscf =
+                        "fd00:976a:c305:1d::8 fd00:976a:c202:1d::7 fd00:976a:c305:1d::5";
                 mSetupDataCallResult.mtu = 1440;
             } catch (Exception e) {
 

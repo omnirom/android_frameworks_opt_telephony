@@ -19,36 +19,37 @@ package com.android.internal.telephony;
 import static junit.framework.Assert.assertEquals;
 
 import android.os.Parcel;
-import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.CellIdentityLte;
-import android.telephony.NetworkRegistrationState;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.TelephonyManager;
 
 import androidx.test.filters.SmallTest;
 
 import org.junit.Test;
 
-/** Unit tests for {@link NetworkRegistrationState}. */
-public class NetworkRegistrationStateTest {
+import java.util.Arrays;
+
+/** Unit tests for {@link NetworkRegistrationInfo}. */
+public class NetworkRegistrationInfoTest {
 
     @Test
     @SmallTest
     public void testParcel() {
-        NetworkRegistrationState nrs = new NetworkRegistrationState(
-                NetworkRegistrationState.DOMAIN_CS,
-                TransportType.WWAN,
-                NetworkRegistrationState.REG_STATE_HOME,
-                TelephonyManager.NETWORK_TYPE_LTE,
-                0,
-                false,
-                new int[]{NetworkRegistrationState.SERVICE_TYPE_DATA},
-                new CellIdentityLte());
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setDomain(NetworkRegistrationInfo.DOMAIN_CS)
+                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_LTE)
+                .setAvailableServices(Arrays.asList(NetworkRegistrationInfo.SERVICE_TYPE_DATA))
+                .setCellIdentity(new CellIdentityLte())
+                .build();
 
         Parcel p = Parcel.obtain();
-        nrs.writeToParcel(p, 0);
+        nri.writeToParcel(p, 0);
         p.setDataPosition(0);
 
-        NetworkRegistrationState newNrs = NetworkRegistrationState.CREATOR.createFromParcel(p);
-        assertEquals(nrs, newNrs);
+        NetworkRegistrationInfo newNrs = NetworkRegistrationInfo.CREATOR.createFromParcel(p);
+        assertEquals(nri, newNrs);
     }
 }

@@ -38,6 +38,7 @@ import static org.mockito.Mockito.verify;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -110,7 +111,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         }
         @Override
         public void onLooperPrepared() {
-            mCTUT = new ImsPhoneCallTracker(mImsPhone);
+            mCTUT = new ImsPhoneCallTracker(mImsPhone, Runnable::run);
             mCTUT.addReasonCodeRemapping(null, "Wifi signal lost.", ImsReasonInfo.CODE_WIFI_LOST);
             mCTUT.addReasonCodeRemapping(501, "Call answered elsewhere.",
                     ImsReasonInfo.CODE_ANSWERED_ELSEWHERE);
@@ -199,6 +200,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         imsCallMocking(mSecondImsCall);
         doReturn(ImsFeature.STATE_READY).when(mImsManager).getImsServiceState();
         doReturn(mImsCallProfile).when(mImsManager).createCallProfile(anyInt(), anyInt());
+        mContextFixture.addSystemFeature(PackageManager.FEATURE_TELEPHONY_IMS);
 
         doAnswer(invocation -> {
             mMmTelListener = (MmTelFeature.Listener) invocation.getArguments()[0];
@@ -283,7 +285,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     @SmallTest
     public void testImsDeregistered() {
         // when IMS is deregistered
-        mRegistrationCallback.onDeregistered(new ImsReasonInfo());
+        mRegistrationCallback.onUnregistered(new ImsReasonInfo());
         // then service state should be OUT_OF_SERVICE and ImsPhone state set to not registered
         verify(mImsPhone).setServiceState(eq(ServiceState.STATE_OUT_OF_SERVICE));
         verify(mImsPhone).setImsRegistered(eq(false));
