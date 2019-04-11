@@ -241,6 +241,11 @@ public class DataConnection extends StateMachine {
 
     int mTag;
     public int mCid;
+    /**
+     * Indicate this data connection has been transferred to the other transport type during
+     * IWLAN and WWAN handover.
+     */
+    private boolean mHasTransferred;
     private final Map<ApnContext, ConnectionParams> mApnContexts = new ConcurrentHashMap<>();
     PendingIntent mReconnectIntent = null;
 
@@ -377,6 +382,10 @@ public class DataConnection extends StateMachine {
 
     boolean isActivating() {
         return getCurrentState() == mActivatingState;
+    }
+
+    boolean hasBeenTransferred() {
+        return mHasTransferred;
     }
 
     int getCid() {
@@ -1756,6 +1765,7 @@ public class DataConnection extends StateMachine {
                     mApnSetting != null ? (long) mApnSetting.getApnTypeBitmask() : 0L,
                     mApnSetting != null
                         ? mApnSetting.canHandleType(ApnSetting.TYPE_DEFAULT) : false);
+            mHasTransferred = false;
         }
         @Override
         public boolean processMessage(Message msg) {
@@ -2932,6 +2942,7 @@ public class DataConnection extends StateMachine {
     public DcNetworkAgent transferNetworkAgent(DataConnection dataConnection,
                                                @TransportType int transportType) {
         mNetworkAgent.acquireOwnership(dataConnection, transportType);
+        this.mHasTransferred = true;
         return mNetworkAgent;
     }
 
