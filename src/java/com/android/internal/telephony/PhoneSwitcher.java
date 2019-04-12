@@ -132,8 +132,10 @@ public class PhoneSwitcher extends Handler {
         } catch (RemoteException e) {
         }
 
-        mContext.registerReceiver(mDefaultDataChangedReceiver,
-                new IntentFilter(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED));
+        IntentFilter intentFilter = new IntentFilter(
+                TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED);
+        intentFilter.setPriority(100);
+        mContext.registerReceiver(mDefaultDataChangedReceiver, intentFilter);
 
         NetworkCapabilities netCap = new NetworkCapabilities();
         netCap.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
