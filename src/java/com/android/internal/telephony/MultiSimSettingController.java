@@ -53,14 +53,14 @@ public class MultiSimSettingController {
     private static final String LOG_TAG = "MultiSimSettingController";
     private static final boolean DBG = true;
 
-    private final Context mContext;
+    protected final Context mContext;
     private final Phone[] mPhones;
-    private final SubscriptionController mSubController;
+    protected final SubscriptionController mSubController;
     private boolean mIsAllSubscriptionsLoaded;
     private List<SubscriptionInfo> mPrimarySubList;
 
     /** The singleton instance. */
-    private static MultiSimSettingController sInstance = null;
+    protected static MultiSimSettingController sInstance = null;
 
     /**
      * Return the singleton or create one if not existed.
@@ -281,7 +281,7 @@ public class MultiSimSettingController {
         }
     }
 
-    private void disableDataForNonDefaultNonOpportunisticSubscriptions() {
+    protected void disableDataForNonDefaultNonOpportunisticSubscriptions() {
         int defaultDataSub = mSubController.getDefaultDataSubId();
 
         for (Phone phone : mPhones) {
@@ -299,7 +299,7 @@ public class MultiSimSettingController {
      * Make sure MOBILE_DATA of subscriptions in the same group with the subId
      * are synced.
      */
-    private synchronized void setUserDataEnabledForGroup(int subId, boolean enable) {
+    protected synchronized void setUserDataEnabledForGroup(int subId, boolean enable) {
         log("setUserDataEnabledForGroup subId " + subId + " enable " + enable);
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
                 mSubController.getGroupUuid(subId), mContext.getOpPackageName());
@@ -388,11 +388,11 @@ public class MultiSimSettingController {
         return SubscriptionManager.isValidSubscriptionId(newValue);
     }
 
-    private void log(String msg) {
+    protected void log(String msg) {
         Log.d(LOG_TAG, msg);
     }
 
-    private void loge(String msg) {
+    protected void loge(String msg) {
         Log.e(LOG_TAG, msg);
     }
 }
