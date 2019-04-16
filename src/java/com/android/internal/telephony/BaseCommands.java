@@ -78,6 +78,8 @@ public abstract class BaseCommands implements CommandsInterface {
     protected RegistrantList mNattKeepaliveStatusRegistrants = new RegistrantList();
     protected RegistrantList mPhysicalChannelConfigurationRegistrants = new RegistrantList();
     protected RegistrantList mLceInfoRegistrants = new RegistrantList();
+    public RegistrantList mArfcnChangeRegistrants = new RegistrantList();
+
 
     protected Registrant mGsmSmsRegistrant;
     protected Registrant mCdmaSmsRegistrant;
@@ -981,5 +983,21 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mNattKeepaliveStatusRegistrants.remove(h);
         }
+    }
+
+    /*
+     * @hide
+     */
+    @Override
+    public void registerForArfcnChange(Handler h, int what, Object obj) {
+        mArfcnChangeRegistrants.add(new Registrant(h, what, obj));
+    }
+
+    /*
+     * @hide
+     */
+    @Override
+    public void unregisterForArfcnChange(Handler h) {
+        mArfcnChangeRegistrants.remove(h);
     }
 }
