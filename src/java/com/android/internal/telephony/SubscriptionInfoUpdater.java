@@ -457,7 +457,8 @@ public class SubscriptionInfoUpdater extends Handler {
                         nameToSet = "CARD " + Integer.toString(slotId + 1);
                     }
                     logd("sim name = " + nameToSet);
-                    SubscriptionController.getInstance().setDisplayName(nameToSet, subId);
+                    SubscriptionController.getInstance().setDisplayNameUsingSrc(nameToSet, subId,
+                            SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE);
                 }
 
                 /* Update preferred network type and network selection mode on SIM change.
@@ -881,6 +882,7 @@ public class SubscriptionInfoUpdater extends Handler {
                     .getUriForSubscriptionId(currentSubId), cv, null, null) > 0) {
             sc.refreshCachedActiveSubscriptionInfoList();
             sc.notifySubscriptionInfoChanged();
+            MultiSimSettingController.getInstance().onSubscriptionGroupChanged(groupId);
         }
     }
 
