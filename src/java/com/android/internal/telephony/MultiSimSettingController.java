@@ -56,8 +56,8 @@ public class MultiSimSettingController {
     protected final Context mContext;
     private final Phone[] mPhones;
     protected final SubscriptionController mSubController;
-    private boolean mIsAllSubscriptionsLoaded;
-    private List<SubscriptionInfo> mPrimarySubList;
+    protected boolean mIsAllSubscriptionsLoaded;
+    protected List<SubscriptionInfo> mPrimarySubList;
 
     /** The singleton instance. */
     protected static MultiSimSettingController sInstance = null;
