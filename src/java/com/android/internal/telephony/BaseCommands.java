@@ -1000,4 +1000,10 @@ public abstract class BaseCommands implements CommandsInterface {
     public void unregisterForArfcnChange(Handler h) {
         mArfcnChangeRegistrants.remove(h);
     }
+
+    /*
+     * @hide
+     */
+    public void requestArfcnChange(Message result, int change) {
+    }
 }

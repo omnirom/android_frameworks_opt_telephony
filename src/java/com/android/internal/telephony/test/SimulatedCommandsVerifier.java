@@ -1474,4 +1474,7 @@ public class SimulatedCommandsVerifier implements CommandsInterface {
     public void unregisterForArfcnChange(Handler h) {
     }
 
+    @Override
+    public void requestArfcnChange(Message result, int change) {
+    }
 }

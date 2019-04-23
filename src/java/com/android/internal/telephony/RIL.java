@@ -5577,4 +5577,11 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 signalStrength.wcdma.base.signalStrength,
                 signalStrength.wcdma.rscp);
     }
+
+    /* {CRAP}
+    * @hide
+    */
+    public void requestArfcnChange(Message response, int change) {
+    }
+
 }

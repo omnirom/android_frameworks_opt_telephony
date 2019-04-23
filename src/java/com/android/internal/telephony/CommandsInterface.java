@@ -2256,4 +2256,6 @@ public interface CommandsInterface {
     */
     void registerForArfcnChange(Handler h, int what, Object obj);
     void unregisterForArfcnChange(Handler h);
+    void requestArfcnChange(Message message, int i);
+
 }
