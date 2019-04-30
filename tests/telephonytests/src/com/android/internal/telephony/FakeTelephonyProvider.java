@@ -73,6 +73,8 @@ public class FakeTelephonyProvider extends MockContentProvider {
                     + SubscriptionManager.MNC + " INTEGER DEFAULT 0,"
                     + SubscriptionManager.MCC_STRING + " TEXT,"
                     + SubscriptionManager.MNC_STRING + " TEXT,"
+                    + SubscriptionManager.EHPLMNS + " TEXT,"
+                    + SubscriptionManager.HPLMNS + " TEXT,"
                     + SubscriptionManager.SIM_PROVISIONING_STATUS
                     + " INTEGER DEFAULT " + SubscriptionManager.SIM_PROVISIONED + ","
                     + SubscriptionManager.IS_EMBEDDED + " INTEGER DEFAULT 0,"
@@ -104,7 +106,8 @@ public class FakeTelephonyProvider extends MockContentProvider {
                     + SubscriptionManager.CARRIER_ID + " INTEGER DEFAULT -1,"
                     + SubscriptionManager.PROFILE_CLASS
                     + " INTEGER DEFAULT " + SubscriptionManager.PROFILE_CLASS_DEFAULT + ","
-                    + SubscriptionManager.SUBSCRIPTION_TYPE + " INTEGER DEFAULT 0"
+                    + SubscriptionManager.SUBSCRIPTION_TYPE + " INTEGER DEFAULT 0,"
+                    + SubscriptionManager.WHITE_LISTED_APN_DATA + " INTEGER DEFAULT 0"
                     + ");";
         }
 
