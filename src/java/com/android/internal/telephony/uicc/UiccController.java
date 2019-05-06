@@ -239,8 +239,16 @@ public class UiccController extends Handler {
         return -1;
     }
 
-    private int getSlotIdFromPhoneId(int phoneId) {
-        return mPhoneIdToSlotId[phoneId];
+    /**
+     * Return the physical slot id associated with the given phoneId, or INVALID_SLOT_ID.
+     * @param phoneId the phoneId to check
+     */
+    public int getSlotIdFromPhoneId(int phoneId) {
+        try {
+            return mPhoneIdToSlotId[phoneId];
+        } catch (ArrayIndexOutOfBoundsException e) {
+            return INVALID_SLOT_ID;
+        }
     }
 
     @UnsupportedAppUsage
@@ -696,21 +704,30 @@ public class UiccController extends Handler {
             boolean isEuicc = slot.isEuicc();
             String eid = null;
             UiccCard card = slot.getUiccCard();
-            if (card == null) {
-                continue;
-            }
-            String iccid = card.getIccId();
-            int cardId;
+            String iccid = null;
+            int cardId = UNINITIALIZED_CARD_ID;
             boolean isRemovable = slot.isRemovable();
-            if (isEuicc) {
-                eid = card.getCardId();
-                cardId = convertToPublicCardId(eid);
+
+            // first we try to populate UiccCardInfo using the UiccCard, but if it doesn't exist
+            // (e.g. the slot is for an inactive eUICC) then we try using the UiccSlot.
+            if (card != null) {
+                iccid = card.getIccId();
+                if (isEuicc) {
+                    eid = ((EuiccCard) card).getEid();
+                    cardId = convertToPublicCardId(eid);
+                } else {
+                    // leave eid null if the UICC is not embedded
+                    cardId = convertToPublicCardId(iccid);
+                }
             } else {
-                // leave eid null if the UICC is not embedded
-                cardId = convertToPublicCardId(iccid);
+                iccid = slot.getIccId();
+                // Fill in the fields we can
+                if (!isEuicc && !TextUtils.isEmpty(iccid)) {
+                    cardId = convertToPublicCardId(iccid);
+                }
             }
-            UiccCardInfo info = new UiccCardInfo(isEuicc, cardId, eid, iccid, slotIndex,
-                    isRemovable);
+            UiccCardInfo info = new UiccCardInfo(isEuicc, cardId, eid,
+                    IccUtils.stripTrailingFs(iccid), slotIndex, isRemovable);
             infos.add(info);
         }
         return infos;

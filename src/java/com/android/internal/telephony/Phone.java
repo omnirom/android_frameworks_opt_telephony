@@ -225,7 +225,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_SET_CARRIER_DATA_ENABLED       = 48;
     protected static final int EVENT_DEVICE_PROVISIONED_CHANGE      = 49;
     protected static final int EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE = 50;
-    private static final int EVENT_ALL_DATA_DISCONNECTED         = 51;
+    protected static final int EVENT_GET_AVAILABLE_NETWORKS_DONE    = 51;
+
+    private static final int EVENT_ALL_DATA_DISCONNECTED         = 52;
 
     protected static final int EVENT_LAST = EVENT_ALL_DATA_DISCONNECTED;
 
