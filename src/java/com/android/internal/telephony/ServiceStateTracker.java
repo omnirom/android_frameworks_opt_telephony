@@ -1540,9 +1540,7 @@ public class ServiceStateTracker extends Handler {
                     boolean hasChanged =
                             updateNrFrequencyRangeFromPhysicalChannelConfigs(list, mSS);
                     hasChanged |= updateNrStateFromPhysicalChannelConfigs(
-                            list,
-                            mSS.getNetworkRegistrationInfo(NetworkRegistrationInfo.DOMAIN_PS,
-                                    AccessNetworkType.EUTRAN));
+                            list, mSS);
 
                     // Notify NR frequency, NR connection status or bandwidths changed.
                     if (hasChanged
@@ -1964,9 +1962,10 @@ public class ServiceStateTracker extends Handler {
     }
 
     private boolean updateNrStateFromPhysicalChannelConfigs(
-            List<PhysicalChannelConfig> configs, NetworkRegistrationInfo regState) {
-
-        if (regState == null || configs == null) return false;
+            List<PhysicalChannelConfig> configs, ServiceState ss) {
+        NetworkRegistrationInfo regInfo = ss.getNetworkRegistrationInfo(
+                NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
+        if (regInfo == null || configs == null) return false;
 
         boolean hasNrSecondaryServingCell = false;
         for (PhysicalChannelConfig config : configs) {
@@ -1977,19 +1976,20 @@ public class ServiceStateTracker extends Handler {
             }
         }
 
-        int newNrState = regState.getNrState();
+        int newNrState = regInfo.getNrState();
         if (hasNrSecondaryServingCell) {
-            if (regState.getNrState() == NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED) {
+            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED) {
                 newNrState = NetworkRegistrationInfo.NR_STATE_CONNECTED;
             }
         } else {
-            if (regState.getNrState() == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
+            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
                 newNrState = NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED;
             }
         }
 
-        boolean hasChanged = newNrState != regState.getNrState();
-        regState.setNrState(newNrState);
+        boolean hasChanged = newNrState != regInfo.getNrState();
+        regInfo.setNrState(newNrState);
+        ss.addNetworkRegistrationInfo(regInfo);
         return hasChanged;
     }
 
@@ -2021,8 +2021,6 @@ public class ServiceStateTracker extends Handler {
             // If the device is not camped on IWLAN, then we use cellular PS registration state
             // to compute reg state and rat.
             int regState = wwanPsRegState.getRegistrationState();
-            int dataRat = ServiceState.networkTypeToRilRadioTechnology(
-                    wwanPsRegState.getAccessNetworkTechnology());
             serviceState.setDataRegState(regCodeToServiceState(regState));
         }
         if (DBG) {
@@ -2104,8 +2102,7 @@ public class ServiceStateTracker extends Handler {
                 mNewCellIdentity = networkRegState.getCellIdentity();
 
                 if (DBG) {
-                    log("handlPollVoiceRegResultMessage: regState=" + registrationState
-                            + " radioTechnology=" + newVoiceRat);
+                    log("handlePollStateResultMessage: CS cellular. " + networkRegState);
                 }
                 break;
             }
@@ -2115,7 +2112,7 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.addNetworkRegistrationInfo(networkRegState);
 
                 if (DBG) {
-                    log("handlPollStateResultMessage: PS IWLAN. " + networkRegState);
+                    log("handlePollStateResultMessage: PS IWLAN. " + networkRegState);
                 }
                 break;
             }
@@ -2131,7 +2128,7 @@ public class ServiceStateTracker extends Handler {
                         networkRegState.getAccessNetworkTechnology());
 
                 if (DBG) {
-                    log("handlPollStateResultMessage: PS cellular. " + networkRegState);
+                    log("handlePollStateResultMessage: PS cellular. " + networkRegState);
                 }
 
                 // When we receive OOS reset the PhyChanConfig list so that non-return-to-idle
@@ -2141,8 +2138,7 @@ public class ServiceStateTracker extends Handler {
                     mLastPhysicalChannelConfigList = null;
                     updateNrFrequencyRangeFromPhysicalChannelConfigs(null, mNewSS);
                 }
-                updateNrStateFromPhysicalChannelConfigs(
-                        mLastPhysicalChannelConfigList, networkRegState);
+                updateNrStateFromPhysicalChannelConfigs(mLastPhysicalChannelConfigList, mNewSS);
                 setPhyCellInfoFromCellIdentity(mNewSS, networkRegState.getCellIdentity());
 
                 if (mPhone.isPhoneTypeGsm()) {
@@ -3518,7 +3514,7 @@ public class ServiceStateTracker extends Handler {
                 isRoaming = ss.getRoaming();
             } else {
                 String[] hplmns = mIccRecords != null ? mIccRecords.getHomePlmns() : null;
-                isRoaming = ArrayUtils.contains(hplmns, ss.getOperatorNumeric());
+                isRoaming = !ArrayUtils.contains(hplmns, ss.getOperatorNumeric());
             }
             int rule;
             if (isRoaming) {
@@ -4599,11 +4595,7 @@ public class ServiceStateTracker extends Handler {
             pollState();
             updateLteEarfcnLists(config);
             updateReportingCriteria(config);
-            String operatorNamePattern = config.getString(
-                    CarrierConfigManager.KEY_OPERATOR_NAME_FILTER_PATTERN_STRING);
-            if (!TextUtils.isEmpty(operatorNamePattern)) {
-                mOperatorNameStringPattern = Pattern.compile(operatorNamePattern);
-            }
+            updateOperatorNamePattern(config);
         }
 
         // Sometimes the network registration information comes before carrier config is ready.
@@ -5329,6 +5321,17 @@ public class ServiceStateTracker extends Handler {
         return mEriManager.getCdmaEriText(roamInd, defRoamInd);
     }
 
+    private void updateOperatorNamePattern(PersistableBundle config) {
+        String operatorNamePattern = config.getString(
+                CarrierConfigManager.KEY_OPERATOR_NAME_FILTER_PATTERN_STRING);
+        if (!TextUtils.isEmpty(operatorNamePattern)) {
+            mOperatorNameStringPattern = Pattern.compile(operatorNamePattern);
+            if (DBG) {
+                log("mOperatorNameStringPattern: " + mOperatorNameStringPattern.toString());
+            }
+        }
+    }
+
     private void updateOperatorNameForServiceState(ServiceState servicestate) {
         if (servicestate == null) {
             return;
@@ -5360,16 +5363,29 @@ public class ServiceStateTracker extends Handler {
                 filterOperatorNameByPattern((String) cellIdentity.getOperatorAlphaShort()));
     }
 
-    private void updateOperatorNameForCellInfo(List<CellInfo> cellInfos) {
+    /**
+     * To modify the operator name of CellInfo by pattern.
+     *
+     * @param cellInfos List of CellInfo{@link CellInfo}.
+     */
+    public void updateOperatorNameForCellInfo(List<CellInfo> cellInfos) {
         if (cellInfos == null || cellInfos.isEmpty()) {
             return;
         }
-        for (int i = 0; i < cellInfos.size(); i++) {
-            updateOperatorNameForCellIdentity(cellInfos.get(i).getCellIdentity());
+        for (CellInfo cellInfo : cellInfos) {
+            if (cellInfo.isRegistered()) {
+                updateOperatorNameForCellIdentity(cellInfo.getCellIdentity());
+            }
         }
     }
 
-    private String filterOperatorNameByPattern(String operatorName) {
+    /**
+     * To modify the operator name by pattern.
+     *
+     * @param operatorName Registered operator name
+     * @return An operator name.
+     */
+    public String filterOperatorNameByPattern(String operatorName) {
         if (mOperatorNameStringPattern == null || TextUtils.isEmpty(operatorName)) {
             return operatorName;
         }

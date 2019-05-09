@@ -2918,7 +2918,6 @@ public class SubscriptionController extends ISub.Stub {
      * @throws SecurityException if the caller doesn't meet the requirements
      *             outlined above.
      * @throws IllegalArgumentException if the some subscriptions in the list doesn't exist.
-     * @throws IllegalStateException if Telephony service is in bad state.
      *
      * @param subIdList list of subId that will be in the same group
      * @return groupUUID a UUID assigned to the subscription group. It returns
@@ -3102,7 +3101,6 @@ public class SubscriptionController extends ISub.Stub {
      *  the access rules we keep in our database for currently inactive eSIMs.
      *
      * @throws IllegalArgumentException if the some subId is invalid or doesn't exist.
-     * @throws IllegalStateException if Telephony is in bad state.
      *
      *  @return true if checking passes on all subId, false otherwise.
      */
@@ -3129,10 +3127,6 @@ public class SubscriptionController extends ISub.Stub {
         long identity = Binder.clearCallingIdentity();
 
         try {
-            if (!isSubInfoReady()) {
-                throw new IllegalStateException("Sub Controller not ready");
-            }
-
             // Check access rules for each sub info.
             SubscriptionManager subscriptionManager = (SubscriptionManager)
                     mContext.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
@@ -3419,9 +3413,9 @@ public class SubscriptionController extends ISub.Stub {
                                 + logicalSlotIndex);
             }
 
-            // Getting physicalSlotIndex
+            // Getting and validating the physicalSlotIndex.
             int physicalSlotIndex = getPhysicalSlotIndexFromLogicalSlotIndex(logicalSlotIndex);
-            if (!SubscriptionManager.isValidSlotIndex(physicalSlotIndex)) {
+            if (physicalSlotIndex == SubscriptionManager.INVALID_SIM_SLOT_INDEX) {
                 return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
             }
 
@@ -3654,7 +3648,15 @@ public class SubscriptionController extends ISub.Stub {
     }
 
     private @ApnSetting.ApnType int getWhiteListedApnDataTypes(int subId, String callingPackage) {
-        return Integer.valueOf(getSubscriptionProperty(subId,
-                SubscriptionManager.WHITE_LISTED_APN_DATA, callingPackage));
+        String whiteListedApnData = getSubscriptionProperty(subId,
+                SubscriptionManager.WHITE_LISTED_APN_DATA, callingPackage);
+
+        try {
+            return Integer.valueOf(whiteListedApnData);
+        } catch (NumberFormatException e) {
+            loge("[getWhiteListedApnDataTypes] couldn't parse apn data:" + whiteListedApnData);
+        }
+
+        return ApnSetting.TYPE_NONE;
     }
 }
