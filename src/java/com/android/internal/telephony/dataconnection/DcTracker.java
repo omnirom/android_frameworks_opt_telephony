@@ -1546,21 +1546,6 @@ public class DcTracker extends Handler {
         }
     }
 
-    // Disabled apn's still need avail/unavail notifications - send them out
-    protected void notifyOffApnsOfAvailability() {
-        for (ApnContext apnContext : mApnContexts.values()) {
-            if (!mAttached.get() || !apnContext.isReady()) {
-                if (DBG) log("notifyOffApnOfAvailability type:" + apnContext.getApnType());
-                mPhone.notifyDataConnection(apnContext.getApnType());
-            } else {
-                if (VDBG) {
-                    log("notifyOffApnsOfAvailability skipped apn due to attached && isReady " +
-                            apnContext.toString());
-                }
-            }
-        }
-    }
-
     /**
      * Clean up all data connections. Note this is just detach the APN context from the data
      * connection. After all APN contexts are detached from the data connection, the data
