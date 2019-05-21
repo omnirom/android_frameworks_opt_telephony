@@ -22,11 +22,9 @@ import android.content.Intent;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.telephony.Rlog;
-import android.telephony.ServiceState;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.gsm.SimTlv;
-//import com.android.internal.telephony.gsm.VoiceMailConstants;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -412,12 +410,6 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
     @Override
     public String[] getIsimPcscf() {
         return (mIsimPcscf != null) ? mIsimPcscf.clone() : null;
-    }
-
-    @Override
-    public int getDisplayRule(ServiceState serviceState) {
-        // Not applicable to Isim
-        return 0;
     }
 
     @Override

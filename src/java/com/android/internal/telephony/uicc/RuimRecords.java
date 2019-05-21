@@ -25,7 +25,6 @@ import android.os.AsyncResult;
 import android.os.Message;
 import android.os.SystemProperties;
 import android.telephony.Rlog;
-import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
@@ -897,17 +896,6 @@ public class RuimRecords extends IccRecords {
 
         if (DBG) log("fetchRuimRecords " + mRecordsToLoad + " requested: " + mRecordsRequested);
         // Further records that can be inserted are Operator/OEM dependent
-    }
-
-    /**
-     * {@inheritDoc}
-     *
-     * No Display rule for RUIMs yet.
-     */
-    @Override
-    public int getDisplayRule(ServiceState serviceState) {
-        // TODO together with spn
-        return 0;
     }
 
     @Override

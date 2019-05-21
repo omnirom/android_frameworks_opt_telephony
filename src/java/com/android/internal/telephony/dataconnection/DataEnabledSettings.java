@@ -119,6 +119,7 @@ public class DataEnabledSettings {
                                 + mPhone.getSubId());
                         mSubId = mPhone.getSubId();
                         updateDataEnabledAndNotify(REASON_USER_DATA_ENABLED);
+                        mPhone.notifyUserMobileDataStateChanged(isUserDataEnabled());
                     }
                 }
             };
@@ -346,6 +347,15 @@ public class DataEnabledSettings {
         SubscriptionInfo info = SubscriptionController.getInstance().getActiveSubscriptionInfo(
                 subId, context.getOpPackageName());
         return (info != null) && info.isOpportunistic() && info.getGroupUuid() == null;
+    }
+
+    public synchronized boolean isDataEnabled(int apnType) {
+        boolean userDataEnabled = isUserDataEnabled();
+        boolean isApnWhiteListed = SubscriptionController.getInstance().isApnWhiteListed(
+                mPhone.getSubId(), mPhone.getContext().getOpPackageName(), apnType);
+
+        return (mInternalDataEnabled && mPolicyDataEnabled && mCarrierDataEnabled
+                && (userDataEnabled || isApnWhiteListed));
     }
 
     private void log(String s) {

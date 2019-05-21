@@ -53,14 +53,14 @@ public class MultiSimSettingController {
     private static final String LOG_TAG = "MultiSimSettingController";
     private static final boolean DBG = true;
 
-    private final Context mContext;
+    protected final Context mContext;
     private final Phone[] mPhones;
-    private final SubscriptionController mSubController;
+    protected final SubscriptionController mSubController;
     private boolean mIsAllSubscriptionsLoaded;
     private List<SubscriptionInfo> mPrimarySubList;
 
     /** The singleton instance. */
-    private static MultiSimSettingController sInstance = null;
+    protected static MultiSimSettingController sInstance = null;
 
     /**
      * Return the singleton or create one if not existed.
@@ -143,15 +143,21 @@ public class MultiSimSettingController {
     /**
      * When a subscription group is created or new subscriptions are added in the group, make
      * sure the settings among them are synced.
+     * TODO: b/130258159 have a separate database table for grouped subscriptions so we don't
+     * manually sync each setting.
      */
-    public synchronized void onSubscriptionGroupCreated(int[] subGroup) {
-        if (DBG) log("onSubscriptionGroupCreated");
-        if (subGroup == null || subGroup.length == 0) return;
+    public synchronized void onSubscriptionGroupChanged(ParcelUuid groupUuid) {
+        if (DBG) log("onSubscriptionGroupChanged");
+
+        List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
+                groupUuid, mContext.getOpPackageName());
+        if (infoList == null || infoList.isEmpty()) return;
 
         // Get a reference subscription to copy settings from.
         // TODO: the reference sub should be passed in from external caller.
-        int refSubId = subGroup[0];
-        for (int subId : subGroup) {
+        int refSubId = infoList.get(0).getSubscriptionId();
+        for (SubscriptionInfo info : infoList) {
+            int subId = info.getSubscriptionId();
             if (mSubController.isActiveSubId(subId) && !mSubController.isOpportunistic(subId)) {
                 refSubId = subId;
                 break;
@@ -159,21 +165,32 @@ public class MultiSimSettingController {
         }
         if (DBG) log("refSubId is " + refSubId);
 
+        boolean enable = false;
         try {
-            boolean enable = GlobalSettingsHelper.getBoolean(
+            enable = GlobalSettingsHelper.getBoolean(
                     mContext, Settings.Global.MOBILE_DATA, refSubId);
             onUserDataEnabled(refSubId, enable);
         } catch (SettingNotFoundException exception) {
-            // Do nothing if it's never set.
+            //pass invalid refSubId to fetch the single-sim setting
+            enable = GlobalSettingsHelper.getBoolean(
+                    mContext, Settings.Global.MOBILE_DATA, INVALID_SUBSCRIPTION_ID, enable);
+            onUserDataEnabled(refSubId, enable);
         }
 
+        enable = false;
         try {
-            boolean enable = GlobalSettingsHelper.getBoolean(
+            enable = GlobalSettingsHelper.getBoolean(
                     mContext, Settings.Global.DATA_ROAMING, refSubId);
             onRoamingDataEnabled(refSubId, enable);
         } catch (SettingNotFoundException exception) {
-            // Do nothing if it's never set.
+            //pass invalid refSubId to fetch the single-sim setting
+            enable = GlobalSettingsHelper.getBoolean(
+                    mContext, Settings.Global.DATA_ROAMING, INVALID_SUBSCRIPTION_ID, enable);
+            onRoamingDataEnabled(refSubId, enable);
         }
+
+        // Sync settings in subscription database..
+        mSubController.syncGroupedSetting(refSubId);
     }
 
     /**
@@ -281,8 +298,13 @@ public class MultiSimSettingController {
         }
     }
 
-    private void disableDataForNonDefaultNonOpportunisticSubscriptions() {
+    protected void disableDataForNonDefaultNonOpportunisticSubscriptions() {
         int defaultDataSub = mSubController.getDefaultDataSubId();
+        // Only disable data for non-default subscription if default sub is active.
+        if (!mSubController.isActiveSubId(defaultDataSub)) {
+            log("default data sub is inactive, skip disabling data for non-default subs");
+            return;
+        }
 
         for (Phone phone : mPhones) {
             if (phone.getSubId() != defaultDataSub
@@ -299,7 +321,7 @@ public class MultiSimSettingController {
      * Make sure MOBILE_DATA of subscriptions in the same group with the subId
      * are synced.
      */
-    private synchronized void setUserDataEnabledForGroup(int subId, boolean enable) {
+    protected synchronized void setUserDataEnabledForGroup(int subId, boolean enable) {
         log("setUserDataEnabledForGroup subId " + subId + " enable " + enable);
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
                 mSubController.getGroupUuid(subId), mContext.getOpPackageName());
@@ -308,7 +330,6 @@ public class MultiSimSettingController {
 
         for (SubscriptionInfo info : infoList) {
             int currentSubId = info.getSubscriptionId();
-            if (currentSubId == subId) continue;
             // TODO: simplify when setUserDataEnabled becomes singleton
             if (mSubController.isActiveSubId(currentSubId)) {
                 // If we end up enabling two active primary subscriptions, don't enable the
@@ -388,11 +409,11 @@ public class MultiSimSettingController {
         return SubscriptionManager.isValidSubscriptionId(newValue);
     }
 
-    private void log(String msg) {
+    protected void log(String msg) {
         Log.d(LOG_TAG, msg);
     }
 
-    private void loge(String msg) {
+    protected void loge(String msg) {
         Log.e(LOG_TAG, msg);
     }
 }

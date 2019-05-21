@@ -84,6 +84,10 @@ public class PhoneSwitcher extends Handler {
     private static final int DEFAULT_NETWORK_CHANGE_TIMEOUT_MS = 5000;
     private static final int MODEM_COMMAND_RETRY_PERIOD_MS     = 5000;
 
+    // If there are no subscriptions in a device, then the phone to be used for emergency should
+    // always be the "first" phone.
+    private static final int DEFAULT_EMERGENCY_PHONE_ID = 0;
+
     protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<DcRequest>();
     protected final RegistrantList mActivePhoneRegistrants;
     protected final SubscriptionController mSubscriptionController;
@@ -104,7 +108,7 @@ public class PhoneSwitcher extends Handler {
                     EVENT_NETWORK_VALIDATION_DONE, subId, validated ? 1 : 0).sendToTarget();
     @UnsupportedAppUsage
     protected int mMaxActivePhones;
-    private static PhoneSwitcher sPhoneSwitcher = null;
+    protected static PhoneSwitcher sPhoneSwitcher = null;
 
     // Which primary (non-opportunistic) subscription is set as data subscription among all primary
     // subscriptions. This value usually comes from user setting, and it's the subscription used for
@@ -117,7 +121,7 @@ public class PhoneSwitcher extends Handler {
 
     // The phone ID that has an active voice call. If set, and its mobile data setting is on,
     // it will become the mPreferredDataPhoneId.
-    private int mPhoneIdInVoiceCall = SubscriptionManager.INVALID_PHONE_INDEX;
+    protected int mPhoneIdInVoiceCall = SubscriptionManager.INVALID_PHONE_INDEX;
 
     @VisibleForTesting
     // It decides:
@@ -146,9 +150,10 @@ public class PhoneSwitcher extends Handler {
     private static final int EVENT_REMOVE_DEFAULT_NETWORK_CHANGE_CALLBACK = 111;
     private static final int EVENT_MODEM_COMMAND_DONE             = 112;
     private static final int EVENT_MODEM_COMMAND_RETRY            = 113;
-    protected final static int EVENT_VOICE_CALL_ENDED             = 114;
-    protected static final int EVENT_UNSOL_MAX_DATA_ALLOWED_CHANGED = 115;
-    protected static final int EVENT_OEM_HOOK_SERVICE_READY       = 116;
+    private static final int EVENT_DATA_ENABLED_CHANGED           = 114;
+    protected final static int EVENT_VOICE_CALL_ENDED             = 115;
+    protected static final int EVENT_UNSOL_MAX_DATA_ALLOWED_CHANGED = 116;
+    protected static final int EVENT_OEM_HOOK_SERVICE_READY       = 117;
 
     // Depending on version of IRadioConfig, we need to send either RIL_REQUEST_ALLOW_DATA if it's
     // 1.0, or RIL_REQUEST_SET_PREFERRED_DATA if it's 1.1 or later. So internally mHalCommandToUse
@@ -266,6 +271,21 @@ public class PhoneSwitcher extends Handler {
                 if (mPhoneIdInVoiceCall != oldPhoneIdInVoiceCall) {
                     log("mPhoneIdInVoiceCall changed from" + oldPhoneIdInVoiceCall
                             + " to " + mPhoneIdInVoiceCall);
+
+                    // Switches and listens to the updated voice phone.
+                    Phone dataPhone = findPhoneById(mPhoneIdInVoiceCall);
+                    if (dataPhone != null && dataPhone.getDataEnabledSettings() != null) {
+                        dataPhone.getDataEnabledSettings()
+                                .registerForDataEnabledChanged(getInstance(),
+                                        EVENT_DATA_ENABLED_CHANGED, null);
+                    }
+
+                    Phone oldDataPhone = findPhoneById(oldPhoneIdInVoiceCall);
+                    if (oldDataPhone != null && oldDataPhone.getDataEnabledSettings() != null) {
+                        oldDataPhone.getDataEnabledSettings()
+                                .unregisterForDataEnabledChanged(getInstance());
+                    }
+
                     Message msg = PhoneSwitcher.this.obtainMessage(EVENT_PHONE_IN_CALL_CHANGED);
                     msg.sendToTarget();
                 }
@@ -399,7 +419,9 @@ public class PhoneSwitcher extends Handler {
                 onEvaluate(REQUESTS_UNCHANGED, "EVENT_RADIO_AVAILABLE");
                 break;
             }
-            case EVENT_PHONE_IN_CALL_CHANGED: {
+            // fall through
+            case EVENT_DATA_ENABLED_CHANGED:
+            case EVENT_PHONE_IN_CALL_CHANGED:
                 if (onEvaluate(REQUESTS_UNCHANGED, "EVENT_PHONE_IN_CALL_CHANGED")) {
                     logDataSwitchEvent(mOpptDataSubId,
                             TelephonyEvent.EventState.EVENT_STATE_START,
@@ -407,7 +429,6 @@ public class PhoneSwitcher extends Handler {
                     registerDefaultNetworkChangeCallback();
                 }
                 break;
-            }
             case EVENT_NETWORK_VALIDATION_DONE: {
                 int subId = msg.arg1;
                 boolean passed = (msg.arg2 == 1);
@@ -440,6 +461,10 @@ public class PhoneSwitcher extends Handler {
         for (Phone p : mPhones) {
             if (p == null) continue;
             if (p.isInEcm() || p.isInEmergencyCall()) return true;
+            Phone imsPhone = p.getImsPhone();
+            if (imsPhone != null && (imsPhone.isInEcm() || imsPhone.isInEmergencyCall())) {
+                return true;
+            }
         }
         return false;
     }
@@ -563,9 +588,15 @@ public class PhoneSwitcher extends Handler {
             mPrimaryDataSubId = primaryDataSubId;
         }
 
+        // Check to see if there is any active subscription on any phone
+        boolean hasAnyActiveSubscription = false;
+
         // Check if phoneId to subId mapping is changed.
         for (int i = 0; i < mNumPhones; i++) {
             int sub = mSubscriptionController.getSubIdUsingPhoneId(i);
+
+            if (SubscriptionManager.isValidSubscriptionId(sub)) hasAnyActiveSubscription = true;
+
             if (sub != mPhoneSubscriptions[i]) {
                 sb.append(" phone[").append(i).append("] ").append(mPhoneSubscriptions[i]);
                 sb.append("->").append(sub);
@@ -574,9 +605,22 @@ public class PhoneSwitcher extends Handler {
             }
         }
 
+        if (!hasAnyActiveSubscription) {
+            transitionToEmergencyPhone();
+        } else {
+            if (VDBG) log("Found an active subscription");
+        }
+
         // Check if phoneId for preferred data is changed.
         int oldPreferredDataPhoneId = mPreferredDataPhoneId;
-        updatePreferredDataPhoneId();
+
+        // When there are no subscriptions, the preferred data phone ID is invalid, but we want
+        // to keep a valid phoneId for Emergency, so skip logic that updates for preferred data
+        // phone ID. Ideally there should be a single set of checks that evaluate the correct
+        // phoneId on a service-by-service basis (EIMS being one), but for now... just bypass
+        // this logic in the no-SIM case.
+        if (hasAnyActiveSubscription) updatePreferredDataPhoneId();
+
         if (oldPreferredDataPhoneId != mPreferredDataPhoneId) {
             sb.append(" preferred phoneId ").append(oldPreferredDataPhoneId)
                     .append("->").append(mPreferredDataPhoneId);
@@ -723,8 +767,7 @@ public class PhoneSwitcher extends Handler {
         // if Internet PDN is established on the non-preferred phone, it will interrupt
         // Internet connection on the preferred phone. So we only accept Internet request with
         // preferred data subscription or no specified subscription.
-        if (netRequest.networkCapabilities.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        if (netRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 && subId != preferredDataSubId && subId != mValidator.getSubIdInValidation()) {
             // Returning INVALID_PHONE_INDEX will result in netRequest not being handled.
             return INVALID_PHONE_INDEX;
@@ -772,15 +815,15 @@ public class PhoneSwitcher extends Handler {
         }
     }
 
-    // This updates mPreferredDataPhoneId which decides which phone should
-    // handle default network requests.
+    // This updates mPreferredDataPhoneId which decides which phone should handle default network
+    // requests.
     protected void updatePreferredDataPhoneId() {
-        if (SubscriptionManager.isValidPhoneId(mPhoneIdInVoiceCall)) {
+        Phone voicePhone = findPhoneById(mPhoneIdInVoiceCall);
+        if (voicePhone != null && voicePhone.isUserDataEnabled()) {
             // If a phone is in call and user enabled its mobile data, we
             // should switch internet connection to it. Because the other modem
             // will lose data connection anyway.
             // TODO: validate network first.
-
             mPreferredDataPhoneId = mPhoneIdInVoiceCall;
         } else {
             int subId = getSubIdForDefaultNetworkRequests();
@@ -801,15 +844,42 @@ public class PhoneSwitcher extends Handler {
         mPreferredDataSubId = mSubscriptionController.getSubIdUsingPhoneId(mPreferredDataPhoneId);
     }
 
+    private void transitionToEmergencyPhone() {
+        if (mPreferredDataPhoneId != DEFAULT_EMERGENCY_PHONE_ID) {
+            log("No active subscriptions: resetting preferred phone to 0 for emergency");
+            mPreferredDataPhoneId = DEFAULT_EMERGENCY_PHONE_ID;
+        }
+
+        if (mPreferredDataSubId != INVALID_SUBSCRIPTION_ID) {
+            mPreferredDataSubId = INVALID_SUBSCRIPTION_ID;
+            notifyPreferredDataSubIdChanged();
+        }
+    }
+
+    private Phone findPhoneById(final int phoneId) {
+        if (phoneId < 0 || phoneId >= mNumPhones) {
+            return null;
+        }
+        return mPhones[phoneId];
+    }
+
     public boolean shouldApplyNetworkRequest(NetworkRequest networkRequest, int phoneId) {
         validatePhoneId(phoneId);
 
         // In any case, if phone state is inactive, don't apply the network request.
-        if (!isPhoneActive(phoneId)) return false;
+        if (!isPhoneActive(phoneId) || (
+                mSubscriptionController.getSubIdUsingPhoneId(phoneId) == INVALID_SUBSCRIPTION_ID
+                && !isEmergencyNetworkRequest(networkRequest))) {
+            return false;
+        }
 
         int phoneIdToHandle = phoneIdForRequest(networkRequest);
 
         return phoneId == phoneIdToHandle;
+    }
+
+    boolean isEmergencyNetworkRequest(NetworkRequest networkRequest) {
+        return networkRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_EIMS);
     }
 
     @VisibleForTesting
@@ -936,7 +1006,7 @@ public class PhoneSwitcher extends Handler {
                 subId, needValidation ? 1 : 0, callback).sendToTarget();
     }
 
-    private boolean isCallActive(Phone phone) {
+    protected boolean isCallActive(Phone phone) {
         if (phone == null) {
             return false;
         }
@@ -975,7 +1045,7 @@ public class PhoneSwitcher extends Handler {
     /**
      * See {@link PhoneStateListener#LISTEN_ACTIVE_DATA_SUBSCRIPTION_ID_CHANGE}.
      */
-    private void notifyPreferredDataSubIdChanged() {
+    protected void notifyPreferredDataSubIdChanged() {
         ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(ServiceManager.getService(
                 "telephony.registry"));
         try {

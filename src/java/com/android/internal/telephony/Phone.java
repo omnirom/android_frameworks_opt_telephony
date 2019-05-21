@@ -76,6 +76,7 @@ import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
+import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -181,7 +182,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_GET_CALL_FORWARD_DONE       = 13;
     protected static final int EVENT_CALL_RING                   = 14;
     private static final int EVENT_CALL_RING_CONTINUE            = 15;
-    private static final int EVENT_ALL_DATA_DISCONNECTED         = 16;
 
     // Used to intercept the carrier selection calls so that
     // we can save the values.
@@ -225,8 +225,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_SET_CARRIER_DATA_ENABLED       = 48;
     protected static final int EVENT_DEVICE_PROVISIONED_CHANGE      = 49;
     protected static final int EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE = 50;
+    protected static final int EVENT_GET_AVAILABLE_NETWORKS_DONE    = 51;
 
-    protected static final int EVENT_LAST = EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE;
+    private static final int EVENT_ALL_DATA_DISCONNECTED         = 52;
+
+    protected static final int EVENT_LAST = EVENT_ALL_DATA_DISCONNECTED;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -295,9 +298,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private boolean mIsVoiceCapable = true;
     private final AppSmsManager mAppSmsManager;
     private SimActivationTracker mSimActivationTracker;
-    // Keep track of whether or not the phone is in Emergency Callback Mode for Phone and
-    // subclasses
-    protected boolean mIsPhoneInEcmState = false;
     private volatile long mTimeLastEmergencySmsSentMs = EMERGENCY_SMS_NO_TIME_RECORDED;
 
     // Variable to cache the video capability. When RAT changes, we lose this info and are unable
@@ -337,6 +337,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private static final boolean LCE_PULL_MODE = true;
     private int mLceStatus = RILConstants.LCE_NOT_AVAILABLE;
     protected TelephonyComponentFactory mTelephonyComponentFactory;
+    protected EcbmHandler mEcbmHandler;
 
     //IMS
     /**
@@ -2432,18 +2433,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false);
     }
 
-    /**
-     * @return {@code true} if we are in emergency call back mode. This is a period where the phone
-     * should be using as little power as possible and be ready to receive an incoming call from the
-     * emergency operator.
-     */
     public boolean isInEcm() {
-        return mIsPhoneInEcmState;
-    }
-
-    public void setIsInEcm(boolean isInEcm) {
-        setGlobalSystemProperty(TelephonyProperties.PROPERTY_INECM_MODE, String.valueOf(isInEcm));
-        mIsPhoneInEcmState = isInEcm;
+        return EcbmHandler.getInstance().isInEcm();
     }
 
     @UnsupportedAppUsage
@@ -3456,6 +3447,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             //mImsPhone.removeReferences();
             mImsPhone = null;
         }
+        if (mEcbmHandler != null) {
+            mEcbmHandler.updateImsPhone(mImsPhone, mPhoneId);
+        }
+
     }
 
     /**

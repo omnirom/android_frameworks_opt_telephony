@@ -116,7 +116,6 @@ public class PhoneSwitcherTest extends TelephonyTest {
         NetworkRequest internetNetworkRequest = addInternetNetworkRequest(null, 50);
         waitABit();
 
-        assertFalse("data allowed after request", mDataAllowed[0]);
         assertFalse("phone active after request", mPhoneSwitcher
                 .shouldApplyNetworkRequest(internetNetworkRequest, 0));
 
@@ -132,7 +131,6 @@ public class PhoneSwitcherTest extends TelephonyTest {
         setDefaultDataSubId(0);
 
         verify(mActivePhoneSwitchHandler, never()).sendMessageAtTime(any(), anyLong());
-        assertFalse("data allowed", mDataAllowed[0]);
 
         setSlotIndexToSubId(0, 0);
         mSubChangedListener.onSubscriptionsChanged();
@@ -413,6 +411,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
         mPhoneSwitcher.registerForActivePhoneSwitch(mActivePhoneSwitchHandler,
                 ACTIVE_PHONE_SWITCH, null);
         verify(mActivePhoneSwitchHandler, times(2)).sendMessageAtTime(any(), anyLong());
+        clearInvocations(mMockRadioConfig);
         clearInvocations(mActivePhoneSwitchHandler);
 
         // Phone 0 has sub 1, phone 1 has sub 2.
@@ -567,6 +566,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
         mSlotIndexToSubId = new int[numPhones][];
         doReturn(0).when(mPhone).getPhoneId();
         doReturn(1).when(mPhone2).getPhoneId();
+        doReturn(true).when(mPhone2).isUserDataEnabled();
         for (int i = 0; i < numPhones; i++) {
             mSlotIndexToSubId[i] = new int[1];
             mSlotIndexToSubId[i][0] = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
