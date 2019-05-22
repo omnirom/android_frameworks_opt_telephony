@@ -1040,24 +1040,10 @@ public class UiccProfile extends IccCard {
         }
     }
 
-    private boolean areAllApplicationsReady() {
-        for (UiccCardApplication app : mUiccApplications) {
-            if (app != null && isSupportedApplication(app) && !app.isReady()
-                    && !app.isAppIgnored()) {
-                if (VDBG) log("areAllApplicationsReady: return false");
-                return false;
-            }
-        }
-
-        if (VDBG) {
-            log("areAllApplicationsReady: outside loop, return " + (mUiccApplication != null));
-        }
-        return mUiccApplication != null;
-    }
-
     private boolean areReadyAppsRecordsLoaded() {
         for (UiccCardApplication app : mUiccApplications) {
-            if (app != null && isSupportedApplication(app) && !app.isAppIgnored()) {
+            if (app != null && isSupportedApplication(app) && app.isReady()
+                    && !app.isAppIgnored()) {
                 IccRecords ir = app.getIccRecords();
                 if (ir == null || !ir.isLoaded()) {
                     if (VDBG) log("areReadyAppsRecordsLoaded: return false");
