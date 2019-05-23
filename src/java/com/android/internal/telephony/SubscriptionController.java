@@ -342,8 +342,11 @@ public class SubscriptionController extends ISub.Stub {
 
         MultiSimSettingController.getInstance().onSubscriptionsChanged();
         TelephonyMetrics metrics = TelephonyMetrics.getInstance();
-        metrics.updateActiveSubscriptionInfoList(
-                Collections.unmodifiableList(mCacheActiveSubInfoList));
+        List<SubscriptionInfo> subInfos;
+        synchronized (mSubInfoListLock) {
+            subInfos = new ArrayList<>(mCacheActiveSubInfoList);
+        }
+        metrics.updateActiveSubscriptionInfoList(subInfos);
     }
 
     /**
