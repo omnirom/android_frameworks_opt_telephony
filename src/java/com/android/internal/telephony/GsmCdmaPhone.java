@@ -138,6 +138,7 @@ public class GsmCdmaPhone extends Phone {
 
     //CDMA
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
+    private static final String PREFIX_WPS = "*272";
     private CdmaSubscriptionSourceManager mCdmaSSM;
     public int mCdmaSubscriptionSource = CdmaSubscriptionSourceManager.SUBSCRIPTION_SOURCE_UNKNOWN;
     private PowerManager.WakeLock mWakeLock;
@@ -1166,12 +1167,18 @@ public class GsmCdmaPhone extends Phone {
         boolean alwaysTryImsForEmergencyCarrierConfig = configManager.getConfigForSubId(getSubId())
                 .getBoolean(CarrierConfigManager.KEY_CARRIER_USE_IMS_FIRST_FOR_EMERGENCY_BOOL);
 
+        /** Check if the call is Wireless Priority Service call */
+        boolean isWpsCall = dialString != null ? dialString.startsWith(PREFIX_WPS) : false;
+        boolean allowWpsOverIms = configManager.getConfigForSubId(getSubId())
+                .getBoolean(CarrierConfigManager.KEY_SUPPORT_WPS_OVER_IMS_BOOL);
+
         boolean useImsForCall = isImsUseEnabled()
                  && imsPhone != null
                  && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
                  (imsPhone.isVideoEnabled() && VideoProfile.isVideo(dialArgs.videoState)))
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras);
+                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras)
+                 && (isWpsCall ? allowWpsOverIms : true);
 
         boolean useImsForEmergency = imsPhone != null
                 && isEmergency
@@ -1191,6 +1198,8 @@ public class GsmCdmaPhone extends Phone {
                     + ", useImsForEmergency=" + useImsForEmergency
                     + ", useImsForUt=" + useImsForUt
                     + ", isUt=" + isUt
+                    + ", isWpsCall=" + isWpsCall
+                    + ", allowWpsOverIms=" + allowWpsOverIms
                     + ", imsPhone=" + imsPhone
                     + ", imsPhone.isVolteEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVolteEnabled() : "N/A")

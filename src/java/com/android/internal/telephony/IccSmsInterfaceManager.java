@@ -345,13 +345,14 @@ public class IccSmsInterfaceManager {
      * This method checks if the calling package or itself has the permission to send the data sms.
      */
     public void sendDataWithSelfPermissions(String callingPackage, String destAddr, String scAddr,
-            int destPort, byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent) {
+            int destPort, byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent,
+            boolean isForVvm) {
         if (!mSmsPermissions.checkCallingOrSelfCanSendSms(callingPackage, "Sending SMS message")) {
             returnUnspecifiedFailure(sentIntent);
             return;
         }
         sendDataInternal(callingPackage, destAddr, scAddr, destPort, data, sentIntent,
-                deliveryIntent);
+                deliveryIntent, isForVvm);
     }
 
     /**
@@ -366,7 +367,7 @@ public class IccSmsInterfaceManager {
             return;
         }
         sendDataInternal(callingPackage, destAddr, scAddr, destPort, data, sentIntent,
-                deliveryIntent);
+                deliveryIntent, false /* isForVvm */);
     }
 
     /**
@@ -397,15 +398,16 @@ public class IccSmsInterfaceManager {
      */
 
     private void sendDataInternal(String callingPackage, String destAddr, String scAddr,
-            int destPort, byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent) {
+            int destPort, byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent,
+            boolean isForVvm) {
         if (Rlog.isLoggable("SMS", Log.VERBOSE)) {
-            log("sendData: destAddr=" + destAddr + " scAddr=" + scAddr + " destPort=" +
-                destPort + " data='"+ HexDump.toHexString(data)  + "' sentIntent=" +
-                sentIntent + " deliveryIntent=" + deliveryIntent);
+            log("sendData: destAddr=" + destAddr + " scAddr=" + scAddr + " destPort="
+                    + destPort + " data='" + HexDump.toHexString(data)  + "' sentIntent="
+                    + sentIntent + " deliveryIntent=" + deliveryIntent + " isForVVM=" + isForVvm);
         }
         destAddr = filterDestAddress(destAddr);
         mDispatchersController.sendData(callingPackage, destAddr, scAddr, destPort, data,
-                sentIntent, deliveryIntent);
+                sentIntent, deliveryIntent, isForVvm);
     }
 
     /**
@@ -418,7 +420,7 @@ public class IccSmsInterfaceManager {
             boolean persistMessageForNonDefaultSmsApp) {
         sendTextInternal(callingPackage, destAddr, scAddr, text, sentIntent, deliveryIntent,
                 persistMessageForNonDefaultSmsApp, SMS_MESSAGE_PRIORITY_NOT_SPECIFIED,
-                false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED);
+                false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED, false /* isForVvm */);
     }
 
     /**
@@ -427,14 +429,14 @@ public class IccSmsInterfaceManager {
      */
     public void sendTextWithSelfPermissions(String callingPackage, String destAddr, String scAddr,
             String text, PendingIntent sentIntent, PendingIntent deliveryIntent,
-            boolean persistMessage) {
+            boolean persistMessage, boolean isForVvm) {
         if (!mSmsPermissions.checkCallingOrSelfCanSendSms(callingPackage, "Sending SMS message")) {
             returnUnspecifiedFailure(sentIntent);
             return;
         }
         sendTextInternal(callingPackage, destAddr, scAddr, text, sentIntent, deliveryIntent,
-            persistMessage, SMS_MESSAGE_PRIORITY_NOT_SPECIFIED, false /* expectMore */,
-            SMS_MESSAGE_PERIOD_NOT_SPECIFIED);
+                persistMessage, SMS_MESSAGE_PRIORITY_NOT_SPECIFIED, false /* expectMore */,
+                SMS_MESSAGE_PERIOD_NOT_SPECIFIED, isForVvm);
     }
 
     /**
@@ -486,18 +488,17 @@ public class IccSmsInterfaceManager {
     private void sendTextInternal(String callingPackage, String destAddr, String scAddr,
             String text, PendingIntent sentIntent, PendingIntent deliveryIntent,
             boolean persistMessageForNonDefaultSmsApp, int priority, boolean expectMore,
-            int validityPeriod) {
+            int validityPeriod, boolean isForVvm) {
         if (Rlog.isLoggable("SMS", Log.VERBOSE)) {
-            log("sendText: destAddr=" + destAddr + " scAddr=" + scAddr +
-                " text='"+ text + "' sentIntent=" +
-                sentIntent + " deliveryIntent=" + deliveryIntent
-                + " priority=" + priority + " expectMore=" + expectMore
-                + " validityPeriod=" + validityPeriod);
+            log("sendText: destAddr=" + destAddr + " scAddr=" + scAddr
+                    + " text='" + text + "' sentIntent=" + sentIntent + " deliveryIntent="
+                    + deliveryIntent + " priority=" + priority + " expectMore=" + expectMore
+                    + " validityPeriod=" + validityPeriod + " isForVVM=" + isForVvm);
         }
         destAddr = filterDestAddress(destAddr);
         mDispatchersController.sendText(destAddr, scAddr, text, sentIntent, deliveryIntent,
                 null/*messageUri*/, callingPackage, persistMessageForNonDefaultSmsApp,
-                priority, expectMore, validityPeriod);
+                priority, expectMore, validityPeriod, isForVvm);
     }
 
     /**
@@ -555,7 +556,8 @@ public class IccSmsInterfaceManager {
             return;
         }
         sendTextInternal(callingPackage, destAddr, scAddr, text, sentIntent, deliveryIntent,
-                persistMessageForNonDefaultSmsApp, priority, expectMore, validityPeriod);
+                persistMessageForNonDefaultSmsApp, priority, expectMore, validityPeriod,
+                false /* isForVvm */);
     }
 
     /**
@@ -716,11 +718,10 @@ public class IccSmsInterfaceManager {
                     singleDeliveryIntent = deliveryIntents.get(i);
                 }
 
-                mDispatchersController.sendText(destAddr, scAddr, singlePart,
-                        singleSentIntent, singleDeliveryIntent,
-                        null/*messageUri*/, callingPackage,
-                        persistMessageForNonDefaultSmsApp,
-                        priority, expectMore, validityPeriod);
+                mDispatchersController.sendText(destAddr, scAddr, singlePart, singleSentIntent,
+                        singleDeliveryIntent, null /* messageUri */, callingPackage,
+                        persistMessageForNonDefaultSmsApp, priority, expectMore, validityPeriod,
+                        false /* isForVvm */);
             }
             return;
         }
@@ -1153,7 +1154,7 @@ public class IccSmsInterfaceManager {
         mDispatchersController.sendText(textAndAddress[1], scAddress, textAndAddress[0],
                 sentIntent, deliveryIntent, messageUri, callingPkg,
                 true /* persistMessageForNonDefaultSmsApp */, SMS_MESSAGE_PRIORITY_NOT_SPECIFIED,
-                false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED);
+                false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED, false /* isForVvm */);
     }
 
     @UnsupportedAppUsage
@@ -1210,7 +1211,8 @@ public class IccSmsInterfaceManager {
                         singleSentIntent, singleDeliveryIntent, messageUri, callingPkg,
                         true  /* persistMessageForNonDefaultSmsApp */,
                         SMS_MESSAGE_PRIORITY_NOT_SPECIFIED,
-                        false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED);
+                        false /* expectMore */, SMS_MESSAGE_PERIOD_NOT_SPECIFIED,
+                        false /* isForVvm */);
             }
             return;
         }
