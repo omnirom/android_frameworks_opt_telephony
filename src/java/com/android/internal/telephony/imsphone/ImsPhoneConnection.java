@@ -47,6 +47,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
+import com.android.internal.telephony.metrics.TelephonyMetrics;
 
 import java.util.Objects;
 
@@ -65,6 +66,7 @@ public class ImsPhoneConnection extends Connection implements
     private ImsPhoneCall mParent;
     private ImsCall mImsCall;
     private Bundle mExtras = new Bundle();
+    private TelephonyMetrics mMetrics = TelephonyMetrics.getInstance();
 
     private boolean mDisconnected;
 
@@ -123,6 +125,9 @@ public class ImsPhoneConnection extends Connection implements
      * calls.
      */
     private boolean mIsVideoEnabled = true;
+
+    // Store the current audio codec
+    private int mAudioCodec = ImsStreamMediaProfile.AUDIO_QUALITY_NONE;
 
     //***** Event Constants
     private static final int EVENT_DTMF_DONE = 1;
@@ -986,6 +991,13 @@ public class ImsPhoneConnection extends Connection implements
             if (getConnectionCapabilities() != capabilities) {
                 setConnectionCapabilities(capabilities);
                 changed = true;
+            }
+
+            // Metrics for audio codec
+            if (localCallProfile != null
+                    && localCallProfile.mMediaProfile.mAudioQuality != mAudioCodec) {
+                mAudioCodec = localCallProfile.mMediaProfile.mAudioQuality;
+                mMetrics.writeAudioCodecIms(mOwner.mPhone.getPhoneId(), imsCall.getCallSession());
             }
 
             if (!mOwner.isViLteDataMetered()) {
