@@ -1169,7 +1169,8 @@ public class DataConnection extends StateMachine {
                 mApnSetting.getApnTypeBitmask() & ~mDisabledApnTypeBitMask).split(",");
             for (String type : types) {
                 if (!mRestrictedNetworkOverride && mUnmeteredUseOnly
-                        && ApnSettingUtils.isMeteredApnType(type, mPhone)) {
+                        && ApnSettingUtils.isMeteredApnType(
+                                ApnSetting.getApnTypesBitmaskFromString(type), mPhone)) {
                     log("Dropped the metered " + type + " for the unmetered data call.");
                     continue;
                 }
@@ -2738,7 +2739,7 @@ public class DataConnection extends StateMachine {
     private void updateScore() {
         int oldScore = mScore;
         mScore = calculateScore();
-        if (oldScore != mScore) {
+        if (oldScore != mScore && mNetworkAgent != null) {
             log("Updating score from " + oldScore + " to " + mScore);
             mNetworkAgent.sendNetworkScore(mScore, this);
         }

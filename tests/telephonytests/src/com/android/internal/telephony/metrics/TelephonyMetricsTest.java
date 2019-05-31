@@ -41,6 +41,7 @@ import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
 import android.telephony.data.DataCallResponse;
+import android.telephony.emergency.EmergencyNumber;
 import android.telephony.ims.ImsCallSession;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.feature.MmTelFeature;
@@ -49,6 +50,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Base64;
 
 import com.android.internal.telephony.Call;
+import com.android.internal.telephony.CarrierResolver;
 import com.android.internal.telephony.GsmCdmaConnection;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.SmsResponse;
@@ -73,6 +75,7 @@ import org.junit.Test;
 import org.mockito.Mock;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 public class TelephonyMetricsTest extends TelephonyTest {
@@ -188,9 +191,23 @@ public class TelephonyMetricsTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testWriteCarrierIdMatchingEventWithInvalidMatchingScore() throws Exception {
+        CarrierResolver.CarrierMatchingRule simInfo = new CarrierResolver.CarrierMatchingRule(
+                "mccmncTest",
+                "imsiPrefixTest",
+                "iccidPrefixTest",
+                "gid1Test",
+                "gid2Test",
+                "plmnTest",
+                "spnTest",
+                "apnTest",
+                new ArrayList<>(),
+                -1, null, -1);
 
         mMetrics.writeCarrierIdMatchingEvent(mPhone.getPhoneId(), 1,
-                TelephonyManager.UNKNOWN_CARRIER_ID, "mccmncTest", "gid1Test");
+                TelephonyManager.UNKNOWN_CARRIER_ID,
+                "unknownMccmncTest",
+                "unknownGid1Test",
+                simInfo);
         TelephonyLog log = buildProto();
 
         assertEquals(1, log.events.length);
@@ -200,16 +217,35 @@ public class TelephonyMetricsTest extends TelephonyTest {
         assertEquals(mPhone.getPhoneId(), log.events[0].phoneId);
         assertEquals(1, log.events[0].carrierIdMatching.cidTableVersion);
         assertEquals(TelephonyEvent.Type.CARRIER_ID_MATCHING, log.events[0].type);
+        assertEquals("unknownMccmncTest", log.events[0].carrierIdMatching.result.unknownMccmnc);
+        assertTrue(log.events[0].carrierIdMatching.result.unknownGid1.isEmpty());
+        assertEquals("iccidPrefixTest", log.events[0].carrierIdMatching.result.iccidPrefix);
+        assertEquals("imsiPrefixTest", log.events[0].carrierIdMatching.result.imsiPrefix);
+        assertEquals("spnTest", log.events[0].carrierIdMatching.result.spn);
+        assertEquals("plmnTest", log.events[0].carrierIdMatching.result.pnn);
+        assertEquals("apnTest", log.events[0].carrierIdMatching.result.preferApn);
         assertEquals("mccmncTest", log.events[0].carrierIdMatching.result.mccmnc);
-        assertTrue(log.events[0].carrierIdMatching.result.gid1.isEmpty());
+        assertEquals("gid1Test", log.events[0].carrierIdMatching.result.gid1);
     }
 
     // Test write Carrier Identification matching event
     @Test
     @SmallTest
     public void testWriteCarrierIdMatchingEvent() throws Exception {
+        CarrierResolver.CarrierMatchingRule simInfo = new CarrierResolver.CarrierMatchingRule(
+                "mccmncTest",
+                "imsiPrefixTest",
+                "iccidPrefixTest",
+                "gid1Test",
+                "gid2Test",
+                "plmnTest",
+                "spnTest",
+                "apnTest",
+                new ArrayList<>(),
+                -1, null, -1);
 
-        mMetrics.writeCarrierIdMatchingEvent(mPhone.getPhoneId(), 1, 1, "mccmncTest", "gid1Test");
+        mMetrics.writeCarrierIdMatchingEvent(mPhone.getPhoneId(), 1, 1,
+                "unknownMccmncTest", "unknownGid1Test", simInfo);
         TelephonyLog log = buildProto();
 
         assertEquals(1, log.events.length);
@@ -220,8 +256,48 @@ public class TelephonyMetricsTest extends TelephonyTest {
         assertEquals(TelephonyEvent.Type.CARRIER_ID_MATCHING, log.events[0].type);
         assertEquals(1, log.events[0].carrierIdMatching.cidTableVersion);
         assertEquals(1, log.events[0].carrierIdMatching.result.carrierId);
+        assertEquals("unknownMccmncTest", log.events[0].carrierIdMatching.result.unknownMccmnc);
+        assertEquals("unknownGid1Test", log.events[0].carrierIdMatching.result.unknownGid1);
+        assertEquals("iccidPrefixTest", log.events[0].carrierIdMatching.result.iccidPrefix);
+        assertEquals("imsiPrefixTest", log.events[0].carrierIdMatching.result.imsiPrefix);
+        assertEquals("spnTest", log.events[0].carrierIdMatching.result.spn);
+        assertEquals("plmnTest", log.events[0].carrierIdMatching.result.pnn);
+        assertEquals("apnTest", log.events[0].carrierIdMatching.result.preferApn);
         assertEquals("mccmncTest", log.events[0].carrierIdMatching.result.mccmnc);
         assertEquals("gid1Test", log.events[0].carrierIdMatching.result.gid1);
+    }
+
+    // Test write Emergency Number update event
+    @Test
+    @SmallTest
+    public void testWriteEmergencyNumberUpdateEvent() throws Exception {
+        EmergencyNumber number = new EmergencyNumber(
+                "911",
+                "us",
+                "30",
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                new ArrayList<String>(),
+                EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
+                EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
+
+        mMetrics.writeEmergencyNumberUpdateEvent(mPhone.getPhoneId(), number);
+        TelephonyLog log = buildProto();
+
+        assertEquals(1, log.events.length);
+        assertEquals(0, log.callSessions.length);
+        assertEquals(0, log.smsSessions.length);
+
+        assertEquals(mPhone.getPhoneId(), log.events[0].phoneId);
+        assertEquals(TelephonyEvent.Type.EMERGENCY_NUMBER_REPORT, log.events[0].type);
+        assertEquals("911", log.events[0].updatedEmergencyNumber.address);
+        assertEquals("30", log.events[0].updatedEmergencyNumber.mnc);
+        assertEquals(EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                log.events[0].updatedEmergencyNumber.serviceCategoriesBitmask);
+        assertEquals(0, log.events[0].updatedEmergencyNumber.urns.length);
+        assertEquals(EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
+                log.events[0].updatedEmergencyNumber.numberSourcesBitmask);
+        assertEquals(EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL,
+                log.events[0].updatedEmergencyNumber.routing);
     }
 
     // Test write on IMS call start
@@ -516,7 +592,7 @@ public class TelephonyMetricsTest extends TelephonyTest {
         doReturn(Call.State.DIALING).when(mConnection).getState();
         mMetrics.writeRilDial(mPhone.getPhoneId(), mConnection, 2, mUusInfo);
         doReturn(Call.State.DISCONNECTED).when(mConnection).getState();
-        mMetrics.writeRilHangup(mPhone.getPhoneId(), mConnection, 3);
+        mMetrics.writeRilHangup(mPhone.getPhoneId(), mConnection, 3, "");
         mMetrics.writePhoneState(mPhone.getPhoneId(), PhoneConstants.State.IDLE);
         TelephonyLog log = buildProto();
 
