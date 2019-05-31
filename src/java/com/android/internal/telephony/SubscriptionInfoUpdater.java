@@ -109,6 +109,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private static int[] sSimCardState = new int[PROJECT_SIM_NUM];
     private static int[] sSimApplicationState = new int[PROJECT_SIM_NUM];
     private boolean[] mIsRecordLoaded = new boolean[PROJECT_SIM_NUM];
+    private static boolean sIsSubInfoInitialized = false;
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
     @UnsupportedAppUsage
@@ -213,8 +214,15 @@ public class SubscriptionInfoUpdater extends Handler {
     @UnsupportedAppUsage
     protected boolean isAllIccIdQueryDone() {
         for (int i = 0; i < PROJECT_SIM_NUM; i++) {
-            if (mIccId[i] == null) {
-                logd("Wait for SIM" + (i + 1) + " IccId");
+            UiccSlot slot = UiccController.getInstance().getUiccSlotForPhone(i);
+            int slotId = UiccController.getInstance().getSlotIdFromPhoneId(i);
+            if  (mIccId[i] == null || slot == null || !slot.isActive()) {
+                if (mIccId[i] == null) {
+                    logd("Wait for SIM " + i + " Iccid");
+                } else {
+                    logd(String.format("Wait for slot corresponding to phone %d to be active, "
+                            + "slotId is %d", i, slotId));
+                }
                 return false;
             }
         }
@@ -419,7 +427,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
         updateSubscriptionInfoByIccId(slotId);
         List<SubscriptionInfo> subscriptionInfos = SubscriptionController.getInstance()
-                .getSubInfoUsingSlotIndexPrivileged(slotId, false);
+                .getSubInfoUsingSlotIndexPrivileged(slotId);
         if (subscriptionInfos == null || subscriptionInfos.isEmpty()) {
             loge("empty subinfo for slotId: " + slotId + "could not update ContentResolver");
         } else {
@@ -601,7 +609,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
 
         List<SubscriptionInfo> subInfos = SubscriptionController.getInstance()
-                .getSubInfoUsingSlotIndexPrivileged(slotIndex, false);
+                .getSubInfoUsingSlotIndexPrivileged(slotIndex);
         if (subInfos != null) {
             boolean changed = false;
             for (int i = 0; i < subInfos.size(); i++) {
@@ -638,17 +646,33 @@ public class SubscriptionInfoUpdater extends Handler {
             UiccSlot[] uiccSlots = uiccController.getUiccSlots();
             if (uiccSlots != null) {
                 Arrays.stream(uiccSlots)
-                        .filter(uiccSlot -> uiccSlot.getUiccCard() != null)
+                        .filter(uiccSlot -> uiccSlot != null && uiccSlot.getUiccCard() != null)
                         .map(uiccSlot -> uiccController.convertToPublicCardId(
                                 uiccSlot.getUiccCard().getCardId()))
                         .forEach(cardId -> updateEmbeddedSubscriptions(cardId));
             }
-            // update default subId
-            MultiSimSettingController.getInstance().onAllSubscriptionsLoaded();
+            setSubInfoInitialized();
         }
 
         SubscriptionController.getInstance().notifySubscriptionInfoChanged();
         logd("updateSubscriptionInfoByIccId:- SubscriptionInfo update complete");
+    }
+
+    private static void setSubInfoInitialized() {
+        // Should only be triggered once.
+        if (!sIsSubInfoInitialized) {
+            if (DBG) logd("SubInfo Initialized");
+            sIsSubInfoInitialized = true;
+            SubscriptionController.getInstance().notifySubInfoReady();
+            MultiSimSettingController.getInstance().notifyAllSubscriptionLoaded();
+        }
+    }
+
+    /**
+     * Whether subscriptions of all SIMs are initialized.
+     */
+    public static boolean isSubInfoInitialized() {
+        return sIsSubInfoInitialized;
     }
 
     /**
@@ -720,11 +744,13 @@ public class SubscriptionInfoUpdater extends Handler {
         for (EuiccProfileInfo embeddedProfile : embeddedProfiles) {
             int index =
                     findSubscriptionInfoForIccid(existingSubscriptions, embeddedProfile.getIccid());
+            int nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE;
             if (index < 0) {
                 // No existing entry for this ICCID; create an empty one.
                 SubscriptionController.getInstance().insertEmptySubInfoRecord(
                         embeddedProfile.getIccid(), SubscriptionManager.SIM_NOT_INSERTED);
             } else {
+                nameSource = existingSubscriptions.get(index).getNameSource();
                 existingSubscriptions.remove(index);
             }
 
@@ -744,13 +770,25 @@ public class SubscriptionInfoUpdater extends Handler {
                     isRuleListEmpty ? null : UiccAccessRule.encodeRules(
                             ruleList.toArray(new UiccAccessRule[ruleList.size()])));
             values.put(SubscriptionManager.IS_REMOVABLE, isRemovable);
-            values.put(SubscriptionManager.DISPLAY_NAME, embeddedProfile.getNickname());
-            values.put(SubscriptionManager.NAME_SOURCE, SubscriptionManager.NAME_SOURCE_USER_INPUT);
+            // override DISPLAY_NAME if the priority of existing nameSource is <= carrier
+            if (SubscriptionController.getNameSourcePriority(nameSource)
+                    <= SubscriptionController.getNameSourcePriority(
+                            SubscriptionManager.NAME_SOURCE_CARRIER)) {
+                values.put(SubscriptionManager.DISPLAY_NAME, embeddedProfile.getNickname());
+                values.put(SubscriptionManager.NAME_SOURCE,
+                        SubscriptionManager.NAME_SOURCE_CARRIER);
+            }
             values.put(SubscriptionManager.PROFILE_CLASS, embeddedProfile.getProfileClass());
             CarrierIdentifier cid = embeddedProfile.getCarrierIdentifier();
             if (cid != null) {
                 values.put(SubscriptionManager.CARRIER_ID,
                         CarrierResolver.getCarrierIdFromIdentifier(mContext, cid));
+                String mcc = cid.getMcc();
+                String mnc = cid.getMnc();
+                values.put(SubscriptionManager.MCC_STRING, mcc);
+                values.put(SubscriptionManager.MCC, mcc);
+                values.put(SubscriptionManager.MNC_STRING, mnc);
+                values.put(SubscriptionManager.MNC, mnc);
             }
             hasChanges = true;
             contentResolver.update(SubscriptionManager.CONTENT_URI, values,
@@ -869,19 +907,23 @@ public class SubscriptionInfoUpdater extends Handler {
 
         String groupUuidString =
                 config.getString(CarrierConfigManager.KEY_SUBSCRIPTION_GROUP_UUID_STRING, "");
-        ParcelUuid groupId = null;
+        ParcelUuid groupUuid = null;
         if (!TextUtils.isEmpty(groupUuidString)) {
             try {
                 // Update via a UUID Structure to ensure consistent formatting
-                ParcelUuid groupUuid = ParcelUuid.fromString(groupUuidString);
+                groupUuid = ParcelUuid.fromString(groupUuidString);
                 if (groupUuid.equals(REMOVE_GROUP_UUID)
                             && currentSubInfo.getGroupUuid() != null) {
                     cv.put(SubscriptionManager.GROUP_UUID, (String) null);
                     if (DBG) logd("Group Removed for" + currentSubId);
-                } else {
-                    // TODO: validate and update group owner information once feasible.
+                } else if (SubscriptionController.getInstance().canPackageManageGroup(groupUuid,
+                        configPackageName)) {
                     cv.put(SubscriptionManager.GROUP_UUID, groupUuid.toString());
+                    cv.put(SubscriptionManager.GROUP_OWNER, configPackageName);
                     if (DBG) logd("Group Added for" + currentSubId);
+                } else {
+                    loge("configPackageName " + configPackageName + " doesn't own grouUuid "
+                            + groupUuid);
                 }
             } catch (IllegalArgumentException e) {
                 loge("Invalid Group UUID=" + groupUuidString);
@@ -891,7 +933,7 @@ public class SubscriptionInfoUpdater extends Handler {
                     .getUriForSubscriptionId(currentSubId), cv, null, null) > 0) {
             sc.refreshCachedActiveSubscriptionInfoList();
             sc.notifySubscriptionInfoChanged();
-            MultiSimSettingController.getInstance().onSubscriptionGroupChanged(groupId);
+            MultiSimSettingController.getInstance().notifySubscriptionGroupChanged(groupUuid);
         }
     }
 
@@ -1013,11 +1055,11 @@ public class SubscriptionInfoUpdater extends Handler {
     }
 
     @UnsupportedAppUsage
-    private void logd(String message) {
+    private static void logd(String message) {
         Rlog.d(LOG_TAG, message);
     }
 
-    private void loge(String message) {
+    private static void loge(String message) {
         Rlog.e(LOG_TAG, message);
     }
 
