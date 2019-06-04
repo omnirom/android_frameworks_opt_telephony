@@ -518,7 +518,12 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         when(mSubscriptionController.getSubscriptionInfoListForEmbeddedSubscriptionUpdate(
                 new String[] { "1", "3"}, false /* removable */)).thenReturn(subInfoList);
 
-        assertTrue(mUpdater.updateEmbeddedSubscriptions(FAKE_CARD_ID));
+        List<Integer> cardIds = new ArrayList<>();
+        cardIds.add(FAKE_CARD_ID);
+        mUpdater.updateEmbeddedSubscriptions(cardIds, null /* callback */);
+
+        // Wait for some time until the callback is triggered.
+        waitForMs(100);
 
         // 3 is new and so a new entry should have been created.
         verify(mSubscriptionController).insertEmptySubInfoRecord(
@@ -569,7 +574,9 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         when(mSubscriptionController.getSubscriptionInfoListForEmbeddedSubscriptionUpdate(
                 new String[0], false /* removable */)).thenReturn(subInfoList);
 
-        assertFalse(mUpdater.updateEmbeddedSubscriptions(FAKE_CARD_ID));
+        ArrayList<Integer> cardIds = new ArrayList<>(1);
+        cardIds.add(FAKE_CARD_ID);
+        mUpdater.updateEmbeddedSubscriptions(cardIds, null /* callback */);
 
         // No new entries should be created.
         verify(mSubscriptionController, times(0)).clearSubInfo();
@@ -597,7 +604,9 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         when(mSubscriptionController.getSubscriptionInfoListForEmbeddedSubscriptionUpdate(
                 new String[0], false /* removable */)).thenReturn(subInfoList);
 
-        assertFalse(mUpdater.updateEmbeddedSubscriptions(FAKE_CARD_ID));
+        ArrayList<Integer> cardIds = new ArrayList<>(1);
+        cardIds.add(FAKE_CARD_ID);
+        mUpdater.updateEmbeddedSubscriptions(cardIds, null /* callback */);
 
         // No new entries should be created.
         verify(mSubscriptionController, never()).insertEmptySubInfoRecord(anyString(), anyInt());
