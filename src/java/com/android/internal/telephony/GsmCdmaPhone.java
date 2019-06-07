@@ -134,8 +134,6 @@ public class GsmCdmaPhone extends Phone {
     /** List of Registrants to receive Supplementary Service Notifications. */
     private RegistrantList mSsnRegistrants = new RegistrantList();
 
-    private static final int IMEI_14_DIGIT = 14;
-
     //CDMA
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
     private static final String PREFIX_WPS = "*272";
@@ -1590,14 +1588,15 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getDeviceId() {
-        CarrierConfigManager configManager = (CarrierConfigManager)
-                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        boolean force_imei = configManager.getConfigForSubId(getSubId())
-                .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
-
-        if (isPhoneTypeGsm() || force_imei) {
-            return getImei();
+        if (isPhoneTypeGsm()) {
+            return mImei;
         } else {
+            CarrierConfigManager configManager = (CarrierConfigManager)
+                    mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+            boolean force_imei = configManager.getConfigForSubId(getSubId())
+                    .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
+            if (force_imei) return mImei;
+
             String id = getMeid();
             if ((id == null) || id.matches("^0*$")) {
                 loge("getDeviceId(): MEID is not initialized use ESN");
@@ -1624,14 +1623,6 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getImei() {
-        CarrierConfigManager configManager = (CarrierConfigManager)
-                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        boolean enable14DigitImei = configManager.getConfigForSubId(getSubId())
-                .getBoolean("config_enable_display_14digit_imei");
-        if (enable14DigitImei && !TextUtils.isEmpty(mImei)
-                && mImei.length() > IMEI_14_DIGIT) {
-            return mImei.substring(0, IMEI_14_DIGIT);
-        }
         return mImei;
     }
 
