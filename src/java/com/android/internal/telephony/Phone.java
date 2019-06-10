@@ -739,7 +739,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 ar = (AsyncResult)msg.obj;
                 if (ar.exception == null) {
                     byte[] data = (byte[])ar.result;
-                    mNotifier.notifyOemHookRawEventForSubscriber(getSubId(), data);
+                    mNotifier.notifyOemHookRawEventForSubscriber(this, data);
                 } else {
                     Rlog.e(LOG_TAG, "OEM hook raw exception: " + ar.exception);
                 }
@@ -987,6 +987,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         migrate(mUnknownConnectionRegistrants, from.mUnknownConnectionRegistrants);
         migrate(mSuppServiceFailedRegistrants, from.mSuppServiceFailedRegistrants);
         migrate(mCellInfoRegistrants, from.mCellInfoRegistrants);
+        // The emergency state of IMS phone will be cleared in ImsPhone#notifySrvccState after
+        // receive SRVCC completed
         if (from.isInEmergencyCall()) {
             setIsInEmergencyCall();
         }
@@ -2417,7 +2419,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     /** Notify the {@link EmergencyNumber} changes. */
     public void notifyEmergencyNumberList() {
-        mNotifier.notifyEmergencyNumberList();
+        mNotifier.notifyEmergencyNumberList(this);
     }
 
     /**
