@@ -3699,7 +3699,11 @@ public class GsmCdmaPhone extends Phone {
         if (subInfo == null) {
             return null;
         }
-        return subInfo.getCountryIso().toUpperCase();
+        final String country = subInfo.getCountryIso();
+        if (country == null) {
+            return null;
+        }
+        return country.toUpperCase();
     }
 
     private static final int[] VOICE_PS_CALL_RADIO_TECHNOLOGY = {
