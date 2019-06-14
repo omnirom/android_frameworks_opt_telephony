@@ -21,7 +21,6 @@ import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.nullable;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -53,7 +52,6 @@ import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.telephony.emergency.EmergencyNumber;
 import android.telephony.euicc.EuiccManager;
 import android.telephony.ims.ImsCallProfile;
 import android.test.mock.MockContentProvider;
@@ -66,7 +64,6 @@ import com.android.ims.ImsEcbm;
 import com.android.ims.ImsManager;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.cdma.EriManager;
-import com.android.internal.telephony.dataconnection.DataEnabledOverride;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DcTracker;
 import com.android.internal.telephony.dataconnection.TransportManager;
@@ -94,7 +91,6 @@ import org.mockito.stubbing.Answer;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -107,12 +103,6 @@ public abstract class TelephonyTest {
     protected static String TAG;
 
     private static final int MAX_INIT_WAIT_MS = 30000; // 30 seconds
-
-    private static final EmergencyNumber SAMPLE_EMERGENCY_NUMBER =
-            new EmergencyNumber("911", "us", "30",
-                    EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
-            new ArrayList<String>(), EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
-            EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
 
     @Mock
     protected GsmCdmaPhone mPhone;
@@ -234,8 +224,6 @@ public abstract class TelephonyTest {
     protected RestrictedState mRestrictedState;
     @Mock
     protected DataEnabledSettings mDataEnabledSettings;
-    @Mock
-    protected DataEnabledOverride mDataEnabledOverride;
     @Mock
     protected PhoneConfigurationManager mPhoneConfigurationManager;
     @Mock
@@ -385,8 +373,6 @@ public abstract class TelephonyTest {
         doReturn(mEmergencyNumberTracker).when(mTelephonyComponentFactory)
                 .makeEmergencyNumberTracker(nullable(Phone.class),
                         nullable(CommandsInterface.class));
-        doReturn(getTestEmergencyNumber()).when(mEmergencyNumberTracker)
-                .getEmergencyNumber(any());
         doReturn(mUiccProfile).when(mTelephonyComponentFactory)
                 .makeUiccProfile(nullable(Context.class), nullable(CommandsInterface.class),
                         nullable(IccCardStatus.class), anyInt(), nullable(UiccCard.class),
@@ -718,10 +704,6 @@ public abstract class TelephonyTest {
                 // do nothing
             }
         }
-    }
-
-    protected final EmergencyNumber getTestEmergencyNumber() {
-        return SAMPLE_EMERGENCY_NUMBER;
     }
 
     public static Object invokeMethod(

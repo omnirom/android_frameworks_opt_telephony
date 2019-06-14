@@ -512,9 +512,10 @@ public abstract class Connection {
      *
      * @hide
      */
-    public void setEmergencyCallInfo(CallTracker ct) {
-        if (ct != null) {
-            Phone phone = ct.getPhone();
+    public void setEmergencyCallInfo() {
+        Call call = getCall();
+        if (call != null) {
+            Phone phone = call.getPhone();
             if (phone != null) {
                 EmergencyNumberTracker tracker = phone.getEmergencyNumberTracker();
                 if (tracker != null) {
@@ -522,17 +523,9 @@ public abstract class Connection {
                     if (num != null) {
                         mIsEmergencyCall = true;
                         mEmergencyNumberInfo = num;
-                    } else {
-                        Rlog.e(TAG, "setEmergencyCallInfo: emergency number is null");
                     }
-                } else {
-                    Rlog.e(TAG, "setEmergencyCallInfo: emergency number tracker is null");
                 }
-            } else {
-                Rlog.e(TAG, "setEmergencyCallInfo: phone is null");
             }
-        } else {
-            Rlog.e(TAG, "setEmergencyCallInfo: call tracker is null");
         }
     }
 
@@ -812,11 +805,6 @@ public abstract class Connection {
         mPostDialString = c.mPostDialString;
         mNextPostDialChar = c.mNextPostDialChar;
         mPostDialState = c.mPostDialState;
-
-        // Migrate Emergency call parameters
-        mIsEmergencyCall = c.isEmergencyCall();
-        mEmergencyNumberInfo = c.getEmergencyNumberInfo();
-        mHasKnownUserIntentEmergency = c.hasKnownUserIntentEmergency();
     }
 
     /**

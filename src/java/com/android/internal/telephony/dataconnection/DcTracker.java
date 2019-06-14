@@ -718,8 +718,6 @@ public class DcTracker extends Handler {
 
         mDataEnabledSettings.registerForDataEnabledChanged(this,
                 DctConstants.EVENT_DATA_ENABLED_CHANGED, null);
-        mDataEnabledSettings.registerForDataEnabledOverrideChanged(this,
-                DctConstants.EVENT_DATA_ENABLED_OVERRIDE_RULES_CHANGED);
 
         mPhone.getContext().registerReceiver(mIntentReceiver, filter, null, mPhone);
 
@@ -875,9 +873,6 @@ public class DcTracker extends Handler {
         mPhone.getCallTracker().unregisterForVoiceCallStarted(this);
         unregisterServiceStateTrackerEvents();
         mDataServiceManager.unregisterForServiceBindingChanged(this);
-
-        mDataEnabledSettings.unregisterForDataEnabledChanged(this);
-        mDataEnabledSettings.unregisterForDataEnabledOverrideChanged(this);
     }
 
     /**
@@ -3869,8 +3864,10 @@ public class DcTracker extends Handler {
                     onDataEnabledChanged(enabled, reason);
                 }
                 break;
-            case DctConstants.EVENT_DATA_ENABLED_OVERRIDE_RULES_CHANGED:
-                onDataEnabledOverrideRulesChanged();
+            case DctConstants.EVENT_APN_WHITE_LIST_CHANGE:
+                int apnType = msg.arg1;
+                boolean enable = msg.arg2 == 1;
+                onApnWhiteListChange(apnType, enable);
                 break;
             default:
                 Rlog.e("DcTracker", "Unhandled event=" + msg);
@@ -4358,22 +4355,30 @@ public class DcTracker extends Handler {
         setActivity(activity);
     }
 
-    private void onDataEnabledOverrideRulesChanged() {
+    public void notifyApnWhiteListChange(int apnType, boolean enable) {
+        Message msg = obtainMessage(DctConstants.EVENT_APN_WHITE_LIST_CHANGE);
+        msg.arg1 = apnType;
+        msg.arg2 = enable ? 1 : 0;
+        sendMessage(msg);
+    }
+
+    private void onApnWhiteListChange(int apnType, boolean enable) {
         if (DBG) {
-            log("onDataEnabledOverrideRulesChanged");
+            log("onApnWhiteListChange: enable=" + enable + ", apnType=" + apnType);
         }
 
-        for (ApnContext apnContext : mPrioritySortedApnContexts) {
-            if (isDataAllowed(apnContext, REQUEST_TYPE_NORMAL, null)) {
-                if (apnContext.getDataConnection() != null) {
-                    apnContext.getDataConnection().reevaluateRestrictedState();
-                }
-                setupDataOnConnectableApn(apnContext, Phone.REASON_DATA_ENABLED_OVERRIDE,
-                        RetryFailures.ALWAYS);
-            } else if (shouldCleanUpConnection(apnContext, true)) {
-                apnContext.setReason(Phone.REASON_DATA_ENABLED_OVERRIDE);
-                cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
+        final ApnContext apnContext = mApnContextsByType.get(apnType);
+        if (apnContext == null) return;
+
+        if (isDataAllowed(apnContext, REQUEST_TYPE_NORMAL, null)) {
+            if (apnContext.getDataConnection() != null) {
+                apnContext.getDataConnection().reevaluateRestrictedState();
             }
+            setupDataOnConnectableApn(apnContext, Phone.REASON_APN_ADDED_TO_WHITELIST,
+                    RetryFailures.ALWAYS);
+        } else if (shouldCleanUpConnection(apnContext, true)) {
+            apnContext.setReason(Phone.REASON_APN_REMOVED_FROM_WHITELIST);
+            cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
         }
     }
 

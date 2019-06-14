@@ -101,8 +101,6 @@ public abstract class CallTracker extends Handler {
 
     protected abstract void handlePollCalls(AsyncResult ar);
 
-    protected abstract Phone getPhone();
-
     protected Connection getHoConnection(DriverCall dc) {
         for (Connection hoConn : mHandoverConnections) {
             log("getHoConnection - compare number: hoConn= " + hoConn.toString());

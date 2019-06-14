@@ -269,7 +269,7 @@ public class ImsPhoneConnection extends Connection implements
 
         mIsEmergency = isEmergency;
         if (isEmergency) {
-            setEmergencyCallInfo(mOwner);
+            setEmergencyCallInfo();
         }
 
         fetchDtmfToneDelay(phone);
