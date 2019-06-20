@@ -47,9 +47,11 @@ import com.android.internal.util.IndentingPrintWriter;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * The locale tracker keeps tracking the current locale of the phone.
@@ -87,6 +89,22 @@ public class LocaleTracker extends Handler {
 
     /** The maximum fail count to prevent delay time overflow */
     private static final int MAX_FAIL_COUNT = 30;
+
+    /** MCCs used in test environments */
+    public static final Set<String> TEST_MCCS = new HashSet<String>() {{
+        add("001");
+        add("002");
+        add("003");
+        add("004");
+        add("005");
+        add("006");
+        add("007");
+        add("008");
+        add("009");
+        add("010");
+        add("011");
+        add("012");
+    }};
 
     private final Phone mPhone;
 
@@ -388,7 +406,7 @@ public class LocaleTracker extends Handler {
 
         // If for any reason we can't get country from operator numeric, try to get it from cell
         // info.
-        if (TextUtils.isEmpty(countryIso)) {
+        if (TextUtils.isEmpty(countryIso) && !TEST_MCCS.contains(mcc)) {
             mcc = getMccFromCellInfo();
             countryIso = MccTable.countryCodeForMcc(mcc);
         }
@@ -427,7 +445,7 @@ public class LocaleTracker extends Handler {
             countryChanged = true;
         }
 
-        if (TextUtils.isEmpty(countryIso)) {
+        if (TextUtils.isEmpty(countryIso) && !TEST_MCCS.contains(mcc)) {
             mNitzStateMachine.handleNetworkCountryCodeUnavailable();
         } else {
             mNitzStateMachine.handleNetworkCountryCodeSet(countryChanged);
