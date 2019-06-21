@@ -109,6 +109,14 @@ public class MultiSimSettingController extends Handler {
     /** The singleton instance. */
     protected static MultiSimSettingController sInstance = null;
 
+    // This will be set true when handling EVENT_ALL_SUBSCRIPTIONS_LOADED. The reason of keeping
+    // a local variable instead of calling SubscriptionInfoUpdater#isSubInfoInitialized is, there
+    // might be a race condition that we receive EVENT_SUBSCRIPTION_INFO_CHANGED first, then
+    // EVENT_ALL_SUBSCRIPTIONS_LOADED. And calling SubscriptionInfoUpdater#isSubInfoInitialized
+    // will make us handle EVENT_SUBSCRIPTION_INFO_CHANGED unexpectedly and causing us to believe
+    // the SIMs are newly inserted instead of being initialized.
+    private boolean mSubInfoInitialized = false;
+
     /**
      * Return the singleton or create one if not existed.
      */
@@ -251,6 +259,7 @@ public class MultiSimSettingController extends Handler {
      */
     private void onAllSubscriptionsLoaded() {
         if (DBG) log("onAllSubscriptionsLoaded");
+        mSubInfoInitialized = true;
         updateDefaults(/*init*/ true);
         disableDataForNonDefaultNonOpportunisticSubscriptions();
     }
@@ -262,7 +271,7 @@ public class MultiSimSettingController extends Handler {
      */
     private void onSubscriptionsChanged() {
         if (DBG) log("onSubscriptionsChanged");
-        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
+        if (!mSubInfoInitialized) return;
         updateDefaults(/*init*/ false);
         disableDataForNonDefaultNonOpportunisticSubscriptions();
     }
@@ -346,7 +355,7 @@ public class MultiSimSettingController extends Handler {
     protected void updateDefaults(boolean init) {
         if (DBG) log("updateDefaults");
 
-        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
+        if (!mSubInfoInitialized) return;
 
         List<SubscriptionInfo> activeSubInfos = mSubController
                 .getActiveSubscriptionInfoList(mContext.getOpPackageName());
@@ -542,7 +551,7 @@ public class MultiSimSettingController extends Handler {
     }
 
     protected void disableDataForNonDefaultNonOpportunisticSubscriptions() {
-        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
+        if (!mSubInfoInitialized) return;
 
         int defaultDataSub = mSubController.getDefaultDataSubId();
 

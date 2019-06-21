@@ -459,7 +459,8 @@ public class SubscriptionInfoUpdater extends Handler {
         } else {
             for (SubscriptionInfo sub : subscriptionInfos) {
                 int subId = sub.getSubscriptionId();
-                TelephonyManager tm = TelephonyManager.getDefault();
+                TelephonyManager tm = (TelephonyManager)
+                        mContext.getSystemService(Context.TELEPHONY_SERVICE);
                 String operator = tm.getSimOperatorNumeric(subId);
 
                 if (operator != null && !TextUtils.isEmpty(operator)) {
@@ -482,6 +483,11 @@ public class SubscriptionInfoUpdater extends Handler {
                 String msisdn = tm.getLine1Number(subId);
                 if (msisdn != null) {
                     SubscriptionController.getInstance().setDisplayNumber(msisdn, subId);
+                }
+
+                String imsi = tm.createForSubscriptionId(subId).getSubscriberId();
+                if (imsi != null) {
+                    SubscriptionController.getInstance().setImsi(imsi, subId);
                 }
 
                 String[] ehplmns = records.getEhplmns();
