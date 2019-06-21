@@ -22,6 +22,7 @@ import static com.android.internal.util.DumpUtils.checkDumpPermission;
 
 import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
+import android.app.ActivityManager;
 import android.app.ActivityThread;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
@@ -42,6 +43,7 @@ import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -136,11 +138,17 @@ public class SmsController extends ISmsImplBase {
     public void sendDataForSubscriberWithSelfPermissions(int subId, String callingPackage,
             String destAddr, String scAddr, int destPort, byte[] data, PendingIntent sentIntent,
             PendingIntent deliveryIntent) {
+        sendDataForSubscriberWithSelfPermissionsInternal(subId, callingPackage, destAddr, scAddr,
+                destPort, data, sentIntent, deliveryIntent, false /* isForVvm */);
+    }
+
+    private void sendDataForSubscriberWithSelfPermissionsInternal(int subId, String callingPackage,
+            String destAddr, String scAddr, int destPort, byte[] data, PendingIntent sentIntent,
+            PendingIntent deliveryIntent, boolean isForVvm) {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendDataWithSelfPermissions(callingPackage, destAddr, scAddr, destPort,
-                    data,
-                    sentIntent, deliveryIntent);
+                    data, sentIntent, deliveryIntent, isForVvm);
         } else {
             Rlog.e(LOG_TAG, "sendText iccSmsIntMgr is null for"
                     + " Subscription: " + subId);
@@ -202,10 +210,17 @@ public class SmsController extends ISmsImplBase {
     public void sendTextForSubscriberWithSelfPermissions(int subId, String callingPackage,
             String destAddr, String scAddr, String text, PendingIntent sentIntent,
             PendingIntent deliveryIntent, boolean persistMessage) {
+        sendTextForSubscriberWithSelfPermissionsInternal(subId, callingPackage, destAddr, scAddr,
+                text, sentIntent, deliveryIntent, persistMessage, false /* isForVvm */);
+    }
+
+    private void sendTextForSubscriberWithSelfPermissionsInternal(int subId, String callingPackage,
+            String destAddr, String scAddr, String text, PendingIntent sentIntent,
+            PendingIntent deliveryIntent, boolean persistMessage, boolean isForVvm) {
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendTextWithSelfPermissions(callingPackage, destAddr, scAddr, text,
-                    sentIntent, deliveryIntent, persistMessage);
+                    sentIntent, deliveryIntent, persistMessage, isForVvm);
         } else {
             Rlog.e(LOG_TAG, "sendText iccSmsIntMgr is null for"
                     + " Subscription: " + subId);
@@ -353,6 +368,16 @@ public class SmsController extends ISmsImplBase {
     @Override
     public boolean isSmsSimPickActivityNeeded(int subId) {
         final Context context = ActivityThread.currentApplication().getApplicationContext();
+        ActivityManager am = context.getSystemService(ActivityManager.class);
+        // Don't show the SMS SIM Pick activity if it is not foreground.
+        boolean isCallingProcessForeground = am != null
+                && am.getUidImportance(Binder.getCallingUid())
+                        == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
+        if (!isCallingProcessForeground) {
+            Rlog.d(LOG_TAG, "isSmsSimPickActivityNeeded: calling process not foreground. "
+                    + "Suppressing activity.");
+            return false;
+        }
         TelephonyManager telephonyManager =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
         List<SubscriptionInfo> subInfoList;
@@ -409,14 +434,33 @@ public class SmsController extends ISmsImplBase {
     }
 
     /**
-     * Get User preferred SMS subscription
+     * Get preferred SMS subscription.
      *
-     * @return User preferred SMS subscription
+     * @return User-defined default SMS subscription. If there is no default, return the active
+     * subscription if there is only one active. If no preference can be found, return
+     * {@link SubscriptionManager#INVALID_SUBSCRIPTION_ID}.
      */
     @UnsupportedAppUsage
     @Override
     public int getPreferredSmsSubscription() {
-        return SubscriptionController.getInstance().getDefaultSmsSubId();
+        // If there is a default, choose that one.
+        int defaultSubId = SubscriptionController.getInstance().getDefaultSmsSubId();
+        if (SubscriptionManager.isValidSubscriptionId(defaultSubId)) {
+            return defaultSubId;
+        }
+        // No default, if there is only one sub active, choose that as the "preferred" sub id.
+        long token = Binder.clearCallingIdentity();
+        try {
+            int[] activeSubs = SubscriptionController.getInstance()
+                    .getActiveSubIdList(true /*visibleOnly*/);
+            if (activeSubs.length == 1) {
+                return activeSubs[0];
+            }
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+        // No preference can be found.
+        return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     }
 
     /**
@@ -488,6 +532,22 @@ public class SmsController extends ISmsImplBase {
             return getPhone(subId).mSmsUsageMonitor.checkDestination(destAddress, countryIso);
         } finally {
             Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    /**
+     * Internal API to send visual voicemail related SMS. This is not exposed outside the phone
+     * process, and should be called only after verifying that the caller is the default VVM app.
+     */
+    public void sendVisualVoicemailSmsForSubscriber(String callingPackage, int subId,
+            String number, int port, String text, PendingIntent sentIntent) {
+        if (port == 0) {
+            sendTextForSubscriberWithSelfPermissionsInternal(subId, callingPackage, number,
+                    null, text, sentIntent, null, false, true /* isForVvm */);
+        } else {
+            byte[] data = text.getBytes(StandardCharsets.UTF_8);
+            sendDataForSubscriberWithSelfPermissionsInternal(subId, callingPackage, number,
+                    null, (short) port, data, sentIntent, null, true /* isForVvm */);
         }
     }
 

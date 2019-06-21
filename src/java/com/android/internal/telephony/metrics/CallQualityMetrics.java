@@ -225,7 +225,7 @@ public class CallQualityMetrics {
 
     // Returns the LTE signal to noise ratio, or 0 if unavailable
     private Integer getLteSnr() {
-        ServiceStateTracker sst = mPhone.getServiceStateTracker();
+        ServiceStateTracker sst = mPhone.getDefaultPhone().getServiceStateTracker();
         if (sst == null) {
             Rlog.e(TAG, "getLteSnr: unable to get SST for phone " + mPhone.getPhoneId());
             return CellInfo.UNAVAILABLE;
@@ -267,7 +267,8 @@ public class CallQualityMetrics {
         // handover from IMS->CS->IMS, but this is currently not possible
         // TODO(b/130302396) this also may be possible when we put a call on hold and continue with
         // another call
-        summary.totalDurationWithQualityInformationInSeconds = mLastCallQuality.getCallDuration();
+        summary.totalDurationWithQualityInformationInSeconds =
+                mLastCallQuality.getCallDuration() / 1000;
         if (mWorstSsWithGoodDlQuality != null) {
             summary.snapshotOfWorstSsWithGoodQuality =
                     toCallQualityProto(mWorstSsWithGoodDlQuality.first);
@@ -304,7 +305,8 @@ public class CallQualityMetrics {
         // handover from IMS->CS->IMS, but this is currently not possible
         // TODO(b/130302396) this also may be possible when we put a call on hold and continue with
         // another call
-        summary.totalDurationWithQualityInformationInSeconds = mLastCallQuality.getCallDuration();
+        summary.totalDurationWithQualityInformationInSeconds =
+                mLastCallQuality.getCallDuration() / 1000;
         if (mWorstSsWithGoodUlQuality != null) {
             summary.snapshotOfWorstSsWithGoodQuality =
                     toCallQualityProto(mWorstSsWithGoodUlQuality.first);
@@ -336,15 +338,19 @@ public class CallQualityMetrics {
         sb.append(mPhone.getPhoneId());
         sb.append(" mUlSnapshots: {");
         for (Pair<CallQuality, Integer> snapshot : mUlSnapshots) {
-            sb.append(" {");
+            sb.append(" {cq=");
             sb.append(snapshot.first);
+            sb.append(" ss=");
+            sb.append(snapshot.second);
             sb.append("}");
         }
         sb.append("}");
         sb.append(" mDlSnapshots:{");
         for (Pair<CallQuality, Integer> snapshot : mDlSnapshots) {
-            sb.append(" {");
+            sb.append(" {cq=");
             sb.append(snapshot.first);
+            sb.append(" ss=");
+            sb.append(snapshot.second);
             sb.append("}");
         }
         sb.append("}");

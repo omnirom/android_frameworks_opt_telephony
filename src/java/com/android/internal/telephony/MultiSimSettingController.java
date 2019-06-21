@@ -24,8 +24,12 @@ import static android.telephony.TelephonyManager.EXTRA_DEFAULT_SUBSCRIPTION_SELE
 import static android.telephony.TelephonyManager.EXTRA_DEFAULT_SUBSCRIPTION_SELECT_TYPE_NONE;
 import static android.telephony.TelephonyManager.EXTRA_SUBSCRIPTION_ID;
 
+import android.annotation.IntDef;
+import android.annotation.NonNull;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Message;
 import android.os.ParcelUuid;
 import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
@@ -35,7 +39,11 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.util.ArrayUtils;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -49,15 +57,49 @@ import java.util.stream.Collectors;
  *    become the new default.
  * 3) For primary subscriptions, only default data subscription will have MOBILE_DATA on.
  */
-public class MultiSimSettingController {
+public class MultiSimSettingController extends Handler {
     private static final String LOG_TAG = "MultiSimSettingController";
     private static final boolean DBG = true;
+    private static final int EVENT_USER_DATA_ENABLED                 = 1;
+    private static final int EVENT_ROAMING_DATA_ENABLED              = 2;
+    private static final int EVENT_ALL_SUBSCRIPTIONS_LOADED          = 3;
+    private static final int EVENT_SUBSCRIPTION_INFO_CHANGED         = 4;
+    private static final int EVENT_SUBSCRIPTION_GROUP_CHANGED        = 5;
+    private static final int EVENT_DEFAULT_DATA_SUBSCRIPTION_CHANGED = 6;
+
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(prefix = {"PRIMARY_SUB_"},
+            value = {
+                    PRIMARY_SUB_NO_CHANGE,
+                    PRIMARY_SUB_ADDED,
+                    PRIMARY_SUB_REMOVED,
+                    PRIMARY_SUB_SWAPPED,
+                    PRIMARY_SUB_SWAPPED_IN_GROUP,
+                    PRIMARY_SUB_MARKED_OPPT,
+                    PRIMARY_SUB_INITIALIZED
+    })
+    private @interface PrimarySubChangeType {}
+
+    // Primary subscription not change.
+    private static final int PRIMARY_SUB_NO_CHANGE              = 0;
+    // One or more primary subscriptions are activated.
+    private static final int PRIMARY_SUB_ADDED                  = 1;
+    // One or more primary subscriptions are deactivated.
+    private static final int PRIMARY_SUB_REMOVED                = 2;
+    // One or more primary subscriptions are swapped.
+    private static final int PRIMARY_SUB_SWAPPED                = 3;
+    // One or more primary subscriptions are swapped but within same sub group.
+    private static final int PRIMARY_SUB_SWAPPED_IN_GROUP       = 4;
+    // One or more primary subscriptions are marked as opportunistic.
+    private static final int PRIMARY_SUB_MARKED_OPPT            = 5;
+    // Subscription information is initially loaded.
+    private static final int PRIMARY_SUB_INITIALIZED            = 6;
 
     protected final Context mContext;
-    private final Phone[] mPhones;
     protected final SubscriptionController mSubController;
-    private boolean mIsAllSubscriptionsLoaded;
-    private List<SubscriptionInfo> mPrimarySubList;
+    protected boolean mIsAllSubscriptionsLoaded;
+    // Keep a record of active primary (non-opportunistic) subscription list.
+    @NonNull protected List<Integer> mPrimarySubList = new ArrayList<>();
 
     /** The singleton instance. */
     protected static MultiSimSettingController sInstance = null;
@@ -68,17 +110,105 @@ public class MultiSimSettingController {
     public static MultiSimSettingController getInstance() {
         synchronized (SubscriptionController.class) {
             if (sInstance == null) {
-                sInstance = new MultiSimSettingController();
+                Log.wtf(LOG_TAG, "getInstance null");
+            }
+
+            return sInstance;
+        }
+    }
+
+    /**
+     * Init instance of MultiSimSettingController.
+     */
+    public static MultiSimSettingController init(Context context, SubscriptionController sc) {
+        synchronized (SubscriptionController.class) {
+            if (sInstance == null) {
+                sInstance = new MultiSimSettingController(context, sc);
+            } else {
+                Log.wtf(LOG_TAG, "init() called multiple times!  sInstance = " + sInstance);
             }
             return sInstance;
         }
     }
 
     @VisibleForTesting
-    public MultiSimSettingController() {
-        mContext = PhoneFactory.getDefaultPhone().getContext();
-        mPhones = PhoneFactory.getPhones();
-        mSubController = SubscriptionController.getInstance();
+    public MultiSimSettingController(Context context, SubscriptionController sc) {
+        mContext = context;
+        mSubController = sc;
+    }
+
+    /**
+     * Notify MOBILE_DATA of a subscription is changed.
+     */
+    public void notifyUserDataEnabled(int subId, boolean enable) {
+        obtainMessage(EVENT_USER_DATA_ENABLED, subId, enable ? 1 : 0).sendToTarget();
+    }
+
+    /**
+     * Notify DATA_ROAMING of a subscription is changed.
+     */
+    public void notifyRoamingDataEnabled(int subId, boolean enable) {
+        obtainMessage(EVENT_ROAMING_DATA_ENABLED, subId, enable ? 1 : 0).sendToTarget();
+    }
+
+    /**
+     * Notify that, for the first time after boot, SIMs are initialized.
+     * Should only be triggered once.
+     */
+    public void notifyAllSubscriptionLoaded() {
+        obtainMessage(EVENT_ALL_SUBSCRIPTIONS_LOADED).sendToTarget();
+    }
+
+    /**
+     * Notify subscription info change.
+     */
+    public void notifySubscriptionInfoChanged() {
+        obtainMessage(EVENT_SUBSCRIPTION_INFO_CHANGED).sendToTarget();
+    }
+
+    /**
+     * Notify subscription group information change.
+     */
+    public void notifySubscriptionGroupChanged(ParcelUuid groupUuid) {
+        obtainMessage(EVENT_SUBSCRIPTION_GROUP_CHANGED, groupUuid).sendToTarget();
+    }
+
+    /**
+     * Notify default data subscription change.
+     */
+    public void notifyDefaultDataSubChanged() {
+        obtainMessage(EVENT_DEFAULT_DATA_SUBSCRIPTION_CHANGED).sendToTarget();
+    }
+
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+            case EVENT_USER_DATA_ENABLED: {
+                int subId = msg.arg1;
+                boolean enable = msg.arg2 != 0;
+                onUserDataEnabled(subId, enable);
+                break;
+            }
+            case EVENT_ROAMING_DATA_ENABLED: {
+                int subId = msg.arg1;
+                boolean enable = msg.arg2 != 0;
+                onRoamingDataEnabled(subId, enable);
+                break;
+            }
+            case EVENT_ALL_SUBSCRIPTIONS_LOADED:
+                onAllSubscriptionsLoaded();
+                break;
+            case EVENT_SUBSCRIPTION_INFO_CHANGED:
+                onSubscriptionsChanged();
+                break;
+            case EVENT_SUBSCRIPTION_GROUP_CHANGED:
+                ParcelUuid groupUuid = (ParcelUuid) msg.obj;
+                onSubscriptionGroupChanged(groupUuid);
+                break;
+            case EVENT_DEFAULT_DATA_SUBSCRIPTION_CHANGED:
+                onDefaultDataSettingChanged();
+                break;
+        }
     }
 
     /**
@@ -87,7 +217,7 @@ public class MultiSimSettingController {
      * If user is enabling a non-default non-opportunistic subscription, make it default
      * data subscription.
      */
-    public synchronized void onUserDataEnabled(int subId, boolean enable) {
+    protected void onUserDataEnabled(int subId, boolean enable) {
         if (DBG) log("onUserDataEnabled");
         // Make sure MOBILE_DATA of subscriptions in same group are synced.
         setUserDataEnabledForGroup(subId, enable);
@@ -102,7 +232,7 @@ public class MultiSimSettingController {
     /**
      * Make sure DATA_ROAMING of subscriptions in same group are synced.
      */
-    public synchronized void onRoamingDataEnabled(int subId, boolean enable) {
+    private void onRoamingDataEnabled(int subId, boolean enable) {
         if (DBG) log("onRoamingDataEnabled");
         setRoamingDataEnabledForGroup(subId, enable);
 
@@ -111,12 +241,12 @@ public class MultiSimSettingController {
     }
 
     /**
-     * Mark mIsAllSubscriptionsLoaded and update defaults and mobile data enabling.
+     * Upon initialization, update defaults and mobile data enabling.
+     * Should only be triggered once.
      */
-    public synchronized void onAllSubscriptionsLoaded() {
+    private void onAllSubscriptionsLoaded() {
         if (DBG) log("onAllSubscriptionsLoaded");
-        mIsAllSubscriptionsLoaded = true;
-        updateDefaults();
+        updateDefaults(/*init*/ true);
         disableDataForNonDefaultNonOpportunisticSubscriptions();
     }
 
@@ -125,17 +255,17 @@ public class MultiSimSettingController {
      *
      * Make sure non-default non-opportunistic subscriptions has data off.
      */
-    public synchronized void onSubscriptionsChanged() {
+    private void onSubscriptionsChanged() {
         if (DBG) log("onSubscriptionsChanged");
-        if (!mIsAllSubscriptionsLoaded) return;
-        updateDefaults();
+        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
+        updateDefaults(/*init*/ false);
         disableDataForNonDefaultNonOpportunisticSubscriptions();
     }
 
     /**
      * Make sure non-default non-opportunistic subscriptions has data disabled.
      */
-    public synchronized void onDefaultDataSettingChanged() {
+    private void onDefaultDataSettingChanged() {
         if (DBG) log("onDefaultDataSettingChanged");
         disableDataForNonDefaultNonOpportunisticSubscriptions();
     }
@@ -146,7 +276,7 @@ public class MultiSimSettingController {
      * TODO: b/130258159 have a separate database table for grouped subscriptions so we don't
      * manually sync each setting.
      */
-    public synchronized void onSubscriptionGroupChanged(ParcelUuid groupUuid) {
+    private void onSubscriptionGroupChanged(ParcelUuid groupUuid) {
         if (DBG) log("onSubscriptionGroupChanged");
 
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
@@ -205,32 +335,37 @@ public class MultiSimSettingController {
      *    data subscription on it. Because default data in Android Q is an internal value,
      *    not a user settable value anymore.
      * 4) If non above is met, clear the default value to INVALID.
+     *
+     * @param init whether the subscriptions are just initialized.
      */
-    @VisibleForTesting
-    public synchronized void updateDefaults() {
+    protected void updateDefaults(boolean init) {
         if (DBG) log("updateDefaults");
 
-        if (!mIsAllSubscriptionsLoaded) return;
+        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
 
         List<SubscriptionInfo> activeSubInfos = mSubController
                 .getActiveSubscriptionInfoList(mContext.getOpPackageName());
-        // If subscription controller is not ready, do nothing.
-        if (activeSubInfos == null) return;
 
-        List<SubscriptionInfo> prevPrimarySubList = mPrimarySubList;
+        if (ArrayUtils.isEmpty(activeSubInfos)) {
+            mPrimarySubList.clear();
+            if (DBG) log("[updateDefaultValues] No active sub. Setting default to INVALID sub.");
+            mSubController.setDefaultDataSubId(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            mSubController.setDefaultVoiceSubId(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            mSubController.setDefaultSmsSubId(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            return;
+        }
 
-        // Opportunistic subscriptions can't be default data / voice / sms subscription.
-        mPrimarySubList = activeSubInfos.stream().filter(info -> !info.isOpportunistic())
-                .collect(Collectors.toList());
+        int change = updatePrimarySubListAndGetChangeType(activeSubInfos, init);
+        if (DBG) log("[updateDefaultValues] change: " + change);
+        if (change == PRIMARY_SUB_NO_CHANGE) return;
 
         // If there's only one primary subscription active, we trigger PREFERRED_PICK_DIALOG
         // dialog if and only if there were multiple primary SIM cards and one is removed.
         // Otherwise, if user just inserted their first SIM, or there's one primary and one
         // opportunistic subscription active (activeSubInfos.size() > 1), we automatically
         // set the primary to be default SIM and return.
-        if (mPrimarySubList.size() == 1 && (activeSubInfos.size() > 1
-                || (prevPrimarySubList != null && prevPrimarySubList.isEmpty()))) {
-            int subId = mPrimarySubList.get(0).getSubscriptionId();
+        if (mPrimarySubList.size() == 1 && change != PRIMARY_SUB_REMOVED) {
+            int subId = mPrimarySubList.get(0);
             if (DBG) log("[updateDefaultValues] to only primary sub " + subId);
             mSubController.setDefaultDataSubId(subId);
             mSubController.setDefaultVoiceSubId(subId);
@@ -240,7 +375,6 @@ public class MultiSimSettingController {
 
         if (DBG) log("[updateDefaultValues] records: " + mPrimarySubList);
 
-        // TODO: b/121394765 update logic once confirmed the behaviors.
         // Update default data subscription.
         if (DBG) log("[updateDefaultValues] Update default data subscription");
         boolean dataSelected = updateDefaultValue(mPrimarySubList,
@@ -259,32 +393,76 @@ public class MultiSimSettingController {
                 mSubController.getDefaultSmsSubId(),
                 (newValue -> mSubController.setDefaultSmsSubId(newValue)));
 
-        showSimSelectDialogIfNeeded(prevPrimarySubList, dataSelected, voiceSelected, smsSelected);
+        showSimSelectDialogIfNeeded(change, dataSelected, voiceSelected, smsSelected);
     }
 
-    private void showSimSelectDialogIfNeeded(List<SubscriptionInfo> prevPrimarySubs,
-            boolean dataSelected, boolean voiceSelected, boolean smsSelected) {
+    @PrimarySubChangeType
+    private int updatePrimarySubListAndGetChangeType(List<SubscriptionInfo> activeSubList,
+            boolean init) {
+        // Update mPrimarySubList. Opportunistic subscriptions can't be default
+        // data / voice / sms subscription.
+        List<Integer> prevPrimarySubList = mPrimarySubList;
+        mPrimarySubList = activeSubList.stream().filter(info -> !info.isOpportunistic())
+                .map(info -> info.getSubscriptionId())
+                .collect(Collectors.toList());
+
+        if (init) return PRIMARY_SUB_INITIALIZED;
+        if (mPrimarySubList.equals(prevPrimarySubList)) return PRIMARY_SUB_NO_CHANGE;
+        if (mPrimarySubList.size() > prevPrimarySubList.size()) return PRIMARY_SUB_ADDED;
+
+        if (mPrimarySubList.size() == prevPrimarySubList.size()) {
+            // We need to differentiate PRIMARY_SUB_SWAPPED and PRIMARY_SUB_SWAPPED_IN_GROUP:
+            // For SWAPPED_IN_GROUP, we never pop up dialog to ask data sub selection again.
+            for (int subId : mPrimarySubList) {
+                boolean swappedInSameGroup = false;
+                for (int prevSubId : prevPrimarySubList) {
+                    if (areSubscriptionsInSameGroup(subId, prevSubId)) {
+                        swappedInSameGroup = true;
+                        break;
+                    }
+                }
+                if (!swappedInSameGroup) return PRIMARY_SUB_SWAPPED;
+            }
+            return PRIMARY_SUB_SWAPPED_IN_GROUP;
+        } else /* mPrimarySubList.size() < prevPrimarySubList.size() */ {
+            // We need to differentiate whether the missing subscription is removed or marked as
+            // opportunistic. Usually only one subscription may change at a time, But to be safe, if
+            // any previous primary subscription becomes inactive, we consider it
+            for (int subId : prevPrimarySubList) {
+                if (mPrimarySubList.contains(subId)) continue;
+                if (!mSubController.isActiveSubId(subId)) return PRIMARY_SUB_REMOVED;
+                if (!mSubController.isOpportunistic(subId)) {
+                    // Should never happen.
+                    loge("[updatePrimarySubListAndGetChangeType]: missing active primary subId "
+                            + subId);
+                }
+            }
+            return PRIMARY_SUB_MARKED_OPPT;
+        }
+    }
+
+    private void showSimSelectDialogIfNeeded(int change, boolean dataSelected,
+            boolean voiceSelected, boolean smsSelected) {
         @TelephonyManager.DefaultSubscriptionSelectType
         int dialogType = EXTRA_DEFAULT_SUBSCRIPTION_SELECT_TYPE_NONE;
         int preferredSubId = INVALID_SUBSCRIPTION_ID;
-        boolean primarySubRemoved = prevPrimarySubs != null
-                && mPrimarySubList.size() < prevPrimarySubs.size();
-        boolean primarySubAdded = prevPrimarySubs != null
-                && mPrimarySubList.size() > prevPrimarySubs.size();
 
         // If a primary subscription is removed and only one is left active, ask user
         // for preferred sub selection if any default setting is not set.
         // If another primary subscription is added or default data is not selected, ask
         // user to select default for data as it's most important.
-        if (mPrimarySubList.size() == 1 && primarySubRemoved
+        if (mPrimarySubList.size() == 1 && change == PRIMARY_SUB_REMOVED
                 && (!dataSelected || !smsSelected || !voiceSelected)) {
             dialogType = EXTRA_DEFAULT_SUBSCRIPTION_SELECT_TYPE_ALL;
-            preferredSubId = mPrimarySubList.get(0).getSubscriptionId();
-        } else if (mPrimarySubList.size() > 1 && (!dataSelected || primarySubAdded)) {
+            preferredSubId = mPrimarySubList.get(0);
+        } else if (mPrimarySubList.size() > 1 && (change == PRIMARY_SUB_REMOVED
+                || change == PRIMARY_SUB_ADDED || change == PRIMARY_SUB_SWAPPED)) {
+            // If change is SWAPPED_IN_GROUP or MARKED_OPPT orINITIALIZED, don't ask user again.
             dialogType = EXTRA_DEFAULT_SUBSCRIPTION_SELECT_TYPE_DATA;
         }
 
         if (dialogType != EXTRA_DEFAULT_SUBSCRIPTION_SELECT_TYPE_NONE) {
+            log("[showSimSelectDialogIfNeeded] showing dialog type " + dialogType);
             Intent intent = new Intent();
             intent.setAction(ACTION_PRIMARY_SUBSCRIPTION_LIST_CHANGED);
             intent.setClassName("com.android.settings",
@@ -299,29 +477,37 @@ public class MultiSimSettingController {
     }
 
     protected void disableDataForNonDefaultNonOpportunisticSubscriptions() {
-        int defaultDataSub = mSubController.getDefaultDataSubId();
-        // Only disable data for non-default subscription if default sub is active.
-        if (!mSubController.isActiveSubId(defaultDataSub)) {
-            log("default data sub is inactive, skip disabling data for non-default subs");
-            return;
-        }
+        if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
 
-        for (Phone phone : mPhones) {
+        int defaultDataSub = mSubController.getDefaultDataSubId();
+
+        for (Phone phone : PhoneFactory.getPhones()) {
             if (phone.getSubId() != defaultDataSub
                     && SubscriptionManager.isValidSubscriptionId(phone.getSubId())
                     && !mSubController.isOpportunistic(phone.getSubId())
-                    && phone.isUserDataEnabled()) {
+                    && phone.isUserDataEnabled()
+                    && !areSubscriptionsInSameGroup(defaultDataSub, phone.getSubId())) {
                 log("setting data to false on " + phone.getSubId());
                 phone.getDataEnabledSettings().setUserDataEnabled(false);
             }
         }
     }
 
+    private boolean areSubscriptionsInSameGroup(int subId1, int subId2) {
+        if (!SubscriptionManager.isUsableSubscriptionId(subId1)
+                || !SubscriptionManager.isUsableSubscriptionId(subId2)) return false;
+        if (subId1 == subId2) return true;
+
+        ParcelUuid groupUuid1 = mSubController.getGroupUuid(subId1);
+        ParcelUuid groupUuid2 = mSubController.getGroupUuid(subId2);
+        return groupUuid1 != null && groupUuid1.equals(groupUuid2);
+    }
+
     /**
      * Make sure MOBILE_DATA of subscriptions in the same group with the subId
      * are synced.
      */
-    protected synchronized void setUserDataEnabledForGroup(int subId, boolean enable) {
+    protected void setUserDataEnabledForGroup(int subId, boolean enable) {
         log("setUserDataEnabledForGroup subId " + subId + " enable " + enable);
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
                 mSubController.getGroupUuid(subId), mContext.getOpPackageName());
@@ -332,15 +518,6 @@ public class MultiSimSettingController {
             int currentSubId = info.getSubscriptionId();
             // TODO: simplify when setUserDataEnabled becomes singleton
             if (mSubController.isActiveSubId(currentSubId)) {
-                // If we end up enabling two active primary subscriptions, don't enable the
-                // non-default data sub. This will only happen if two primary subscriptions
-                // in a group are both active. This is not a valid use-case now, but we are
-                // handling it just in case.
-                if (enable && !mSubController.isOpportunistic(currentSubId)
-                        && currentSubId != mSubController.getDefaultSubId()) {
-                    loge("Can not enable two active primary subscriptions.");
-                    continue;
-                }
                 // For active subscription, call setUserDataEnabled through DataEnabledSettings.
                 Phone phone = PhoneFactory.getPhone(mSubController.getPhoneId(currentSubId));
                 // If enable is true and it's not opportunistic subscription, we don't enable it,
@@ -360,7 +537,7 @@ public class MultiSimSettingController {
      * Make sure DATA_ROAMING of subscriptions in the same group with the subId
      * are synced.
      */
-    private synchronized void setRoamingDataEnabledForGroup(int subId, boolean enable) {
+    private void setRoamingDataEnabledForGroup(int subId, boolean enable) {
         SubscriptionController subController = SubscriptionController.getInstance();
         List<SubscriptionInfo> infoList = subController.getSubscriptionsInGroup(
                 mSubController.getGroupUuid(subId), mContext.getOpPackageName());
@@ -379,23 +556,18 @@ public class MultiSimSettingController {
     }
 
     // Returns whether the new default value is valid.
-    private boolean updateDefaultValue(List<SubscriptionInfo> subInfos, int oldValue,
+    private boolean updateDefaultValue(List<Integer> primarySubList, int oldValue,
             UpdateDefaultAction action) {
         int newValue = INVALID_SUBSCRIPTION_ID;
 
-        if (subInfos.size() > 0) {
-            // Get groupUuid of old
-            ParcelUuid groupUuid = mSubController.getGroupUuid(oldValue);
-
-            for (SubscriptionInfo info : subInfos) {
-                int id = info.getSubscriptionId();
-                if (DBG) log("[updateDefaultValue] Record.id: " + id);
+        if (primarySubList.size() > 0) {
+            for (int subId : primarySubList) {
+                if (DBG) log("[updateDefaultValue] Record.id: " + subId);
                 // If the old subId is still active, or there's another active primary subscription
                 // that is in the same group, that should become the new default subscription.
-                if (id == oldValue || (groupUuid != null && groupUuid.equals(
-                        info.getGroupUuid()))) {
-                    log("[updateDefaultValue] updates to subId=" + id);
-                    newValue = id;
+                if (areSubscriptionsInSameGroup(subId, oldValue)) {
+                    newValue = subId;
+                    log("[updateDefaultValue] updates to subId=" + newValue);
                     break;
                 }
             }

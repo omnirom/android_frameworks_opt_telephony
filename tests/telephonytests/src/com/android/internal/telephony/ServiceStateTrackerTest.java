@@ -32,6 +32,7 @@ import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -81,6 +82,7 @@ import android.telephony.NetworkService;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
+import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.cdma.CdmaCellLocation;
@@ -125,6 +127,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     private NetworkService mIwlanNetworkService;
     @Mock
     private INetworkService.Stub mIwlanNetworkServiceStub;
+
+    @Mock
+    private SubscriptionInfo mSubInfo;
 
     private ServiceStateTracker sst;
     private ServiceStateTrackerTestHandler mSSTTestHandler;
@@ -224,6 +229,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         addNetworkService();
 
         doReturn(true).when(mDcTracker).isDisconnected();
+
+        doReturn(new ServiceState()).when(mPhone).getServiceState();
 
         replaceInstance(ProxyController.class, "sProxyController", null, mProxyController);
         mBundle = mContextFixture.getCarrierConfigBundle();
@@ -1378,7 +1385,13 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testSetPsNotifications() {
-        sst.mSubId = 1;
+        int subId = 1;
+        sst.mSubId = subId;
+        doReturn(subId).when(mSubInfo).getSubscriptionId();
+
+        doReturn(mSubInfo).when(mSubscriptionController).getActiveSubscriptionInfo(
+                anyInt(), anyString());
+
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
@@ -1405,7 +1418,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testSetCsNotifications() {
-        sst.mSubId = 1;
+        int subId = 1;
+        sst.mSubId = subId;
+        doReturn(subId).when(mSubInfo).getSubscriptionId();
+        doReturn(mSubInfo).when(mSubscriptionController)
+                .getActiveSubscriptionInfo(anyInt(), anyString());
+
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
@@ -1433,7 +1451,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testSetCsNormalNotifications() {
-        sst.mSubId = 1;
+        int subId = 1;
+        sst.mSubId = subId;
+        doReturn(subId).when(mSubInfo).getSubscriptionId();
+        doReturn(mSubInfo).when(mSubscriptionController)
+                .getActiveSubscriptionInfo(anyInt(), anyString());
+
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
@@ -1460,7 +1483,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testSetCsEmergencyNotifications() {
-        sst.mSubId = 1;
+        int subId = 1;
+        sst.mSubId = subId;
+        doReturn(subId).when(mSubInfo).getSubscriptionId();
+        doReturn(mSubInfo).when(mSubscriptionController)
+                .getActiveSubscriptionInfo(anyInt(), anyString());
+
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
@@ -1484,6 +1512,36 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         sst.setNotification(ServiceStateTracker.CS_DISABLED);
         verify(nm).cancel(Integer.toString(sst.mSubId), ServiceStateTracker.CS_NOTIFICATION);
         sst.setNotification(ServiceStateTracker.CS_REJECT_CAUSE_ENABLED);
+    }
+
+    @Test
+    @SmallTest
+    public void testSetNotificationsForGroupedSubs() {
+        //if subscription is grouped, no notification should be set whatsoever
+        int subId = 1;
+        int otherSubId = 2;
+        sst.mSubId = otherSubId;
+        doReturn(subId).when(mSubInfo).getSubscriptionId();
+
+        final NotificationManager nm = (NotificationManager)
+                mContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        mContextFixture.putBooleanResource(
+                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+        doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
+        Drawable mockDrawable = mock(Drawable.class);
+        Resources mockResources = mContext.getResources();
+        when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
+
+        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnDataTitle, "test1");
+
+        sst.setNotification(ServiceStateTracker.EVENT_NETWORK_STATE_CHANGED);
+        ArgumentCaptor<Notification> notificationArgumentCaptor =
+                ArgumentCaptor.forClass(Notification.class);
+        verify(nm, never()).notify(anyString(), anyInt(), notificationArgumentCaptor.capture());
+
+        sst.setNotification(ServiceStateTracker.PS_DISABLED);
+        verify(nm, never()).cancel(Integer.toString(sst.mSubId),
+                ServiceStateTracker.PS_NOTIFICATION);
     }
 
     @Test
@@ -1972,6 +2030,16 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         doReturn(false).when(mRuimRecords).isProvisioned();
         String mockMdn = "mockMdn";
         doReturn(mockMdn).when(mRuimRecords).getMdn();
+
+        // trigger RUIM_RECORDS_LOADED
+        Message msg1 = Message.obtain();
+        msg1.what = integerArgumentCaptor.getValue();
+        msg1.obj = new AsyncResult(null, null, null);
+        sst.sendMessage(msg1);
+
+        // wait for RUIM_RECORDS_LOADED to be handled
+        waitForHandlerAction(sst, 5000);
+
         assertEquals(mockMdn, sst.getMdnNumber());
     }
 
@@ -2060,31 +2128,17 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         ServiceState ss = new ServiceState();
         ss.setVoiceRegState(ServiceState.STATE_EMERGENCY_ONLY);
         ss.setDataRegState(ServiceState.STATE_OUT_OF_SERVICE);
-        sst.mSS = ss;
-
-        // Emergency call only
-        NetworkRegistrationInfo voiceRegInfo =
-                new NetworkRegistrationInfo(NetworkRegistrationInfo.DOMAIN_CS,
-                        AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
-                        ss.getVoiceRegState(), TelephonyManager.NETWORK_TYPE_LTE, 0,
-                        true /* emergency call only */,
-                        null, null, false, 0, 0, 0);
-
-        sst.obtainMessage(
-                ServiceStateTracker.EVENT_POLL_STATE_CS_CELLULAR_REGISTRATION,
-                new AsyncResult(sst.mPollingContext, voiceRegInfo, null /* exception */))
-                .sendToTarget();
-        waitForMs(200);
+        ss.setEmergencyOnly(true);
+        doReturn(ss).when(mSST).getServiceState();
 
         // update the spn
         sst.updateSpnDisplay();
 
-        // Only plmn should be shown, and the string is "Emergency call only"
+        // Plmn should be shown, and the string is "Emergency call only"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_EMERGENCY_CALL);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isFalse();
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2098,17 +2152,17 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         ServiceState ss = new ServiceState();
         ss.setVoiceRegState(ServiceState.STATE_OUT_OF_SERVICE);
         ss.setDataRegState(ServiceState.STATE_OUT_OF_SERVICE);
-        sst.mSS = ss;
+        ss.setEmergencyOnly(false);
+        doReturn(ss).when(mSST).getServiceState();
 
         // update the spn
         sst.updateSpnDisplay();
 
-        // Only plmn should be shown, and the string is "No service"
+        // Plmn should be shown, and the string is "No service"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isFalse();
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2122,17 +2176,16 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         ServiceState ss = new ServiceState();
         ss.setVoiceRegState(ServiceState.STATE_POWER_OFF);
         ss.setDataRegState(ServiceState.STATE_POWER_OFF);
-        sst.mSS = ss;
+        doReturn(ss).when(mSST).getServiceState();
 
         // update the spn
         sst.updateSpnDisplay();
 
-        // Only plmn should be shown, and the string is "No service"
+        // Plmn should be shown, and the string is "No service"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isFalse();
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2157,9 +2210,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // Only spn should be shown
         String spn = mBundle.getString(CarrierConfigManager.KEY_CARRIER_NAME_STRING);
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_SPN))
                 .isEqualTo(String.format(WIFI_CALLING_VOICE_FORMAT, spn));
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_DATA_SPN))
                 .isEqualTo(String.format(WIFI_CALLING_DATA_FORMAT, spn));
         assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isFalse();
@@ -2191,9 +2244,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         String plmn = mBundle.getStringArray(CarrierConfigManager.KEY_PNN_OVERRIDE_STRING_ARRAY)[0];
         plmn = plmn.split("\\s*,\\s*")[0];
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
                 .isEqualTo(String.format(WIFI_CALLING_VOICE_FORMAT, plmn));
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
         assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isFalse();
     }
 
@@ -2220,10 +2273,10 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         String plmn = mBundle.getStringArray(CarrierConfigManager.KEY_PNN_OVERRIDE_STRING_ARRAY)[0];
         plmn = plmn.split("\\s*,\\s*")[0];
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_SPN)).isEqualTo(spn);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
         assertThat(b.getString(TelephonyIntents.EXTRA_PLMN)).isEqualTo(plmn);
+        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     private Bundle getExtrasFromLastSpnUpdateIntent() {

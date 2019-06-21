@@ -94,9 +94,11 @@ import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.EcbmHandler;
+import com.android.internal.telephony.LocaleTracker;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneInternalInterface;
+import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
@@ -2121,6 +2123,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         int code = maybeRemapReasonCode(reasonInfo);
         switch (code) {
+            case ImsReasonInfo.CODE_SIP_REQUEST_CANCELLED:
+                return DisconnectCause.OUTGOING_FAILURE;
             case ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL:
                 return DisconnectCause.IMS_SIP_ALTERNATE_EMERGENCY_CALL;
             case ImsReasonInfo.CODE_SIP_BAD_ADDRESS:
@@ -2473,7 +2477,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             String callId = imsCall.getSession().getCallId();
             mMetrics.writeOnImsCallTerminated(mPhone.getPhoneId(), imsCall.getCallSession(),
-                    reasonInfo, mCallQualityMetrics.get(callId));
+                    reasonInfo, mCallQualityMetrics.get(callId), conn.getEmergencyNumberInfo(),
+                    getNetworkCountryIso());
             pruneCallQualityMetricsHistory();
             mPhone.notifyImsReason(reasonInfo);
 
@@ -3357,10 +3362,15 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         mSrvccState = state;
 
         if (mSrvccState == Call.SrvccState.COMPLETED) {
+            resetState();
             transferHandoverConnections(mForegroundCall);
             transferHandoverConnections(mBackgroundCall);
             transferHandoverConnections(mRingingCall);
         }
+    }
+
+    private void resetState() {
+        mIsInEmergencyCall = false;
     }
 
     //****** Overridden from Handler
@@ -4415,6 +4425,20 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mediaProfile.setRttMode(ImsStreamMediaProfile.RTT_MODE_FULL);
         }
         return mediaProfile;
+    }
+
+    private String getNetworkCountryIso() {
+        String countryIso = "";
+        if (mPhone != null) {
+            ServiceStateTracker sst = mPhone.getServiceStateTracker();
+            if (sst != null) {
+                LocaleTracker lt = sst.getLocaleTracker();
+                if (lt != null) {
+                    countryIso = lt.getCurrentCountry();
+                }
+            }
+        }
+        return countryIso;
     }
 
     public ImsPhone getPhone() {

@@ -134,10 +134,9 @@ public class GsmCdmaPhone extends Phone {
     /** List of Registrants to receive Supplementary Service Notifications. */
     private RegistrantList mSsnRegistrants = new RegistrantList();
 
-    private static final int IMEI_14_DIGIT = 14;
-
     //CDMA
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
+    private static final String PREFIX_WPS = "*272";
     private CdmaSubscriptionSourceManager mCdmaSSM;
     public int mCdmaSubscriptionSource = CdmaSubscriptionSourceManager.SUBSCRIPTION_SOURCE_UNKNOWN;
     private PowerManager.WakeLock mWakeLock;
@@ -680,7 +679,8 @@ public class GsmCdmaPhone extends Phone {
     public void notifyDisconnect(Connection cn) {
         mDisconnectRegistrants.notifyResult(cn);
 
-        mNotifier.notifyDisconnectCause(cn.getDisconnectCause(), cn.getPreciseDisconnectCause());
+        mNotifier.notifyDisconnectCause(this, cn.getDisconnectCause(),
+                cn.getPreciseDisconnectCause());
     }
 
     public void notifyUnknownConnection(Connection cn) {
@@ -1165,12 +1165,18 @@ public class GsmCdmaPhone extends Phone {
         boolean alwaysTryImsForEmergencyCarrierConfig = configManager.getConfigForSubId(getSubId())
                 .getBoolean(CarrierConfigManager.KEY_CARRIER_USE_IMS_FIRST_FOR_EMERGENCY_BOOL);
 
+        /** Check if the call is Wireless Priority Service call */
+        boolean isWpsCall = dialString != null ? dialString.startsWith(PREFIX_WPS) : false;
+        boolean allowWpsOverIms = configManager.getConfigForSubId(getSubId())
+                .getBoolean(CarrierConfigManager.KEY_SUPPORT_WPS_OVER_IMS_BOOL);
+
         boolean useImsForCall = isImsUseEnabled()
                  && imsPhone != null
                  && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
                  (imsPhone.isVideoEnabled() && VideoProfile.isVideo(dialArgs.videoState)))
                  && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras);
+                 && !shallDialOnCircuitSwitch(dialArgs.intentExtras)
+                 && (isWpsCall ? allowWpsOverIms : true);
 
         boolean useImsForEmergency = imsPhone != null
                 && isEmergency
@@ -1190,6 +1196,8 @@ public class GsmCdmaPhone extends Phone {
                     + ", useImsForEmergency=" + useImsForEmergency
                     + ", useImsForUt=" + useImsForUt
                     + ", isUt=" + isUt
+                    + ", isWpsCall=" + isWpsCall
+                    + ", allowWpsOverIms=" + allowWpsOverIms
                     + ", imsPhone=" + imsPhone
                     + ", imsPhone.isVolteEnabled()="
                     + ((imsPhone != null) ? imsPhone.isVolteEnabled() : "N/A")
@@ -1580,14 +1588,15 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getDeviceId() {
-        CarrierConfigManager configManager = (CarrierConfigManager)
-                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        boolean force_imei = configManager.getConfigForSubId(getSubId())
-                .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
-
-        if (isPhoneTypeGsm() || force_imei) {
-            return getImei();
+        if (isPhoneTypeGsm()) {
+            return mImei;
         } else {
+            CarrierConfigManager configManager = (CarrierConfigManager)
+                    mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+            boolean force_imei = configManager.getConfigForSubId(getSubId())
+                    .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
+            if (force_imei) return mImei;
+
             String id = getMeid();
             if ((id == null) || id.matches("^0*$")) {
                 loge("getDeviceId(): MEID is not initialized use ESN");
@@ -1614,14 +1623,6 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getImei() {
-        CarrierConfigManager configManager = (CarrierConfigManager)
-                mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-        boolean enable14DigitImei = configManager.getConfigForSubId(getSubId())
-                .getBoolean("config_enable_display_14digit_imei");
-        if (enable14DigitImei && !TextUtils.isEmpty(mImei)
-                && mImei.length() > IMEI_14_DIGIT) {
-            return mImei.substring(0, IMEI_14_DIGIT);
-        }
         return mImei;
     }
 
@@ -2416,7 +2417,7 @@ public class GsmCdmaPhone extends Phone {
 
     private void handleRadioPowerStateChange() {
         Rlog.d(LOG_TAG, "handleRadioPowerStateChange, state= " + mCi.getRadioState());
-        mNotifier.notifyRadioPowerStateChanged(mCi.getRadioState());
+        mNotifier.notifyRadioPowerStateChanged(this, mCi.getRadioState());
     }
 
     @Override

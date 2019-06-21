@@ -1117,8 +1117,10 @@ public class GsmCdmaCallTracker extends CallTracker {
                 newUnknownConnectionCdma = null;
             }
         }
+
         if (locallyDisconnectedConnections.size() > 0) {
-            mMetrics.writeRilCallList(mPhone.getPhoneId(), locallyDisconnectedConnections);
+            mMetrics.writeRilCallList(mPhone.getPhoneId(), locallyDisconnectedConnections,
+                    getNetworkCountryIso());
         }
 
         /* Disconnect any pending Handover connections */
@@ -1189,7 +1191,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         for (GsmCdmaConnection conn : connections) {
             if (conn != null) activeConnections.add(conn);
         }
-        mMetrics.writeRilCallList(mPhone.getPhoneId(), activeConnections);
+        mMetrics.writeRilCallList(mPhone.getPhoneId(), activeConnections, getNetworkCountryIso());
     }
 
     private void handleRadioNotAvailable() {
@@ -1265,7 +1267,8 @@ public class GsmCdmaCallTracker extends CallTracker {
             return;
         } else {
             try {
-                mMetrics.writeRilHangup(mPhone.getPhoneId(), conn, conn.getGsmCdmaIndex());
+                mMetrics.writeRilHangup(mPhone.getPhoneId(), conn, conn.getGsmCdmaIndex(),
+                        getNetworkCountryIso());
                 mCi.hangupConnection (conn.getGsmCdmaIndex(), obtainCompleteMessage());
             } catch (CallStateException ex) {
                 // Ignore "connection not found"
@@ -1360,7 +1363,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             } catch (CallStateException ex) {
                 call_index = -1;
             }
-            mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, call_index);
+            mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, call_index, getNetworkCountryIso());
         }
         if (VDBG) Rlog.v(LOG_TAG, "logHangupEvent logged " + count + " Connections ");
     }
@@ -1382,7 +1385,8 @@ public class GsmCdmaCallTracker extends CallTracker {
         for (int i = 0; i < count; i++) {
             GsmCdmaConnection cn = (GsmCdmaConnection)call.mConnections.get(i);
             if (!cn.mDisconnected && cn.getGsmCdmaIndex() == index) {
-                mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, cn.getGsmCdmaIndex());
+                mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, cn.getGsmCdmaIndex(),
+                        getNetworkCountryIso());
                 mCi.hangupConnection(index, obtainCompleteMessage());
                 return;
             }
@@ -1397,7 +1401,8 @@ public class GsmCdmaCallTracker extends CallTracker {
             for (int i = 0; i < count; i++) {
                 GsmCdmaConnection cn = (GsmCdmaConnection)call.mConnections.get(i);
                 if (!cn.mDisconnected) {
-                    mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, cn.getGsmCdmaIndex());
+                    mMetrics.writeRilHangup(mPhone.getPhoneId(), cn, cn.getGsmCdmaIndex(),
+                            getNetworkCountryIso());
                     mCi.hangupConnection(cn.getGsmCdmaIndex(), obtainCompleteMessage());
                 }
             }
@@ -1580,7 +1585,8 @@ public class GsmCdmaCallTracker extends CallTracker {
                 updatePhoneState();
 
                 mPhone.notifyPreciseCallStateChanged();
-                mMetrics.writeRilCallList(mPhone.getPhoneId(), mDroppedDuringPoll);
+                mMetrics.writeRilCallList(mPhone.getPhoneId(), mDroppedDuringPoll,
+                        getNetworkCountryIso());
                 mDroppedDuringPoll.clear();
             break;
 
@@ -1827,6 +1833,20 @@ public class GsmCdmaCallTracker extends CallTracker {
         return mPhone.isPhoneTypeGsm() ?
                 MAX_CONNECTIONS_PER_CALL_GSM :
                 MAX_CONNECTIONS_PER_CALL_CDMA;
+    }
+
+    private String getNetworkCountryIso() {
+        String countryIso = "";
+        if (mPhone != null) {
+            ServiceStateTracker sst = mPhone.getServiceStateTracker();
+            if (sst != null) {
+                LocaleTracker lt = sst.getLocaleTracker();
+                if (lt != null) {
+                    countryIso = lt.getCurrentCountry();
+                }
+            }
+        }
+        return countryIso;
     }
 
     /**
