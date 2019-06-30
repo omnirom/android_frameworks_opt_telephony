@@ -327,12 +327,13 @@ public class SubscriptionInfoUpdater extends Handler {
 
             case EVENT_REFRESH_EMBEDDED_SUBSCRIPTIONS:
                 cardIds.add(msg.arg1);
+                Runnable r = (Runnable) msg.obj;
                 updateEmbeddedSubscriptions(cardIds, (hasChanges) -> {
                     if (hasChanges) {
                         SubscriptionController.getInstance().notifySubscriptionInfoChanged();
                     }
-                    if (msg.obj != null) {
-                        ((Runnable) msg.obj).run();
+                    if (r != null) {
+                        r.run();
                     }
                 });
                 break;
@@ -458,7 +459,8 @@ public class SubscriptionInfoUpdater extends Handler {
         } else {
             for (SubscriptionInfo sub : subscriptionInfos) {
                 int subId = sub.getSubscriptionId();
-                TelephonyManager tm = TelephonyManager.getDefault();
+                TelephonyManager tm = (TelephonyManager)
+                        mContext.getSystemService(Context.TELEPHONY_SERVICE);
                 String operator = tm.getSimOperatorNumeric(subId);
 
                 if (operator != null && !TextUtils.isEmpty(operator)) {
@@ -481,6 +483,11 @@ public class SubscriptionInfoUpdater extends Handler {
                 String msisdn = tm.getLine1Number(subId);
                 if (msisdn != null) {
                     SubscriptionController.getInstance().setDisplayNumber(msisdn, subId);
+                }
+
+                String imsi = tm.createForSubscriptionId(subId).getSubscriberId();
+                if (imsi != null) {
+                    SubscriptionController.getInstance().setImsi(imsi, subId);
                 }
 
                 String[] ehplmns = records.getEhplmns();
@@ -813,6 +820,7 @@ public class SubscriptionInfoUpdater extends Handler {
         for (EuiccProfileInfo embeddedProfile : embeddedProfiles) {
             int index =
                     findSubscriptionInfoForIccid(existingSubscriptions, embeddedProfile.getIccid());
+            int prevCarrierId = TelephonyManager.UNKNOWN_CARRIER_ID;
             int nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE;
             if (index < 0) {
                 // No existing entry for this ICCID; create an empty one.
@@ -820,6 +828,7 @@ public class SubscriptionInfoUpdater extends Handler {
                         embeddedProfile.getIccid(), SubscriptionManager.SIM_NOT_INSERTED);
             } else {
                 nameSource = existingSubscriptions.get(index).getNameSource();
+                prevCarrierId = existingSubscriptions.get(index).getCarrierId();
                 existingSubscriptions.remove(index);
             }
 
@@ -850,8 +859,13 @@ public class SubscriptionInfoUpdater extends Handler {
             values.put(SubscriptionManager.PROFILE_CLASS, embeddedProfile.getProfileClass());
             CarrierIdentifier cid = embeddedProfile.getCarrierIdentifier();
             if (cid != null) {
-                values.put(SubscriptionManager.CARRIER_ID,
-                        CarrierResolver.getCarrierIdFromIdentifier(mContext, cid));
+                // Due to the limited subscription information, carrier id identified here might
+                // not be accurate compared with CarrierResolver. Only update carrier id if there
+                // is no valid carrier id present.
+                if (prevCarrierId == TelephonyManager.UNKNOWN_CARRIER_ID) {
+                    values.put(SubscriptionManager.CARRIER_ID,
+                            CarrierResolver.getCarrierIdFromIdentifier(mContext, cid));
+                }
                 String mcc = cid.getMcc();
                 String mnc = cid.getMnc();
                 values.put(SubscriptionManager.MCC_STRING, mcc);
