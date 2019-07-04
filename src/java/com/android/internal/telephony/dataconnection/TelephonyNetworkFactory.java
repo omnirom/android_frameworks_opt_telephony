@@ -64,7 +64,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private final Handler mInternalHandler;
     private static final int EVENT_ACTIVE_PHONE_SWITCH          = 1;
     private static final int EVENT_SUBSCRIPTION_CHANGED         = 2;
-    private static final int EVENT_DEFAULT_SUBSCRIPTION_CHANGED = 3;
     private static final int EVENT_NETWORK_REQUEST              = 4;
     private static final int EVENT_NETWORK_RELEASE              = 5;
 
@@ -88,6 +87,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         mDcTracker = dcTracker;
 
         mIsActive = false;
+        mPhoneSwitcher.registerForActivePhoneSwitch(mInternalHandler,
+                EVENT_ACTIVE_PHONE_SWITCH, null);
+
         mPhoneSwitcher.registerForActivePhoneSwitch(mPhoneId, mInternalHandler,
                 EVENT_ACTIVE_PHONE_SWITCH, null);
 
@@ -96,9 +98,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                 EVENT_SUBSCRIPTION_CHANGED, null);
 
         mIsDefault = false;
-        mSubscriptionMonitor.registerForDefaultDataSubscriptionChanged(mPhoneId, mInternalHandler,
-                EVENT_DEFAULT_SUBSCRIPTION_CHANGED, null);
-
         register();
     }
 
@@ -143,10 +142,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                     onSubIdChange();
                     break;
                 }
-                case EVENT_DEFAULT_SUBSCRIPTION_CHANGED: {
-                    onDefaultChange();
-                    break;
-                }
                 case EVENT_NETWORK_REQUEST: {
                     onNeedNetworkFor(msg);
                     break;
@@ -180,11 +175,18 @@ public class TelephonyNetworkFactory extends NetworkFactory {
     private void onActivePhoneSwitch() {
         final boolean newIsActive = mPhoneSwitcher.isPhoneActive(mPhoneId);
         mIsActive = newIsActive;
-        String logString = "onActivePhoneSwitch(" + mIsActive + ", " + mIsDefault + ")";
-        if (DBG) log(logString);
-        if (mIsDefault) {
-            applyRequests(mDefaultRequests, (mIsActive ? REQUEST : RELEASE), logString);
+        String logString = "onActivePhoneSwitch(" + mIsActive + ")";
+        log(logString);
+        final int newDefaultSubscriptionId = mSubscriptionController.getDefaultDataSubId();
+        final boolean newIsDefault = (newDefaultSubscriptionId == mSubscriptionId);
+        mIsDefault = newIsDefault;
+        log("mIsDefault->" + mIsDefault);
+        if (mIsDefault && mIsActive) {
+            applyRequests(mDefaultRequests, REQUEST, logString);
+        } else {
+            applyRequests(mDefaultRequests, RELEASE, logString);
         }
+
         applyRequests(mSpecificRequests, (mIsActive ? REQUEST : RELEASE), logString);
     }
 
@@ -196,27 +198,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
             if (DBG) log("onSubIdChange " + mSubscriptionId + "->" + newSubscriptionId);
             mSubscriptionId = newSubscriptionId;
             setCapabilityFilter(makeNetworkFilter(mSubscriptionId));
-        }
-    }
-
-    // watch for default-data changes (could be side effect of
-    // phoneId->subId map change or direct change of default subId)
-    // and apply/revoke default-only requests.
-    private void onDefaultChange() {
-        final int newDefaultSubscriptionId = mSubscriptionController.getDefaultDataSubId();
-        final boolean newIsDefault = (newDefaultSubscriptionId == mSubscriptionId);
-        if (newIsDefault != mIsDefault) {
-            final boolean newIsActive = mPhoneSwitcher.isPhoneActive(mPhoneId);
-            mIsDefault = newIsDefault;
-            String logString = "onDefaultChange(" + newIsActive + "," + mIsDefault + ")";
-            if (DBG) log(logString);
-            if (mIsDefault) {
-                if (newIsActive) {
-                    applyRequests(mDefaultRequests, REQUEST, logString);
-                }
-            } else {
-                applyRequests(mDefaultRequests, RELEASE, logString);
-            }
         }
     }
 

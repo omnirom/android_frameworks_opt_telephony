@@ -63,6 +63,7 @@ public class PhoneSwitcher extends Handler {
     protected int mMaxActivePhones;
     protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<DcRequest>();
     protected final RegistrantList[] mActivePhoneRegistrants;
+    protected final RegistrantList mNewActivePhoneRegistrants;
     protected final SubscriptionController mSubscriptionController;
     protected final int[] mPhoneSubscriptions;
     protected final CommandsInterface[] mCommandsInterfaces;
@@ -98,6 +99,7 @@ public class PhoneSwitcher extends Handler {
         mPhones = null;
         mLocalLog = null;
         mActivePhoneRegistrants = null;
+        mNewActivePhoneRegistrants = null;
         mNumPhones = 0;
     }
 
@@ -115,6 +117,7 @@ public class PhoneSwitcher extends Handler {
         mSubscriptionController = subscriptionController;
 
         mActivePhoneRegistrants = new RegistrantList[numPhones];
+        mNewActivePhoneRegistrants = new RegistrantList();
         mPhoneStates = new PhoneState[numPhones];
         for (int i = 0; i < numPhones; i++) {
             mActivePhoneRegistrants[i] = new RegistrantList();
@@ -346,7 +349,7 @@ public class PhoneSwitcher extends Handler {
         if (mNumPhones > 1) {
             mCommandsInterfaces[phoneId].setDataAllowed(false, null);
         }
-        mActivePhoneRegistrants[phoneId].notifyRegistrants();
+        mNewActivePhoneRegistrants.notifyRegistrants();
     }
 
     protected void activate(int phoneId) {
@@ -359,7 +362,7 @@ public class PhoneSwitcher extends Handler {
         if (mNumPhones > 1) {
             mCommandsInterfaces[phoneId].setDataAllowed(true, null);
         }
-        mActivePhoneRegistrants[phoneId].notifyRegistrants();
+        mNewActivePhoneRegistrants.notifyRegistrants();
     }
 
     // used when the modem may have been rebooted and we want to resend
@@ -414,11 +417,21 @@ public class PhoneSwitcher extends Handler {
         return mPhoneStates[phoneId].active;
     }
 
+    public void registerForActivePhoneSwitch(Handler h, int what, Object o) {
+        Registrant r = new Registrant(h, what, o);
+        mNewActivePhoneRegistrants.add(r);
+        r.notifyRegistrant();
+    }
+
     public void registerForActivePhoneSwitch(int phoneId, Handler h, int what, Object o) {
         validatePhoneId(phoneId);
         Registrant r = new Registrant(h, what, o);
         mActivePhoneRegistrants[phoneId].add(r);
         r.notifyRegistrant();
+    }
+
+    public void unregisterForActivePhoneSwitch(Handler h) {
+        mNewActivePhoneRegistrants.remove(h);
     }
 
     public void unregisterForActivePhoneSwitch(int phoneId, Handler h) {
