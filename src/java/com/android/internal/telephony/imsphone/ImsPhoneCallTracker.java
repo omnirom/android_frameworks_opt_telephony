@@ -361,11 +361,18 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         private long mCachedTime;
         private long mConnectTime;
         private long mConnectElapsedTime;
+        /**
+         * The direction of the call;
+         * {@link android.telecom.Call.Details#DIRECTION_INCOMING} for incoming calls, or
+         * {@link android.telecom.Call.Details#DIRECTION_OUTGOING} for outgoing calls.
+         */
+        private int mCallDirection;
 
-        CacheEntry(long cachedTime, long connectTime, long connectElapsedTime) {
+        CacheEntry(long cachedTime, long connectTime, long connectElapsedTime, int callDirection) {
             mCachedTime = cachedTime;
             mConnectTime = connectTime;
             mConnectElapsedTime = connectElapsedTime;
+            mCallDirection = callDirection;
         }
     }
 
@@ -1436,8 +1443,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     }
 
     private void cacheConnectionTimeWithPhoneNumber(@NonNull ImsPhoneConnection connection) {
+        int callDirection =
+                connection.isIncoming() ? android.telecom.Call.Details.DIRECTION_INCOMING
+                        : android.telecom.Call.Details.DIRECTION_OUTGOING;
         CacheEntry cachedConnectTime = new CacheEntry(SystemClock.elapsedRealtime(),
-                connection.getConnectTime(), connection.getConnectTimeReal());
+                connection.getConnectTime(), connection.getConnectTimeReal(), callDirection);
         maintainConnectTimeCache();
         if (PhoneConstants.PRESENTATION_ALLOWED == connection.getNumberPresentation()) {
             // In case of merging calls with the same number, use the latest connect time. Since
@@ -1465,13 +1475,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 return null;
             }
 
-            String numParts = PhoneNumberUtils
-                    .extractNetworkPortion(participant.getHandle().getSchemeSpecificPart());
-            if (TextUtils.isEmpty(numParts)) {
+            String number = ConferenceParticipant.getParticipantAddress(participant.getHandle(),
+                    getCountryIso()).getSchemeSpecificPart();
+            if (TextUtils.isEmpty(number)) {
                 return null;
             }
-
-            String formattedNumber = getFormattedPhoneNumber(numParts);
+            String formattedNumber = getFormattedPhoneNumber(number);
             return mPhoneNumAndConnTime.get(formattedNumber);
         } else {
             return mUnknownPeerConnTime.poll();
@@ -2891,6 +2900,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 if (cachedConnectTime != null) {
                     participant.setConnectTime(cachedConnectTime.mConnectTime);
                     participant.setConnectElapsedTime(cachedConnectTime.mConnectElapsedTime);
+                    participant.setCallDirection(cachedConnectTime.mCallDirection);
                 }
             }
         }
@@ -3560,6 +3570,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 try {
                     mLastDialArgs.intentExtras.putBoolean(
                             android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, false);
+                    mLastDialArgs = ImsPhone.ImsDialArgs.Builder.from(mLastDialArgs)
+                                            .setRttTextStream(null).build();
                     Connection newConnection =
                             mPhone.getDefaultPhone().dial(mLastDialString, mLastDialArgs);
                     oldConnection.onOriginalConnectionReplaced(newConnection);
