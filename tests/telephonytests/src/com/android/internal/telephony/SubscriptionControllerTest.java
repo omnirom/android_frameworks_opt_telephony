@@ -92,8 +92,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         replaceInstance(MultiSimSettingController.class, "sInstance", null,
                 mMultiSimSettingControllerMock);
 
-        TelephonyComponentFactory.getInstance().inject(SubscriptionController.class.
-                getName()).initSubscriptionController(mContext, null);
+        SubscriptionController.init(mContext, null);
         mSubscriptionControllerUT = SubscriptionController.getInstance();
         mCallingPackage = mContext.getOpPackageName();
 

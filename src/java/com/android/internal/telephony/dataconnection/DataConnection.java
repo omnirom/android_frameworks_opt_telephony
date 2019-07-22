@@ -113,8 +113,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * as the coordinator has members which are used without synchronization.
  */
 public class DataConnection extends StateMachine {
-    private static final boolean DBG = true;
-    private static final boolean VDBG = true;
+    protected static final boolean DBG = true;
+    protected static final boolean VDBG = true;
 
     private static final String NETWORK_TYPE = "MOBILE";
 
@@ -168,7 +168,7 @@ public class DataConnection extends StateMachine {
     // The Tester for failing all bringup's
     private DcTesterFailBringUpAll mDcTesterFailBringUpAll;
 
-    private static AtomicInteger mInstanceNumber = new AtomicInteger(0);
+    protected static AtomicInteger mInstanceNumber = new AtomicInteger(0);
     private AsyncChannel mAc;
 
     // The DCT that's talking to us, we only support one!
@@ -183,7 +183,7 @@ public class DataConnection extends StateMachine {
      */
     public static class ConnectionParams {
         int mTag;
-        ApnContext mApnContext;
+        public ApnContext mApnContext;
         int mProfileId;
         int mRilRat;
         Message mOnCompletedMsg;
@@ -250,9 +250,9 @@ public class DataConnection extends StateMachine {
     @DataFailCause.FailCause
     private int mDcFailCause;
 
-    private Phone mPhone;
+    protected Phone mPhone;
     private DataServiceManager mDataServiceManager;
-    private final int mTransportType;
+    protected final int mTransportType;
     private LinkProperties mLinkProperties = new LinkProperties();
     private long mCreateTime;
     private long mLastFailTime;
@@ -276,7 +276,7 @@ public class DataConnection extends StateMachine {
 
     private int mDisabledApnTypeBitMask = 0;
 
-    int mTag;
+    protected int mTag;
     public int mCid;
 
     @HandoverState
@@ -314,9 +314,10 @@ public class DataConnection extends StateMachine {
     static final int EVENT_RESET = BASE + 24;
     static final int EVENT_REEVALUATE_RESTRICTED_STATE = BASE + 25;
     static final int EVENT_REEVALUATE_DATA_CONNECTION_PROPERTIES = BASE + 26;
+    protected static final int EVENT_RETRY_CONNECTION = BASE + 27;
 
     private static final int CMD_TO_STRING_COUNT =
-            EVENT_REEVALUATE_DATA_CONNECTION_PROPERTIES - BASE + 1;
+            EVENT_RETRY_CONNECTION - BASE + 1;
 
     private static String[] sCmdToString = new String[CMD_TO_STRING_COUNT];
     static {
@@ -352,6 +353,7 @@ public class DataConnection extends StateMachine {
                 "EVENT_REEVALUATE_RESTRICTED_STATE";
         sCmdToString[EVENT_REEVALUATE_DATA_CONNECTION_PROPERTIES - BASE] =
                 "EVENT_REEVALUATE_DATA_CONNECTION_PROPERTIES";
+        sCmdToString[EVENT_RETRY_CONNECTION - BASE] = "EVENT_RETRY_CONNECTION";
     }
     // Convert cmd to string or null if unknown
     static String cmdToString(int cmd) {
@@ -389,7 +391,7 @@ public class DataConnection extends StateMachine {
         return dc;
     }
 
-    void dispose() {
+    protected void dispose() {
         log("dispose: call quiteNow()");
         quitNow();
     }
@@ -577,7 +579,7 @@ public class DataConnection extends StateMachine {
     }
 
     //***** Constructor (NOTE: uses dcc.getHandler() as its Handler)
-    private DataConnection(Phone phone, String tagSuffix, int id,
+    protected DataConnection(Phone phone, String tagSuffix, int id,
                            DcTracker dct, DataServiceManager dataServiceManager,
                            DcTesterFailBringUpAll failBringUpAll, DcController dcc) {
         super("DC-" + tagSuffix, dcc.getHandler());
@@ -811,7 +813,7 @@ public class DataConnection extends StateMachine {
 
             connectionCompletedMsg.sendToTarget();
         }
-        if (sendAll) {
+        if (sendAll && !(isPdpRejectConfigEnabled() && isPdpRejectCause(cause))) {
             log("Send to all. " + alreadySent + " " + DataFailCause.toString(cause));
             notifyAllWithEvent(alreadySent, DctConstants.EVENT_DATA_SETUP_COMPLETE_ERROR,
                     DataFailCause.toString(cause));
@@ -823,7 +825,7 @@ public class DataConnection extends StateMachine {
      *
      * @param dp is the DisconnectParams.
      */
-    private void notifyDisconnectCompleted(DisconnectParams dp, boolean sendAll) {
+    protected void notifyDisconnectCompleted(DisconnectParams dp, boolean sendAll) {
         if (VDBG) log("NotifyDisconnectCompleted");
 
         ApnContext alreadySent = null;
@@ -1622,6 +1624,13 @@ public class DataConnection extends StateMachine {
                                 msg.arg1, SocketKeepalive.ERROR_INVALID_NETWORK);
                     }
                     break;
+                case EVENT_RETRY_CONNECTION:
+                    if (DBG) {
+                        String s = "DcDefaultState ignore EVENT_RETRY_CONNECTION"
+                                + " tag=" + msg.arg1 + ":mTag=" + mTag;
+                        logAndAddLogRec(s);
+                    }
+                    break;
 
                 default:
                     if (DBG) {
@@ -1673,7 +1682,7 @@ public class DataConnection extends StateMachine {
     /**
      * The state machine is inactive and expects a EVENT_CONNECT.
      */
-    private class DcInactiveState extends State {
+    protected class DcInactiveState extends State {
         // Inform all contexts we've failed connecting
         public void setEnterNotificationParams(ConnectionParams cp,
                                                @DataFailCause.FailCause int cause) {
@@ -1739,7 +1748,10 @@ public class DataConnection extends StateMachine {
             // Remove ourselves from cid mapping, before clearSettings
             mDcController.removeActiveDcByCid(DataConnection.this);
 
-            clearSettings();
+            if (!(isPdpRejectConfigEnabled() && isPdpRejectCause(mDcFailCause))) {
+                log("DcInactiveState: clearing settings");
+                clearSettings();
+            }
         }
 
         @Override
@@ -1790,6 +1802,23 @@ public class DataConnection extends StateMachine {
                     if (DBG) log("DcInactiveState: msg.what=EVENT_DISCONNECT_ALL");
                     notifyDisconnectCompleted((DisconnectParams)msg.obj, false);
                     return HANDLED;
+                case EVENT_RETRY_CONNECTION:
+                    if (DBG) {
+                        log("DcInactiveState: msg.what=EVENT_RETRY_CONNECTION"
+                                + " mConnectionParams=" + mConnectionParams);
+                    }
+                    if (mConnectionParams != null) {
+                        if (initConnection(mConnectionParams)) {
+                            connect(mConnectionParams);
+                            transitionTo(mActivatingState);
+                        } else {
+                            if (DBG) {
+                                log("DcInactiveState: msg.what=EVENT_RETRY_CONNECTION"
+                                    + " initConnection failed");
+                            }
+                        }
+                    }
+                    return HANDLED;
                 default:
                     if (VDBG) {
                         log("DcInactiveState not handled msg.what=" + getWhatToString(msg.what));
@@ -1798,7 +1827,7 @@ public class DataConnection extends StateMachine {
             }
         }
     }
-    private DcInactiveState mInactiveState = new DcInactiveState();
+    protected DcInactiveState mInactiveState = new DcInactiveState();
 
     /**
      * The state machine is activating a connection.
@@ -1835,6 +1864,10 @@ public class DataConnection extends StateMachine {
                     DataCallResponse dataCallResponse =
                             msg.getData().getParcelable(DataServiceManager.DATA_CALL_RESPONSE);
                     SetupResult result = onSetupConnectionCompleted(msg.arg1, dataCallResponse, cp);
+                    if (result != null) {
+                        log("EVENT_SETUP_DATA_CONNECTION_DONE, result: " + result
+                                + ", mFailCause: " + result.mFailCause);
+                    }
                     if (result != SetupResult.ERROR_STALE) {
                         if (mConnectionParams != cp) {
                             loge("DcActivatingState: WEIRD mConnectionsParams:"+ mConnectionParams
@@ -1853,6 +1886,7 @@ public class DataConnection extends StateMachine {
                             // All is well
                             mDcFailCause = DataFailCause.NONE;
                             transitionTo(mActiveState);
+                            handlePdpRejectCauseSuccess();
                             break;
                         case ERROR_RADIO_NOT_AVAILABLE:
                             // Vendor ril rejected the command and didn't connect.
@@ -1885,6 +1919,10 @@ public class DataConnection extends StateMachine {
                                     + " isPermanentFailure=" +
                                     mDct.isPermanentFailure(result.mFailCause);
                             if (DBG) log(str);
+                            if (isPdpRejectCauseFailureHandled(result, cp)) {
+                                if (DBG) log("isPdpRejectCauseFailureHandled true, breaking");
+                                break;
+                            }
                             if (cp.mApnContext != null) cp.mApnContext.requestLog(str);
 
                             // Save the cause. DcTracker.onDataSetupComplete will check this
@@ -2851,5 +2889,25 @@ public class DataConnection extends StateMachine {
         pw.println();
         pw.flush();
     }
-}
 
+    protected void handlePdpRejectCauseSuccess() {
+        if (DBG) log("DataConnection: handlePdpRejectCauseSuccess()");
+    }
+
+    protected boolean isPdpRejectCauseFailureHandled(SetupResult result,
+            ConnectionParams cp) {
+        if (DBG) log("DataConnection: isPdpRejectCauseFailureHandled()");
+        return false;
+    }
+
+    protected boolean isPdpRejectCause(int cause) {
+        return (cause == DataFailCause.USER_AUTHENTICATION
+                || cause == DataFailCause.SERVICE_OPTION_NOT_SUBSCRIBED
+                || cause == DataFailCause.MULTI_CONN_TO_SAME_PDN_NOT_ALLOWED);
+    }
+
+    protected boolean isPdpRejectConfigEnabled() {
+        return mPhone.getContext().getResources().getBoolean(
+                com.android.internal.R.bool.config_pdp_retry_for_29_33_55_enabled);
+    }
+}

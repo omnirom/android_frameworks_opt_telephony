@@ -964,10 +964,9 @@ public class PhoneSwitcherTest extends TelephonyTest {
         mHandlerThread = new HandlerThread("PhoneSwitcherTestThread") {
             @Override
             public void onLooperPrepared() {
-                mPhoneSwitcher = TelephonyComponentFactory.getInstance().inject(PhoneSwitcher.
-                    class.getName()).makePhoneSwitcher(maxActivePhones, numPhones,
-                    mContext, mSubscriptionController, this.getLooper(),
-                    mTelRegistryMock, mCommandsInterfaces, mPhones);
+                mPhoneSwitcher = new PhoneSwitcher(maxActivePhones, numPhones,
+                        mContext, mSubscriptionController, this.getLooper(),
+                        mTelRegistryMock, mCommandsInterfaces, mPhones);
             }
         };
 
