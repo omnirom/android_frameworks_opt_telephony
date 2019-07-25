@@ -233,13 +233,6 @@ public class TelephonyNetworkFactory extends NetworkFactory {
 
     // apply or revoke requests if our active-ness changes
     private void onActivePhoneSwitch() {
-        // For non DDS phone, mAutoAttachOnCreation should be true because it may be detached
-        // automatically from network only because it's idle for too long. In this case, we should
-        // try setting up data call even if it's not attached. And doing so will trigger PS attach
-        // if possible.
-        mPhone.getDcTracker(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
-                .updateAutoAttachOnCreation();
-
         for (HashMap.Entry<NetworkRequest, Integer> entry : mNetworkRequests.entrySet()) {
             NetworkRequest networkRequest = entry.getKey();
             boolean applied = entry.getValue() != AccessNetworkConstants.TRANSPORT_TYPE_INVALID;
@@ -296,6 +289,10 @@ public class TelephonyNetworkFactory extends NetworkFactory {
 
     private void onNeedNetworkFor(Message msg) {
         NetworkRequest networkRequest = (NetworkRequest) msg.obj;
+        if (networkRequest.type != NetworkRequest.Type.REQUEST) {
+           logl("Skip non REQUEST type request: " + networkRequest);
+           return;
+        }
         boolean shouldApply = mPhoneSwitcher.shouldApplyNetworkRequest(
                 networkRequest, mPhone.getPhoneId());
 
@@ -320,6 +317,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
 
     private void onReleaseNetworkFor(Message msg) {
         NetworkRequest networkRequest = (NetworkRequest) msg.obj;
+        if (!mNetworkRequests.containsKey(networkRequest)) {
+            return;
+        }
         boolean applied = mNetworkRequests.get(networkRequest)
                 != AccessNetworkConstants.TRANSPORT_TYPE_INVALID;
 

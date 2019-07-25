@@ -287,6 +287,8 @@ public class UiccProfile extends IccCard {
             mCatService = null;
             mUiccApplications = null;
             mCarrierPrivilegeRules = null;
+            mContext.getContentResolver().unregisterContentObserver(
+                    mProvisionCompleteContentObserver);
             mDisposed = true;
         }
     }
@@ -311,7 +313,14 @@ public class UiccProfile extends IccCard {
             if (isGsm) {
                 mCurrentAppType = UiccController.APP_FAM_3GPP;
             } else {
-                mCurrentAppType = UiccController.APP_FAM_3GPP2;
+                //if CSIM application is not present, set current app to default app i.e 3GPP
+                UiccCardApplication newApp = null;
+                newApp = getApplication(UiccController.APP_FAM_3GPP2);
+                if (newApp != null) {
+                    mCurrentAppType = UiccController.APP_FAM_3GPP2;
+                } else {
+                    mCurrentAppType = UiccController.APP_FAM_3GPP;
+                }
             }
         }
     }
@@ -958,6 +967,8 @@ public class UiccProfile extends IccCard {
             } else if (mCarrierPrivilegeRules != null
                     && ics.mCardState != CardState.CARDSTATE_PRESENT) {
                 mCarrierPrivilegeRules = null;
+                mContext.getContentResolver().unregisterContentObserver(
+                        mProvisionCompleteContentObserver);
             }
 
             sanitizeApplicationIndexesLocked();
@@ -1194,7 +1205,9 @@ public class UiccProfile extends IccCard {
         if (certPackageMap.isEmpty()) {
             return Collections.emptySet();
         }
-
+        if (mCarrierPrivilegeRules == null) {
+            return Collections.emptySet();
+        }
         Set<String> uninstalledCarrierPackages = new ArraySet<>();
         List<UiccAccessRule> accessRules = mCarrierPrivilegeRules.getAccessRules();
         for (UiccAccessRule accessRule : accessRules) {
@@ -1348,6 +1361,8 @@ public class UiccProfile extends IccCard {
             if (reset && TextUtils.isEmpty(aid)) {
                 if (mCarrierPrivilegeRules != null) {
                     mCarrierPrivilegeRules = null;
+                    mContext.getContentResolver().unregisterContentObserver(
+                            mProvisionCompleteContentObserver);
                     changed = true;
                 }
                 // CatService shall be disposed only when a card level reset happens.
