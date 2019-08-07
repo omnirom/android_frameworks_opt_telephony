@@ -61,14 +61,7 @@ public class IccPhoneBookInterfaceManager {
     }
 
     @UnsupportedAppUsage
-    protected final IccPbHandler mBaseHandler;
-
-    private HandlerThread  mHandlerThread  = null;
-
-    protected class IccPbHandler extends Handler {
-        public IccPbHandler(Looper looper) {
-            super(looper);
-        }
+    protected Handler mBaseHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             AsyncResult ar = (AsyncResult) msg.obj;
@@ -127,14 +120,9 @@ public class IccPhoneBookInterfaceManager {
         if (r != null) {
             mAdnCache = r.getAdnCache();
         }
-
-        mHandlerThread  = new HandlerThread("IccPbHandlerLoader" + phone.getPhoneId());
-        mHandlerThread.start();
-        mBaseHandler = new IccPbHandler(mHandlerThread.getLooper());
     }
 
     public void dispose() {
-        mHandlerThread.quitSafely();
     }
 
     public void updateIccRecords(IccRecords iccRecords) {
