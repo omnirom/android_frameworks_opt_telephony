@@ -134,6 +134,8 @@ public class GsmCdmaPhone extends Phone {
     /** List of Registrants to receive Supplementary Service Notifications. */
     private RegistrantList mSsnRegistrants = new RegistrantList();
 
+    private static final int IMEI_14_DIGIT = 14;
+
     //CDMA
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
     private static final String PREFIX_WPS = "*272";
@@ -197,6 +199,7 @@ public class GsmCdmaPhone extends Phone {
 
     private int mRilVersion;
     private boolean mBroadcastEmergencyCallStateChanges = false;
+    private boolean mEnable14DigitImei = false;
     private CarrierKeyDownloadManager mCDM;
     private CarrierInfoManager mCIM;
 
@@ -758,13 +761,11 @@ public class GsmCdmaPhone extends Phone {
     public void registerForSuppServiceNotification(
             Handler h, int what, Object obj) {
         mSsnRegistrants.addUnique(h, what, obj);
-        if (mSsnRegistrants.size() == 1) mCi.setSuppServiceNotifications(true, null);
     }
 
     @Override
     public void unregisterForSuppServiceNotification(Handler h) {
         mSsnRegistrants.remove(h);
-        if (mSsnRegistrants.size() == 0) mCi.setSuppServiceNotifications(false, null);
     }
 
     @Override
@@ -1589,13 +1590,13 @@ public class GsmCdmaPhone extends Phone {
     @Override
     public String getDeviceId() {
         if (isPhoneTypeGsm()) {
-            return mImei;
+            return getImei();
         } else {
             CarrierConfigManager configManager = (CarrierConfigManager)
                     mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
             boolean force_imei = configManager.getConfigForSubId(getSubId())
                     .getBoolean(CarrierConfigManager.KEY_FORCE_IMEI_BOOL);
-            if (force_imei) return mImei;
+            if (force_imei) return getImei();
 
             String id = getMeid();
             if ((id == null) || id.matches("^0*$")) {
@@ -1623,6 +1624,10 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public String getImei() {
+        if (mEnable14DigitImei && !TextUtils.isEmpty(mImei)
+                && mImei.length() > IMEI_14_DIGIT) {
+            return mImei.substring(0, IMEI_14_DIGIT);
+        }
         return mImei;
     }
 
@@ -2384,6 +2389,7 @@ public class GsmCdmaPhone extends Phone {
         mCi.getDeviceIdentity(obtainMessage(EVENT_GET_DEVICE_IDENTITY_DONE));
         mCi.getRadioCapability(obtainMessage(EVENT_GET_RADIO_CAPABILITY));
         startLceAfterRadioIsAvailable();
+        mCi.setSuppServiceNotifications(true, null);
     }
 
     private void handleRadioOn() {
@@ -2512,10 +2518,12 @@ public class GsmCdmaPhone extends Phone {
                 }
 
                 // Update broadcastEmergencyCallStateChanges
+                // also cache the config value for displaying 14 digit IMEI
                 CarrierConfigManager configMgr = (CarrierConfigManager)
                         getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
                 PersistableBundle b = configMgr.getConfigForSubId(getSubId());
                 if (b != null) {
+                    mEnable14DigitImei = b.getBoolean("config_enable_display_14digit_imei");
                     boolean broadcastEmergencyCallStateChanges = b.getBoolean(
                             CarrierConfigManager.KEY_BROADCAST_EMERGENCY_CALL_STATE_CHANGES_BOOL);
                     logd("broadcastEmergencyCallStateChanges = " +
