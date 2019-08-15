@@ -2534,21 +2534,39 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // If we are the in midst of swapping FG and BG calls and the call that was
                 // terminated was the one that we expected to resume, we need to swap the FG and
                 // BG calls back.
-                if (imsCall == mCallExpectedToResume) {
-                    if (DBG) {
-                        log("onCallTerminated: switching " + mForegroundCall + " with "
-                                + mBackgroundCall);
-                    }
-                    mForegroundCall.switchWith(mBackgroundCall);
-                }
-                // This call terminated in the midst of a switch after the other call was held, so
-                // resume it back to ACTIVE state since the switch failed.
-                log("onCallTerminated: foreground call in state " + mForegroundCall.getState() +
-                        " and ringing call in state " + (mRingingCall == null ? "null" :
+                log("onCallTerminated: foreground call in state : " + mForegroundCall.getState() +
+                        " , background call in state : " + mBackgroundCall.getState() +
+                        " and ringing call in state : " + (mRingingCall == null ? "null" :
                         mRingingCall.getState().toString()));
-
-                sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
-                mHoldSwitchingState = HoldSwapState.INACTIVE;
+                if (imsCall == mCallExpectedToResume) {
+                    if (!mBackgroundCall.getImsCall().isPendingHold()) {
+                        //Switch the calls only if the background call is not in a PENDING_HOLD
+                        //state. Otherwise resuming the background call will anyways fail
+                        //and we would have incorrectly switched the calls. The user won't be able
+                        //to resume the held call later on.
+                        if (DBG) {
+                            log("onCallTerminated: switching " + mForegroundCall + " with "
+                                    + mBackgroundCall);
+                        }
+                        // This call terminated in the midst of a switch after the other call was
+                        // held, so resume it back to ACTIVE state since the switch failed.
+                        mForegroundCall.switchWith(mBackgroundCall);
+                        sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
+                        mHoldSwitchingState = HoldSwapState.INACTIVE;
+                    } else {
+                        log("onCallTerminated: backgroung call has a PENDING_HOLD action in " +
+                                "progress and cannot be resumed. Avoid switching the fg and bg "+
+                                "calls and dont send EVENT_RESUME_NOW_FOREGROUND_CALL");
+                        //Since the foreground call has ended and the background call
+                        //is in PENDING_HOLD state
+                        mHoldSwitchingState = HoldSwapState.PENDING_SINGLE_CALL_HOLD;
+                    }
+                } else {
+                    // The call which was put on hold and not expected to resume got terminated.
+                    // Just resume the foreground call as is done currently.
+                    sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
+                    mHoldSwitchingState = HoldSwapState.INACTIVE;
+                }
                 mCallExpectedToResume = null;
                 logHoldSwapState("onCallTerminated swap active and hold case");
             } else if (mHoldSwitchingState == HoldSwapState.PENDING_SINGLE_CALL_UNHOLD
