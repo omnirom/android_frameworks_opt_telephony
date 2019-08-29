@@ -4271,7 +4271,8 @@ public class DcTracker extends Handler {
                         || !containsAllApns(currentWaitingApns, waitingApns))) {
                     if (VDBG) log("new waiting apn is different for " + apnContext);
                     apnContext.setWaitingApns(waitingApns);
-                    if (!apnContext.isDisconnected()) {
+                    if (!apnContext.isDisconnected()
+                            && isCleanUpConnectionRequired(apnContext, waitingApns)) {
                         if (VDBG) log("cleanUpConnectionsOnUpdatedApns for " + apnContext);
                         apnContext.setReason(reason);
                         cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
@@ -4291,6 +4292,20 @@ public class DcTracker extends Handler {
         if (detach && mDisconnectPendingCount == 0) {
             notifyAllDataDisconnected();
         }
+    }
+
+    private boolean isCleanUpConnectionRequired(ApnContext apnContext,
+            ArrayList<ApnSetting> waitingApns) {
+        boolean cleanupRequired = false;
+        ApnSetting apnSetting = apnContext.getApnSetting();
+        if (apnContext.getApnType().equals(PhoneConstants.APN_TYPE_DEFAULT)) {
+            if ((getPreferredApn() == null) || !apnSetting.equals(getPreferredApn())) {
+                cleanupRequired = true;
+            }
+        } else if (!waitingApns.contains(apnSetting)) {
+            cleanupRequired = true;
+        }
+        return cleanupRequired;
     }
 
     /**
