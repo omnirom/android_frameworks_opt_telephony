@@ -1174,7 +1174,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // being sent to the lower layers/to the network.
             }
 
-            int mode = QtiImsUtils.getRttOperatingMode(mPhone.getContext());
+            int mode = QtiImsUtils.getRttOperatingMode(mPhone.getContext(), mPhone.getPhoneId());
             if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
 
             if (mPhone.isRttSupported() && mPhone.isRttOn()) {
