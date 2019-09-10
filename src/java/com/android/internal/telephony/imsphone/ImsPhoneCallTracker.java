@@ -2134,8 +2134,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         int code = maybeRemapReasonCode(reasonInfo);
         switch (code) {
-            case ImsReasonInfo.CODE_SIP_REQUEST_CANCELLED:
-                return DisconnectCause.OUTGOING_FAILURE;
             case ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL:
                 return DisconnectCause.IMS_SIP_ALTERNATE_EMERGENCY_CALL;
             case ImsReasonInfo.CODE_SIP_BAD_ADDRESS:
@@ -2852,8 +2850,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             }
             foregroundImsPhoneCall.merge(peerImsPhoneCall, ImsPhoneCall.State.ACTIVE);
 
+            final ImsPhoneConnection conn = findConnection(call);
             try {
-                final ImsPhoneConnection conn = findConnection(call);
                 log("onCallMerged: ImsPhoneConnection=" + conn);
                 log("onCallMerged: CurrentVideoProvider=" + conn.getVideoProvider());
                 setVideoCallProvider(conn, call);
@@ -2869,6 +2867,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (peerConnection != null) {
                 processCallStateChange(mBackgroundCall.getImsCall(), ImsPhoneCall.State.HOLDING,
                     DisconnectCause.NOT_DISCONNECTED);
+            }
+
+            if (conn != null) {
+                conn.handleMergeComplete();
             }
 
             // Check if the merge was requested by an existing conference call. In that
