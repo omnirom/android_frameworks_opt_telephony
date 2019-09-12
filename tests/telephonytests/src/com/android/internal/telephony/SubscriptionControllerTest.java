@@ -71,6 +71,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     private MockContentResolver mMockContentResolver;
     private FakeTelephonyProvider mFakeTelephonyProvider;
     @Mock
+    GsmCdmaPhone mSecondPhone;
+    @Mock
     private UiccCard mUiccCard;
     @Mock
     private UiccSlot mUiccSlot;
@@ -650,6 +652,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testSetSubscriptionGroupWithModifyPermission() throws Exception {
         testInsertSim();
+        when(UiccController.getInstance().getUiccCardForPhone(0)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("test2", 0);
         mContextFixture.removeCallingOrSelfPermission(ContextFixture.PERMISSION_ENABLE_ALL);
         mContextFixture.addCallingOrSelfPermission(Manifest.permission.READ_PHONE_STATE);
@@ -682,6 +685,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
         testInsertSim();
         // Adding a second profile and mark as embedded.
         // TODO b/123300875 slot index 1 is not expected to be valid
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
         ContentValues values = new ContentValues();
         values.put(SubscriptionManager.IS_EMBEDDED, 1);
@@ -740,6 +745,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testUpdateSubscriptionGroupWithCarrierPrivilegePermission() throws Exception {
         testInsertSim();
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         // Adding a second profile and mark as embedded.
         // TODO b/123300875 slot index 1 is not expected to be valid
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
@@ -857,6 +864,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testSetSubscriptionGroup() throws Exception {
         testInsertSim();
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         // Adding a second profile and mark as embedded.
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
         ContentValues values = new ContentValues();
@@ -934,8 +943,11 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testGetActiveSubIdList() throws Exception {
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         // TODO b/123300875 slot index 1 is not expected to be valid
         mSubscriptionControllerUT.addSubInfoRecord("123", 1);   // sub 1
+        when(UiccController.getInstance().getUiccCardForPhone(0)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("456", 0);   // sub 2
 
         int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
