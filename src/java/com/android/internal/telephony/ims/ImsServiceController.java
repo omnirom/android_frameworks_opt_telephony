@@ -16,17 +16,18 @@
 
 package com.android.internal.telephony.ims;
 
+import android.app.AppGlobals;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.content.pm.IPackageManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.RemoteException;
-import android.os.ServiceManager;
+import android.os.UserHandle;
+import android.permission.IPermissionManager;
 import android.telephony.ims.ImsService;
 import android.telephony.ims.aidl.IImsConfig;
 import android.telephony.ims.aidl.IImsMmTelFeature;
@@ -71,25 +72,23 @@ public class ImsServiceController {
             synchronized (mLock) {
                 mIsBound = true;
                 mIsBinding = false;
-                Log.d(LOG_TAG, "ImsService(" + name + "): onServiceConnected with binder: "
-                        + service);
-                if (service != null) {
-                    try {
-                        setServiceController(service);
-                        notifyImsServiceReady();
-                        // create all associated features in the ImsService
-                        for (ImsFeatureConfiguration.FeatureSlotPair i : mImsFeatures) {
-                            addImsServiceFeature(i);
-                        }
-                    } catch (RemoteException e) {
-                        mIsBound = false;
-                        mIsBinding = false;
-                        // Remote exception means that the binder already died.
-                        cleanupConnection();
-                        startDelayedRebindToService();
-                        Log.e(LOG_TAG, "ImsService(" + name + ") RemoteException:"
-                                + e.getMessage());
+                try {
+                    Log.d(LOG_TAG, "ImsService(" + name + "): onServiceConnected with binder: "
+                            + service);
+                    setServiceController(service);
+                    notifyImsServiceReady();
+                    // create all associated features in the ImsService
+                    for (ImsFeatureConfiguration.FeatureSlotPair i : mImsFeatures) {
+                        addImsServiceFeature(i);
                     }
+                } catch (RemoteException e) {
+                    mIsBound = false;
+                    mIsBinding = false;
+                    // Remote exception means that the binder already died.
+                    cleanupConnection();
+                    startDelayedRebindToService();
+                    Log.e(LOG_TAG, "ImsService(" + name + ") RemoteException:"
+                            + e.getMessage());
                 }
             }
         }
@@ -111,10 +110,27 @@ public class ImsServiceController {
                 mIsBound = false;
             }
             cleanupConnection();
+            // according to the docs, we should fully unbind before rebinding again.
+            mContext.unbindService(mImsServiceConnection);
             Log.w(LOG_TAG, "ImsService(" + name + "): onBindingDied. Starting rebind...");
             startDelayedRebindToService();
         }
 
+        @Override
+        public void onNullBinding(ComponentName name) {
+            Log.w(LOG_TAG, "ImsService(" + name + "): onNullBinding. Removing.");
+            synchronized (mLock) {
+                mIsBinding = false;
+                mIsBound = false;
+            }
+            cleanupConnection();
+            if (mCallbacks != null) {
+                // Will trigger an unbind.
+                mCallbacks.imsServiceBindPermanentError(getComponentName());
+            }
+        }
+
+        // Does not clear features, just removes all active features.
         private void cleanupConnection() {
             cleanupAllFeatures();
             cleanUpService();
@@ -151,6 +167,12 @@ public class ImsServiceController {
          */
         void imsServiceFeaturesChanged(ImsFeatureConfiguration config,
                 ImsServiceController controller);
+
+        /**
+         * Called by the ImsServiceController when there has been an error binding that is
+         * not recoverable, such as the ImsService returning a null binder.
+         */
+        void imsServiceBindPermanentError(ComponentName name);
     }
 
     /**
@@ -176,7 +198,7 @@ public class ImsServiceController {
     private static final int REBIND_MAXIMUM_DELAY_MS = 60 * 1000; // 1 minute
     private final ComponentName mComponentName;
     private final HandlerThread mHandlerThread = new HandlerThread("ImsServiceControllerHandler");
-    private final IPackageManager mPackageManager;
+    private final IPermissionManager mPermissionManager;
     private ImsServiceControllerCallbacks mCallbacks;
     private ExponentialBackoff mBackoff;
 
@@ -246,7 +268,8 @@ public class ImsServiceController {
             @Override
             public void notifyImsFeatureStatus(int featureStatus) throws RemoteException {
                 Log.i(LOG_TAG, "notifyImsFeatureStatus: slot=" + mSlotId + ", feature="
-                        + mFeatureType + ", status=" + featureStatus);
+                        + ImsFeature.FEATURE_LOG_MAP.get(mFeatureType) + ", status="
+                        + ImsFeature.STATE_LOG_MAP.get(featureStatus));
                 sendImsFeatureStatusChanged(mSlotId, mFeatureType, featureStatus);
             }
         };
@@ -298,7 +321,7 @@ public class ImsServiceController {
                 2, /* multiplier */
                 mHandlerThread.getLooper(),
                 mRestartImsServiceRunnable);
-        mPackageManager = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
+        mPermissionManager = AppGlobals.getPermissionManager();
     }
 
     @VisibleForTesting
@@ -315,7 +338,7 @@ public class ImsServiceController {
                 2, /* multiplier */
                 handler,
                 mRestartImsServiceRunnable);
-        mPackageManager = null;
+        mPermissionManager = null;
     }
 
     /**
@@ -384,6 +407,8 @@ public class ImsServiceController {
             removeImsServiceFeatureCallbacks();
             Log.i(LOG_TAG, "Unbinding ImsService: " + mComponentName);
             mContext.unbindService(mImsServiceConnection);
+            mIsBound = false;
+            mIsBinding = false;
             cleanUpService();
         }
     }
@@ -396,6 +421,9 @@ public class ImsServiceController {
             HashSet<ImsFeatureConfiguration.FeatureSlotPair> newImsFeatures)
             throws RemoteException {
         synchronized (mLock) {
+            if (mImsFeatures.equals(newImsFeatures)) {
+                return;
+            }
             Log.i(LOG_TAG, "Features changed (" + mImsFeatures + "->" + newImsFeatures + ") for "
                     + "ImsService: " + mComponentName);
             HashSet<ImsFeatureConfiguration.FeatureSlotPair> oldImsFeatures =
@@ -584,15 +612,15 @@ public class ImsServiceController {
         mBackoff.start();
     }
 
-    // Grant runtime permissions to ImsService. PackageManager ensures that the ImsService is
+    // Grant runtime permissions to ImsService. PermissionManager ensures that the ImsService is
     // system/signed before granting permissions.
     private void grantPermissionsToService() {
         Log.i(LOG_TAG, "Granting Runtime permissions to:" + getComponentName());
         String[] pkgToGrant = {mComponentName.getPackageName()};
         try {
-            if (mPackageManager != null) {
-                mPackageManager.grantDefaultPermissionsToEnabledImsServices(pkgToGrant,
-                        mContext.getUserId());
+            if (mPermissionManager != null) {
+                mPermissionManager.grantDefaultPermissionsToEnabledImsServices(pkgToGrant,
+                    UserHandle.myUserId());
             }
         } catch (RemoteException e) {
             Log.w(LOG_TAG, "Unable to grant permissions, binder died.");
@@ -692,7 +720,8 @@ public class ImsServiceController {
             } catch (RemoteException e) {
                 // The connection to this ImsService doesn't exist. This may happen if the service
                 // has died and we are removing features.
-                Log.i(LOG_TAG, "Couldn't remove feature {" + featurePair.featureType
+                Log.i(LOG_TAG, "Couldn't remove feature {"
+                        + ImsFeature.FEATURE_LOG_MAP.get(featurePair.featureType)
                         + "}, connection is down: " + e.getMessage());
             }
         } else {

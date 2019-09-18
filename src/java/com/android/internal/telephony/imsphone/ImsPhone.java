@@ -1494,6 +1494,7 @@ public class ImsPhone extends ImsPhoneBase {
                 mSS.addNetworkRegistrationInfo(nri);
             }
 
+            mSS.setIwlanPreferred(ss.isIwlanPreferred());
             logd("updateDataServiceState: defSs = " + ss + " imsSs = " + mSS);
         }
     }

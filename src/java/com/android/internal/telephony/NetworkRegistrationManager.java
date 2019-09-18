@@ -22,6 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.IBinder;
@@ -102,8 +103,14 @@ public class NetworkRegistrationManager extends Handler {
 
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
-        phone.getContext().registerReceiverAsUser(mBroadcastReceiver, UserHandle.ALL,
-                intentFilter, null, null);
+        try {
+            Context contextAsUser = phone.getContext().createPackageContextAsUser(
+                phone.getContext().getPackageName(), 0, UserHandle.ALL);
+            contextAsUser.registerReceiver(mBroadcastReceiver, intentFilter,
+                null /* broadcastPermission */, null);
+        } catch (PackageManager.NameNotFoundException e) {
+            loge("Package name not found: " + e.getMessage());
+        }
         sendEmptyMessage(EVENT_BIND_NETWORK_SERVICE);
     }
 
@@ -236,10 +243,20 @@ public class NetworkRegistrationManager extends Handler {
     }
 
     private void bindService() {
+        Intent intent = null;
         String packageName = getPackageName();
+        String className = getClassName();
         if (TextUtils.isEmpty(packageName)) {
             loge("Can't find the binding package");
             return;
+        }
+
+        if (TextUtils.isEmpty(className)) {
+            intent = new Intent(NetworkService.SERVICE_INTERFACE);
+            intent.setPackage(packageName);
+        } else {
+            ComponentName cm = new ComponentName(packageName, className);
+            intent = new Intent(NetworkService.SERVICE_INTERFACE).setComponent(cm);
         }
 
         if (TextUtils.equals(packageName, mTargetBindingPackageName)) {
@@ -257,9 +274,6 @@ public class NetworkRegistrationManager extends Handler {
 
             mPhone.getContext().unbindService(mServiceConnection);
         }
-
-        Intent intent = new Intent(NetworkService.SERVICE_INTERFACE);
-        intent.setPackage(getPackageName());
 
         try {
             // We bind this as a foreground service because it is operating directly on the SIM,
@@ -312,6 +326,39 @@ public class NetworkRegistrationManager extends Handler {
         return packageName;
     }
 
+    private String getClassName() {
+        String className;
+        int resourceId;
+        String carrierConfig;
+
+        switch (mTransportType) {
+            case AccessNetworkConstants.TRANSPORT_TYPE_WWAN:
+                resourceId = com.android.internal.R.string.config_wwan_network_service_class;
+                carrierConfig = CarrierConfigManager
+                        .KEY_CARRIER_NETWORK_SERVICE_WWAN_CLASS_OVERRIDE_STRING;
+                break;
+            case AccessNetworkConstants.TRANSPORT_TYPE_WLAN:
+                resourceId = com.android.internal.R.string.config_wlan_network_service_class;
+                carrierConfig = CarrierConfigManager
+                        .KEY_CARRIER_NETWORK_SERVICE_WLAN_CLASS_OVERRIDE_STRING;
+                break;
+            default:
+                throw new IllegalStateException("Transport type not WWAN or WLAN. type="
+                        + mTransportType);
+        }
+
+        // Read class name from resource overlay
+        className = mPhone.getContext().getResources().getString(resourceId);
+
+        PersistableBundle b = mCarrierConfigManager.getConfigForSubId(mPhone.getSubId());
+
+        if (b != null && !TextUtils.isEmpty(b.getString(carrierConfig))) {
+            // If carrier config overrides it, use the one from carrier config
+            className = b.getString(carrierConfig, className);
+        }
+
+        return className;
+    }
     private void logd(String msg) {
         Rlog.d(mTag, msg);
     }
