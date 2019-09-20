@@ -1324,6 +1324,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     ImsCommand.IMS_CMD_HOLD);
         } catch (ImsException e) {
             mForegroundCall.switchWith(mBackgroundCall);
+            mHoldSwitchingState = HoldSwapState.INACTIVE;
             throw new CallStateException(e.getMessage());
         }
     }
@@ -1353,6 +1354,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         ImsCommand.IMS_CMD_HOLD);
             } catch (ImsException e) {
                 mForegroundCall.switchWith(mBackgroundCall);
+                mHoldSwitchingState = HoldSwapState.INACTIVE;
                 throw new CallStateException(e.getMessage());
             }
         }
@@ -1375,6 +1377,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         ImsCommand.IMS_CMD_HOLD);
             } catch (ImsException e) {
                 mForegroundCall.switchWith(mBackgroundCall);
+                mHoldSwitchingState = HoldSwapState.INACTIVE;
                 throw new CallStateException(e.getMessage());
             }
         }
@@ -1401,6 +1404,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         ImsCommand.IMS_CMD_RESUME);
             }
         } catch (ImsException e) {
+            mForegroundCall.switchWith(mBackgroundCall);
+            mHoldSwitchingState = HoldSwapState.INACTIVE;
             throw new CallStateException(e.getMessage());
         }
     }
