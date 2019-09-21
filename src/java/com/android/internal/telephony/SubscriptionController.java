@@ -1025,17 +1025,19 @@ public class SubscriptionController extends ISub.Stub {
     @Override
     public int addSubInfo(String uniqueId, String displayName, int slotIndex,
             int subscriptionType) {
-        String fullIccId;
-        Phone phone = PhoneFactory.getPhone(slotIndex);
-        UiccCard uiccCard = UiccController.getInstance().getUiccCardForPhone(slotIndex);
-        if (phone != null && uiccCard != null) {
-            fullIccId = phone.getFullIccSerialNumber();
-            if (TextUtils.isEmpty(fullIccId)) {
-                fullIccId = uniqueId;
-            }
-        } else {
+        String fullIccId = uniqueId;
+        if (!isSubscriptionForRemoteSim(subscriptionType)) {
+            Phone phone = PhoneFactory.getPhone(slotIndex);
+            UiccCard uiccCard = UiccController.getInstance().getUiccCardForPhone(slotIndex);
+            if (phone != null && uiccCard != null) {
+                fullIccId = phone.getFullIccSerialNumber();
+                if (TextUtils.isEmpty(fullIccId)) {
+                    fullIccId = uniqueId;
+                }
+            } else {
             if (DBG) logdl("[addSubInfoRecord]- null fullIccId");
-            return -1;
+                return -1;
+            }
         }
 
         if (DBG) {
@@ -3810,5 +3812,32 @@ public class SubscriptionController extends ISub.Stub {
     public String getDataEnabledOverrideRules(int subId) {
         return TextUtils.emptyIfNull(getSubscriptionProperty(subId,
                 SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES));
+    }
+
+    /**
+     * Get active data subscription id.
+     *
+     * @return Active data subscription id
+     *
+     * @hide
+     */
+    @Override
+    public int getActiveDataSubscriptionId() {
+        final long token = Binder.clearCallingIdentity();
+
+        try {
+            PhoneSwitcher phoneSwitcher = PhoneSwitcher.getInstance();
+            if (phoneSwitcher != null) {
+                int activeDataSubId = phoneSwitcher.getActiveDataSubId();
+                if (SubscriptionManager.isUsableSubscriptionId(activeDataSubId)) {
+                    return activeDataSubId;
+                }
+            }
+            // If phone switcher isn't ready, or active data sub id is not available, use default
+            // sub id from settings.
+            return getDefaultDataSubId();
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
     }
 }

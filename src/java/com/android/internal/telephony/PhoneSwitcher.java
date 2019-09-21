@@ -1056,7 +1056,7 @@ public class PhoneSwitcher extends Handler {
         mPreferredDataSubId = mSubscriptionController.getSubIdUsingPhoneId(mPreferredDataPhoneId);
     }
 
-    private void transitionToEmergencyPhone() {
+    protected void transitionToEmergencyPhone() {
         if (mPreferredDataPhoneId != DEFAULT_EMERGENCY_PHONE_ID) {
             log("No active subscriptions: resetting preferred phone to 0 for emergency");
             mPreferredDataPhoneId = DEFAULT_EMERGENCY_PHONE_ID;
@@ -1253,10 +1253,6 @@ public class PhoneSwitcher extends Handler {
                 || phone.getForegroundCall().getState() == Call.State.ALERTING);
     }
 
-    protected boolean isCallActive(int phoneId) {
-        return false;
-    }
-
     private void updateHalCommandToUse() {
         mHalCommandToUse = mRadioConfig.isSetPreferredDataCommandSupported()
                 ? HAL_COMMAND_PREFERRED_DATA : HAL_COMMAND_ALLOW_DATA;
@@ -1296,6 +1292,13 @@ public class PhoneSwitcher extends Handler {
         } catch (RemoteException ex) {
             // Should never happen because its always available.
         }
+    }
+
+    /**
+     * @return The active data subscription id
+     */
+    public int getActiveDataSubId() {
+        return mPreferredDataSubId;
     }
 
     public void dump(FileDescriptor fd, PrintWriter writer, String[] args) {

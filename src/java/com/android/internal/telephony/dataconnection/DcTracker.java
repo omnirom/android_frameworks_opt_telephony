@@ -1227,10 +1227,6 @@ public class DcTracker extends Handler {
         setupDataOnAllConnectableApns(Phone.REASON_DATA_ATTACHED, RetryFailures.ALWAYS);
     }
 
-    protected boolean getAttachedStatus() {
-        return mAttached.get();
-    }
-
     /**
      * Check if it is allowed to make a data connection (without checking APN context specific
      * conditions).
@@ -1266,7 +1262,7 @@ public class DcTracker extends Handler {
 
         // Step 1: Get all environment conditions.
         final boolean internalDataEnabled = mDataEnabledSettings.isInternalDataEnabled();
-        boolean attachedState = getAttachedStatus();
+        boolean attachedState = mAttached.get();
         boolean desiredPowerState = mPhone.getServiceStateTracker().getDesiredPowerState();
         boolean radioStateFromCarrier = mPhone.getServiceStateTracker().getPowerStateFromCarrier();
         // TODO: Remove this hack added by ag/641832.
@@ -4271,7 +4267,8 @@ public class DcTracker extends Handler {
                         || !containsAllApns(currentWaitingApns, waitingApns))) {
                     if (VDBG) log("new waiting apn is different for " + apnContext);
                     apnContext.setWaitingApns(waitingApns);
-                    if (!apnContext.isDisconnected()) {
+                    if (!apnContext.isDisconnected()
+                            && isCleanUpConnectionRequired(apnContext, waitingApns)) {
                         if (VDBG) log("cleanUpConnectionsOnUpdatedApns for " + apnContext);
                         apnContext.setReason(reason);
                         cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
@@ -4291,6 +4288,20 @@ public class DcTracker extends Handler {
         if (detach && mDisconnectPendingCount == 0) {
             notifyAllDataDisconnected();
         }
+    }
+
+    private boolean isCleanUpConnectionRequired(ApnContext apnContext,
+            ArrayList<ApnSetting> waitingApns) {
+        boolean cleanupRequired = false;
+        ApnSetting apnSetting = apnContext.getApnSetting();
+        if (apnContext.getApnType().equals(PhoneConstants.APN_TYPE_DEFAULT)) {
+            if ((getPreferredApn() == null) || !apnSetting.equals(getPreferredApn())) {
+                cleanupRequired = true;
+            }
+        } else if (!waitingApns.contains(apnSetting)) {
+            cleanupRequired = true;
+        }
+        return cleanupRequired;
     }
 
     /**
