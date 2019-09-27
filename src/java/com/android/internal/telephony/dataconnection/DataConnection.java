@@ -42,11 +42,13 @@ import android.net.SocketKeepalive;
 import android.net.StringNetworkSpecifier;
 import android.os.AsyncResult;
 import android.os.Message;
+import android.os.PersistableBundle;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Telephony;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.CarrierConfigManager;
 import android.telephony.DataFailCause;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.Rlog;
@@ -54,6 +56,7 @@ import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
+import android.telephony.data.ApnSetting.ApnType;
 import android.telephony.data.DataCallResponse;
 import android.telephony.data.DataProfile;
 import android.telephony.data.DataService;
@@ -2065,6 +2068,12 @@ public class DataConnection extends StateMachine {
                     mHandoverLocalLog.log(logStr);
                     mNetworkAgent = mHandoverSourceNetworkAgent;
                     mNetworkAgent.acquireOwnership(DataConnection.this, mTransportType);
+
+                    // TODO: Should evaluate mDisabledApnTypeBitMask again after handover. We don't
+                    // do it now because connectivity service does not support dynamically removing
+                    // immutable capabilities.
+
+                    // Update the capability after handover
                     mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities(),
                             DataConnection.this);
                     mNetworkAgent.sendLinkProperties(mLinkProperties, DataConnection.this);
@@ -2081,6 +2090,9 @@ public class DataConnection extends StateMachine {
                         mPhone.getPhoneId());
                 final int factorySerialNumber = (null == factory)
                         ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
+
+                mDisabledApnTypeBitMask |= getDisallowedApnTypes();
+
                 mNetworkAgent = DcNetworkAgent.createDcNetworkAgent(DataConnection.this,
                         mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
             }
@@ -2837,6 +2849,33 @@ public class DataConnection extends StateMachine {
                 == NetworkRegistrationInfo.NR_STATE_CONNECTED;
     }
 
+    /**
+     * @return The disallowed APN types bitmask
+     */
+    private @ApnType int getDisallowedApnTypes() {
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        int apnTypesBitmask = 0;
+        if (configManager != null) {
+            PersistableBundle bundle = configManager.getConfigForSubId(mSubId);
+            if (bundle != null) {
+                String key = (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                        ? CarrierConfigManager.KEY_CARRIER_WWAN_DISALLOWED_APN_TYPES_STRING_ARRAY
+                        : CarrierConfigManager.KEY_CARRIER_WLAN_DISALLOWED_APN_TYPES_STRING_ARRAY;
+                if (bundle.getStringArray(key) != null) {
+                    String disallowedApnTypesString =
+                            TextUtils.join(",", bundle.getStringArray(key));
+                    if (!TextUtils.isEmpty(disallowedApnTypesString)) {
+                        apnTypesBitmask = ApnSetting.getApnTypesBitmaskFromString(
+                                disallowedApnTypesString);
+                    }
+                }
+            }
+        }
+
+        return apnTypesBitmask;
+    }
+
     private void dumpToLog() {
         dump(null, new PrintWriter(new StringWriter(0)) {
             @Override
@@ -2930,6 +2969,8 @@ public class DataConnection extends StateMachine {
         pw.println("mSubscriptionOverride=" + Integer.toHexString(mSubscriptionOverride));
         pw.println("mRestrictedNetworkOverride=" + mRestrictedNetworkOverride);
         pw.println("mUnmeteredUseOnly=" + mUnmeteredUseOnly);
+        pw.println("disallowedApnTypes="
+                + ApnSetting.getApnTypesStringFromBitmask(getDisallowedApnTypes()));
         pw.println("mInstanceNumber=" + mInstanceNumber);
         pw.println("mAc=" + mAc);
         pw.println("mScore=" + mScore);
