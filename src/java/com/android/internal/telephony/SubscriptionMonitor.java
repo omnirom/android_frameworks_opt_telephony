@@ -27,20 +27,13 @@ import android.os.Handler;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.RemoteException;
-import android.os.ServiceManager;
 import android.telephony.Rlog;
-import android.telephony.SubscriptionManager;
 import android.util.LocalLog;
 
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.telephony.ISub;
-import com.android.internal.telephony.IOnSubscriptionsChangedListener;
-import com.android.internal.telephony.ITelephonyRegistry;
-import com.android.internal.telephony.PhoneConstants;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
-import java.lang.IllegalArgumentException;
 
 /**
  * Utility singleton to monitor subscription changes and help people act on them.
@@ -84,6 +77,12 @@ public class SubscriptionMonitor {
             mDefaultDataSubChangedRegistrants[phoneId] = new RegistrantList();
             mPhoneSubId[phoneId] = mSubscriptionController.getSubIdUsingPhoneId(phoneId);
         }
+        try {
+            tr.addOnSubscriptionsChangedListener(context.getOpPackageName(),
+                    mSubscriptionsChangedListener);
+        } catch (RemoteException e) {
+        }
+
         try {
             tr.addOnSubscriptionsChangedListener(context.getOpPackageName(),
                     mSubscriptionsChangedListener);

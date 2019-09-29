@@ -60,7 +60,7 @@ import java.util.stream.Collectors;
  *
  * The device can operate in the following modes, which is stored in the system properties
  * ro.telephony.iwlan_operation_mode. If the system properties is missing, then it's tied to
- * IRadio version. For 1.4 or above, it's legacy mode. For 1.3 or below, it's
+ * IRadio version. For 1.4 or above, it's AP-assisted mdoe. For 1.3 or below, it's legacy mode.
  *
  * Legacy mode:
  *      Frameworks send all data requests to the default data service, which is the cellular data
@@ -75,13 +75,13 @@ import java.util.stream.Collectors;
  *      frameworks to bind.
  *
  *      Package name of data service:
- *          The resource overlay 'config_wwan_data_service_package' or,
+ *          The resource overlay 'config_wlan_data_service_package' or,
  *          the carrier config
  *          {@link CarrierConfigManager#KEY_CARRIER_DATA_SERVICE_WLAN_PACKAGE_OVERRIDE_STRING}.
  *          The carrier config takes precedence over the resource overlay if both exist.
  *
  *      Package name of network service
- *          The resource overlay 'config_wwan_network_service_package' or
+ *          The resource overlay 'config_wlan_network_service_package' or
  *          the carrier config
  *          {@link CarrierConfigManager#KEY_CARRIER_NETWORK_SERVICE_WLAN_PACKAGE_OVERRIDE_STRING}.
  *          The carrier config takes precedence over the resource overlay if both exist.
@@ -129,8 +129,8 @@ public class TransportManager extends Handler {
     public @interface IwlanOperationMode {}
 
     /**
-     * IWLAN default mode. On device that has IRadio 1.3 or above, it means
-     * {@link #IWLAN_OPERATION_MODE_AP_ASSISTED}. On device that has IRadio 1.2 or below, it means
+     * IWLAN default mode. On device that has IRadio 1.4 or above, it means
+     * {@link #IWLAN_OPERATION_MODE_AP_ASSISTED}. On device that has IRadio 1.3 or below, it means
      * {@link #IWLAN_OPERATION_MODE_LEGACY}.
      */
     public static final String IWLAN_OPERATION_MODE_DEFAULT = "default";
@@ -199,8 +199,10 @@ public class TransportManager extends Handler {
              * Called when handover is completed.
              *
              * @param success {@true} if handover succeeded, otherwise failed.
+             * @param fallback {@true} if handover failed, the data connection fallback to the
+             * original transport
              */
-            void onCompleted(boolean success);
+            void onCompleted(boolean success, boolean fallback);
         }
 
         public final @ApnType int apnType;
@@ -347,28 +349,33 @@ public class TransportManager extends Handler {
                             + AccessNetworkConstants.transportTypeToString(targetTransport));
                     mPendingHandoverApns.put(networks.apnType, targetTransport);
                     mHandoverNeededEventRegistrants.notifyResult(
-                            new HandoverParams(networks.apnType, targetTransport, success -> {
-                                // The callback for handover completed.
-                                if (success) {
-                                    logl("Handover succeeded.");
-                                } else {
-                                    logl("APN type "
-                                            + ApnSetting.getApnTypeString(networks.apnType)
-                                            + " handover to "
-                                            + AccessNetworkConstants.transportTypeToString(
-                                                    targetTransport) + " failed.");
-                                }
-                                // No matter succeeded or not, we need to set the current transport
-                                // to the new one. If failed, there will be retry afterwards anyway.
-                                setCurrentTransport(networks.apnType, targetTransport);
-                                mPendingHandoverApns.delete(networks.apnType);
+                            new HandoverParams(networks.apnType, targetTransport,
+                                    (success, fallback) -> {
+                                        // The callback for handover completed.
+                                        if (success) {
+                                            logl("Handover succeeded.");
+                                        } else {
+                                            logl("APN type "
+                                                    + ApnSetting.getApnTypeString(networks.apnType)
+                                                    + " handover to "
+                                                    + AccessNetworkConstants.transportTypeToString(
+                                                    targetTransport) + " failed."
+                                                    + ", fallback=" + fallback);
+                                        }
+                                        if (success || !fallback) {
+                                            // If handover succeeds or failed without falling back
+                                            // to the original transport, we should move to the new
+                                            // transport (even if it is failed).
+                                            setCurrentTransport(networks.apnType, targetTransport);
+                                        }
+                                        mPendingHandoverApns.delete(networks.apnType);
 
-                                // If there are still pending available network changes, we need to
-                                // process the rest.
-                                if (mAvailableNetworksList.size() > 0) {
-                                    sendEmptyMessage(EVENT_UPDATE_AVAILABLE_NETWORKS);
-                                }
-                            }));
+                                        // If there are still pending available network changes, we
+                                        // need to process the rest.
+                                        if (mAvailableNetworksList.size() > 0) {
+                                            sendEmptyMessage(EVENT_UPDATE_AVAILABLE_NETWORKS);
+                                        }
+                                    }));
                 }
                 mCurrentAvailableNetworks.put(networks.apnType, networks.qualifiedNetworks);
             } else {

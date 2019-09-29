@@ -276,6 +276,8 @@ public class ContextFixture implements TestFixture<Context> {
                 return Context.APP_OPS_SERVICE;
             } else if (serviceClass == TelecomManager.class) {
                 return Context.TELECOM_SERVICE;
+            } else if (serviceClass == UserManager.class) {
+                return Context.USER_SERVICE;
             }
             return super.getSystemServiceName(serviceClass);
         }
@@ -603,7 +605,7 @@ public class ContextFixture implements TestFixture<Context> {
                         (Intent) invocation.getArguments()[0],
                         (Integer) invocation.getArguments()[1]);
             }
-        }).when(mPackageManager).queryIntentServicesAsUser((Intent) any(), anyInt(), anyInt());
+        }).when(mPackageManager).queryIntentServicesAsUser((Intent) any(), anyInt(), any());
 
         try {
             doReturn(mPackageInfo).when(mPackageManager).getPackageInfoAsUser(any(), anyInt(),
