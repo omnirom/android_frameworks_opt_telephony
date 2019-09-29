@@ -16,6 +16,8 @@
 
 package com.android.internal.telephony.gsm;
 
+import static com.android.internal.telephony.SmsResponse.NO_ERROR_CODE;
+
 import android.os.AsyncResult;
 import android.os.Message;
 import android.provider.Telephony.Sms.Intents;
@@ -26,9 +28,9 @@ import android.util.Pair;
 import com.android.internal.telephony.GsmAlphabet.TextEncodingDetails;
 import com.android.internal.telephony.InboundSmsHandler;
 import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.SMSDispatcher;
 import com.android.internal.telephony.SmsConstants;
 import com.android.internal.telephony.SmsDispatchersController;
-import com.android.internal.telephony.SMSDispatcher;
 import com.android.internal.telephony.SmsHeader;
 import com.android.internal.telephony.SmsMessageBase;
 import com.android.internal.telephony.uicc.IccRecords;
@@ -36,6 +38,8 @@ import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.util.SMSDispatcherUtil;
+
+import dalvik.annotation.compat.UnsupportedAppUsage;
 
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -46,6 +50,7 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
     private AtomicReference<IccRecords> mIccRecords = new AtomicReference<IccRecords>();
     private AtomicReference<UiccCardApplication> mUiccApplication =
             new AtomicReference<UiccCardApplication>();
+    @UnsupportedAppUsage
     private GsmInboundSmsHandler mGsmInboundSmsHandler;
 
     /** Status report received */
@@ -68,6 +73,7 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
         mUiccController.unregisterForIccChanged(this);
     }
 
+    @UnsupportedAppUsage
     @Override
     protected String getFormat() {
         return SmsConstants.FORMAT_3GPP;
@@ -158,6 +164,7 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
     }
 
     /** {@inheritDoc} */
+    @UnsupportedAppUsage
     @Override
     protected void sendSms(SmsTracker tracker) {
         HashMap<String, Object> map = tracker.getData();
@@ -191,7 +198,7 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
         if (!isIms() && ss != ServiceState.STATE_IN_SERVICE) {
             if(mPhone.getServiceState().getRilDataRadioTechnology()
                     != ServiceState.RIL_RADIO_TECHNOLOGY_NR) {
-                tracker.onFailed(mContext, getNotInServiceError(ss), 0/*errorCode*/);
+                tracker.onFailed(mContext, getNotInServiceError(ss), NO_ERROR_CODE);
                 return;
             }
         }

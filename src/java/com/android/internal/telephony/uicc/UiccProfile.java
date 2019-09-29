@@ -34,6 +34,7 @@ import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.Registrant;
 import android.os.RegistrantList;
+import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.telephony.CarrierConfigManager;
@@ -97,6 +98,7 @@ public class UiccProfile extends IccCard {
     private int mGsmUmtsSubscriptionAppIndex;
     private int mCdmaSubscriptionAppIndex;
     private int mImsSubscriptionAppIndex;
+    private int mApplicationCount;
     private UiccCardApplication[] mUiccApplications =
             new UiccCardApplication[IccCardStatus.CARD_MAX_APPS];
     private Context mContext;
@@ -136,19 +138,37 @@ public class UiccProfile extends IccCard {
     private IccRecords mIccRecords = null;
     private IccCardConstants.State mExternalState = IccCardConstants.State.UNKNOWN;
 
+    // The number of UiccApplications modem reported. It's different from mUiccApplications.length
+    // which is always CARD_MAX_APPS, and only updated when modem sends an update, and NOT updated
+    // during SIM refresh. It's currently only used to help identify empty profile.
+    private int mLastReportedNumOfUiccApplications;
+
     private final ContentObserver mProvisionCompleteContentObserver =
             new ContentObserver(new Handler()) {
                 @Override
                 public void onChange(boolean selfChange) {
-                    mContext.getContentResolver().unregisterContentObserver(this);
-                    for (String pkgName : getUninstalledCarrierPackages()) {
-                        InstallCarrierAppUtils.showNotification(mContext, pkgName);
-                        InstallCarrierAppUtils.registerPackageInstallReceiver(mContext);
+                    synchronized (mLock) {
+                        mContext.getContentResolver().unregisterContentObserver(this);
+                        mProvisionCompleteContentObserverRegistered = false;
+                        showCarrierAppNotificationsIfPossible();
                     }
                 }
             };
+    private boolean mProvisionCompleteContentObserverRegistered;
 
-    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+    private final BroadcastReceiver mUserUnlockReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            synchronized (mLock) {
+                mContext.unregisterReceiver(this);
+                mUserUnlockReceiverRegistered = false;
+                showCarrierAppNotificationsIfPossible();
+            }
+        }
+    };
+    private boolean mUserUnlockReceiverRegistered;
+
+    private final BroadcastReceiver mCarrierConfigChangedReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent.getAction().equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED)) {
@@ -254,7 +274,7 @@ public class UiccProfile extends IccCard {
 
         IntentFilter intentfilter = new IntentFilter();
         intentfilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
-        c.registerReceiver(mReceiver, intentfilter);
+        c.registerReceiver(mCarrierConfigChangedReceiver, intentfilter);
     }
 
     /**
@@ -272,11 +292,22 @@ public class UiccProfile extends IccCard {
             unregisterAllAppEvents();
             unregisterCurrAppEvents();
 
+            if (mProvisionCompleteContentObserverRegistered) {
+                mContext.getContentResolver()
+                        .unregisterContentObserver(mProvisionCompleteContentObserver);
+                mProvisionCompleteContentObserverRegistered = false;
+            }
+
+            if (mUserUnlockReceiverRegistered) {
+                mContext.unregisterReceiver(mUserUnlockReceiver);
+                mUserUnlockReceiverRegistered = false;
+            }
+
             InstallCarrierAppUtils.hideAllNotifications(mContext);
             InstallCarrierAppUtils.unregisterPackageInstallReceiver(mContext);
 
             mCi.unregisterForOffOrNotAvailable(mHandler);
-            mContext.unregisterReceiver(mReceiver);
+            mContext.unregisterReceiver(mCarrierConfigChangedReceiver);
 
             if (mCatService != null) mCatService.dispose();
             for (UiccCardApplication app : mUiccApplications) {
@@ -840,10 +871,11 @@ public class UiccProfile extends IccCard {
     public boolean isEmptyProfile() {
         // If there's no UiccCardApplication, it's an empty profile.
         // Empty profile is a valid case of eSIM (default boot profile).
-        for (UiccCardApplication app : mUiccApplications) {
-            if (app != null) return false;
-        }
-        return true;
+        // But we clear all apps of mUiccCardApplication to be null during refresh (see
+        // resetAppWithAid) but not mLastReportedNumOfUiccApplications.
+        // So if mLastReportedNumOfUiccApplications == 0, it means modem confirmed that we landed
+        // on empty profile.
+        return mLastReportedNumOfUiccApplications == 0;
     }
 
     @Override
@@ -933,6 +965,7 @@ public class UiccProfile extends IccCard {
             mGsmUmtsSubscriptionAppIndex = ics.mGsmUmtsSubscriptionAppIndex;
             mCdmaSubscriptionAppIndex = ics.mCdmaSubscriptionAppIndex;
             mImsSubscriptionAppIndex = ics.mImsSubscriptionAppIndex;
+            mApplicationCount = ics.mApplications.length;
             mContext = c;
             mCi = ci;
             mTelephonyManager = (TelephonyManager) mContext.getSystemService(
@@ -940,6 +973,8 @@ public class UiccProfile extends IccCard {
 
             //update applications
             if (DBG) log(ics.mApplications.length + " applications");
+            mLastReportedNumOfUiccApplications = ics.mApplications.length;
+
             for (int i = 0; i < mUiccApplications.length; i++) {
                 if (mUiccApplications[i] == null) {
                     //Create newly added Applications
@@ -1145,10 +1180,13 @@ public class UiccProfile extends IccCard {
         }
     }
 
-    static boolean isPackageInstalled(Context context, String pkgName) {
+    static boolean isPackageBundled(Context context, String pkgName) {
         PackageManager pm = context.getPackageManager();
         try {
-            pm.getPackageInfo(pkgName, PackageManager.GET_ACTIVITIES);
+            // We also match hidden-until-installed apps. The assumption here is that some other
+            // mechanism (like CarrierAppUtils) would automatically enable such an app, so we
+            // shouldn't prompt the user about it.
+            pm.getApplicationInfo(pkgName, PackageManager.MATCH_HIDDEN_UNTIL_INSTALLED_COMPONENTS);
             if (DBG) log(pkgName + " is installed.");
             return true;
         } catch (PackageManager.NameNotFoundException e) {
@@ -1175,21 +1213,47 @@ public class UiccProfile extends IccCard {
 
         synchronized (mLock) {
             mCarrierPrivilegeRegistrants.notifyRegistrants();
-            boolean isProvisioned = Settings.Global.getInt(
-                    mContext.getContentResolver(),
-                    Settings.Global.DEVICE_PROVISIONED, 1) == 1;
-            // Only show dialog if the phone is through with Setup Wizard.  Otherwise, wait for
-            // completion and show a notification instead
-            if (isProvisioned) {
+            boolean isProvisioned = isProvisioned();
+            boolean isUnlocked = isUserUnlocked();
+            // Only show dialog if the phone is through with Setup Wizard and is unlocked.
+            // Otherwise, wait for completion and unlock and show a notification instead.
+            if (isProvisioned && isUnlocked) {
                 for (String pkgName : getUninstalledCarrierPackages()) {
                     promptInstallCarrierApp(pkgName);
                 }
             } else {
-                final Uri uri = Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED);
-                mContext.getContentResolver().registerContentObserver(
-                        uri,
-                        false,
-                        mProvisionCompleteContentObserver);
+                if (!isProvisioned) {
+                    final Uri uri = Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED);
+                    mContext.getContentResolver().registerContentObserver(
+                            uri,
+                            false,
+                            mProvisionCompleteContentObserver);
+                    mProvisionCompleteContentObserverRegistered = true;
+                }
+                if (!isUnlocked) {
+                    mContext.registerReceiver(
+                            mUserUnlockReceiver, new IntentFilter(Intent.ACTION_USER_UNLOCKED));
+                    mUserUnlockReceiverRegistered = true;
+                }
+            }
+        }
+    }
+
+    private boolean isProvisioned() {
+        return Settings.Global.getInt(
+                mContext.getContentResolver(),
+                Settings.Global.DEVICE_PROVISIONED, 1) == 1;
+    }
+
+    private boolean isUserUnlocked() {
+        return mContext.getSystemService(UserManager.class).isUserUnlocked();
+    }
+
+    private void showCarrierAppNotificationsIfPossible() {
+        if (isProvisioned() && isUserUnlocked()) {
+            for (String pkgName : getUninstalledCarrierPackages()) {
+                InstallCarrierAppUtils.showNotification(mContext, pkgName);
+                InstallCarrierAppUtils.registerPackageInstallReceiver(mContext);
             }
         }
     }
@@ -1213,7 +1277,7 @@ public class UiccProfile extends IccCard {
         for (UiccAccessRule accessRule : accessRules) {
             String certHexString = accessRule.getCertificateHexString().toUpperCase();
             String pkgName = certPackageMap.get(certHexString);
-            if (!TextUtils.isEmpty(pkgName) && !isPackageInstalled(mContext, pkgName)) {
+            if (!TextUtils.isEmpty(pkgName) && !isPackageBundled(mContext, pkgName)) {
                 uninstalledCarrierPackages.add(pkgName);
             }
         }
@@ -1433,13 +1497,9 @@ public class UiccProfile extends IccCard {
      * Returns number of applications on this card
      */
     public int getNumApplications() {
-        int count = 0;
-        for (UiccCardApplication a : mUiccApplications) {
-            if (a != null) {
-                count++;
-            }
+        synchronized (mLock) {
+            return mApplicationCount;
         }
-        return count;
     }
 
     /**

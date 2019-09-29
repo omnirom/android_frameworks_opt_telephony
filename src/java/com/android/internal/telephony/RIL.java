@@ -73,6 +73,12 @@ import android.service.carrier.CarrierIdentifier;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierRestrictionRules;
 import android.telephony.CellInfo;
+import android.telephony.CellSignalStrengthCdma;
+import android.telephony.CellSignalStrengthGsm;
+import android.telephony.CellSignalStrengthLte;
+import android.telephony.CellSignalStrengthNr;
+import android.telephony.CellSignalStrengthTdscdma;
+import android.telephony.CellSignalStrengthWcdma;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.ModemActivityInfo;
@@ -83,6 +89,7 @@ import android.telephony.RadioAccessFamily;
 import android.telephony.RadioAccessSpecifier;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
+import android.telephony.SignalStrength;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyHistogram;
 import android.telephony.TelephonyManager;
@@ -615,7 +622,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return Settings.Global.getInt(
                 mContext.getContentResolver(),
                 Settings.Global.ENABLE_RADIO_BUG_DETECTION,
-                0) != 0;
+                1) != 0;
     }
 
     @Override
@@ -3240,7 +3247,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @Override
-    public void writeSmsToRuim(int status, String pdu, Message result) {
+    public void writeSmsToRuim(int status, byte[] pdu, Message result) {
         status = translateStatus(status);
         IRadio radioProxy = getRadioProxy(result);
         if (radioProxy != null) {
@@ -3255,7 +3262,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             CdmaSmsWriteArgs args = new CdmaSmsWriteArgs();
             args.status = status;
-            constructCdmaSendSmsRilRequest(args.message, IccUtils.hexStringToBytes(pdu));
+            constructCdmaSendSmsRilRequest(args.message, pdu);
 
             try {
                 radioProxy.writeSmsToRuim(rr.mSerial, args);
@@ -5286,6 +5293,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "GET_CURRENT_CALLS";
             case RIL_REQUEST_DIAL:
                 return "DIAL";
+            case RIL_REQUEST_EMERGENCY_DIAL:
+                return "EMERGENCY_DIAL";
             case RIL_REQUEST_GET_IMSI:
                 return "GET_IMSI";
             case RIL_REQUEST_HANGUP:
@@ -5676,6 +5685,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "RIL_UNSOL_KEEPALIVE_STATUS";
             case RIL_UNSOL_PHYSICAL_CHANNEL_CONFIG:
                 return "RIL_UNSOL_PHYSICAL_CHANNEL_CONFIG";
+            case RIL_UNSOL_EMERGENCY_NUMBER_LIST:
+                return "RIL_UNSOL_EMERGENCY_NUMBER_LIST";
             default:
                 return "<unknown response>";
         }
@@ -5904,6 +5915,58 @@ public class RIL extends BaseCommands implements CommandsInterface {
             response.add(CellInfo.create(record));
         }
         return response;
+    }
+
+    /**
+     * Fixup for SignalStrength 1.0 to Assume GSM to WCDMA when
+     * The current RAT type is one of the UMTS RATs.
+     * @param signalStrength the initial signal strength
+     * @return a new SignalStrength if RAT is UMTS or existing SignalStrength
+     */
+    public SignalStrength fixupSignalStrength10(SignalStrength signalStrength) {
+        List<CellSignalStrengthGsm> gsmList = signalStrength.getCellSignalStrengths(
+                CellSignalStrengthGsm.class);
+        // If GSM is not the primary type, then bail out; no fixup needed.
+        if (gsmList.isEmpty() || !gsmList.get(0).isValid()) {
+            return signalStrength;
+        }
+
+        CellSignalStrengthGsm gsmStrength = gsmList.get(0);
+
+        // Use the voice RAT which is a guarantee in GSM and UMTS
+        int voiceRat = ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN;
+        Phone phone = PhoneFactory.getPhone(mPhoneId);
+        if (phone != null) {
+            ServiceState ss = phone.getServiceState();
+            if (ss != null) {
+                voiceRat = ss.getRilVoiceRadioTechnology();
+            }
+        }
+        switch (voiceRat) {
+            case ServiceState.RIL_RADIO_TECHNOLOGY_UMTS: /* fallthrough */
+            case ServiceState.RIL_RADIO_TECHNOLOGY_HSDPA: /* fallthrough */
+            case ServiceState.RIL_RADIO_TECHNOLOGY_HSUPA: /* fallthrough */
+            case ServiceState.RIL_RADIO_TECHNOLOGY_HSPA: /* fallthrough */
+            case ServiceState.RIL_RADIO_TECHNOLOGY_HSPAP: /* fallthrough */
+                break;
+            default:
+                // If we are not currently on WCDMA/HSPA, then we don't need to do a fixup.
+                return signalStrength;
+        }
+
+        // The service state reports WCDMA, and the SignalStrength is reported for GSM, so at this
+        // point we take an educated guess that the GSM SignalStrength report is actually for
+        // WCDMA. Also, if we are in WCDMA/GSM we can safely assume that there are no other valid
+        // signal strength reports (no SRLTE, which is the only supported case in HAL 1.0).
+        // Thus, we just construct a new SignalStrength and migrate RSSI and BER from the
+        // GSM report to the WCDMA report, leaving everything else empty.
+        return new SignalStrength(
+                new CellSignalStrengthCdma(), new CellSignalStrengthGsm(),
+                new CellSignalStrengthWcdma(gsmStrength.getRssi(),
+                        gsmStrength.getBitErrorRate(),
+                        CellInfo.UNAVAILABLE, CellInfo.UNAVAILABLE),
+                new CellSignalStrengthTdscdma(), new CellSignalStrengthLte(),
+                new CellSignalStrengthNr());
     }
 
     /**

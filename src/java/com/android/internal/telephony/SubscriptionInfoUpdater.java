@@ -20,6 +20,7 @@ import android.Manifest;
 import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
 import android.app.ActivityManager;
+import android.app.AppGlobals;
 import android.app.UserSwitchObserver;
 import android.content.ContentResolver;
 import android.content.ContentValues;
@@ -36,6 +37,7 @@ import android.os.ParcelUuid;
 import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.permission.IPermissionManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Settings.Global;
@@ -65,6 +67,8 @@ import com.android.internal.telephony.uicc.UiccSlot;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -113,6 +117,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private EuiccManager mEuiccManager;
     @UnsupportedAppUsage
     private IPackageManager mPackageManager;
+    private IPermissionManager mPermissionManager;
     private Handler mBackgroundHandler;
 
     // The current foreground user ID.
@@ -138,12 +143,14 @@ public class SubscriptionInfoUpdater extends Handler {
     public SubscriptionInfoUpdater(
             Looper looper, Context context, Phone[] phone, CommandsInterface[] ci) {
         this(looper, context, phone, ci,
-                IPackageManager.Stub.asInterface(ServiceManager.getService("package")));
+                IPackageManager.Stub.asInterface(ServiceManager.getService("package")),
+                AppGlobals.getPermissionManager());
     }
 
     @VisibleForTesting public SubscriptionInfoUpdater(
             Looper looper, Context context, Phone[] phone,
-            CommandsInterface[] ci, IPackageManager packageMgr) {
+            CommandsInterface[] ci, IPackageManager packageMgr,
+            IPermissionManager permissionMgr) {
         logd("Constructor invoked");
         mBackgroundHandler = new Handler(looper);
 
@@ -152,6 +159,7 @@ public class SubscriptionInfoUpdater extends Handler {
         mSubscriptionManager = SubscriptionManager.from(mContext);
         mEuiccManager = (EuiccManager) mContext.getSystemService(Context.EUICC_SERVICE);
         mPackageManager = packageMgr;
+        mPermissionManager = permissionMgr;
 
         mCarrierServiceBindHelper = new CarrierServiceBindHelper(mContext);
         initializeCarrierApps();
@@ -174,7 +182,7 @@ public class SubscriptionInfoUpdater extends Handler {
                         throws RemoteException {
                     mCurrentlyActiveUserId = newUserId;
                     CarrierAppUtils.disableCarrierAppsUntilPrivileged(mContext.getOpPackageName(),
-                            mPackageManager, TelephonyManager.getDefault(),
+                            mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
                             mContext.getContentResolver(), mCurrentlyActiveUserId);
 
                     if (reply != null) {
@@ -185,13 +193,15 @@ public class SubscriptionInfoUpdater extends Handler {
                     }
                 }
             }, LOG_TAG);
-            mCurrentlyActiveUserId = ActivityManager.getService().getCurrentUser().id;
+            ActivityManager am = (ActivityManager) mContext.getSystemService(
+                Context.ACTIVITY_SERVICE);
+            mCurrentlyActiveUserId = am.getCurrentUser();
         } catch (RemoteException e) {
             logd("Couldn't get current user ID; guessing it's 0: " + e.getMessage());
         }
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(mContext.getOpPackageName(),
-                mPackageManager, TelephonyManager.getDefault(), mContext.getContentResolver(),
-                mCurrentlyActiveUserId);
+                mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
+                mContext.getContentResolver(), mCurrentlyActiveUserId);
     }
 
     /**
@@ -542,7 +552,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
                 // Update set of enabled carrier apps now that the privilege rules may have changed.
                 CarrierAppUtils.disableCarrierAppsUntilPrivileged(mContext.getOpPackageName(),
-                        mPackageManager, TelephonyManager.getDefault(),
+                        mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
                         mContext.getContentResolver(), mCurrentlyActiveUserId);
 
                 if (mIsRecordLoaded[slotId] == true) {
@@ -558,7 +568,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
         // Update set of enabled carrier apps now that the privilege rules may have changed.
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(mContext.getOpPackageName(),
-                mPackageManager, TelephonyManager.getDefault(),
+                mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
                 mContext.getContentResolver(), mCurrentlyActiveUserId);
 
         /**
@@ -988,6 +998,23 @@ public class SubscriptionInfoUpdater extends Handler {
             cv.put(SubscriptionManager.IS_OPPORTUNISTIC, isOpportunistic ? "1" : "0");
         }
 
+        String[] certs = config.getStringArray(
+            CarrierConfigManager.KEY_CARRIER_CERTIFICATE_STRING_ARRAY);
+        if (certs != null) {
+            UiccAccessRule[] carrierConfigAccessRules = new UiccAccessRule[certs.length];
+            try {
+                for (int i = 0; i < certs.length; i++) {
+                    carrierConfigAccessRules[i] = new UiccAccessRule(
+                        MessageDigest.getInstance("SHA-256").digest(certs[i].getBytes()), null, 0);
+                }
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("for setCarrierConfigAccessRules, SHA-256 must exist",
+                    e);
+            }
+            cv.put(SubscriptionManager.ACCESS_RULES_FROM_CARRIER_CONFIGS,
+                    UiccAccessRule.encodeRules(carrierConfigAccessRules));
+        }
+
         String groupUuidString =
                 config.getString(CarrierConfigManager.KEY_SUBSCRIPTION_GROUP_UUID_STRING, "");
         ParcelUuid groupUuid = null;
@@ -1085,10 +1112,14 @@ public class SubscriptionInfoUpdater extends Handler {
     private void broadcastSimApplicationStateChanged(int phoneId, int state) {
         // Broadcast if the state has changed, except if old state was UNKNOWN and new is NOT_READY,
         // because that's the initial state and a broadcast should be sent only on a transition
-        // after SIM is PRESENT
-        if (!(state == sSimApplicationState[phoneId]
-                || (state == TelephonyManager.SIM_STATE_NOT_READY
-                && sSimApplicationState[phoneId] == TelephonyManager.SIM_STATE_UNKNOWN))) {
+        // after SIM is PRESENT. The only exception is eSIM boot profile, where NOT_READY is the
+        // terminal state.
+        boolean isUnknownToNotReady =
+                (sSimApplicationState[phoneId] == TelephonyManager.SIM_STATE_UNKNOWN
+                        && state == TelephonyManager.SIM_STATE_NOT_READY);
+        IccCard iccCard = mPhone[phoneId].getIccCard();
+        boolean emptyProfile = iccCard != null && iccCard.isEmptyProfile();
+        if (state != sSimApplicationState[phoneId] && (!isUnknownToNotReady || emptyProfile)) {
             sSimApplicationState[phoneId] = state;
             Intent i = new Intent(TelephonyManager.ACTION_SIM_APPLICATION_STATE_CHANGED);
             i.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);

@@ -35,7 +35,7 @@ import java.io.PrintWriter;
 /**
  * {@hide}
  */
-public final class NewNitzStateMachine implements NitzStateMachine {
+public final class NitzStateMachineImpl implements NitzStateMachine {
 
     private static final String LOG_TAG = ServiceStateTracker.LOG_TAG;
     private static final boolean DBG = ServiceStateTracker.DBG;
@@ -70,6 +70,14 @@ public final class NewNitzStateMachine implements NitzStateMachine {
     private String mSavedTimeZoneId;
 
     /**
+     * The last time zone ID that was set. It is used for log entry filtering. This is different
+     * from {@link #mSavedTimeZoneId} in that this records the last zone ID this class actually
+     * suggested should be set as the device zone ID; i.e. it is only set if automatic time zone
+     * detection is enabled.
+     */
+    private String mLastSetTimeZoneId;
+
+    /**
      * Boolean is {@code true} if NITZ has been used to determine a time zone (which may not
      * ultimately have been used due to user settings). Cleared by {@link #handleNetworkAvailable()}
      * and {@link #handleNetworkCountryCodeUnavailable()}. The flag can be used when historic NITZ
@@ -80,25 +88,25 @@ public final class NewNitzStateMachine implements NitzStateMachine {
     private boolean mNitzTimeZoneDetectionSuccessful = false;
 
     // Miscellaneous dependencies and helpers not related to detection state.
-    private final LocalLog mTimeLog = new LocalLog(15);
-    private final LocalLog mTimeZoneLog = new LocalLog(15);
+    private final LocalLog mTimeLog = new LocalLog(30);
+    private final LocalLog mTimeZoneLog = new LocalLog(30);
     private final GsmCdmaPhone mPhone;
     private final DeviceState mDeviceState;
-    private final NewTimeServiceHelper mTimeServiceHelper;
+    private final TimeServiceHelper mTimeServiceHelper;
     private final TimeZoneLookupHelper mTimeZoneLookupHelper;
     /** Wake lock used while setting time of day. */
     private final PowerManager.WakeLock mWakeLock;
     private static final String WAKELOCK_TAG = "NitzStateMachine";
 
-    public NewNitzStateMachine(GsmCdmaPhone phone) {
+    public NitzStateMachineImpl(GsmCdmaPhone phone) {
         this(phone,
-                new NewTimeServiceHelper(phone.getContext()),
+                new TimeServiceHelper(phone.getContext()),
                 new DeviceState(phone),
                 new TimeZoneLookupHelper());
     }
 
     @VisibleForTesting
-    public NewNitzStateMachine(GsmCdmaPhone phone, NewTimeServiceHelper timeServiceHelper,
+    public NitzStateMachineImpl(GsmCdmaPhone phone, TimeServiceHelper timeServiceHelper,
             DeviceState deviceState, TimeZoneLookupHelper timeZoneLookupHelper) {
         mPhone = phone;
 
@@ -110,7 +118,7 @@ public final class NewNitzStateMachine implements NitzStateMachine {
         mDeviceState = deviceState;
         mTimeZoneLookupHelper = timeZoneLookupHelper;
         mTimeServiceHelper = timeServiceHelper;
-        mTimeServiceHelper.setListener(new NewTimeServiceHelper.Listener() {
+        mTimeServiceHelper.setListener(new TimeServiceHelper.Listener() {
             @Override
             public void onTimeZoneDetectionChange(boolean enabled) {
                 if (enabled) {
@@ -208,35 +216,30 @@ public final class NewNitzStateMachine implements NitzStateMachine {
                 zoneId = lookupResult != null ? lookupResult.zoneId : null;
             }
 
-            // Log the action taken to the dedicated time zone log.
-            final String tmpLog = "updateTimeZoneFromCountryAndNitz:"
+            String logMsg = "updateTimeZoneFromCountryAndNitz:"
                     + " isTimeZoneSettingInitialized=" + isTimeZoneSettingInitialized
                     + " isoCountryCode=" + isoCountryCode
                     + " nitzSignal=" + nitzSignal
                     + " zoneId=" + zoneId
                     + " isTimeZoneDetectionEnabled()="
                     + mTimeServiceHelper.isTimeZoneDetectionEnabled();
-            mTimeZoneLog.log(tmpLog);
 
             // Set state as needed.
             if (zoneId != null) {
-                if (DBG) {
-                    Rlog.d(LOG_TAG, "updateTimeZoneFromCountryAndNitz: zoneId=" + zoneId);
-                }
                 if (mTimeServiceHelper.isTimeZoneDetectionEnabled()) {
-                    setAndBroadcastNetworkSetTimeZone(zoneId);
+                    setAndBroadcastNetworkSetTimeZone(zoneId, logMsg);
                 } else {
                     if (DBG) {
-                        Rlog.d(LOG_TAG, "updateTimeZoneFromCountryAndNitz: skip changing zone"
-                                + " as isTimeZoneDetectionEnabled() is false");
+                        logMsg += " [Not setting device time zone]";
+                        Rlog.d(LOG_TAG, logMsg);
                     }
                 }
                 mSavedTimeZoneId = zoneId;
                 mNitzTimeZoneDetectionSuccessful = true;
             } else {
                 if (DBG) {
-                    Rlog.d(LOG_TAG,
-                            "updateTimeZoneFromCountryAndNitz: zoneId == null, do nothing");
+                    logMsg += " [Not setting device time zone (zoneId == null)]";
+                    Rlog.d(LOG_TAG, logMsg);
                 }
             }
         } catch (RuntimeException ex) {
@@ -298,6 +301,12 @@ public final class NewNitzStateMachine implements NitzStateMachine {
 
         updateTimeZoneFromCountryAndNitz();
         updateTimeFromNitz();
+    }
+
+    @Override
+    public void handleAirplaneModeChanged(boolean on) {
+        Rlog.d(LOG_TAG, "handleAirplaneModeChanged: on=" + on);
+        // TODO
     }
 
     private void updateTimeFromNitz() {
@@ -390,11 +399,22 @@ public final class NewNitzStateMachine implements NitzStateMachine {
         }
     }
 
-    private void setAndBroadcastNetworkSetTimeZone(String zoneId) {
+    private void setAndBroadcastNetworkSetTimeZone(String zoneId, String logMessage) {
+        logMessage += " [Setting device time zone to zoneId=" + zoneId + "]";
         if (DBG) {
-            Rlog.d(LOG_TAG, "setAndBroadcastNetworkSetTimeZone: zoneId=" + zoneId);
+            Rlog.d(LOG_TAG, logMessage);
         }
+
+        // Filter mTimeZoneLog entries to only store "interesting" ones. NITZ signals can be
+        // quite frequent (e.g. every few minutes) and logging each one soon obliterates useful
+        // entries from bug reports. http://b/138187241
+        if (!zoneId.equals(mLastSetTimeZoneId)) {
+            mTimeZoneLog.log(logMessage);
+            mLastSetTimeZoneId = zoneId;
+        }
+
         mTimeServiceHelper.setDeviceTimeZone(zoneId);
+
         if (DBG) {
             Rlog.d(LOG_TAG,
                     "setAndBroadcastNetworkSetTimeZone: called setDeviceTimeZone()"
@@ -403,14 +423,15 @@ public final class NewNitzStateMachine implements NitzStateMachine {
     }
 
     private void handleAutoTimeZoneEnabled() {
-        String tmpLog = "handleAutoTimeZoneEnabled: Reverting to NITZ TimeZone:"
+        String logMsg = "handleAutoTimeZoneEnabled: "
                 + " mSavedTimeZoneId=" + mSavedTimeZoneId;
-        if (DBG) {
-            Rlog.d(LOG_TAG, tmpLog);
-        }
-        mTimeZoneLog.log(tmpLog);
         if (mSavedTimeZoneId != null) {
-            setAndBroadcastNetworkSetTimeZone(mSavedTimeZoneId);
+            setAndBroadcastNetworkSetTimeZone(mSavedTimeZoneId, logMsg);
+        } else {
+            if (DBG) {
+                logMsg += " [Not setting device time zone]";
+                Rlog.d(LOG_TAG, logMsg);
+            }
         }
     }
 
@@ -456,13 +477,15 @@ public final class NewNitzStateMachine implements NitzStateMachine {
             String logMsg = "updateTimeZoneFromNetworkCountryCode: tz result found"
                     + " iso=" + iso
                     + " lookupResult=" + lookupResult;
-            if (DBG) {
-                Rlog.d(LOG_TAG, logMsg);
-            }
-            mTimeZoneLog.log(logMsg);
+
             String zoneId = lookupResult.zoneId;
             if (mTimeServiceHelper.isTimeZoneDetectionEnabled()) {
-                setAndBroadcastNetworkSetTimeZone(zoneId);
+                setAndBroadcastNetworkSetTimeZone(zoneId, logMsg);
+            } else {
+                if (DBG) {
+                    logMsg += " [Not setting device time zone]";
+                    Rlog.d(LOG_TAG, logMsg);
+                }
             }
             mSavedTimeZoneId = zoneId;
         } else {
