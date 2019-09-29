@@ -111,7 +111,9 @@ public class NitzStateMachineImplTest extends TelephonyTest {
 
         // allZonesHaveSameOffset == false, so we shouldn't pick an arbitrary zone.
         CountryResult expectedCountryLookupResult = new CountryResult(
-                "America/New_York", false /* allZonesHaveSameOffset */,
+                "America/New_York",
+                true /* multipleZonesInCountry */,
+                false /* allZonesHaveSameOffset */,
                 UNIQUE_US_ZONE_SCENARIO.getInitialSystemClockMillis());
         CountryResult actualCountryLookupResult =
                 mRealTimeZoneLookupHelper.lookupByCountry(
@@ -121,7 +123,7 @@ public class NitzStateMachineImplTest extends TelephonyTest {
 
         // isOnlyMatch == true, so the combination of country + NITZ should be enough.
         OffsetResult expectedLookupResult =
-                new OffsetResult("America/Los_Angeles", true /* isOnlyMatch */);
+                new OffsetResult(zone("America/Los_Angeles"), true /* isOnlyMatch */);
         OffsetResult actualLookupResult = mRealTimeZoneLookupHelper.lookupByNitzCountry(
                 UNIQUE_US_ZONE_SCENARIO.getNitzSignal().getValue(),
                 UNIQUE_US_ZONE_SCENARIO.getNetworkCountryIsoCode());
@@ -135,7 +137,9 @@ public class NitzStateMachineImplTest extends TelephonyTest {
         // allZonesHaveSameOffset == true (not only that, there is only one zone), so we can pick
         // the zone knowing only the country.
         CountryResult expectedCountryLookupResult = new CountryResult(
-                "Europe/London", true /* allZonesHaveSameOffset */,
+                "Europe/London",
+                false /* multipleZonesInCountry */,
+                true /* allZonesHaveSameOffset */,
                 UNITED_KINGDOM_SCENARIO.getInitialSystemClockMillis());
         CountryResult actualCountryLookupResult =
                 mRealTimeZoneLookupHelper.lookupByCountry(
@@ -144,7 +148,7 @@ public class NitzStateMachineImplTest extends TelephonyTest {
         assertEquals(expectedCountryLookupResult, actualCountryLookupResult);
 
         OffsetResult expectedLookupResult =
-                new OffsetResult("Europe/London", true /* isOnlyMatch */);
+                new OffsetResult(zone("Europe/London"), true /* isOnlyMatch */);
         OffsetResult actualLookupResult = mRealTimeZoneLookupHelper.lookupByNitzCountry(
                 UNITED_KINGDOM_SCENARIO.getNitzSignal().getValue(),
                 UNITED_KINGDOM_SCENARIO.getNetworkCountryIsoCode());
@@ -653,10 +657,10 @@ public class NitzStateMachineImplTest extends TelephonyTest {
     private String checkNitzOnlyLookupIsAmbiguousAndReturnZoneId(Scenario scenario) {
         OffsetResult result =
                 mRealTimeZoneLookupHelper.lookupByNitz(scenario.getNitzSignal().getValue());
-        String expectedZoneId = result.zoneId;
+        String expectedZoneId = result.getTimeZone().getID();
         // All our scenarios should return multiple matches. The only cases where this wouldn't be
         // true are places that use offsets like XX:15, XX:30 and XX:45.
-        assertFalse(result.isOnlyMatch);
+        assertFalse(result.getIsOnlyMatch());
         assertSameOffset(scenario.getActualTimeMillis(), expectedZoneId, scenario.getTimeZoneId());
         return expectedZoneId;
     }
@@ -966,5 +970,9 @@ public class NitzStateMachineImplTest extends TelephonyTest {
         verify(mTimeServiceHelper, atLeast(0)).elapsedRealtime();
         verify(mTimeServiceHelper, atLeast(0)).currentTimeMillis();
         verifyNoMoreInteractions(mTimeServiceHelper);
+    }
+
+    private static TimeZone zone(String zoneId) {
+        return TimeZone.getFrozenTimeZone(zoneId);
     }
 }

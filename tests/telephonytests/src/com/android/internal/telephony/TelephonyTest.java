@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Matchers.anyBoolean;
@@ -41,12 +42,11 @@ import android.net.ConnectivityManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.IDeviceIdleController;
 import android.os.Looper;
 import android.os.Message;
-import android.os.Process;
+import android.os.MessageQueue;
 import android.os.RegistrantList;
 import android.os.ServiceManager;
 import android.provider.BlockedNumberContract;
@@ -62,6 +62,7 @@ import android.telephony.euicc.EuiccManager;
 import android.telephony.ims.ImsCallProfile;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
+import android.testing.TestableLooper;
 import android.util.Log;
 import android.util.Singleton;
 
@@ -103,6 +104,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -117,6 +119,23 @@ public abstract class TelephonyTest {
                     EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
             new ArrayList<String>(), EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
             EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
+
+    private static final Field MESSAGE_QUEUE_FIELD;
+    private static final Field MESSAGE_WHEN_FIELD;
+    private static final Field MESSAGE_NEXT_FIELD;
+
+    static {
+        try {
+            MESSAGE_QUEUE_FIELD = MessageQueue.class.getDeclaredField("mMessages");
+            MESSAGE_QUEUE_FIELD.setAccessible(true);
+            MESSAGE_WHEN_FIELD = Message.class.getDeclaredField("when");
+            MESSAGE_WHEN_FIELD.setAccessible(true);
+            MESSAGE_NEXT_FIELD = Message.class.getDeclaredField("next");
+            MESSAGE_NEXT_FIELD.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException("Failed to initialize TelephonyTest", e);
+        }
+    }
 
     @Mock
     protected GsmCdmaPhone mPhone;
@@ -263,60 +282,8 @@ public abstract class TelephonyTest {
     private boolean mReady;
     protected HashMap<String, IBinder> mServiceManagerMockedServices = new HashMap<>();
     protected Phone[] mPhones;
-
-    /**
-     * Similar to Runnable but its run() throws exception.
-     */
-    interface RunnableWithException {
-        void run() throws Exception;
-    }
-
-    /**
-     * This API is used to run a runnable that triggers an async action (e.g. send a message)
-     * in mTesteeHandlerThread and wait until it's processed.
-     */
-    public void doAndWaitReady(RunnableWithException runnable) throws Exception {
-        setReady(false);
-        runnable.run();
-        waitUntilReady();
-    }
-
-    /**
-     * Similar to doAndWaitReady above except the runnable here will run in mTesteeHandlerThread.
-     * This can be used to initialize the testee object.
-     *
-     * @param runnable
-     * @throws Exception
-     */
-    public void doInHandlerThreadAndWait(Runnable runnable) throws Exception {
-        doAndWaitReady(()->mTesteeHandlerThread.getThreadHandler().post(runnable));
-    }
-
-    protected HandlerThread mTesteeHandlerThread = new HandlerThread("mTesteeHandlerThread") {
-        @Override
-        public void onLooperPrepared() {
-            Looper.setObserver(mObserver);
-        }
-
-        Looper.Observer mObserver = new Looper.Observer() {
-            @Override
-            public Object messageDispatchStarting() {
-                return Process.myTid();
-            }
-
-            @Override
-            public void messageDispatched(Object token, Message msg) {
-                if ((int) token == getThreadId() && Looper.myQueue().isIdle()) {
-                    setReady(true);
-                }
-            }
-
-            @Override
-            public void dispatchingThrewException(Object token, Message msg, Exception exception) {
-            }
-        };
-    };
-
+    protected List<TestableLooper> mTestableLoopers = new ArrayList<>();
+    protected TestableLooper mTestableLooper;
 
     protected HashMap<Integer, ImsManager> mImsManagerInstances = new HashMap<>();
     private HashMap<InstanceKey, Object> mOldInstances = new HashMap<InstanceKey, Object>();
@@ -359,8 +326,7 @@ public abstract class TelephonyTest {
                 }
 
                 if (!mReady) {
-                    fail("mReady Stayed false. Most likely another thread failed to trigger"
-                            + " setReady().");
+                    fail("Telephony tests failed to initialize");
                 }
             }
         }
@@ -369,7 +335,7 @@ public abstract class TelephonyTest {
     protected void setReady(boolean ready) {
         synchronized (mLock) {
             mReady = ready;
-            if (ready) mLock.notifyAll();
+            mLock.notifyAll();
         }
     }
 
@@ -578,6 +544,7 @@ public abstract class TelephonyTest {
                 nullable(Intent[].class), nullable(String[].class), anyInt(),
                 nullable(Bundle.class), anyInt());
         doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
+        doReturn(TelephonyManager.PHONE_TYPE_GSM).when(mTelephonyManager).getPhoneType();
         doReturn(mServiceState).when(mSST).getServiceState();
         mSST.mSS = mServiceState;
         mSST.mRestrictedState = mRestrictedState;
@@ -648,14 +615,24 @@ public abstract class TelephonyTest {
         assertNotNull("Failed to set up SubscriptionController singleton",
                 SubscriptionController.getInstance());
         setReady(false);
-        mTesteeHandlerThread.start();
+        // create default TestableLooper for test and add to list of monitored loopers
+        mTestableLooper = TestableLooper.get(TelephonyTest.this);
+        if (mTestableLooper != null) {
+            monitorTestableLooper(mTestableLooper);
+        }
     }
 
     protected void tearDown() throws Exception {
-        mTesteeHandlerThread.quit();
-        mTesteeHandlerThread.join(1000);
+        // unmonitor TestableLooper
+        if (mTestableLooper != null) {
+            unmonitorTestableLooper(mTestableLooper);
+        }
         mSimulatedCommands.dispose();
 
+        // destroy all created TestableLoopers so they can be reused
+        for (TestableLooper looper : mTestableLoopers) {
+            looper.destroy();
+        }
         SharedPreferences sharedPreferences = mContext.getSharedPreferences((String) null, 0);
         sharedPreferences.edit().clear().commit();
 
@@ -759,6 +736,7 @@ public abstract class TelephonyTest {
                 "mContentProvider", providerHolder, iContentProvider);
     }
 
+    // TODO(b/138886216): remove method after refactor
     protected final void waitForHandlerAction(Handler h, long timeoutMillis) {
         final CountDownLatch lock = new CountDownLatch(1);
         h.post(lock::countDown);
@@ -771,6 +749,33 @@ public abstract class TelephonyTest {
         }
     }
 
+    /**
+     * Wait for up to 1 second for the handler message queue to clear.
+     */
+    protected final void waitForLastHandlerAction(Handler h) {
+        CountDownLatch lock = new CountDownLatch(1);
+        // Allow the handler to start work on stuff.
+        h.postDelayed(lock::countDown, 100);
+        int timeoutCount = 0;
+        while (timeoutCount < 5) {
+            try {
+                if (lock.await(200, TimeUnit.MILLISECONDS)) {
+                    // no messages in queue, stop waiting.
+                    if (!h.hasMessagesOrCallbacks()) break;
+                    lock = new CountDownLatch(1);
+                    // Delay to allow the handler thread to start work on stuff.
+                    h.postDelayed(lock::countDown, 100);
+                }
+
+            } catch (InterruptedException e) {
+                // do nothing
+            }
+            timeoutCount++;
+        }
+        assertTrue("Handler was not empty before timeout elapsed", timeoutCount < 5);
+    }
+
+    // TODO(b/138886216): remove method after refactor
     protected final void waitForHandlerActionDelayed(Handler h, long timeoutMillis, long delayMs) {
         final CountDownLatch lock = new CountDownLatch(1);
         h.postDelayed(lock::countDown, delayMs);
@@ -797,5 +802,75 @@ public abstract class TelephonyTest {
             fail(instance.getClass() + " " + methodName + " " + e.getClass().getName());
         }
         return null;
+    }
+
+    /**
+     * Add a TestableLooper to the list of monitored loopers
+     * @param looper added if it doesn't already exist
+     */
+    public void monitorTestableLooper(TestableLooper looper) {
+        if (!mTestableLoopers.contains(looper)) {
+            mTestableLoopers.add(looper);
+        }
+    }
+
+    /**
+     * Remove a TestableLooper from the list of monitored loopers
+     * @param looper removed if it does exist
+     */
+    public void unmonitorTestableLooper(TestableLooper looper) {
+        if (mTestableLoopers.contains(looper)) {
+            mTestableLoopers.remove(looper);
+        }
+    }
+
+    /**
+     * Handle all messages that can be processed at the current time
+     * for all monitored TestableLoopers
+     */
+    public void processAllMessages() {
+        if (mTestableLoopers.isEmpty()) {
+            fail("mTestableLoopers is empty. Please make sure to add @RunWithLooper annotation");
+        }
+        while (!areAllTestableLoopersIdle()) {
+            for (TestableLooper looper : mTestableLoopers) looper.processAllMessages();
+        }
+    }
+
+    /**
+     * Check if there are any messages to be processed in any monitored TestableLooper
+     * Delayed messages to be handled at a later time will be ignored
+     * @return true if there are no messages that can be handled at the current time
+     *         across all monitored TestableLoopers
+     */
+    private boolean areAllTestableLoopersIdle() {
+        for (TestableLooper looper : mTestableLoopers) {
+            if (!looper.getLooper().getQueue().isIdle()) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Effectively moves time forward by reducing the time of all messages
+     * for all monitored TestableLoopers
+     * @param milliSeconds number of milliseconds to move time forward by
+     */
+    public void moveTimeForward(long milliSeconds) {
+        for (TestableLooper looper : mTestableLoopers) {
+            MessageQueue queue = looper.getLooper().getQueue();
+            try {
+                Message msg = (Message) MESSAGE_QUEUE_FIELD.get(queue);
+                while (msg != null) {
+                    long updatedWhen = msg.getWhen() - milliSeconds;
+                    if (updatedWhen < 0) {
+                        updatedWhen = 0;
+                    }
+                    MESSAGE_WHEN_FIELD.set(msg, updatedWhen);
+                    msg = (Message) MESSAGE_NEXT_FIELD.get(msg);
+                }
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("Access failed in TelephonyTest", e);
+            }
+        }
     }
 }
