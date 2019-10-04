@@ -267,7 +267,7 @@ public class CdmaInboundSmsHandlerTest extends TelephonyTest {
         mCdmaInboundSmsHandler.sendMessage(InboundSmsHandler.EVENT_NEW_SMS,
                 new AsyncResult(null, mSmsMessage, null));
         waitForMs(200);
-        assertEquals(msg.getTeleService(), SmsEnvelope.TELESERVICE_CT_WAP);
+        assertEquals(msg.getTeleService(), SmsEnvelope.TELESERVICE_FDEA_WAP);
         assertEquals("Test standard SMS", msg.getMessageBody());
         assertNotNull(msg.getUserData());
     }
