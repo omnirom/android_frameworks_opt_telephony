@@ -175,7 +175,7 @@ public class PhoneFactory {
 
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 telephonyComponentFactory.inject(SubscriptionController.class.
-                                getName()).initSubscriptionController(context, sCommandsInterfaces);
+                                getName()).initSubscriptionController(context);
                 telephonyComponentFactory.inject(MultiSimSettingController.class.
                                 getName()).initMultiSimSettingController(context,
                                 SubscriptionController.getInstance());

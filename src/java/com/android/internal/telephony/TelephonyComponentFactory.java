@@ -442,9 +442,9 @@ public class TelephonyComponentFactory {
                 telephonyComponentFactory);
     }
 
-    public SubscriptionController initSubscriptionController(Context c, CommandsInterface[] ci) {
+    public SubscriptionController initSubscriptionController(Context c) {
         Rlog.i(TAG, "initSubscriptionController");
-        return SubscriptionController.init(c, ci);
+        return SubscriptionController.init(c);
     }
 
     public SubscriptionInfoUpdater makeSubscriptionInfoUpdater(Looper looper, Context context,
