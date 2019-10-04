@@ -1142,8 +1142,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 setEmergencyCallInfo(profile, conn);
             }
 
-            boolean isStartRttCall = true;
-
             // Translate call subject intent-extra from Telecom-specific extra key to the
             // ImsCallProfile key.
             if (intentExtras != null) {
@@ -1154,10 +1152,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     );
                 }
 
-                isStartRttCall = intentExtras.getBoolean(
-                    android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, true);
-                if (DBG) log("dialInternal: isStartRttCall = " + isStartRttCall);
-                if (conn.hasRttTextStream() && isStartRttCall) {
+                if (conn.hasRttTextStream()) {
                     profile.mMediaProfile.mRttMode = ImsStreamMediaProfile.RTT_MODE_FULL;
                 }
 
@@ -1183,6 +1178,13 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
 
             if (mPhone.isRttSupported() && mPhone.isRttOn()) {
+                boolean isStartRttCall = true;
+                if (intentExtras != null) {
+                    isStartRttCall = intentExtras.getBoolean(
+                            android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, true);
+
+                }
+                if (DBG) log("dialInternal: isStartRttCall = " + isStartRttCall);
                 if (isStartRttCall &&
                         (!profile.isVideoCall() || QtiImsUtils.isRttSupportedOnVtCalls(
                         mPhone.getPhoneId(),mPhone.getContext()))) {
