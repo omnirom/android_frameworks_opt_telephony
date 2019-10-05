@@ -92,6 +92,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
     protected TelephonyManager mTelephonyManager;
 
     protected RegistrantList mRecordsLoadedRegistrants = new RegistrantList();
+    protected RegistrantList mEssentialRecordsLoadedRegistrants = new RegistrantList();
     protected RegistrantList mLockedRecordsLoadedRegistrants = new RegistrantList();
     protected RegistrantList mNetworkLockedRecordsLoadedRegistrants = new RegistrantList();
     protected RegistrantList mImsiReadyRegistrants = new RegistrantList();
@@ -101,6 +102,12 @@ public abstract class IccRecords extends Handler implements IccConstants {
     protected RegistrantList mNetworkSelectionModeAutomaticRegistrants = new RegistrantList();
     protected RegistrantList mSpnUpdatedRegistrants = new RegistrantList();
     protected RegistrantList mRecordsOverrideRegistrants = new RegistrantList();
+
+    @UnsupportedAppUsage
+    protected boolean mEssentialRecordsListenerNotified;
+
+    @UnsupportedAppUsage
+    protected int mEssentialRecordsToLoad;  // number of pending essential records load requests
 
     @UnsupportedAppUsage
     protected int mRecordsToLoad;  // number of pending load requests
@@ -235,6 +242,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
                 + " mCi=" + mCi
                 + " mFh=" + mFh
                 + " mParentApp=" + mParentApp
+                + " mEssentialRecordsToLoad=" + mEssentialRecordsToLoad
                 + " recordsToLoad=" + mRecordsToLoad
                 + " adnCache=" + mAdnCache
                 + " recordsRequested=" + mRecordsRequested
@@ -374,6 +382,20 @@ public abstract class IccRecords extends Handler implements IccConstants {
     }
 
     @UnsupportedAppUsage
+    public void registerForEssentialRecordsLoaded(Handler h, int what, Object obj) {
+        if (mDestroyed.get()) {
+            return;
+        }
+
+        Registrant r = new Registrant(h, what, obj);
+        mEssentialRecordsLoadedRegistrants.add(r);
+
+        if (getEssentialRecordsLoaded()) {
+            r.notifyRegistrant(new AsyncResult(null, null, null));
+        }
+    }
+
+    @UnsupportedAppUsage
     public void registerForRecordsLoaded(Handler h, int what, Object obj) {
         if (mDestroyed.get()) {
             return;
@@ -386,6 +408,12 @@ public abstract class IccRecords extends Handler implements IccConstants {
             r.notifyRegistrant(new AsyncResult(null, null, null));
         }
     }
+
+    @UnsupportedAppUsage
+    public void unregisterForEssentialRecordsLoaded(Handler h) {
+        mEssentialRecordsLoadedRegistrants.remove(h);
+    }
+
     @UnsupportedAppUsage
     public void unregisterForRecordsLoaded(Handler h) {
         mRecordsLoadedRegistrants.remove(h);
@@ -775,6 +803,11 @@ public abstract class IccRecords extends Handler implements IccConstants {
     public abstract void onRefresh(boolean fileChanged, int[] fileList);
 
     @UnsupportedAppUsage
+    public boolean getEssentialRecordsLoaded() {
+        return mEssentialRecordsToLoad == 0 && mRecordsRequested;
+    }
+
+    @UnsupportedAppUsage
     public boolean getRecordsLoaded() {
         return mRecordsToLoad == 0 && mRecordsRequested;
     }
@@ -943,6 +976,8 @@ public abstract class IccRecords extends Handler implements IccConstants {
     }
 
     protected abstract void onRecordLoaded();
+
+    protected abstract void onAllEssentialRecordsLoaded();
 
     protected abstract void onAllRecordsLoaded();
 
@@ -1220,6 +1255,12 @@ public abstract class IccRecords extends Handler implements IccConstants {
         pw.println(" mCi=" + mCi);
         pw.println(" mFh=" + mFh);
         pw.println(" mParentApp=" + mParentApp);
+        pw.println(" mEssentialRecordsLoadedRegistrants: size="
+                + mEssentialRecordsLoadedRegistrants.size());
+        for (int i = 0; i < mEssentialRecordsLoadedRegistrants.size(); i++) {
+            pw.println("  mEssentialRecordsLoadedRegistrants[" + i + "]="
+                    + ((Registrant)mEssentialRecordsLoadedRegistrants.get(i)).getHandler());
+        }
         pw.println(" recordsLoadedRegistrants: size=" + mRecordsLoadedRegistrants.size());
         for (int i = 0; i < mRecordsLoadedRegistrants.size(); i++) {
             pw.println("  recordsLoadedRegistrants[" + i + "]="
@@ -1260,6 +1301,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
         }
         pw.println(" mRecordsRequested=" + mRecordsRequested);
         pw.println(" mLockedRecordsReqReason=" + mLockedRecordsReqReason);
+        pw.println(" mEssentialRecordsToLoad=" + mEssentialRecordsToLoad);
         pw.println(" mRecordsToLoad=" + mRecordsToLoad);
         pw.println(" mRdnCache=" + mAdnCache);
 
