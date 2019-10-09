@@ -1494,6 +1494,7 @@ public class ImsPhone extends ImsPhoneBase {
                 mSS.addNetworkRegistrationInfo(nri);
             }
 
+            mSS.setIwlanPreferred(ss.isIwlanPreferred());
             logd("updateDataServiceState: defSs = " + ss + " imsSs = " + mSS);
         }
     }
@@ -1912,6 +1913,11 @@ public class ImsPhone extends ImsPhoneBase {
     private BroadcastReceiver mRttReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (mPhoneId != intent.getIntExtra(QtiImsUtils.EXTRA_PHONE_ID, 0)) {
+                Rlog.d(LOG_TAG, "RTT: intent - " + intent.getAction() +
+                        " received but not intended for phoneId: " + mPhoneId);
+                return;
+            }
             if (QtiImsUtils.ACTION_SEND_RTT_TEXT.equals(intent.getAction())) {
                 Rlog.d(LOG_TAG, "RTT: Received ACTION_SEND_RTT_TEXT");
                 String data = intent.getStringExtra(QtiImsUtils.RTT_TEXT_VALUE);
@@ -2069,7 +2075,7 @@ public class ImsPhone extends ImsPhoneBase {
         }
         Rlog.d(LOG_TAG, "RTT: rtt supported = " +
                 QtiImsUtils.isRttSupported(mPhoneId, mContext) + ", Rtt mode = " +
-                QtiImsUtils.getRttOperatingMode(mContext));
+                QtiImsUtils.getRttOperatingMode(mContext, mPhoneId));
         return true;
     }
 
@@ -2083,11 +2089,11 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     public boolean isRttOn() {
-        if (!QtiImsUtils.isRttOn(mContext)) {
+        if (!QtiImsUtils.isRttOn(mContext, mPhoneId)) {
             Rlog.d(LOG_TAG, "RTT: RTT is off");
             return false;
         }
-        Rlog.d(LOG_TAG, "RTT: Rtt on = " + QtiImsUtils.isRttOn(mContext));
+        Rlog.d(LOG_TAG, "RTT: Rtt on = " + QtiImsUtils.isRttOn(mContext, mPhoneId));
         return true;
     }
 

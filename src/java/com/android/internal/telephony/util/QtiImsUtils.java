@@ -63,6 +63,8 @@ public class QtiImsUtils {
 
     // RTT Off
     public static final int RTT_MODE_DISABLED = 0;
+    public static final int RTT_DEFAULT_PHONE_ID = 0;
+    public static final String EXTRA_PHONE_ID = "slotId";
 
     /**
      * Broadcast Action: Send RTT Text Message
@@ -136,13 +138,25 @@ public class QtiImsUtils {
 
     // Returns true if global setting has stored value as true
     public static boolean isRttOn(Context context) {
-        return (getRttMode(context) != RTT_MODE_DISABLED);
+        return isRttOn(context, RTT_DEFAULT_PHONE_ID);
+    }
+
+    public static boolean isRttOn(Context context, int phoneId) {
+        return getRttMode(context, phoneId) != RTT_MODE_DISABLED;
     }
 
     // Returns value of RTT mode
     public static int getRttMode(Context context) {
+        return getRttMode(context, RTT_DEFAULT_PHONE_ID);
+    }
+
+    public static int getRttMode(Context context, int phoneId) {
         return android.provider.Settings.Secure.getInt(context.getContentResolver(),
-                Settings.Secure.RTT_CALLING_MODE, RTT_MODE_DISABLED);
+                Settings.Secure.RTT_CALLING_MODE + convertRttPhoneId(phoneId), RTT_MODE_DISABLED);
+    }
+
+    private static String convertRttPhoneId(int phoneId) {
+        return phoneId != 0 ? Integer.toString(phoneId) : "";
     }
 
     // Returns true if Carrier supports RTT for Video Calls
@@ -229,7 +243,12 @@ public class QtiImsUtils {
     // Utility to get the RTT Mode that is set through adb property
     // Mode can be either RTT_MODE_DISABLED or RTT_MODE_FULL
     public static int getRttOperatingMode(Context context) {
-        int mode = SystemProperties.getInt(PROPERTY_RTT_OPERATING_MODE, 0);
+        return getRttOperatingMode(context, RTT_DEFAULT_PHONE_ID);
+    }
+
+    public static int getRttOperatingMode(Context context, int phoneId) {
+        int mode = SystemProperties.getInt(PROPERTY_RTT_OPERATING_MODE + convertRttPhoneId(phoneId),
+                0);
         return mode;
     }
 }
