@@ -3098,6 +3098,11 @@ public class ServiceStateTracker extends Handler {
             }
         }
 
+        // Filter out per transport data RAT changes, only want to track changes based on
+        // transport preference changes (WWAN to WLAN, for example).
+        boolean hasDataTransportPreferenceChanged = !anyDataRatChanged
+                && (mSS.getRilDataRadioTechnology() != mNewSS.getRilDataRadioTechnology());
+
         boolean hasVoiceRegStateChanged =
                 mSS.getVoiceRegState() != mNewSS.getVoiceRegState();
 
@@ -3177,6 +3182,7 @@ public class ServiceStateTracker extends Handler {
                     + " hasDataRegStateChanged = " + hasDataRegStateChanged
                     + " hasRilVoiceRadioTechnologyChanged = " + hasRilVoiceRadioTechnologyChanged
                     + " hasRilDataRadioTechnologyChanged = " + hasRilDataRadioTechnologyChanged
+                    + " hasDataTransportPreferenceChanged = " + hasDataTransportPreferenceChanged
                     + " hasChanged = " + hasChanged
                     + " hasVoiceRoamingOn = " + hasVoiceRoamingOn
                     + " hasVoiceRoamingOff = " + hasVoiceRoamingOff
@@ -3352,7 +3358,10 @@ public class ServiceStateTracker extends Handler {
             }
 
             if (hasDataRegStateChanged.get(transport)
-                    || hasRilDataRadioTechnologyChanged.get(transport)) {
+                    || hasRilDataRadioTechnologyChanged.get(transport)
+                    // Update all transports if preference changed so that consumers can be notified
+                    // that ServiceState#getRilDataRadioTechnology has changed.
+                    || hasDataTransportPreferenceChanged) {
                 notifyDataRegStateRilRadioTechnologyChanged(transport);
                 mPhone.notifyDataConnection();
             }
@@ -5239,6 +5248,10 @@ public class ServiceStateTracker extends Handler {
                     mNewSS.addNetworkRegistrationInfo(nri);
                 }
                 mNewSS.setOperatorAlphaLong(operator);
+                // Since it's in airplane mode, cellular must be out of service. The only possible
+                // transport for data to go through is the IWLAN transport. Setting this to true
+                // so that ServiceState.getDataNetworkType can report the right RAT.
+                mNewSS.setIwlanPreferred(true);
                 log("pollStateDone: mNewSS = " + mNewSS);
             }
             return;
