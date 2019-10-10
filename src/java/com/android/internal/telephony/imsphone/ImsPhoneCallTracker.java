@@ -515,6 +515,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
      */
     private Map<Pair<Integer, String>, Integer> mImsReasonCodeMap = new ArrayMap<>();
 
+     /**
+     * Carrier configuration option which indicates whether the carrier supports the hold
+     * command while in an IMS call
+     */
+    private boolean mAllowHoldingCall = true;
 
     /**
      * TODO: Remove this code; it is a workaround.
@@ -978,6 +983,23 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     }
 
     /**
+     * Determines if the device will respect the value of the
+     * {@link CarrierConfigManager#KEY_ALLOW_HOLD_IN_IMS_CALL_BOOL} configuration option.
+     *
+     * @return {@code false} if the device always supports holding IMS calls, {@code true} if it
+     *      will use {@link CarrierConfigManager#KEY_ALLOW_HOLD_IN_IMS_CALL_BOOL} to determine if
+     *      hold is supported.
+     */
+    private boolean doesDeviceRespectHoldCarrierConfig() {
+        Phone phone = getPhone();
+        if (phone == null) {
+            return true;
+        }
+        return phone.getContext().getResources().getBoolean(
+                com.android.internal.R.bool.config_device_respects_hold_carrier_config);
+    }
+
+    /**
      * Caches frequently used carrier configuration items locally.
      *
      * @param subId The sub id.
@@ -1045,6 +1067,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 CarrierConfigManager.KEY_AUTO_RETRY_FAILED_WIFI_EMERGENCY_CALL);
         mIgnoreResetUtCapability =  carrierConfig.getBoolean(
                 CarrierConfigManager.KEY_IGNORE_RESET_UT_CAPABILITY_BOOL);
+        mAllowHoldingCall = carrierConfig.getBoolean(
+                CarrierConfigManager.KEY_ALLOW_HOLD_IN_IMS_CALL_BOOL);
 
         String[] mappings = carrierConfig
                 .getStringArray(CarrierConfigManager.KEY_IMS_REASONINFO_MAPPING_STRING_ARRAY);
@@ -2644,6 +2668,17 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         dialPendingMO();
                         mHoldSwitchingState = HoldSwapState.INACTIVE;
                         logHoldSwapState("onCallHeld hold to dial");
+                    }  else if (mHoldSwitchingState == HoldSwapState.PENDING_SINGLE_CALL_HOLD
+                            && doesDeviceRespectHoldCarrierConfig() && !mAllowHoldingCall) {
+                        // In this case since holding/unholding call is not allowed from UI we are
+                        // resuming the call which is currently in background.
+                        // The current fix assumes that holdActiveCall() which also sets
+                        // mHoldSwitchingState to HoldSwapState.PENDING_SINGLE_CALL_HOLD
+                        // will only be called from UI and not from framework.
+                        mForegroundCall.switchWith(mBackgroundCall);
+                        sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
+                        mHoldSwitchingState = HoldSwapState.INACTIVE;
+                        logHoldSwapState("onCallHeld auto resume");
                     } else {
                         // In this case there will be no call resumed, so we can assume that we
                         // are done switching fg and bg calls now.
