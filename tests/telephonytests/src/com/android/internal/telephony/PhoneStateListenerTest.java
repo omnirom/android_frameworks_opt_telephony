@@ -20,73 +20,72 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.verify;
 
-import android.os.HandlerThread;
 import android.telephony.PhoneStateListener;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.ServiceState;
+import android.telephony.emergency.EmergencyNumber;
 import android.test.suitebuilder.annotation.SmallTest;
+import android.testing.AndroidTestingRunner;
+import android.testing.TestableLooper;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+@RunWith(AndroidTestingRunner.class)
+@TestableLooper.RunWithLooper
 public class PhoneStateListenerTest extends TelephonyTest {
 
     private PhoneStateListener mPhoneStateListenerUT;
-    private PhoneStateListenerHandler mPhoneStateListenerHandler;
     private boolean mUserMobileDataState = false;
     private List<PhysicalChannelConfig> mPhysicalChannelConfigs;
-
-    private class PhoneStateListenerHandler extends HandlerThread {
-        private PhoneStateListenerHandler(String name) {
-            super(name);
-        }
-        @Override
-        public void onLooperPrepared() {
-
-            mPhoneStateListenerUT = new PhoneStateListener() {
-                @Override
-                public void onServiceStateChanged(ServiceState serviceState) {
-                    logd("Service State Changed");
-                    mServiceState.setVoiceRegState(serviceState.getVoiceRegState());
-                    mServiceState.setDataRegState(serviceState.getDataRegState());
-                    setReady(true);
-                }
-
-                @Override
-                public void onUserMobileDataStateChanged(boolean state) {
-                    logd("User Mobile Data State Changed");
-                    mUserMobileDataState = true;
-                    setReady(true);
-                }
-
-                @Override
-                public void onPhysicalChannelConfigurationChanged(
-                        List<PhysicalChannelConfig> configs) {
-                    logd("PhysicalChannelConfig Changed");
-                    mPhysicalChannelConfigs = configs;
-                    setReady(true);
-                }
-            };
-            setReady(true);
-        }
-    }
+    private EmergencyNumber mCalledEmergencyNumber;
+    private EmergencyNumber mTextedEmergencyNumber;
 
     @Before
     public void setUp() throws Exception {
-        this.setUp(this.getClass().getSimpleName());
-        mPhoneStateListenerHandler = new PhoneStateListenerHandler(TAG);
-        mPhoneStateListenerHandler.start();
-        waitUntilReady();
+        super.setUp(getClass().getSimpleName());
+        mPhoneStateListenerUT = new PhoneStateListener() {
+            @Override
+            public void onServiceStateChanged(ServiceState serviceState) {
+                logd("Service State Changed");
+                mServiceState.setVoiceRegState(serviceState.getVoiceRegState());
+                mServiceState.setDataRegState(serviceState.getDataRegState());
+            }
+
+            @Override
+            public void onUserMobileDataStateChanged(boolean state) {
+                logd("User Mobile Data State Changed");
+                mUserMobileDataState = true;
+            }
+
+            public void onOutgoingEmergencyCall(EmergencyNumber emergencyNumber) {
+                logd("OutgoingCallEmergencyNumber Changed");
+                mCalledEmergencyNumber = emergencyNumber;
+            }
+
+            public void onOutgoingEmergencySms(EmergencyNumber emergencyNumber) {
+                logd("OutgoingSmsEmergencyNumber Changed");
+                mTextedEmergencyNumber = emergencyNumber;
+            }
+
+            @Override
+            public void onPhysicalChannelConfigurationChanged(List<PhysicalChannelConfig> configs) {
+                logd("PhysicalChannelConfig Changed");
+                mPhysicalChannelConfigs = configs;
+            }
+        };
+        processAllMessages();
     }
 
     @After
     public void tearDown() throws Exception {
-        mPhoneStateListenerHandler.quit();
         super.tearDown();
     }
 
@@ -99,9 +98,8 @@ public class PhoneStateListenerTest extends TelephonyTest {
         ss.setDataRegState(ServiceState.STATE_IN_SERVICE);
         ss.setVoiceRegState(ServiceState.STATE_EMERGENCY_ONLY);
 
-        setReady(false);
         ((IPhoneStateListener) field.get(mPhoneStateListenerUT)).onServiceStateChanged(ss);
-        waitUntilReady();
+        processAllMessages();
 
         verify(mServiceState).setDataRegState(ServiceState.STATE_IN_SERVICE);
         verify(mServiceState).setVoiceRegState(ServiceState.STATE_EMERGENCY_ONLY);
@@ -114,11 +112,56 @@ public class PhoneStateListenerTest extends TelephonyTest {
 
         assertFalse(mUserMobileDataState);
 
-        setReady(false);
         ((IPhoneStateListener) field.get(mPhoneStateListenerUT)).onUserMobileDataStateChanged(true);
-        waitUntilReady();
+        processAllMessages();
 
         assertTrue(mUserMobileDataState);
+    }
+
+    @Test @SmallTest
+    public void testTriggerOutgoingCallEmergencyNumberChanged() throws Exception {
+        Field field = PhoneStateListener.class.getDeclaredField("callback");
+        field.setAccessible(true);
+
+        assertNull(mCalledEmergencyNumber);
+
+        EmergencyNumber emergencyNumber = new EmergencyNumber(
+                "911",
+                "us",
+                "30",
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                new ArrayList<String>(),
+                EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
+                EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
+
+        ((IPhoneStateListener) field.get(mPhoneStateListenerUT)).onOutgoingEmergencyCall(
+                emergencyNumber);
+        processAllMessages();
+
+        assertTrue(mCalledEmergencyNumber.equals(emergencyNumber));
+    }
+
+    @Test @SmallTest
+    public void testTriggerOutgoingSmsEmergencyNumberChanged() throws Exception {
+        Field field = PhoneStateListener.class.getDeclaredField("callback");
+        field.setAccessible(true);
+
+        assertNull(mTextedEmergencyNumber);
+
+        EmergencyNumber emergencyNumber = new EmergencyNumber(
+                "911",
+                "us",
+                "30",
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
+                new ArrayList<String>(),
+                EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
+                EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
+
+        ((IPhoneStateListener) field.get(mPhoneStateListenerUT)).onOutgoingEmergencySms(
+                emergencyNumber);
+        processAllMessages();
+
+        assertTrue(mTextedEmergencyNumber.equals(emergencyNumber));
     }
 
     @Test @SmallTest
@@ -135,10 +178,9 @@ public class PhoneStateListenerTest extends TelephonyTest {
 
         List<PhysicalChannelConfig> configs = Collections.singletonList(config);
 
-        setReady(false);
         ((IPhoneStateListener) field.get(mPhoneStateListenerUT))
             .onPhysicalChannelConfigurationChanged(configs);
-        waitUntilReady();
+        processAllMessages();
 
         assertTrue(mPhysicalChannelConfigs.equals(configs));
     }

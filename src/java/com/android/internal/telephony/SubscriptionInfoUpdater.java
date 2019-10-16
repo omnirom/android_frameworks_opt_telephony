@@ -55,6 +55,7 @@ import android.telephony.TelephonyManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.euicc.EuiccManager;
 import android.text.TextUtils;
+import android.util.Pair;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.euicc.EuiccController;
@@ -67,8 +68,6 @@ import com.android.internal.telephony.uicc.UiccSlot;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -745,19 +744,20 @@ public class SubscriptionInfoUpdater extends Handler {
         }
 
         mBackgroundHandler.post(() -> {
-            List<GetEuiccProfileInfoListResult> results = new ArrayList<>();
+            List<Pair<Integer, GetEuiccProfileInfoListResult>> results = new ArrayList<>();
             for (int cardId : cardIds) {
                 GetEuiccProfileInfoListResult result =
                         EuiccController.get().blockingGetEuiccProfileInfoList(cardId);
                 if (DBG) logd("blockingGetEuiccProfileInfoList cardId " + cardId);
-                results.add(result);
+                results.add(Pair.create(cardId, result));
             }
 
             // The runnable will be executed in the main thread.
             this.post(() -> {
                 boolean hasChanges = false;
-                for (GetEuiccProfileInfoListResult result : results) {
-                    if (updateEmbeddedSubscriptionsCache(result)) {
+                for (Pair<Integer, GetEuiccProfileInfoListResult> cardIdAndResult : results) {
+                    if (updateEmbeddedSubscriptionsCache(cardIdAndResult.first,
+                            cardIdAndResult.second)) {
                         hasChanges = true;
                     }
                 }
@@ -778,7 +778,8 @@ public class SubscriptionInfoUpdater extends Handler {
      * but notifications about subscription changes may be skipped if this returns false as an
      * optimization to avoid spurious notifications.
      */
-    private boolean updateEmbeddedSubscriptionsCache(GetEuiccProfileInfoListResult result) {
+    private boolean updateEmbeddedSubscriptionsCache(int cardId,
+            GetEuiccProfileInfoListResult result) {
         if (DBG) logd("updateEmbeddedSubscriptionsCache");
 
         if (result == null) {
@@ -883,6 +884,14 @@ public class SubscriptionInfoUpdater extends Handler {
                 values.put(SubscriptionManager.MNC_STRING, mnc);
                 values.put(SubscriptionManager.MNC, mnc);
             }
+            // If cardId = unsupported or unitialized, we have no reason to update DB.
+            // Additionally, if the device does not support cardId for default eUICC, the CARD_ID
+            // field should not contain the EID
+            if (cardId >= 0 && UiccController.getInstance().getCardIdForDefaultEuicc()
+                    != TelephonyManager.UNSUPPORTED_CARD_ID) {
+                values.put(SubscriptionManager.CARD_ID,
+                        mEuiccManager.createForCardId(cardId).getEid());
+            }
             hasChanges = true;
             contentResolver.update(SubscriptionManager.CONTENT_URI, values,
                     SubscriptionManager.ICC_ID + "=\"" + embeddedProfile.getIccid() + "\"", null);
@@ -985,58 +994,55 @@ public class SubscriptionInfoUpdater extends Handler {
             return;
         }
 
-        if (!isCarrierServicePackage(phoneId, configPackageName)) {
-            loge("Cannot manage subId=" + currentSubId + ", carrierPackage=" + configPackageName);
-            return;
-        }
-
         ContentValues cv = new ContentValues();
-        boolean isOpportunistic = config.getBoolean(
-                CarrierConfigManager.KEY_IS_OPPORTUNISTIC_SUBSCRIPTION_BOOL, false);
-        if (currentSubInfo.isOpportunistic() != isOpportunistic) {
-            if (DBG) logd("Set SubId=" + currentSubId + " isOpportunistic=" + isOpportunistic);
-            cv.put(SubscriptionManager.IS_OPPORTUNISTIC, isOpportunistic ? "1" : "0");
-        }
+        ParcelUuid groupUuid = null;
 
+        // carrier certificates are not subscription-specific, so we want to load them even if
+        // this current package is not a CarrierServicePackage
         String[] certs = config.getStringArray(
             CarrierConfigManager.KEY_CARRIER_CERTIFICATE_STRING_ARRAY);
         if (certs != null) {
             UiccAccessRule[] carrierConfigAccessRules = new UiccAccessRule[certs.length];
-            try {
-                for (int i = 0; i < certs.length; i++) {
-                    carrierConfigAccessRules[i] = new UiccAccessRule(
-                        MessageDigest.getInstance("SHA-256").digest(certs[i].getBytes()), null, 0);
-                }
-            } catch (NoSuchAlgorithmException e) {
-                throw new RuntimeException("for setCarrierConfigAccessRules, SHA-256 must exist",
-                    e);
+            for (int i = 0; i < certs.length; i++) {
+                carrierConfigAccessRules[i] = new UiccAccessRule(IccUtils.hexStringToBytes(
+                    certs[i]), null, 0);
             }
             cv.put(SubscriptionManager.ACCESS_RULES_FROM_CARRIER_CONFIGS,
                     UiccAccessRule.encodeRules(carrierConfigAccessRules));
         }
 
-        String groupUuidString =
+        if (!isCarrierServicePackage(phoneId, configPackageName)) {
+            loge("Cannot manage subId=" + currentSubId + ", carrierPackage=" + configPackageName);
+        } else {
+            boolean isOpportunistic = config.getBoolean(
+                    CarrierConfigManager.KEY_IS_OPPORTUNISTIC_SUBSCRIPTION_BOOL, false);
+            if (currentSubInfo.isOpportunistic() != isOpportunistic) {
+                if (DBG) logd("Set SubId=" + currentSubId + " isOpportunistic=" + isOpportunistic);
+                cv.put(SubscriptionManager.IS_OPPORTUNISTIC, isOpportunistic ? "1" : "0");
+            }
+
+            String groupUuidString =
                 config.getString(CarrierConfigManager.KEY_SUBSCRIPTION_GROUP_UUID_STRING, "");
-        ParcelUuid groupUuid = null;
-        if (!TextUtils.isEmpty(groupUuidString)) {
-            try {
-                // Update via a UUID Structure to ensure consistent formatting
-                groupUuid = ParcelUuid.fromString(groupUuidString);
-                if (groupUuid.equals(REMOVE_GROUP_UUID)
+            if (!TextUtils.isEmpty(groupUuidString)) {
+                try {
+                    // Update via a UUID Structure to ensure consistent formatting
+                    groupUuid = ParcelUuid.fromString(groupUuidString);
+                    if (groupUuid.equals(REMOVE_GROUP_UUID)
                             && currentSubInfo.getGroupUuid() != null) {
-                    cv.put(SubscriptionManager.GROUP_UUID, (String) null);
-                    if (DBG) logd("Group Removed for" + currentSubId);
-                } else if (SubscriptionController.getInstance().canPackageManageGroup(groupUuid,
+                        cv.put(SubscriptionManager.GROUP_UUID, (String) null);
+                        if (DBG) logd("Group Removed for" + currentSubId);
+                    } else if (SubscriptionController.getInstance().canPackageManageGroup(groupUuid,
                         configPackageName)) {
-                    cv.put(SubscriptionManager.GROUP_UUID, groupUuid.toString());
-                    cv.put(SubscriptionManager.GROUP_OWNER, configPackageName);
-                    if (DBG) logd("Group Added for" + currentSubId);
-                } else {
-                    loge("configPackageName " + configPackageName + " doesn't own grouUuid "
+                        cv.put(SubscriptionManager.GROUP_UUID, groupUuid.toString());
+                        cv.put(SubscriptionManager.GROUP_OWNER, configPackageName);
+                        if (DBG) logd("Group Added for" + currentSubId);
+                    } else {
+                        loge("configPackageName " + configPackageName + " doesn't own grouUuid "
                             + groupUuid);
+                    }
+                } catch (IllegalArgumentException e) {
+                    loge("Invalid Group UUID=" + groupUuidString);
                 }
-            } catch (IllegalArgumentException e) {
-                loge("Invalid Group UUID=" + groupUuidString);
             }
         }
         if (cv.size() > 0 && mContext.getContentResolver().update(SubscriptionManager

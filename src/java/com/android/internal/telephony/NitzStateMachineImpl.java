@@ -184,7 +184,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
                 // We log this in the time zone log because it has been a source of bugs.
                 mTimeZoneLog.log(logMsg);
 
-                zoneId = lookupResult != null ? lookupResult.zoneId : null;
+                zoneId = lookupResult != null ? lookupResult.getTimeZone().getID() : null;
             } else if (mLatestNitzSignal == null) {
                 if (DBG) {
                     Rlog.d(LOG_TAG,
@@ -213,7 +213,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
                             + " isoCountryCode=" + isoCountryCode
                             + " lookupResult=" + lookupResult);
                 }
-                zoneId = lookupResult != null ? lookupResult.zoneId : null;
+                zoneId = lookupResult != null ? lookupResult.getTimeZone().getID() : null;
             }
 
             String logMsg = "updateTimeZoneFromCountryAndNitz:"
@@ -263,7 +263,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
         }
 
         NitzData newNitzData = nitzSignal.getValue();
-        boolean zeroOffsetNitz = newNitzData.getLocalOffsetMillis() == 0 && !newNitzData.isDst();
+        boolean zeroOffsetNitz = newNitzData.getLocalOffsetMillis() == 0;
         return zeroOffsetNitz && !countryUsesUtc(isoCountryCode, nitzSignal);
     }
 
