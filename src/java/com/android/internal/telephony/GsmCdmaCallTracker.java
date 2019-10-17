@@ -368,7 +368,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (mNumberConverted) {
-            mPendingMO.setConverted(origNumber);
+            mPendingMO.restoreDialedNumberAfterConversion(origNumber);
             mNumberConverted = false;
         }
 
@@ -506,7 +506,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (mNumberConverted) {
-            mPendingMO.setConverted(origNumber);
+            mPendingMO.restoreDialedNumberAfterConversion(origNumber);
             mNumberConverted = false;
         }
 

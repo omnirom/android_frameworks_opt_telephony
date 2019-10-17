@@ -265,6 +265,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     public void tearDown() throws Exception {
         mCTUT = null;
         mImsCTHandlerThread.quit();
+        mImsCTHandlerThread.join();
         super.tearDown();
     }
 
@@ -399,6 +400,31 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         assertEquals(PhoneConstants.State.OFFHOOK, mCTUT.getState());
         assertEquals(Call.State.ACTIVE, mCTUT.mForegroundCall.getState());
         assertEquals(1, mCTUT.mForegroundCall.getConnections().size());
+    }
+
+    @Test
+    @SmallTest
+    public void testImsHoldException() throws Exception {
+        testImsMTCallAccept();
+        doThrow(new ImsException()).when(mImsCall).hold();
+        try {
+            mCTUT.holdActiveCall();
+            Assert.fail("No exception thrown");
+        } catch (Exception e) {
+            // expected
+            verify(mImsCall).hold();
+        }
+
+        // After the first hold exception, try holding (successfully) again to make sure that it
+        // goes through
+        doNothing().when(mImsCall).hold();
+        try {
+            mCTUT.holdActiveCall();
+            verify(mImsCall, times(2)).hold();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            Assert.fail("unexpected exception thrown" + ex.getMessage());
+        }
     }
 
     @Test
@@ -695,6 +721,45 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                 nullable(MmTelFeature.Listener.class));
     }
 
+    @Test
+    @SmallTest
+    public void testRewriteOutgoingNumber() {
+        try {
+            doAnswer(new Answer<ImsCall>() {
+                @Override
+                public ImsCall answer(InvocationOnMock invocation) throws Throwable {
+                    mImsCallListener =
+                            (ImsCall.Listener) invocation.getArguments()[2];
+                    ImsCall imsCall = spy(new ImsCall(mContext, mImsCallProfile));
+                    imsCall.setListener(mImsCallListener);
+                    imsCallMocking(imsCall);
+                    return imsCall;
+                }
+            }).when(mImsManager).makeCall(eq(mImsCallProfile), (String[]) any(),
+                    (ImsCall.Listener) any());
+        } catch (ImsException ie) {
+        }
+
+        // Perform a dial string remapping.
+        PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
+        bundle.putStringArray(CarrierConfigManager.KEY_DIAL_STRING_REPLACE_STRING_ARRAY,
+                new String[] {"*55:6505551212"});
+
+        ImsPhoneConnection connection = null;
+        try {
+            connection = (ImsPhoneConnection) mCTUT.dial("*55",
+                    ImsCallProfile.CALL_TYPE_VOICE, null);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            Assert.fail("unexpected exception thrown" + ex.getMessage());
+        }
+        if (connection == null) {
+            Assert.fail("connection is null");
+        }
+        Assert.assertEquals("6505551212", connection.getConvertedNumber());
+        Assert.assertEquals("*55", connection.getAddress());
+    }
+
     /**
      * Test notification of handover from LTE to WIFI and WIFI to LTE and ensure that the expected
      * connection events are sent.
@@ -944,6 +1009,23 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testMergeComplete() {
+        boolean[] result = new boolean[1];
+        // Place a call.
+        ImsPhoneConnection connection = placeCallAndMakeActive();
+        connection.addListener(new Connection.ListenerBase() {
+            @Override
+            public void onConnectionEvent(String event, Bundle extras) {
+                result[0] = android.telecom.Connection.EVENT_MERGE_COMPLETE.equals(event);
+            }
+        });
+        ImsCall call = connection.getImsCall();
+        call.getListener().onCallMerged(call, null, false);
+        assertTrue(result[0]);
+    }
+
+    @Test
+    @SmallTest
     public void testNumericOnlyRemap() {
         assertEquals(ImsReasonInfo.CODE_SIP_FORBIDDEN, mCTUT.maybeRemapReasonCode(
                 new ImsReasonInfo(ImsReasonInfo.CODE_USER_TERMINATED_BY_REMOTE, 0)));
@@ -983,7 +1065,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                                 "SERVICE not allowed in this location")));
     }
 
-    private void placeCallAndMakeActive() {
+    private ImsPhoneConnection placeCallAndMakeActive() {
         try {
             doAnswer(new Answer<ImsCall>() {
                 @Override
@@ -1016,6 +1098,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                 new ImsStreamMediaProfile());
         imsCall.getImsCallSessionListenerProxy().callSessionStarted(imsCall.getSession(),
                 new ImsCallProfile());
+        return connection;
     }
 }
 

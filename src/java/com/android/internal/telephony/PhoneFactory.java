@@ -175,7 +175,7 @@ public class PhoneFactory {
 
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 telephonyComponentFactory.inject(SubscriptionController.class.
-                                getName()).initSubscriptionController(context, sCommandsInterfaces);
+                                getName()).initSubscriptionController(context);
                 telephonyComponentFactory.inject(MultiSimSettingController.class.
                                 getName()).initMultiSimSettingController(context,
                                 SubscriptionController.getInstance());
@@ -237,7 +237,6 @@ public class PhoneFactory {
                         getLooper(), context, sPhones, sCommandsInterfaces);
                 SubscriptionController.getInstance().updatePhonesAvailability(sPhones);
 
-
                 // Only bring up IMS if the device supports having an IMS stack.
                 if (context.getPackageManager().hasSystemFeature(
                         PackageManager.FEATURE_TELEPHONY_IMS)) {
@@ -266,9 +265,9 @@ public class PhoneFactory {
 
                 ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(
                         ServiceManager.getService("telephony.registry"));
-                SubscriptionController sc = SubscriptionController.getInstance();
 
-                sSubscriptionMonitor = new SubscriptionMonitor(tr, sContext, sc, numPhones);
+                sSubscriptionMonitor = new SubscriptionMonitor(tr, sContext,
+                    SubscriptionController.getInstance(), numPhones);
 
                 sPhoneConfigurationManager = PhoneConfigurationManager.init(sContext);
 
@@ -279,8 +278,8 @@ public class PhoneFactory {
 
                 sPhoneSwitcher = telephonyComponentFactory.inject(PhoneSwitcher.class.getName()).
                         makePhoneSwitcher(maxActivePhones, numPhones,
-                        sContext, sc, Looper.myLooper(), tr, sCommandsInterfaces,
-                        sPhones);
+                        sContext, SubscriptionController.getInstance(), Looper.myLooper(), tr,
+                        sCommandsInterfaces, sPhones);
 
                 sProxyController = ProxyController.getInstance(context, sPhones,
                         sUiccController, sCommandsInterfaces, sPhoneSwitcher);
@@ -549,6 +548,16 @@ public class PhoneFactory {
             pw.decreaseIndent();
             pw.println("++++++++++++++++++++++++++++++++");
         }
+
+        pw.println("ImsResolver:");
+        pw.increaseIndent();
+        try {
+            if (sImsResolver != null) sImsResolver.dump(fd, pw, args);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        pw.decreaseIndent();
+        pw.println("++++++++++++++++++++++++++++++++");
 
         pw.println("SubscriptionMonitor:");
         pw.increaseIndent();

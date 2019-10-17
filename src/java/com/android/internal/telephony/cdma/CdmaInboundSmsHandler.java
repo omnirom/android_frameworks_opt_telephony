@@ -152,12 +152,14 @@ public class CdmaInboundSmsHandler extends InboundSmsHandler {
                 mServiceCategoryProgramHandler.dispatchSmsMessage(sms);
                 return Intents.RESULT_SMS_HANDLED;
 
+            case SmsEnvelope.TELESERVICE_FDEA_WAP:
+                if (!sms.preprocessCdmaFdeaWap()) {
+                    return Intents.RESULT_SMS_HANDLED;
+                }
+                teleService = SmsEnvelope.TELESERVICE_WAP;
+                // fall through
             case SmsEnvelope.TELESERVICE_WAP:
                 // handled below, after storage check
-                break;
-
-            case SmsEnvelope.TELESERVICE_CT_WAP:
-                // handled below, after TELESERVICE_WAP
                 break;
 
             default:
@@ -174,15 +176,6 @@ public class CdmaInboundSmsHandler extends InboundSmsHandler {
         }
 
         if (SmsEnvelope.TELESERVICE_WAP == teleService) {
-            return processCdmaWapPdu(sms.getUserData(), sms.mMessageRef,
-                    sms.getOriginatingAddress(), sms.getDisplayOriginatingAddress(),
-                    sms.getTimestampMillis());
-        } else if (SmsEnvelope.TELESERVICE_CT_WAP == teleService) {
-            /*  WDP header contains Message identifier
-               and User data subparametrs extract these fields */
-            if (!sms.processCdmaCTWdpHeader(sms)) {
-                return Intents.RESULT_SMS_HANDLED;
-            }
             return processCdmaWapPdu(sms.getUserData(), sms.mMessageRef,
                     sms.getOriginatingAddress(), sms.getDisplayOriginatingAddress(),
                     sms.getTimestampMillis());
