@@ -25,6 +25,7 @@ import static com.android.internal.telephony.uicc.IccRecords.CARRIER_NAME_DISPLA
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -38,7 +39,6 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.hardware.radio.V1_0.CellInfoType;
-import android.icu.util.TimeZone;
 import android.net.NetworkCapabilities;
 import android.os.AsyncResult;
 import android.os.BaseBundle;
@@ -57,6 +57,7 @@ import android.provider.Settings;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.Annotation.RilRadioTechnology;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellIdentity;
 import android.telephony.CellIdentityCdma;
@@ -71,7 +72,6 @@ import android.telephony.NetworkRegistrationInfo;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
-import android.telephony.ServiceState.RilRadioTechnology;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -118,9 +118,12 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -135,6 +138,9 @@ public class ServiceStateTracker extends Handler {
     private static final boolean VDBG = false;  // STOPSHIP if true
 
     private static final String PROP_FORCE_ROAMING = "telephony.test.forceRoaming";
+
+    private static final long SIGNAL_STRENGTH_REFRESH_THRESHOLD_IN_MS =
+            TimeUnit.SECONDS.toMillis(10);
 
     @UnsupportedAppUsage
     private CommandsInterface mCi;
@@ -173,6 +179,7 @@ public class ServiceStateTracker extends Handler {
 
     @UnsupportedAppUsage
     private SignalStrength mSignalStrength;
+    private long mSignalStrengthUpdatedTime;
 
     // TODO - this should not be public, right now used externally GsmConnetion.
     public RestrictedState mRestrictedState;
@@ -212,6 +219,7 @@ public class ServiceStateTracker extends Handler {
     private RegistrantList mPsRestrictEnabledRegistrants = new RegistrantList();
     private RegistrantList mPsRestrictDisabledRegistrants = new RegistrantList();
     private RegistrantList mImsCapabilityChangedRegistrants = new RegistrantList();
+    private RegistrantList mNrStateChangedRegistrants = new RegistrantList();
 
     /* Radio power off pending flag and tag counter */
     private boolean mPendingRadioPowerOffAfterDataOff = false;
@@ -435,6 +443,14 @@ public class ServiceStateTracker extends Handler {
     private CellIdentity mNewCellIdentity;
     private static final int MS_PER_HOUR = 60 * 60 * 1000;
     private final NitzStateMachine mNitzState;
+
+    /**
+     * Holds the last NITZ signal received. Used only for trying to determine an MCC from a CDMA
+     * SID.
+     */
+    @Nullable
+    private NitzData mLastNitzData;
+
     private final EriManager mEriManager;
     @UnsupportedAppUsage
     private final ContentResolver mCr;
@@ -717,6 +733,7 @@ public class ServiceStateTracker extends Handler {
         mNitzState.handleNetworkCountryCodeUnavailable();
         mCellIdentity = null;
         mNewCellIdentity = null;
+        mSignalStrengthUpdatedTime = System.currentTimeMillis();
 
         //cancel any pending pollstate request on voice tech switching
         cancelPollState();
@@ -1551,13 +1568,18 @@ public class ServiceStateTracker extends Handler {
                     mLastPhysicalChannelConfigList = list;
                     boolean hasChanged =
                             updateNrFrequencyRangeFromPhysicalChannelConfigs(list, mSS);
-                    hasChanged |= updateNrStateFromPhysicalChannelConfigs(
-                            list, mSS);
+                    if (updateNrStateFromPhysicalChannelConfigs(list, mSS)) {
+                        mNrStateChangedRegistrants.notifyRegistrants();
+                        hasChanged = true;
+                    }
+                    hasChanged |= RatRatcheter
+                            .updateBandwidths(getBandwidthsFromConfigs(list), mSS);
 
                     // Notify NR frequency, NR connection status or bandwidths changed.
-                    if (hasChanged
-                            || RatRatcheter.updateBandwidths(getBandwidthsFromConfigs(list), mSS)) {
+                    if (hasChanged) {
                         mPhone.notifyServiceStateChanged(mSS);
+                        TelephonyMetrics.getInstance().writeServiceStateChanged(
+                                mPhone.getPhoneId(), mSS);
                     }
                 }
                 break;
@@ -1758,6 +1780,7 @@ public class ServiceStateTracker extends Handler {
     }
 
     public void onAirplaneModeChanged(boolean isAirplaneModeOn) {
+        mLastNitzData = null;
         mNitzState.handleAirplaneModeChanged(isAirplaneModeOn);
     }
 
@@ -2132,6 +2155,7 @@ public class ServiceStateTracker extends Handler {
                 int serviceState = regCodeToServiceState(registrationState);
                 int newDataRat = ServiceState.networkTypeToRilRadioTechnology(
                         networkRegState.getAccessNetworkTechnology());
+                boolean nrHasChanged = false;
 
                 if (DBG) {
                     log("handlePollStateResultMessage: PS cellular. " + networkRegState);
@@ -2142,10 +2166,16 @@ public class ServiceStateTracker extends Handler {
                 // (2 or more cells) to a new cell if they camp for emergency service only.
                 if (serviceState == ServiceState.STATE_OUT_OF_SERVICE) {
                     mLastPhysicalChannelConfigList = null;
-                    updateNrFrequencyRangeFromPhysicalChannelConfigs(null, mNewSS);
+                    nrHasChanged |= updateNrFrequencyRangeFromPhysicalChannelConfigs(null, mNewSS);
                 }
-                updateNrStateFromPhysicalChannelConfigs(mLastPhysicalChannelConfigList, mNewSS);
+                nrHasChanged |= updateNrStateFromPhysicalChannelConfigs(
+                        mLastPhysicalChannelConfigList, mNewSS);
                 setPhyCellInfoFromCellIdentity(mNewSS, networkRegState.getCellIdentity());
+
+                if (nrHasChanged) {
+                    TelephonyMetrics.getInstance().writeServiceStateChanged(
+                            mPhone.getPhoneId(), mSS);
+                }
 
                 if (mPhone.isPhoneTypeGsm()) {
 
@@ -3341,10 +3371,13 @@ public class ServiceStateTracker extends Handler {
             // camped on a cell either to attempt registration or for emergency services, then
             // for purposes of setting the locale, we don't care if registration fails or is
             // incomplete.
-            String localeOperator = isInvalidOperatorNumeric(operatorNumeric)
-                    && (mCellIdentity != null)
-                    ? mCellIdentity.getMccString() + mCellIdentity.getMncString()
-                    : operatorNumeric;
+            // CellIdentity can return a null MCC and MNC in CDMA
+            String localeOperator = operatorNumeric;
+            if (isInvalidOperatorNumeric(operatorNumeric) && (mCellIdentity != null)
+                    && mCellIdentity.getMccString() != null
+                    && mCellIdentity.getMncString() != null) {
+                localeOperator = mCellIdentity.getMccString() + mCellIdentity.getMncString();
+            }
 
             if (isInvalidOperatorNumeric(localeOperator)) {
                 if (DBG) log("localeOperator " + localeOperator + " is invalid");
@@ -3381,7 +3414,9 @@ public class ServiceStateTracker extends Handler {
             mPhone.getContext().getContentResolver()
                     .insert(getUriForSubscriptionId(mPhone.getSubId()),
                             getContentValuesForServiceState(mSS));
+        }
 
+        if (hasChanged || hasNrStateChanged) {
             TelephonyMetrics.getInstance().writeServiceStateChanged(mPhone.getPhoneId(), mSS);
         }
 
@@ -3696,39 +3731,21 @@ public class ServiceStateTracker extends Handler {
             return operatorNumeric;
         }
 
-        // resolve the mcc from sid;
-        // if mNitzState.getSavedTimeZoneId() is null, TimeZone would get the default timeZone,
-        // and the mNitzState.fixTimeZone() couldn't help, because it depends on operator Numeric;
-        // if the sid is conflict and timezone is unavailable, the mcc may be not right.
-        boolean isNitzTimeZone;
-        TimeZone tzone;
-        if (mNitzState.getSavedTimeZoneId() != null) {
-            tzone = TimeZone.getTimeZone(mNitzState.getSavedTimeZoneId());
-            isNitzTimeZone = true;
-        } else {
-            NitzData lastNitzData = mNitzState.getCachedNitzData();
-            if (lastNitzData == null) {
-                tzone = null;
-            } else {
-                tzone = TimeZoneLookupHelper.guessZoneByNitzStatic(lastNitzData);
-                if (ServiceStateTracker.DBG) {
-                    log("fixUnknownMcc(): guessNitzTimeZone returned "
-                            + (tzone == null ? tzone : tzone.getID()));
-                }
-            }
-            isNitzTimeZone = false;
-        }
-
+        // resolve the mcc from sid, using time zone information from the latest NITZ signal when
+        // available.
         int utcOffsetHours = 0;
-        if (tzone != null) {
-            utcOffsetHours = tzone.getRawOffset() / MS_PER_HOUR;
+        boolean isDst = false;
+        boolean isNitzTimeZone = false;
+        NitzData lastNitzData = mLastNitzData;
+        if (lastNitzData != null) {
+            utcOffsetHours = lastNitzData.getLocalOffsetMillis() / MS_PER_HOUR;
+            Integer dstAdjustmentMillis = lastNitzData.getDstAdjustmentMillis();
+            isDst = (dstAdjustmentMillis != null) && (dstAdjustmentMillis != 0);
+            isNitzTimeZone = true;
         }
-
-        NitzData nitzData = mNitzState.getCachedNitzData();
-        boolean isDst = nitzData != null && nitzData.isDst();
         int mcc = mHbpcdUtils.getMcc(sid, utcOffsetHours, (isDst ? 1 : 0), isNitzTimeZone);
         if (mcc > 0) {
-            operatorNumeric = Integer.toString(mcc) + DEFAULT_MNC;
+            operatorNumeric = mcc + DEFAULT_MNC;
         }
         return operatorNumeric;
     }
@@ -4040,6 +4057,7 @@ public class ServiceStateTracker extends Handler {
                     + " start=" + start + " delay=" + (start - nitzReceiveTime));
         }
         NitzData newNitzData = NitzData.parse(nitzString);
+        mLastNitzData = newNitzData;
         if (newNitzData != null) {
             try {
                 TimestampedValue<NitzData> nitzSignal =
@@ -4753,6 +4771,7 @@ public class ServiceStateTracker extends Handler {
             log("onSignalStrengthResult() Exception from RIL : " + ar.exception);
             mSignalStrength = new SignalStrength();
         }
+        mSignalStrengthUpdatedTime = System.currentTimeMillis();
 
         boolean ssChanged = notifySignalStrength();
 
@@ -4885,7 +4904,39 @@ public class ServiceStateTracker extends Handler {
      * @return signal strength
      */
     public SignalStrength getSignalStrength() {
+        if (shouldRefreshSignalStrength()) {
+            log("SST.getSignalStrength() refreshing signal strength.");
+            obtainMessage(EVENT_POLL_SIGNAL_STRENGTH).sendToTarget();
+        }
         return mSignalStrength;
+    }
+
+    private boolean shouldRefreshSignalStrength() {
+        long curTime = System.currentTimeMillis();
+
+        // If last signal strength is older than 10 seconds, or somehow if curTime is smaller
+        // than mSignalStrengthUpdatedTime (system time update), it's considered stale.
+        boolean isStale = (mSignalStrengthUpdatedTime > curTime)
+                || (curTime - mSignalStrengthUpdatedTime > SIGNAL_STRENGTH_REFRESH_THRESHOLD_IN_MS);
+        if (!isStale) return false;
+
+        List<SubscriptionInfo> subInfoList = SubscriptionController.getInstance()
+                .getActiveSubscriptionInfoList(mPhone.getContext().getOpPackageName());
+        for (SubscriptionInfo info : subInfoList) {
+            // If we have an active opportunistic subscription whose data is IN_SERVICE, we needs
+            // to get signal strength to decide data switching threshold. In this case, we poll
+            // latest signal strength from modem.
+            if (info.isOpportunistic()) {
+                TelephonyManager tm = TelephonyManager.from(mPhone.getContext())
+                        .createForSubscriptionId(info.getSubscriptionId());
+                ServiceState ss = tm.getServiceState();
+                if (ss != null && ss.getDataRegState() == ServiceState.STATE_IN_SERVICE) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -5003,6 +5054,7 @@ public class ServiceStateTracker extends Handler {
         pw.println(" mEmergencyOnly=" + mEmergencyOnly);
         pw.flush();
         mNitzState.dumpState(pw);
+        pw.println(" mLastNitzData=" + mLastNitzData);
         pw.flush();
         pw.println(" mStartedGprsRegCheck=" + mStartedGprsRegCheck);
         pw.println(" mReportedGprsNoReg=" + mReportedGprsNoReg);
@@ -5240,6 +5292,7 @@ public class ServiceStateTracker extends Handler {
     @UnsupportedAppUsage
     private void setSignalStrengthDefaultValues() {
         mSignalStrength = new SignalStrength();
+        mSignalStrengthUpdatedTime = System.currentTimeMillis();
     }
 
     protected String getHomeOperatorNumeric() {
@@ -5520,5 +5573,44 @@ public class ServiceStateTracker extends Handler {
             networkType = regInfo.getAccessNetworkTechnology();
         }
         return ServiceState.networkTypeToRilRadioTechnology(networkType);
+    }
+
+    /**
+     * Registers for 5G NR state changed.
+     * @param h handler to notify
+     * @param what what code of message when delivered
+     * @param obj placed in Message.obj
+     */
+    public void registerForNrStateChanged(Handler h, int what, Object obj) {
+        Registrant r = new Registrant(h, what, obj);
+        mNrStateChangedRegistrants.add(r);
+    }
+
+    /**
+     * Unregisters for 5G NR state changed.
+     * @param h handler to notify
+     */
+    public void unregisterForNrStateChanged(Handler h) {
+        mNrStateChangedRegistrants.remove(h);
+    }
+
+    /**
+     * Get the NR data connection context ids.
+     *
+     * @return data connection context ids.
+     */
+    @NonNull
+    public Set<Integer> getNrContextIds() {
+        Set<Integer> idSet = new HashSet<>();
+
+        for (PhysicalChannelConfig config : mLastPhysicalChannelConfigList) {
+            if (isNrPhysicalChannelConfig(config)) {
+                for (int id : config.getContextIds()) {
+                    idSet.add(id);
+                }
+            }
+        }
+
+        return idSet;
     }
 }

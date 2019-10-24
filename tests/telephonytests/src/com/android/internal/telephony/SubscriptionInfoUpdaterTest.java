@@ -125,8 +125,8 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
     public void setUp() throws Exception {
         super.setUp(this.getClass().getSimpleName());
 
-        replaceInstance(SubscriptionInfoUpdater.class, "mIccId", null, new String[1]);
-        replaceInstance(SubscriptionInfoUpdater.class, "mContext", null, null);
+        replaceInstance(SubscriptionInfoUpdater.class, "sIccId", null, new String[1]);
+        replaceInstance(SubscriptionInfoUpdater.class, "sContext", null, null);
         replaceInstance(SubscriptionInfoUpdater.class, "PROJECT_SIM_NUM", null, 1);
         replaceInstance(SubscriptionInfoUpdater.class, "sSimCardState", null, new int[1]);
         replaceInstance(SubscriptionInfoUpdater.class, "sSimApplicationState", null, new int[1]);
@@ -398,10 +398,10 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         doReturn(mUiccProfile).when(mSecondPhone).getIccCard();
         doReturn(mContext).when(mSecondPhone).getContext();
 
-        replaceInstance(SubscriptionInfoUpdater.class, "mIccId", null,
+        replaceInstance(SubscriptionInfoUpdater.class, "sIccId", null,
                 new String[]{null, null});
         replaceInstance(SubscriptionInfoUpdater.class, "PROJECT_SIM_NUM", null, 2);
-        replaceInstance(SubscriptionInfoUpdater.class, "mPhone", null,
+        replaceInstance(SubscriptionInfoUpdater.class, "sPhones", null,
                 new Phone[]{mPhone, mSecondPhone});
         replaceInstance(SubscriptionInfoUpdater.class, "sSimCardState", null,
                 new int[]{0, 0});
@@ -414,7 +414,7 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
                 .getActiveSubscriptionIdList();
         doReturn(FAKE_SUB_ID_1).when(mSubscriptionController).getPhoneId(eq(FAKE_SUB_ID_1));
         doReturn(FAKE_SUB_ID_2).when(mSubscriptionController).getPhoneId(eq(FAKE_SUB_ID_2));
-        doReturn(2).when(mTelephonyManager).getSimCount();
+        doReturn(2).when(mTelephonyManager).getPhoneCount();
         doReturn(FAKE_MCC_MNC_1).when(mPhone).getOperatorNumeric();
         doReturn(FAKE_MCC_MNC_2).when(mSecondPhone).getOperatorNumeric();
         // Mock there is no sim inserted before
@@ -466,7 +466,7 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
     public void testSimLockWithIccId() throws Exception {
         /* no need for IccId query */
 
-        replaceInstance(SubscriptionInfoUpdater.class, "mIccId", null,
+        replaceInstance(SubscriptionInfoUpdater.class, "sIccId", null,
                 new String[]{"89012604200000000000"});
 
         mUpdater.updateInternalIccState(

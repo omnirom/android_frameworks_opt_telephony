@@ -49,6 +49,7 @@ import android.os.Message;
 import android.os.MessageQueue;
 import android.os.RegistrantList;
 import android.os.ServiceManager;
+import android.telephony.TelephonyRegistryManager;
 import android.provider.BlockedNumberContract;
 import android.provider.DeviceConfig;
 import android.provider.Settings;
@@ -270,6 +271,7 @@ public abstract class TelephonyTest {
 
     protected ImsCallProfile mImsCallProfile;
     protected TelephonyManager mTelephonyManager;
+    protected TelephonyRegistryManager mTelephonyRegistryManager;
     protected SubscriptionManager mSubscriptionManager;
     protected EuiccManager mEuiccManager;
     protected PackageManager mPackageManager;
@@ -397,6 +399,8 @@ public abstract class TelephonyTest {
         doReturn(mUiccProfile).when(mUiccCard).getUiccProfile();
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        mTelephonyRegistryManager = (TelephonyRegistryManager) mContext.getSystemService(
+            Context.TELEPHONY_REGISTRY_SERVICE);
         mSubscriptionManager = (SubscriptionManager) mContext.getSystemService(
                 Context.TELEPHONY_SUBSCRIPTION_SERVICE);
         mEuiccManager = (EuiccManager) mContext.getSystemService(Context.EUICC_SERVICE);
@@ -564,6 +568,11 @@ public abstract class TelephonyTest {
         //SIM
         doReturn(1).when(mTelephonyManager).getSimCount();
         doReturn(1).when(mTelephonyManager).getPhoneCount();
+        doReturn(1).when(mTelephonyManager).getActiveModemCount();
+        // Have getMaxPhoneCount always return the same value with getPhoneCount by default.
+        doAnswer((invocation)->Math.max(mTelephonyManager.getActiveModemCount(),
+                mTelephonyManager.getPhoneCount()))
+                .when(mTelephonyManager).getSupportedModemCount();
 
         //Data
         //Initial state is: userData enabled, provisioned.
@@ -623,16 +632,16 @@ public abstract class TelephonyTest {
     }
 
     protected void tearDown() throws Exception {
-        // unmonitor TestableLooper
+        // unmonitor TestableLooper for TelephonyTest class
         if (mTestableLooper != null) {
             unmonitorTestableLooper(mTestableLooper);
         }
-        mSimulatedCommands.dispose();
-
-        // destroy all created TestableLoopers so they can be reused
+        // destroy all newly created TestableLoopers so they can be reused
         for (TestableLooper looper : mTestableLoopers) {
             looper.destroy();
         }
+
+        mSimulatedCommands.dispose();
         SharedPreferences sharedPreferences = mContext.getSharedPreferences((String) null, 0);
         sharedPreferences.edit().clear().commit();
 
@@ -736,7 +745,6 @@ public abstract class TelephonyTest {
                 "mContentProvider", providerHolder, iContentProvider);
     }
 
-    // TODO(b/138886216): remove method after refactor
     protected final void waitForHandlerAction(Handler h, long timeoutMillis) {
         final CountDownLatch lock = new CountDownLatch(1);
         h.post(lock::countDown);
@@ -773,19 +781,6 @@ public abstract class TelephonyTest {
             timeoutCount++;
         }
         assertTrue("Handler was not empty before timeout elapsed", timeoutCount < 5);
-    }
-
-    // TODO(b/138886216): remove method after refactor
-    protected final void waitForHandlerActionDelayed(Handler h, long timeoutMillis, long delayMs) {
-        final CountDownLatch lock = new CountDownLatch(1);
-        h.postDelayed(lock::countDown, delayMs);
-        while (lock.getCount() > 0) {
-            try {
-                lock.await(timeoutMillis, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                // do nothing
-            }
-        }
     }
 
     protected final EmergencyNumber getTestEmergencyNumber() {
