@@ -255,9 +255,6 @@ public class PhoneFactory {
                     Rlog.i(LOG_TAG, "IMS is not supported on this device, skipping ImsResolver.");
                 }
 
-                ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(
-                        ServiceManager.getService("telephony.registry"));
-
                 sPhoneConfigurationManager = PhoneConfigurationManager.init(sContext);
 
                 sCellularNetworkValidator = CellularNetworkValidator.make(sContext);
@@ -267,7 +264,7 @@ public class PhoneFactory {
 
                 sPhoneSwitcher = telephonyComponentFactory.inject(PhoneSwitcher.class.getName()).
                         makePhoneSwitcher(maxActivePhones, numPhones,
-                        sContext, SubscriptionController.getInstance(), Looper.myLooper(), tr,
+                        sContext, SubscriptionController.getInstance(), Looper.myLooper(),
                         sCommandsInterfaces, sPhones);
 
                 sProxyController = ProxyController.getInstance(context, sPhones, sPhoneSwitcher);
