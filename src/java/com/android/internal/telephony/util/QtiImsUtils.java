@@ -59,6 +59,10 @@ public class QtiImsUtils {
     //value of below constant needs to have same value as QtiCallConstants.java
     public static final int CODE_RETRY_ON_IMS_WITHOUT_RTT = 3001;
     public static final String EXTRA_RETRY_ON_IMS_WITHOUT_RTT = "retryOnImsWithoutRTT";
+    //holds the call fail cause because of which redial is attempted
+    public static final String EXTRA_RETRY_CALL_FAIL_REASON = "RetryCallFailReason";
+    //holds the call radiotech on which lower layers may try attempting redial
+    public static final String EXTRA_RETRY_CALL_FAIL_RADIOTECH = "RetryCallFailRadioTech";
     public static final String EXTRA_EMERGENCY_SERVICE_CATEGORY = "EmergencyServiceCategory";
 
     // RTT Off
