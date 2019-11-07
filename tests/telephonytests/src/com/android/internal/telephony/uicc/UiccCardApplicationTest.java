@@ -145,18 +145,14 @@ public class UiccCardApplicationTest extends TelephonyTest {
                .APPSTATE_SUBSCRIPTION_PERSO;
         mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
                 .PERSOSUBSTATE_SIM_NETWORK;
-        Message mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
-        setReady(false);
-        mCardAppUpdate.sendToTarget();
-        waitUntilReady();
+        mUiccCardApplication.update(mUiccCardAppStatus, mContext, mSimulatedCommands);
+        processAllMessages();
         assertTrue(mUiccCardApplication.isPersoLocked());
 
         mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
                 .PERSOSUBSTATE_READY;
-        setReady(false);
-        mCardAppUpdate = mHandler.obtainMessage(UICCCARDAPP_UPDATE_EVENT);
-        mCardAppUpdate.sendToTarget();
-        waitUntilReady();
+        mUiccCardApplication.update(mUiccCardAppStatus, mContext, mSimulatedCommands);
+        processAllMessages();
         assertFalse(mUiccCardApplication.isPersoLocked());
     }
 
