@@ -22,10 +22,7 @@ import static android.net.NetworkPolicyManager.OVERRIDE_UNMETERED;
 import android.annotation.IntDef;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
@@ -1881,6 +1878,14 @@ public class DataConnection extends StateMachine {
                     mApnSetting != null
                         ? mApnSetting.canHandleType(ApnSetting.TYPE_DEFAULT) : false);
             setHandoverState(HANDOVER_STATE_IDLE);
+            // restricted evaluation depends on network requests from apnContext. The evaluation
+            // should happen once entering connecting state rather than active state because it's
+            // possible that restricted network request can be released during the connecting window
+            // and if we wait for connection established, then we might mistakenly
+            // consider it as un-restricted. ConnectivityService then will immediately
+            // tear down the connection through networkAgent unwanted callback if all requests for
+            // this connection are going away.
+            mRestrictedNetworkOverride = shouldRestrictNetwork();
         }
         @Override
         public boolean processMessage(Message msg) {
@@ -2038,7 +2043,6 @@ public class DataConnection extends StateMachine {
             // set skip464xlat if it is not default otherwise
             misc.skip464xlat = shouldSkip464Xlat();
 
-            mRestrictedNetworkOverride = shouldRestrictNetwork();
             mUnmeteredUseOnly = isUnmeteredUseOnly();
 
             if (DBG) {
