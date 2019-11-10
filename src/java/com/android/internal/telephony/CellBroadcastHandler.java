@@ -181,6 +181,8 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
             logd("Device location is outside the broadcast area "
                     + CbGeoUtils.encodeGeometriesToString(broadcastArea));
         }
+
+        sendMessage(EVENT_BROADCAST_NOT_REQUIRED);
     }
 
     /**
@@ -395,8 +397,8 @@ public class CellBroadcastHandler extends WakeLockStateMachine {
         }
 
         private boolean hasPermission(String permission) {
-            return PermissionChecker.checkCallingOrSelfPermission(mContext, permission)
-                    == PERMISSION_GRANTED;
+            return PermissionChecker.checkCallingOrSelfPermissionForDataDelivery(
+                    mContext, permission, null) == PERMISSION_GRANTED;
         }
 
         private final LocationListener mLocationListener = new LocationListener() {

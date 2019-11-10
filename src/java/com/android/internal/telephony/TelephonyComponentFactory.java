@@ -454,11 +454,11 @@ public class TelephonyComponentFactory {
     }
 
     public PhoneSwitcher makePhoneSwitcher(int maxActivePhones, int numPhones, Context context,
-            SubscriptionController subscriptionController, Looper looper, ITelephonyRegistry tr,
+            SubscriptionController subscriptionController, Looper looper,
             CommandsInterface[] cis, Phone[] phones) {
         Rlog.i(TAG, "makePhoneSwitcher");
         return new PhoneSwitcher(maxActivePhones,numPhones,
-                context, subscriptionController, looper, tr, cis,
+                context, subscriptionController, looper, cis,
                 phones);
     }
 

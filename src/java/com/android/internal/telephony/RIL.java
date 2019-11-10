@@ -413,6 +413,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     /** Returns a {@link IRadio} instance or null if the service is not available. */
     @VisibleForTesting
     public synchronized IRadio getRadioProxy(Message result) {
+        if (!PhoneConfigurationManager.isPhoneActive(mPhoneId)) return null;
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getRadioProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -503,9 +504,19 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return mRadioProxy;
     }
 
+    @Override
+    public synchronized void onSlotActiveStatusChange(boolean active) {
+        if (active) {
+            // Try to connect to RIL services and set response functions.
+            getRadioProxy(null);
+            getOemHookProxy(null);
+        }
+    }
+
     /** Returns an {@link IOemHook} instance or null if the service is not available. */
     @VisibleForTesting
     public synchronized IOemHook getOemHookProxy(Message result) {
+        if (!PhoneConfigurationManager.isPhoneActive(mPhoneId)) return null;
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getOemHookProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -2636,7 +2647,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     /**
      * convert RAF from {@link android.hardware.radio.V1_0.RadioAccessFamily} to
      * {@link TelephonyManager.NetworkTypeBitMask}, the bitmask represented by
-     * {@link TelephonyManager.NetworkType}.
+     * {@link android.telephony.Annotation.NetworkType}.
      *
      * @param raf {@link android.hardware.radio.V1_0.RadioAccessFamily}
      * @return {@link TelephonyManager.NetworkTypeBitMask}

@@ -49,7 +49,6 @@ import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.database.ContentObserver;
-import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Binder;
@@ -1261,7 +1260,7 @@ public abstract class SMSDispatcher extends Handler {
                 if (simCountryIso == null || simCountryIso.length() != 2) {
                     Rlog.e(TAG, "Can't get SIM country Iso: trying network country Iso");
                     simCountryIso =
-                            mTelephonyManager.getNetworkCountryIsoForPhone(mPhone.getPhoneId());
+                            mTelephonyManager.getNetworkCountryIso(mPhone.getPhoneId());
                 }
 
                 smsCategory =
@@ -1271,7 +1270,7 @@ public abstract class SMSDispatcher extends Handler {
             }
             if (rule == PREMIUM_RULE_USE_NETWORK || rule == PREMIUM_RULE_USE_BOTH) {
                 String networkCountryIso =
-                        mTelephonyManager.getNetworkCountryIsoForPhone(mPhone.getPhoneId());
+                        mTelephonyManager.getNetworkCountryIso(mPhone.getPhoneId());
                 if (networkCountryIso == null || networkCountryIso.length() != 2) {
                     Rlog.e(TAG, "Can't get Network country Iso: trying SIM country Iso");
                     networkCountryIso =
@@ -1613,8 +1612,7 @@ public abstract class SMSDispatcher extends Handler {
                 // If we wrote this message in writeSentMessage, update it now
                 ContentValues values = new ContentValues(1);
                 values.put(Sms.STATUS, status);
-                SqliteWrapper.update(context, context.getContentResolver(),
-                        mMessageUri, values, null, null);
+                context.getContentResolver().update(mMessageUri, values, null, null);
             }
         }
 
@@ -1634,7 +1632,7 @@ public abstract class SMSDispatcher extends Handler {
             values.put(Sms.ERROR_CODE, errorCode);
             final long identity = Binder.clearCallingIdentity();
             try {
-                if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
+                if (context.getContentResolver().update(mMessageUri, values,
                         null/*where*/, null/*selectionArgs*/) != 1) {
                     Rlog.e(TAG, "Failed to move message to " + messageType);
                 }
