@@ -58,6 +58,7 @@ import android.provider.Telephony;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.Annotation.RilRadioTechnology;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellLocation;
 import android.telephony.ImsiEncryptionInfo;
@@ -1554,10 +1555,20 @@ public class GsmCdmaPhone extends Phone {
                         b.getString(CarrierConfigManager.KEY_DEFAULT_VM_NUMBER_STRING);
                 String defaultVmNumberRoaming =
                         b.getString(CarrierConfigManager.KEY_DEFAULT_VM_NUMBER_ROAMING_STRING);
-                if (!TextUtils.isEmpty(defaultVmNumberRoaming) && mSST.mSS.getRoaming()) {
-                    number = defaultVmNumberRoaming;
-                } else if (!TextUtils.isEmpty(defaultVmNumber)) {
-                    number = defaultVmNumber;
+                String defaultVmNumberRoamingAndImsUnregistered = b.getString(
+                        CarrierConfigManager
+                                .KEY_DEFAULT_VM_NUMBER_ROAMING_AND_IMS_UNREGISTERED_STRING);
+
+                if (!TextUtils.isEmpty(defaultVmNumber)) number = defaultVmNumber;
+                if (mSST.mSS.getRoaming()) {
+                    if (!TextUtils.isEmpty(defaultVmNumberRoamingAndImsUnregistered)
+                            && !mSST.isImsRegistered()) {
+                        // roaming and IMS unregistered case if CC configured
+                        number = defaultVmNumberRoamingAndImsUnregistered;
+                    } else if (!TextUtils.isEmpty(defaultVmNumberRoaming)) {
+                        // roaming default case if CC configured
+                        number = defaultVmNumberRoaming;
+                    }
                 }
             }
         }
@@ -2395,10 +2406,30 @@ public class GsmCdmaPhone extends Phone {
     @UnsupportedAppUsage
     private void syncClirSetting() {
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(getContext());
-        int clirSetting = sp.getInt(CLIR_KEY + getPhoneId(), -1);
-        Rlog.i(LOG_TAG, "syncClirSetting: " + CLIR_KEY + getPhoneId() + "=" + clirSetting);
+        migrateClirSettingIfNeeded(sp);
+
+        int clirSetting = sp.getInt(CLIR_KEY + getSubId(), -1);
+        Rlog.i(LOG_TAG, "syncClirSetting: " + CLIR_KEY + getSubId() + "=" + clirSetting);
         if (clirSetting >= 0) {
             mCi.setCLIR(clirSetting, null);
+        }
+    }
+
+    /**
+     * Migrate CLIR setting with sudId mapping once if there's CLIR setting mapped with phoneId.
+     */
+    private void migrateClirSettingIfNeeded(SharedPreferences sp) {
+        // Get old CLIR setting mapped with phoneId
+        int clirSetting = sp.getInt("clir_key" + getPhoneId(), -1);
+        if (clirSetting >= 0) {
+            // Migrate CLIR setting to new shared preference key with subId
+            Rlog.i(LOG_TAG, "Migrate CLIR setting: value=" + clirSetting + ", clir_key"
+                    + getPhoneId() + " -> " + CLIR_KEY + getSubId());
+            SharedPreferences.Editor editor = sp.edit();
+            editor.putInt(CLIR_KEY + getSubId(), clirSetting);
+
+            // Remove old CLIR setting key
+            editor.remove("clir_key" + getPhoneId()).commit();
         }
     }
 
@@ -3752,7 +3783,7 @@ public class GsmCdmaPhone extends Phone {
      * @return the RIL voice radio technology used for CS calls,
      *         see {@code RIL_RADIO_TECHNOLOGY_*} in {@link android.telephony.ServiceState}.
      */
-    public @ServiceState.RilRadioTechnology int getCsCallRadioTech() {
+    public @RilRadioTechnology int getCsCallRadioTech() {
         int calcVrat = ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN;
         if (mSST != null) {
             calcVrat = getCsCallRadioTech(mSST.mSS.getVoiceRegState(),
@@ -3781,7 +3812,7 @@ public class GsmCdmaPhone extends Phone {
      * @return the RIL voice radio technology used for CS calls,
      *         see {@code RIL_RADIO_TECHNOLOGY_*} in {@link android.telephony.ServiceState}.
      */
-    private @ServiceState.RilRadioTechnology int getCsCallRadioTech(int vrs, int vrat) {
+    private @RilRadioTechnology int getCsCallRadioTech(int vrs, int vrat) {
         logd("getCsCallRadioTech, current vrs=" + vrs + ", vrat=" + vrat);
         int calcVrat = vrat;
         if (vrs != ServiceState.STATE_IN_SERVICE

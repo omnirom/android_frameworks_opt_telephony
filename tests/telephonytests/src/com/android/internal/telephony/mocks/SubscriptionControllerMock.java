@@ -45,9 +45,6 @@ public class SubscriptionControllerMock extends SubscriptionController {
     final int[][] mSlotIndexToSubId;
     int mActiveSubInfoCount;
 
-    public static SubscriptionController init(Phone phone) {
-        throw new RuntimeException("not implemented");
-    }
     public static SubscriptionController init(Context c) {
         throw new RuntimeException("not implemented");
     }

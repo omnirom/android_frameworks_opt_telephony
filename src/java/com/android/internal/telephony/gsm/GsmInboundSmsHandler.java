@@ -17,7 +17,11 @@
 package com.android.internal.telephony.gsm;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.AsyncResult;
 import android.os.Message;
 import android.provider.Telephony.Sms.Intents;
 
@@ -39,18 +43,114 @@ import dalvik.annotation.compat.UnsupportedAppUsage;
  */
 public class GsmInboundSmsHandler extends InboundSmsHandler {
 
+    private static BroadcastReceiver sTestBroadcastReceiver;
     /** Handler for SMS-PP data download messages to UICC. */
     private final UsimDataDownloadHandler mDataDownloadHandler;
+
+    // When TEST_MODE is on we allow the test intent to trigger an SMS CB alert
+    private static final boolean TEST_MODE = true; //STOPSHIP if true
+    private static final String TEST_ACTION = "com.android.internal.telephony.gsm"
+            + ".TEST_TRIGGER_CELL_BROADCAST";
+    private static final String TOGGLE_CB_MODULE = "com.android.internal.telephony.gsm"
+            + ".TOGGLE_CB_MODULE";
 
     /**
      * Create a new GSM inbound SMS handler.
      */
     private GsmInboundSmsHandler(Context context, SmsStorageMonitor storageMonitor,
             Phone phone) {
-        super("GsmInboundSmsHandler", context, storageMonitor, phone,
-                GsmCellBroadcastHandler.makeGsmCellBroadcastHandler(context, phone));
+        super("GsmInboundSmsHandler", context, storageMonitor, phone, null);
         phone.mCi.setOnNewGsmSms(getHandler(), EVENT_NEW_SMS, null);
         mDataDownloadHandler = new UsimDataDownloadHandler(phone.mCi, phone.getPhoneId());
+        if (sEnableCbModule) {
+            mCellBroadcastServiceManager.enable();
+        } else {
+            mCellBroadcastHandler = GsmCellBroadcastHandler.makeGsmCellBroadcastHandler(context,
+                    phone);
+        }
+
+        if (TEST_MODE) {
+            if (sTestBroadcastReceiver == null) {
+                sTestBroadcastReceiver = new GsmCbTestBroadcastReceiver();
+                IntentFilter filter = new IntentFilter();
+                filter.addAction(TEST_ACTION);
+                filter.addAction(TOGGLE_CB_MODULE);
+                context.registerReceiver(sTestBroadcastReceiver, filter);
+            }
+        }
+    }
+
+
+    /**
+     * A broadcast receiver used for testing emergency cell broadcasts. To trigger test GSM cell
+     * broadcasts with adb run e.g:
+     *
+     * adb shell am broadcast -a com.android.internal.telephony.gsm.TEST_TRIGGER_CELL_BROADCAST \
+     * --es pdu_string  0000110011010D0A5BAE57CE770C531790E85C716CBF3044573065B9306757309707767 \
+     * A751F30025F37304463FA308C306B5099304830664E0B30553044FF086C178C615E81FF09000000000000000 \
+     * 0000000000000
+     *
+     * adb shell am broadcast -a com.android.internal.telephony.gsm.TEST_TRIGGER_CELL_BROADCAST \
+     * --es pdu_string  0000110011010D0A5BAE57CE770C531790E85C716CBF3044573065B9306757309707767 \
+     * A751F30025F37304463FA308C306B5099304830664E0B30553044FF086C178C615E81FF09000000000000000 \
+     * 0000000000000 --ei phone_id 0
+     *
+     * adb shell am broadcast -a com.android.internal.telephony.gsm.TOGGLE_CB_MODULE
+     *
+     * adb shell am broadcast -a com.android.internal.telephony.gsm.TOGGLE_CB_MODULE \
+     * --ez enable true
+     */
+    private class GsmCbTestBroadcastReceiver extends CbTestBroadcastReceiver {
+
+        GsmCbTestBroadcastReceiver() {
+            super(TEST_ACTION, TOGGLE_CB_MODULE);
+        }
+
+        @Override
+        protected void handleTestAction(Intent intent) {
+            byte[] smsPdu = intent.getByteArrayExtra("pdu");
+            if (smsPdu == null) {
+                String pduString = intent.getStringExtra("pdu_string");
+                smsPdu = decodeHexString(pduString);
+            }
+            if (smsPdu == null) {
+                log("No pdu or pdu_string extra, ignoring CB test intent");
+                return;
+            }
+
+            // Return early if phone_id is explicilty included and does not match mPhone.
+            // If phone_id extra is not included, continue.
+            int phoneId = mPhone.getPhoneId();
+            if (intent.getIntExtra("phone_id", phoneId) != phoneId) {
+                return;
+            }
+            Message m = Message.obtain();
+            AsyncResult.forMessage(m, smsPdu, null);
+            if (sEnableCbModule) {
+                mCellBroadcastServiceManager.sendGsmMessageToHandler(m);
+            } else {
+                m.setWhat(GsmCellBroadcastHandler.EVENT_NEW_SMS_MESSAGE);
+                mCellBroadcastHandler.sendMessage(m);
+            }
+        }
+
+        @Override
+        protected void handleToggleEnable() {
+            mPhone.mCi.unSetOnNewGsmBroadcastSms(mCellBroadcastHandler.getHandler());
+            mCellBroadcastServiceManager.enable();
+        }
+
+        @Override
+        protected void handleToggleDisable(Context context) {
+            mCellBroadcastServiceManager.disable();
+            if (mCellBroadcastHandler == null) {
+                mCellBroadcastHandler =
+                        GsmCellBroadcastHandler.makeGsmCellBroadcastHandler(context,
+                                mPhone);
+            }
+            mPhone.mCi.setOnNewGsmBroadcastSms(mCellBroadcastHandler.getHandler(),
+                    GsmCellBroadcastHandler.EVENT_NEW_SMS_MESSAGE, null);
+        }
     }
 
     /**
@@ -77,6 +177,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
 
     /**
      * Return true if this handler is for 3GPP2 messages; false for 3GPP format.
+     *
      * @return false (3GPP)
      */
     @Override
@@ -90,7 +191,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
      *
      * @param smsb the SmsMessageBase object from the RIL
      * @return a result code from {@link android.provider.Telephony.Sms.Intents},
-     *  or {@link Activity#RESULT_OK} for delayed acknowledgment to SMSC
+     * or {@link Activity#RESULT_OK} for delayed acknowledgment to SMSC
      */
     @Override
     protected int dispatchMessageRadioSpecific(SmsMessageBase smsb) {
@@ -160,6 +261,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
 
     /**
      * Send an acknowledge message.
+     *
      * @param success indicates that last message was successfully received.
      * @param result result code indicating any error
      * @param response callback message sent when operation completes.
@@ -172,6 +274,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
 
     /**
      * Convert Android result code to 3GPP SMS failure cause.
+     *
      * @param rc the Android SMS intent result value
      * @return 0 for success, or a 3GPP SMS failure cause value
      */
