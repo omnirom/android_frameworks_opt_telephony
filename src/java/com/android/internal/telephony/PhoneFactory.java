@@ -226,7 +226,7 @@ public class PhoneFactory {
                 sSubInfoRecordUpdater = telephonyComponentFactory.inject(
                         SubscriptionInfoUpdater.class.getName()).
                         makeSubscriptionInfoUpdater(BackgroundThread.get().
-                        getLooper(), context, sPhones, sCommandsInterfaces);
+                        getLooper(), context, sCommandsInterfaces);
                 SubscriptionController.getInstance().updatePhonesAvailability(sPhones);
 
                 // Only bring up IMS if the device supports having an IMS stack.

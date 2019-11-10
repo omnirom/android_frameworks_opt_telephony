@@ -27,6 +27,7 @@ import static android.telephony.TelephonyManager.EXTRA_SIM_COMBINATION_WARNING_T
 import static android.telephony.TelephonyManager.EXTRA_SIM_COMBINATION_WARNING_TYPE_DUAL_CDMA;
 import static android.telephony.TelephonyManager.EXTRA_SIM_COMBINATION_WARNING_TYPE_NONE;
 import static android.telephony.TelephonyManager.EXTRA_SUBSCRIPTION_ID;
+import static android.telephony.TelephonyManager.MODEM_COUNT_SINGLE_MODEM;
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
@@ -35,6 +36,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Message;
 import android.os.ParcelUuid;
@@ -78,6 +80,7 @@ public class MultiSimSettingController extends Handler {
     private static final int EVENT_SUBSCRIPTION_GROUP_CHANGED        = 5;
     private static final int EVENT_DEFAULT_DATA_SUBSCRIPTION_CHANGED = 6;
     private static final int EVENT_CARRIER_CONFIG_CHANGED            = 7;
+    private static final int EVENT_MULTI_SIM_CONFIG_CHANGED          = 8;
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(prefix = {"PRIMARY_SUB_"},
@@ -188,6 +191,9 @@ public class MultiSimSettingController extends Handler {
         mCarrierConfigLoadedSubIds = new int[phoneCount];
         Arrays.fill(mCarrierConfigLoadedSubIds, SubscriptionManager.INVALID_SUBSCRIPTION_ID);
 
+        PhoneConfigurationManager.registerForMultiSimConfigChange(
+                this, EVENT_MULTI_SIM_CONFIG_CHANGED, null);
+
         context.registerReceiver(mIntentReceiver, new IntentFilter(
                 CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED));
     }
@@ -268,6 +274,9 @@ public class MultiSimSettingController extends Handler {
                 int subId = msg.arg2;
                 onCarrierConfigChanged(phoneId, subId);
                 break;
+            case EVENT_MULTI_SIM_CONFIG_CHANGED:
+                int activeModems = (int) ((AsyncResult) msg.obj).result;
+                onMultiSimConfigChanged(activeModems);
         }
     }
 
@@ -356,6 +365,14 @@ public class MultiSimSettingController extends Handler {
         }
 
         return true;
+    }
+
+    private void onMultiSimConfigChanged(int activeModems) {
+        // Clear mCarrierConfigLoadedSubIds. Other actions will responds to active
+        // subscription change.
+        for (int phoneId = activeModems; phoneId < mCarrierConfigLoadedSubIds.length; phoneId++) {
+            mCarrierConfigLoadedSubIds[phoneId] = INVALID_SUBSCRIPTION_ID;
+        }
     }
 
     /**
@@ -474,7 +491,9 @@ public class MultiSimSettingController extends Handler {
         // Otherwise, if user just inserted their first SIM, or there's one primary and one
         // opportunistic subscription active (activeSubInfos.size() > 1), we automatically
         // set the primary to be default SIM and return.
-        if (mPrimarySubList.size() == 1 && change != PRIMARY_SUB_REMOVED) {
+        if (mPrimarySubList.size() == 1 && (change != PRIMARY_SUB_REMOVED
+                || ((TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE))
+                .getActiveModemCount() == MODEM_COUNT_SINGLE_MODEM)) {
             int subId = mPrimarySubList.get(0);
             if (DBG) log("[updateDefaultValues] to only primary sub " + subId);
             mSubController.setDefaultDataSubId(subId);

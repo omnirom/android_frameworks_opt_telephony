@@ -61,6 +61,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
 import android.telephony.emergency.EmergencyNumber;
+import android.telephony.ims.RegistrationManager;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.text.TextUtils;
 import android.util.LocalLog;
@@ -97,6 +98,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * (<em>Not for SDK use</em>)
@@ -382,6 +384,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     private final RegistrantList mCellInfoRegistrants = new RegistrantList();
 
+    private final RegistrantList mRedialRegistrants = new RegistrantList();
+
     protected Registrant mPostDialHandler;
 
     protected final LocalLog mLocalLog;
@@ -643,6 +647,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Check if sending CLIR activation("*31#") and deactivation("#31#") code only without dialing
+     * number is prevented.
+     *
+     * @return {@code true} when carrier config
+     * "KEY_PREVENT_CLIR_ACTIVATION_AND_DEACTIVATION_CODE_BOOL" is set to {@code true}
+     */
+    public boolean isClirActivationAndDeactivationPrevented() {
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        PersistableBundle b = configManager.getConfigForSubId(getSubId());
+        if (b == null) {
+            b = CarrierConfigManager.getDefaultConfig();
+        }
+        return b.getBoolean(
+                CarrierConfigManager.KEY_PREVENT_CLIR_ACTIVATION_AND_DEACTIVATION_CODE_BOOL);
+    }
+
+    /**
      * When overridden the derived class needs to call
      * super.handleMessage(msg) so this method has a
      * a chance to process the message.
@@ -699,9 +721,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                     String dialString = (String) ar.result;
                     if (TextUtils.isEmpty(dialString)) return;
                     try {
-                        dialInternal(dialString, new DialArgs.Builder().build());
+                        Connection cn = dialInternal(dialString, new DialArgs.Builder().build());
+                        Rlog.d(LOG_TAG, "Notify redial connection changed cn: " + cn);
+                        if (mImsPhone != null) {
+                            // Don't care it is null or not.
+                            mImsPhone.notifyRedialConnectionChanged(cn);
+                        }
                     } catch (CallStateException e) {
                         Rlog.e(LOG_TAG, "silent redial failed: " + e);
+                        if (mImsPhone != null) {
+                            mImsPhone.notifyRedialConnectionChanged(null);
+                        }
                     }
                 }
                 break;
@@ -896,6 +926,30 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
        mHandoverRegistrants.notifyRegistrants(ar);
     }
 
+    /**
+     * Notifies when a Handover happens due to Silent Redial
+     */
+    public void registerForRedialConnectionChanged(Handler h, int what, Object obj) {
+        checkCorrectThread(h);
+        mRedialRegistrants.addUnique(h, what, obj);
+    }
+
+    /**
+     * Unregisters for redial connection notifications
+     */
+    public void unregisterForRedialConnectionChanged(Handler h) {
+        mRedialRegistrants.remove(h);
+    }
+
+    /**
+     * Subclasses of Phone probably want to replace this with a
+     * version scoped to their packages
+     */
+    public void notifyRedialConnectionChanged(Connection cn) {
+        AsyncResult ar = new AsyncResult(null, cn, null);
+        mRedialRegistrants.notifyRegistrants(ar);
+    }
+
     protected void setIsInEmergencyCall() {
     }
 
@@ -967,6 +1021,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         migrate(mUnknownConnectionRegistrants, from.mUnknownConnectionRegistrants);
         migrate(mSuppServiceFailedRegistrants, from.mSuppServiceFailedRegistrants);
         migrate(mCellInfoRegistrants, from.mCellInfoRegistrants);
+        migrate(mRedialRegistrants, from.mRedialRegistrants);
         // The emergency state of IMS phone will be cleared in ImsPhone#notifySrvccState after
         // receive SRVCC completed
         if (from.isInEmergencyCall()) {
@@ -3641,6 +3696,31 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         Rlog.d(LOG_TAG, "getImsRegistrationTechnology =" + regTech);
         return regTech;
     }
+
+    /**
+     * Get the IMS MmTel Registration technology for this Phone, defined in
+     * {@link ImsRegistrationImplBase}.
+     */
+    public void getImsRegistrationTech(Consumer<Integer> callback) {
+        Phone imsPhone = mImsPhone;
+        if (imsPhone != null) {
+            imsPhone.getImsRegistrationTech(callback);
+        } else {
+            callback.accept(ImsRegistrationImplBase.REGISTRATION_TECH_NONE);
+        }
+    }
+
+    /**
+     * Asynchronously get the IMS MmTel Registration state for this Phone.
+     */
+    public void getImsRegistrationState(Consumer<Integer> callback) {
+        Phone imsPhone = mImsPhone;
+        if (imsPhone != null) {
+            imsPhone.getImsRegistrationState(callback);
+        }
+        callback.accept(RegistrationManager.REGISTRATION_STATE_NOT_REGISTERED);
+    }
+
 
     private boolean getRoamingOverrideHelper(String prefix, String key) {
         String iccId = getIccSerialNumber();
