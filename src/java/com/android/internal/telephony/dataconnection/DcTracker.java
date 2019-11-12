@@ -3346,10 +3346,14 @@ public class DcTracker extends Handler {
                     apnList = sortApnListByPreferred(apnList);
                     if (DBG) log("buildWaitingApns: X added preferred apnList=" + apnList);
                     return apnList;
-                } else {
+                } else if (mTransportType == mPhone.getTransportManager()
+                        .getCurrentTransport(ApnSetting
+                                .getApnTypesBitmaskFromString(requestedApnType))) {
                     if (DBG) log("buildWaitingApns: no preferred APN");
                     setPreferredApn(-1);
                     mPreferredApn = null;
+                } else {
+                    if (DBG) log("buildWaitingApns: do nothing");
                 }
             } else {
                 if (DBG) log("buildWaitingApns: no preferred APN");
