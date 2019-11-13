@@ -345,7 +345,8 @@ public class GsmCdmaPhone extends Phone {
         mContext.registerReceiver(mBroadcastReceiver, filter);
 
         mCDM = new CarrierKeyDownloadManager(this);
-        mCIM = new CarrierInfoManager();
+        mCIM = mTelephonyComponentFactory.inject(CarrierInfoManager.class.getName())
+                .makeCarrierInfoManager(this);
     }
 
     private void initRatSpecific(int precisePhoneType) {
