@@ -448,9 +448,9 @@ public class TelephonyComponentFactory {
     }
 
     public SubscriptionInfoUpdater makeSubscriptionInfoUpdater(Looper looper, Context context,
-            Phone[] phones, CommandsInterface[] ci) {
+            CommandsInterface[] ci) {
         Rlog.i(TAG, "makeSubscriptionInfoUpdater");
-        return new SubscriptionInfoUpdater(looper, context, phones, ci);
+        return new SubscriptionInfoUpdater(looper, context, ci);
     }
 
     public PhoneSwitcher makePhoneSwitcher(int maxActivePhones, int numPhones, Context context,
