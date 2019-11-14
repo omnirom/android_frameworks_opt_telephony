@@ -173,33 +173,16 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
     @UnsupportedAppUsage
     @Override
     protected void sendSms(SmsTracker tracker) {
-        HashMap<String, Object> map = tracker.getData();
+        int ss = mPhone.getServiceState().getState();
 
-        byte pdu[] = (byte[]) map.get("pdu");
-
-        if (tracker.mRetryCount > 0) {
-            Rlog.d(TAG, "sendSms: "
-                    + " mRetryCount=" + tracker.mRetryCount
-                    + " mMessageRef=" + tracker.mMessageRef
-                    + " SS=" + mPhone.getServiceState().getState());
-
-            // per TS 23.040 Section 9.2.3.6:  If TP-MTI SMS-SUBMIT (0x01) type
-            //   TP-RD (bit 2) is 1 for retry
-            //   and TP-MR is set to previously failed sms TP-MR
-            if (((0x01 & pdu[0]) == 0x01)) {
-                pdu[0] |= 0x04; // TP-RD
-                pdu[1] = (byte) tracker.mMessageRef; // TP-MR
-            }
-        }
         Rlog.d(TAG, "sendSms: "
                 + " isIms()=" + isIms()
                 + " mRetryCount=" + tracker.mRetryCount
                 + " mImsRetry=" + tracker.mImsRetry
                 + " mMessageRef=" + tracker.mMessageRef
                 + " mUsesImsServiceForIms=" + tracker.mUsesImsServiceForIms
-                + " SS=" + mPhone.getServiceState().getState());
+                + " SS=" + ss);
 
-        int ss = mPhone.getServiceState().getState();
         // if sms over IMS is not supported on data and voice is not available...
         if (!isIms() && ss != ServiceState.STATE_IN_SERVICE) {
             if(mPhone.getServiceState().getRilDataRadioTechnology()
@@ -209,8 +192,19 @@ public final class GsmSMSDispatcher extends SMSDispatcher {
             }
         }
 
-        byte smsc[] = (byte[]) map.get("smsc");
         Message reply = obtainMessage(EVENT_SEND_SMS_COMPLETE, tracker);
+        HashMap<String, Object> map = tracker.getData();
+        byte pdu[] = (byte[]) map.get("pdu");
+        byte smsc[] = (byte[]) map.get("smsc");
+        if (tracker.mRetryCount > 0) {
+            // per TS 23.040 Section 9.2.3.6:  If TP-MTI SMS-SUBMIT (0x01) type
+            //   TP-RD (bit 2) is 1 for retry
+            //   and TP-MR is set to previously failed sms TP-MR
+            if (((0x01 & pdu[0]) == 0x01)) {
+                pdu[0] |= 0x04; // TP-RD
+                pdu[1] = (byte) tracker.mMessageRef; // TP-MR
+            }
+        }
 
         // sms over gsm is used:
         //   if sms over IMS is not supported AND

@@ -37,6 +37,7 @@ import android.os.Message;
 import android.os.UserManager;
 import android.provider.Telephony;
 import android.telephony.Rlog;
+import android.telephony.SmsCbMessage;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.telephony.emergency.EmergencyNumber;
@@ -74,6 +75,8 @@ public class IccSmsInterfaceManager {
     @UnsupportedAppUsage
     private List<SmsRawData> mSms;
 
+    private String mSmsc;
+
     @UnsupportedAppUsage
     private CellBroadcastRangeManager mCellBroadcastRangeManager =
             new CellBroadcastRangeManager();
@@ -84,6 +87,8 @@ public class IccSmsInterfaceManager {
     private static final int EVENT_UPDATE_DONE = 2;
     protected static final int EVENT_SET_BROADCAST_ACTIVATION_DONE = 3;
     protected static final int EVENT_SET_BROADCAST_CONFIG_DONE = 4;
+    private static final int EVENT_GET_SMSC_DONE = 5;
+    private static final int EVENT_SET_SMSC_DONE = 6;
     private static final int SMS_CB_CODE_SCHEME_MIN = 0;
     private static final int SMS_CB_CODE_SCHEME_MAX = 255;
     public static final int SMS_MESSAGE_PRIORITY_NOT_SPECIFIED = -1;
@@ -133,6 +138,25 @@ public class IccSmsInterfaceManager {
                     break;
                 case EVENT_SET_BROADCAST_ACTIVATION_DONE:
                 case EVENT_SET_BROADCAST_CONFIG_DONE:
+                    ar = (AsyncResult) msg.obj;
+                    synchronized (mLock) {
+                        mSuccess = (ar.exception == null);
+                        mLock.notifyAll();
+                    }
+                    break;
+                case EVENT_GET_SMSC_DONE:
+                    ar = (AsyncResult) msg.obj;
+                    synchronized (mLock) {
+                        if (ar.exception == null) {
+                            mSmsc = (String) ar.result;
+                        } else {
+                            log("Cannot read SMSC");
+                            mSmsc = null;
+                        }
+                        mLock.notifyAll();
+                    }
+                    break;
+                case EVENT_SET_SMSC_DONE:
                     ar = (AsyncResult) msg.obj;
                     synchronized (mLock) {
                         mSuccess = (ar.exception == null);
@@ -801,6 +825,53 @@ public class IccSmsInterfaceManager {
         return data;
     }
 
+    /**
+     * Gets the SMSC address from (U)SIM.
+     *
+     * @return the SMSC address string, null if failed.
+     */
+    public String getSmscAddressFromIccEf(String callingPackage) {
+        if (!mSmsPermissions.checkCallingOrSelfCanGetSmscAddress(
+                callingPackage, "getSmscAddressFromIccEf")) {
+            return null;
+        }
+        synchronized (mLock) {
+            mSmsc = null;
+            Message response = mHandler.obtainMessage(EVENT_GET_SMSC_DONE);
+            mPhone.mCi.getSmscAddress(response);
+            try {
+                mLock.wait();
+            } catch (InterruptedException e) {
+                log("interrupted while trying to read SMSC");
+            }
+        }
+        return mSmsc;
+    }
+
+    /**
+     * Sets the SMSC address on (U)SIM.
+     *
+     * @param smsc the SMSC address string.
+     * @return true for success, false otherwise.
+     */
+    public boolean setSmscAddressOnIccEf(String callingPackage, String smsc) {
+        if (!mSmsPermissions.checkCallingOrSelfCanSetSmscAddress(
+                callingPackage, "setSmscAddressOnIccEf")) {
+            return false;
+        }
+        synchronized (mLock) {
+            mSuccess = false;
+            Message response = mHandler.obtainMessage(EVENT_SET_SMSC_DONE);
+            mPhone.mCi.setSmscAddress(smsc, response);
+            try {
+                mLock.wait();
+            } catch (InterruptedException e) {
+                log("interrupted while trying to write SMSC");
+            }
+        }
+        return mSuccess;
+    }
+
     public boolean enableCellBroadcast(int messageIdentifier, int ranType) {
         return enableCellBroadcastRange(messageIdentifier, messageIdentifier, ranType);
     }
@@ -813,9 +884,9 @@ public class IccSmsInterfaceManager {
         mContext.enforceCallingPermission("android.permission.RECEIVE_EMERGENCY_BROADCAST",
                 "enabling cell broadcast range [" + startMessageId + "-" + endMessageId + "]. "
                         + "ranType=" + ranType);
-        if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_GSM) {
+        if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP) {
             return enableGsmBroadcastRange(startMessageId, endMessageId);
-        } else if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_CDMA) {
+        } else if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP2) {
             return enableCdmaBroadcastRange(startMessageId, endMessageId);
         } else {
             throw new IllegalArgumentException("Not a supported RAN Type");
@@ -826,9 +897,9 @@ public class IccSmsInterfaceManager {
         mContext.enforceCallingPermission("android.permission.RECEIVE_EMERGENCY_BROADCAST",
                 "disabling cell broadcast range [" + startMessageId + "-" + endMessageId
                         + "]. ranType=" + ranType);
-        if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_GSM ) {
+        if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP) {
             return disableGsmBroadcastRange(startMessageId, endMessageId);
-        } else if (ranType == SmsManager.CELL_BROADCAST_RAN_TYPE_CDMA)  {
+        } else if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP2)  {
             return disableCdmaBroadcastRange(startMessageId, endMessageId);
         } else {
             throw new IllegalArgumentException("Not a supported RAN Type");

@@ -55,6 +55,7 @@ import android.os.WorkSource;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Telephony;
+import android.sysprop.TelephonyProperties;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.telephony.AccessNetworkConstants;
@@ -334,8 +335,8 @@ public class GsmCdmaPhone extends Phone {
         mCarrierOtaSpNumSchema = TelephonyManager.from(mContext).getOtaSpNumberSchemaForPhone(
                 getPhoneId(), "");
 
-        mResetModemOnRadioTechnologyChange = SystemProperties.getBoolean(
-                TelephonyProperties.PROPERTY_RESET_ON_RADIO_TECH_CHANGE, false);
+        mResetModemOnRadioTechnologyChange = TelephonyProperties.reset_on_radio_tech_change()
+                .orElse(false);
 
         mCi.registerForRilConnected(this, EVENT_RIL_CONNECTED, null);
         mCi.registerForVoiceRadioTechChanged(this, EVENT_VOICE_RADIO_TECH_CHANGED, null);
@@ -3947,7 +3948,7 @@ public class GsmCdmaPhone extends Phone {
      */
     private void loadTtyMode() {
         int ttyMode = TelecomManager.TTY_MODE_OFF;
-        TelecomManager telecomManager = TelecomManager.from(mContext);
+        TelecomManager telecomManager = mContext.getSystemService(TelecomManager.class);
         if (telecomManager != null) {
             ttyMode = telecomManager.getCurrentTtyMode();
         }

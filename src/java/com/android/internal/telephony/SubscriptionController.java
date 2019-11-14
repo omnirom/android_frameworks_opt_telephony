@@ -133,7 +133,6 @@ public class SubscriptionController extends ISub.Stub {
 
     /** The singleton instance. */
     protected static SubscriptionController sInstance = null;
-    protected static Phone[] sPhones;
     @UnsupportedAppUsage
     protected Context mContext;
     protected TelephonyManager mTelephonyManager;
@@ -1204,7 +1203,7 @@ public class SubscriptionController extends ISub.Stub {
                 }
 
                 // Once the records are loaded, notify DcTracker
-                sPhones[slotIndex].updateDataConnectionTracker();
+                PhoneFactory.getPhone(slotIndex).updateDataConnectionTracker();
 
                 if (DBG) logdl("[addSubInfoRecord]- info size=" + sSlotIndexToSubIds.size());
             }
@@ -2260,7 +2259,7 @@ public class SubscriptionController extends ISub.Stub {
             }
 
             ProxyController proxyController = ProxyController.getInstance();
-            int len = sPhones.length;
+            int len = TelephonyManager.from(mContext).getActiveModemCount();
             logdl("[setDefaultDataSubId] num phones=" + len + ", subId=" + subId);
 
             if (SubscriptionManager.isValidSubscriptionId(subId)) {
@@ -2268,7 +2267,7 @@ public class SubscriptionController extends ISub.Stub {
                 RadioAccessFamily[] rafs = new RadioAccessFamily[len];
                 boolean atLeastOneMatch = false;
                 for (int phoneId = 0; phoneId < len; phoneId++) {
-                    Phone phone = sPhones[phoneId];
+                    Phone phone = PhoneFactory.getPhone(phoneId);
                     int raf;
                     int id = phone.getSubId();
                     if (id == subId) {
@@ -2309,11 +2308,11 @@ public class SubscriptionController extends ISub.Stub {
     @UnsupportedAppUsage
     protected void updateAllDataConnectionTrackers() {
         // Tell Phone Proxies to update data connection tracker
-        int len = sPhones.length;
-        if (DBG) logd("[updateAllDataConnectionTrackers] sPhones.length=" + len);
+        int len = TelephonyManager.from(mContext).getActiveModemCount();
+        if (DBG) logd("[updateAllDataConnectionTrackers] activeModemCount=" + len);
         for (int phoneId = 0; phoneId < len; phoneId++) {
             if (DBG) logd("[updateAllDataConnectionTrackers] phoneId=" + phoneId);
-            sPhones[phoneId].updateDataConnectionTracker();
+            PhoneFactory.getPhone(phoneId).updateDataConnectionTracker();
         }
     }
 
@@ -2470,10 +2469,6 @@ public class SubscriptionController extends ISub.Stub {
         } else if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
             throw new RuntimeException("Default sub id passed as parameter");
         }
-    }
-
-    public void updatePhonesAvailability(Phone[] phones) {
-        sPhones = phones;
     }
 
     private synchronized ArrayList<Integer> getActiveSubIdArrayList() {

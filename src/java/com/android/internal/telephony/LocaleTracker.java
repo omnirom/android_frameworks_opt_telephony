@@ -30,6 +30,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.sysprop.TelephonyProperties;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoGsm;
 import android.telephony.CellInfoLte;
@@ -46,6 +47,7 @@ import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -59,7 +61,6 @@ import java.util.Set;
  */
 public class LocaleTracker extends Handler {
     private static final boolean DBG = true;
-    private static final String TAG = LocaleTracker.class.getSimpleName();
 
     /** Event for getting cell info from the modem */
     private static final int EVENT_REQUEST_CELL_INFO = 1;
@@ -125,6 +126,8 @@ public class LocaleTracker extends Handler {
 
     /** The maximum fail count to prevent delay time overflow */
     private static final int MAX_FAIL_COUNT = 30;
+
+    private String mTag;
 
     /** MCCs used in test environments */
     public static final Set<String> TEST_MCCS = new HashSet<String>() {{
@@ -258,6 +261,7 @@ public class LocaleTracker extends Handler {
         mPhone = phone;
         mNitzStateMachine = nitzStateMachine;
         mSimState = TelephonyManager.SIM_STATE_UNKNOWN;
+        mTag = LocaleTracker.class.getSimpleName() + "-" + mPhone.getPhoneId();
 
         final IntentFilter filter = new IntentFilter();
         filter.addAction(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
@@ -511,8 +515,14 @@ public class LocaleTracker extends Handler {
             mLocalLog.log(msg);
             mCurrentCountryIso = countryIso;
 
-            TelephonyManager.setTelephonyProperty(mPhone.getPhoneId(),
-                    TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY, mCurrentCountryIso);
+            int phoneId = mPhone.getPhoneId();
+            if (SubscriptionManager.isValidPhoneId(phoneId)) {
+                List<String> newProp = new ArrayList<>(
+                        TelephonyProperties.operator_iso_country());
+                while (newProp.size() <= phoneId) newProp.add(null);
+                newProp.set(phoneId, mCurrentCountryIso);
+                TelephonyProperties.operator_iso_country(newProp);
+            }
 
             Intent intent = new Intent(TelephonyManager.ACTION_NETWORK_COUNTRY_CHANGED);
             intent.putExtra(TelephonyManager.EXTRA_NETWORK_COUNTRY, countryIso);
@@ -536,11 +546,11 @@ public class LocaleTracker extends Handler {
     }
 
     private void log(String msg) {
-        Rlog.d(TAG, msg);
+        Rlog.d(mTag, msg);
     }
 
     private void loge(String msg) {
-        Rlog.e(TAG, msg);
+        Rlog.e(mTag, msg);
     }
 
     /**
@@ -552,7 +562,7 @@ public class LocaleTracker extends Handler {
      */
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         final IndentingPrintWriter ipw = new IndentingPrintWriter(pw, "  ");
-        pw.println("LocaleTracker:");
+        pw.println("LocaleTracker-" + mPhone.getPhoneId() + ":");
         ipw.increaseIndent();
         ipw.println("mIsTracking = " + mIsTracking);
         ipw.println("mOperatorNumeric = " + mOperatorNumeric);

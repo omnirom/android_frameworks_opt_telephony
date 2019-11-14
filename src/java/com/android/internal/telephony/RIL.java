@@ -66,10 +66,10 @@ import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.os.SystemProperties;
 import android.os.WorkSource;
 import android.provider.Settings;
 import android.service.carrier.CarrierIdentifier;
+import android.sysprop.TelephonyProperties;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierRestrictionRules;
 import android.telephony.CellInfo;
@@ -91,6 +91,7 @@ import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SmsManager;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyHistogram;
 import android.telephony.TelephonyManager;
 import android.telephony.TelephonyManager.PrefNetworkMode;
@@ -393,7 +394,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
     }
 
-    protected void resetProxyAndRequestList() {
+    protected synchronized void resetProxyAndRequestList() {
         mRadioProxy = null;
         mOemHookProxy = null;
 
@@ -413,7 +414,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     /** Returns a {@link IRadio} instance or null if the service is not available. */
     @VisibleForTesting
     public synchronized IRadio getRadioProxy(Message result) {
-        if (!PhoneConfigurationManager.isPhoneActive(mPhoneId)) return null;
+        if (!SubscriptionManager.isValidPhoneId(mPhoneId)) return null;
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getRadioProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -510,13 +511,15 @@ public class RIL extends BaseCommands implements CommandsInterface {
             // Try to connect to RIL services and set response functions.
             getRadioProxy(null);
             getOemHookProxy(null);
+        } else {
+            resetProxyAndRequestList();
         }
     }
 
     /** Returns an {@link IOemHook} instance or null if the service is not available. */
     @VisibleForTesting
     public synchronized IOemHook getOemHookProxy(Message result) {
-        if (!PhoneConfigurationManager.isPhoneActive(mPhoneId)) return null;
+        if (!SubscriptionManager.isValidPhoneId((mPhoneId))) return null;
         if (!mIsMobileNetworkSupported) {
             if (RILJ_LOGV) riljLog("getOemHookProxy: Not calling getService(): wifi-only");
             if (result != null) {
@@ -607,10 +610,10 @@ public class RIL extends BaseCommands implements CommandsInterface {
         mWakeLock.setReferenceCounted(false);
         mAckWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, RILJ_ACK_WAKELOCK_NAME);
         mAckWakeLock.setReferenceCounted(false);
-        mWakeLockTimeout = SystemProperties.getInt(TelephonyProperties.PROPERTY_WAKE_LOCK_TIMEOUT,
-                DEFAULT_WAKE_LOCK_TIMEOUT_MS);
-        mAckWakeLockTimeout = SystemProperties.getInt(
-                TelephonyProperties.PROPERTY_WAKE_LOCK_TIMEOUT, DEFAULT_ACK_WAKE_LOCK_TIMEOUT_MS);
+        mWakeLockTimeout = TelephonyProperties.wake_lock_timeout()
+                .orElse(DEFAULT_WAKE_LOCK_TIMEOUT_MS);
+        mAckWakeLockTimeout = TelephonyProperties.wake_lock_timeout()
+                .orElse(DEFAULT_ACK_WAKE_LOCK_TIMEOUT_MS);
         mWakeLockCount = 0;
         mRILDefaultWorkSource = new WorkSource(context.getApplicationInfo().uid,
                 context.getPackageName());

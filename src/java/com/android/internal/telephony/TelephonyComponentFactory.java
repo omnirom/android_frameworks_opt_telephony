@@ -42,6 +42,7 @@ import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsExternalCallTracker;
 import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCallTracker;
+import com.android.internal.telephony.nitz.NewNitzStateMachineImpl;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.UiccCard;
@@ -300,11 +301,17 @@ public class TelephonyComponentFactory {
         return new EmergencyNumberTracker(phone, ci);
     }
 
+    private static final boolean USE_NEW_NITZ_STATE_MACHINE = true;
+
     /**
      * Returns a new {@link NitzStateMachine} instance.
      */
     public NitzStateMachine makeNitzStateMachine(GsmCdmaPhone phone) {
-        return new NitzStateMachineImpl(phone);
+        if (USE_NEW_NITZ_STATE_MACHINE) {
+            return NewNitzStateMachineImpl.createInstance(phone);
+        } else {
+            return new NitzStateMachineImpl(phone);
+        }
     }
 
     public SimActivationTracker makeSimActivationTracker(Phone phone) {
@@ -453,13 +460,10 @@ public class TelephonyComponentFactory {
         return new SubscriptionInfoUpdater(looper, context, ci);
     }
 
-    public PhoneSwitcher makePhoneSwitcher(int maxActivePhones, int numPhones, Context context,
-            SubscriptionController subscriptionController, Looper looper,
-            CommandsInterface[] cis, Phone[] phones) {
+    public PhoneSwitcher makePhoneSwitcher(int maxDataAttachModemCount, Context context,
+            Looper looper) {
         Rlog.i(TAG, "makePhoneSwitcher");
-        return new PhoneSwitcher(maxActivePhones,numPhones,
-                context, subscriptionController, looper, cis,
-                phones);
+        return new PhoneSwitcher(maxDataAttachModemCount, context, looper);
     }
 
     public RIL makeRIL(Context context, int preferredNetworkType,
