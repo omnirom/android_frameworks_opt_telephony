@@ -3744,6 +3744,16 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mPendingMO = null;
                     mLastDialArgs.intentExtras.putBoolean(
                             android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, false);
+
+                    mLastDialArgs.intentExtras.putInt(
+                            QtiImsUtils.EXTRA_RETRY_CALL_FAIL_REASON,
+                            QtiImsUtils.CODE_RETRY_ON_IMS_WITHOUT_RTT);
+
+                    int callRadioTech = oldConnection.getCallRadioTech();
+                    log("old callRadioTech = " + callRadioTech);
+                    mLastDialArgs.intentExtras.putInt(
+                            QtiImsUtils.EXTRA_RETRY_CALL_FAIL_RADIOTECH, callRadioTech);
+
                     mLastDialArgs = ImsPhone.ImsDialArgs.Builder.from(mLastDialArgs)
                                             .setRttTextStream(null).build();
                     Connection newConnection =
