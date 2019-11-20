@@ -17,6 +17,9 @@
 package com.android.internal.telephony.imsphone;
 
 import static com.android.internal.telephony.Phone.CS_FALLBACK;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING;
+import static com.android.internal.telephony.TelephonyProperties.EXTRAS_IS_CONFERENCE_URI;
 
 import android.annotation.NonNull;
 import android.annotation.UnsupportedAppUsage;
@@ -1180,9 +1183,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         if (intentExtras != null) {
             isConferenceUri = intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+                    EXTRA_DIAL_CONFERENCE_URI, false);
             isSkipSchemaParsing = intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+                    EXTRA_SKIP_SCHEMA_PARSING, false);
         }
 
 
@@ -1208,7 +1211,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             String[] callees = new String[] { conn.getAddress() };
             ImsCallProfile profile = mImsManager.createCallProfile(serviceType, callType);
             profile.setCallExtraInt(ImsCallProfile.EXTRA_OIR, clirMode);
-            profile.setCallExtraBoolean(TelephonyProperties.EXTRAS_IS_CONFERENCE_URI,
+            profile.setCallExtraBoolean(EXTRAS_IS_CONFERENCE_URI,
                     isConferenceUri);
 
             if (isEmergencyCall) {

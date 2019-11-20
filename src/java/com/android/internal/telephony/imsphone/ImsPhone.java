@@ -38,6 +38,8 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_DAT
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING;
 
 import android.annotation.UnsupportedAppUsage;
 import android.app.Activity;
@@ -763,9 +765,9 @@ public class ImsPhone extends ImsPhoneBase {
         boolean isSkipSchemaParsing = false;
         if (dialArgs.intentExtras != null) {
             isConferenceUri = dialArgs.intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+                    EXTRA_DIAL_CONFERENCE_URI, false);
             isSkipSchemaParsing = dialArgs.intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+                    EXTRA_SKIP_SCHEMA_PARSING, false);
         }
         String newDialString = dialString;
         // Need to make sure dialString gets parsed properly.
