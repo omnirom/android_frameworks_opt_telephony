@@ -1181,7 +1181,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 isStartRttCall = intentExtras.getBoolean(
                     android.telecom.TelecomManager.EXTRA_START_CALL_WITH_RTT, true);
                 if (DBG) log("dialInternal: isStartRttCall = " + isStartRttCall);
-                if (conn.hasRttTextStream() && isStartRttCall) {
+
+                // Set the RTT mode to 1 if sim supports RTT and if the connection has
+                // valid RTT text stream
+                if (mPhone.isRttSupported() && conn.hasRttTextStream() && isStartRttCall) {
                     profile.mMediaProfile.mRttMode = ImsStreamMediaProfile.RTT_MODE_FULL;
                 }
 
@@ -1206,6 +1209,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             int mode = QtiImsUtils.getRttOperatingMode(mPhone.getContext(), mPhone.getPhoneId());
             if (DBG) log("RTT: setRttModeBasedOnOperator mode = " + mode);
 
+            // Override RTT mode as per operator requirements not supported by AOSP
             if (mPhone.isRttSupported() && mPhone.isRttOn()) {
                 if (isStartRttCall &&
                         (!profile.isVideoCall() || QtiImsUtils.isRttSupportedOnVtCalls(
@@ -2063,6 +2067,19 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             //detach the disconnected connections
             conn.getCall().detach(conn);
             removeConnection(conn);
+
+            // remove conference participants from the cached list when call is disconnected
+            List<ConferenceParticipant> cpList = imsCall.getConferenceParticipants();
+            if (cpList != null) {
+                for (ConferenceParticipant cp : cpList) {
+                    String number = ConferenceParticipant.getParticipantAddress(cp.getHandle(),
+                            getCountryIso()).getSchemeSpecificPart();
+                    if (!TextUtils.isEmpty(number)) {
+                        String formattedNumber = getFormattedPhoneNumber(number);
+                        mPhoneNumAndConnTime.remove(formattedNumber);
+                    }
+                }
+            }
         }
 
         if (changed) {
