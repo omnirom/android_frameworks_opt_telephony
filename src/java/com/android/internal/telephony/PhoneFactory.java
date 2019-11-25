@@ -16,6 +16,11 @@
 
 package com.android.internal.telephony;
 
+import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA;
+import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA_LTE;
+
+import static java.util.Arrays.copyOf;
+
 import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
 import android.content.ComponentName;
@@ -24,7 +29,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.LocalServerSocket;
 import android.os.Looper;
-import android.os.ServiceManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
@@ -42,6 +46,7 @@ import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.ims.ImsResolver;
 import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneFactory;
+import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.sip.SipPhone;
 import com.android.internal.telephony.sip.SipPhoneFactory;
 import com.android.internal.telephony.uicc.UiccController;
@@ -112,6 +117,9 @@ public class PhoneFactory {
                 // create the telephony device controller.
                 TelephonyDevController.create();
 
+                TelephonyMetrics metrics = TelephonyMetrics.getInstance();
+                metrics.setContext(context);
+
                 int retryCount = 0;
                 for(;;) {
                     boolean hasException = false;
@@ -147,7 +155,7 @@ public class PhoneFactory {
                 /* In case of multi SIM mode two instances of Phone, RIL are created,
                    where as in single SIM mode only instance. isMultiSimEnabled() function checks
                    whether it is single SIM or multi SIM mode */
-                int numPhones = TelephonyManager.getDefault().getSupportedModemCount();
+                int numPhones = TelephonyManager.getDefault().getActiveModemCount();
 
                 int[] networkModes = new int[numPhones];
                 sPhones = new Phone[numPhones];
@@ -166,7 +174,7 @@ public class PhoneFactory {
 
                 // Instantiate UiccController so that all other classes can just
                 // call getInstance()
-                sUiccController = UiccController.make(context, sCommandsInterfaces);
+                sUiccController = UiccController.make(context);
 
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 telephonyComponentFactory.inject(SubscriptionController.class.
@@ -205,7 +213,7 @@ public class PhoneFactory {
                 // Set the default phone in base class.
                 // FIXME: This is a first best guess at what the defaults will be. It
                 // FIXME: needs to be done in a more controlled manner in the future.
-                sPhone = sPhones[0];
+                if (numPhones > 0) sPhone = sPhones[0];
 
                 // Ensure that we have a default SMS app. Requesting the app with
                 // updateIfNeeded set to true is enough to configure a default SMS app.
@@ -227,7 +235,6 @@ public class PhoneFactory {
                         SubscriptionInfoUpdater.class.getName()).
                         makeSubscriptionInfoUpdater(BackgroundThread.get().
                         getLooper(), context, sCommandsInterfaces);
-                SubscriptionController.getInstance().updatePhonesAvailability(sPhones);
 
                 // Only bring up IMS if the device supports having an IMS stack.
                 if (context.getPackageManager().hasSystemFeature(
@@ -263,11 +270,9 @@ public class PhoneFactory {
                         .getNumberOfModemsWithSimultaneousDataConnections();
 
                 sPhoneSwitcher = telephonyComponentFactory.inject(PhoneSwitcher.class.getName()).
-                        makePhoneSwitcher(maxActivePhones, numPhones,
-                        sContext, SubscriptionController.getInstance(), Looper.myLooper(),
-                        sCommandsInterfaces, sPhones);
+                        makePhoneSwitcher(maxActivePhones, sContext, Looper.myLooper());
 
-                sProxyController = ProxyController.getInstance(context, sPhones, sPhoneSwitcher);
+                sProxyController = ProxyController.getInstance(context);
 
                 sIntentBroadcaster = IntentBroadcaster.getInstance(context);
 
@@ -281,6 +286,53 @@ public class PhoneFactory {
                         makeExtTelephonyClasses(context, sPhones, sCommandsInterfaces);
             }
         }
+    }
+
+    /**
+     * Upon single SIM to dual SIM switch or vice versa, we dynamically allocate or de-allocate
+     * Phone and CommandInterface objects.
+     * @param context
+     * @param activeModemCount
+     */
+    public static void onMultiSimConfigChanged(Context context, int activeModemCount) {
+        synchronized (sLockProxyPhones) {
+            int prevActiveModemCount = sPhones.length;
+            if (prevActiveModemCount == activeModemCount) return;
+
+            // TODO: clean up sPhones, sCommandsInterfaces and sTelephonyNetworkFactories objects.
+            // Currently we will not clean up the 2nd Phone object, so that it can be re-used if
+            // user switches back.
+            if (prevActiveModemCount > activeModemCount) return;
+
+            sPhones = copyOf(sPhones, activeModemCount);
+            sCommandsInterfaces = copyOf(sCommandsInterfaces, activeModemCount);
+            sTelephonyNetworkFactories = copyOf(sTelephonyNetworkFactories, activeModemCount);
+
+            int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
+            for (int i = prevActiveModemCount; i < activeModemCount; i++) {
+                sCommandsInterfaces[i] = new RIL(context, RILConstants.PREFERRED_NETWORK_MODE,
+                        cdmaSubscription, i);
+                sPhones[i] = createPhone(context, i);
+                if (context.getPackageManager().hasSystemFeature(
+                        PackageManager.FEATURE_TELEPHONY_IMS)) {
+                    sPhones[i].startMonitoringImsService();
+                }
+                sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
+                        Looper.myLooper(), sPhones[i], sPhoneSwitcher);
+            }
+        }
+    }
+
+    private static Phone createPhone(Context context, int phoneId) {
+        int phoneType = TelephonyManager.getPhoneType(RILConstants.PREFERRED_NETWORK_MODE);
+        Rlog.i(LOG_TAG, "Creating Phone with type = " + phoneType + " phoneId = " + phoneId);
+
+        // We always use PHONE_TYPE_CDMA_LTE now.
+        if (phoneType == PHONE_TYPE_CDMA) phoneType = PHONE_TYPE_CDMA_LTE;
+
+        return new GsmCdmaPhone(context,
+                sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId, phoneType,
+                TelephonyComponentFactory.getInstance());
     }
 
     @UnsupportedAppUsage
@@ -464,6 +516,15 @@ public class PhoneFactory {
                 throw new IllegalStateException("Default phones haven't been made yet!");
             }
             return sProxyController.getSmsController();
+        }
+    }
+
+    /**
+     * Get Command Interfaces.
+     */
+    public static CommandsInterface[] getCommandsInterfaces() {
+        synchronized (sLockProxyPhones) {
+            return sCommandsInterfaces;
         }
     }
 

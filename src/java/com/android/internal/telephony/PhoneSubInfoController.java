@@ -43,13 +43,10 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
     private static final boolean VDBG = false; // STOPSHIP if true
 
     @UnsupportedAppUsage
-    private final Phone[] mPhone;
-    @UnsupportedAppUsage
     private final Context mContext;
     private final AppOpsManager mAppOps;
 
-    public PhoneSubInfoController(Context context, Phone[] phone) {
-        mPhone = phone;
+    public PhoneSubInfoController(Context context) {
         if (ServiceManager.getService("iphonesubinfo") == null) {
             ServiceManager.addService("iphonesubinfo", this);
         }
@@ -79,7 +76,7 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
 
     public ImsiEncryptionInfo getCarrierInfoForImsiEncryption(int subId, int keyType,
                                                               String callingPackage) {
-        return callPhoneMethodForSubIdWithReadCheck(subId, callingPackage,
+        return callPhoneMethodForSubIdWithPrivilegedCheck(subId,
                 "getCarrierInfoForImsiEncryption",
                 (phone)-> phone.getCarrierInfoForImsiEncryption(keyType));
     }
@@ -103,13 +100,12 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
      */
     public void resetCarrierKeysForImsiEncryption(int subId, String callingPackage) {
         callPhoneMethodForSubIdWithModifyCheck(subId, callingPackage,
-                "setCarrierInfoForImsiEncryption",
+                "resetCarrierKeysForImsiEncryption",
                 (phone)-> {
                     phone.resetCarrierKeysForImsiEncryption();
                     return null;
                 });
     }
-
 
     public String getDeviceSvn(String callingPackage) {
         return getDeviceSvnUsingSubId(getDefaultSubscription(), callingPackage);
@@ -222,7 +218,7 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
         if (!SubscriptionManager.isValidPhoneId(phoneId)) {
             phoneId = 0;
         }
-        return mPhone[phoneId];
+        return PhoneFactory.getPhone(phoneId);
     }
 
     /**
@@ -434,7 +430,6 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
                                 aContext, aSubId, aCallingPackage, aMessage));
     }
 
-
     private <T> T callPhoneMethodForSubIdWithPrivilegedCheck(
             int subId, String message, CallPhoneMethodHelper<T> callMethodHelper) {
         return callPhoneMethodWithPermissionCheck(subId, null, message, callMethodHelper,
@@ -467,7 +462,7 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
         if (!SubscriptionManager.isValidPhoneId(phoneId)) {
             phoneId = 0;
         }
-        final Phone phone = mPhone[phoneId];
+        final Phone phone = PhoneFactory.getPhone(phoneId);
         if (phone == null) {
             return null;
         }
