@@ -26,6 +26,7 @@ import android.content.res.Resources;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
+import android.os.UserHandle;
 import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -105,9 +106,9 @@ public class UiccSlot extends Handler {
             //   2. The latest mCardState is not ABSENT, but there is no UiccCard instance.
             } else if ((oldState == null || oldState == CardState.CARDSTATE_ABSENT
                     || mUiccCard == null) && mCardState != CardState.CARDSTATE_ABSENT) {
-                // No notifications while radio is off or we just powering up
-                if (radioState == TelephonyManager.RADIO_POWER_ON
-                        && mLastRadioState == TelephonyManager.RADIO_POWER_ON) {
+                // No notification while we are just powering up
+                if (radioState != TelephonyManager.RADIO_POWER_UNAVAILABLE
+                        && mLastRadioState != TelephonyManager.RADIO_POWER_UNAVAILABLE) {
                     if (DBG) log("update: notify card added");
                     sendMessage(obtainMessage(EVENT_CARD_ADDED, null));
                 }
@@ -183,9 +184,9 @@ public class UiccSlot extends Handler {
     private void updateCardStateAbsent() {
         int radioState =
                 (mCi == null) ? TelephonyManager.RADIO_POWER_UNAVAILABLE : mCi.getRadioState();
-        // No notifications while radio is off or we just powering up
-        if (radioState == TelephonyManager.RADIO_POWER_ON
-                && mLastRadioState == TelephonyManager.RADIO_POWER_ON) {
+        // No notification while we are just powering up
+        if (radioState != TelephonyManager.RADIO_POWER_UNAVAILABLE
+                && mLastRadioState != TelephonyManager.RADIO_POWER_UNAVAILABLE) {
             if (DBG) log("update: notify card removed");
             sendMessage(obtainMessage(EVENT_CARD_REMOVED, null));
         }
@@ -319,7 +320,7 @@ public class UiccSlot extends Handler {
                         dialogComponent)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         .putExtra(EXTRA_ICC_CARD_ADDED, isAdded);
                 try {
-                    mContext.startActivity(intent);
+                    mContext.startActivityAsUser(intent, UserHandle.CURRENT);
                     return;
                 } catch (ActivityNotFoundException e) {
                     loge("Unable to find ICC hotswap prompt for restart activity: " + e);

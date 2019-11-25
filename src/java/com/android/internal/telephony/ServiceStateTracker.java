@@ -729,7 +729,8 @@ public class ServiceStateTracker extends Handler {
         mMin = null;
         mPrlVersion = null;
         mIsMinInfoReady = false;
-        mNitzState.handleNetworkCountryCodeUnavailable();
+        mLastNitzData = null;
+        mNitzState.handleNetworkUnavailable();
         mCellIdentity = null;
         mNewCellIdentity = null;
         mSignalStrengthUpdatedTime = System.currentTimeMillis();
@@ -3024,7 +3025,8 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.setStateOutOfService();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
-                mNitzState.handleNetworkCountryCodeUnavailable();
+                mLastNitzData = null;
+                mNitzState.handleNetworkUnavailable();
                 pollStateDone();
                 break;
 
@@ -3032,7 +3034,8 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.setStateOff();
                 mNewCellIdentity = null;
                 setSignalStrengthDefaultValues();
-                mNitzState.handleNetworkCountryCodeUnavailable();
+                mLastNitzData = null;
+                mNitzState.handleNetworkUnavailable();
                 // don't poll when device is shutting down or the poll was not modemTrigged
                 // (they sent us new radio data) and current network is not IWLAN
                 if (mDeviceShuttingDown ||
@@ -4107,7 +4110,8 @@ public class ServiceStateTracker extends Handler {
         Context context = mPhone.getContext();
 
         SubscriptionInfo info = mSubscriptionController
-                .getActiveSubscriptionInfo(mPhone.getSubId(), context.getOpPackageName());
+                .getActiveSubscriptionInfo(mPhone.getSubId(), context.getOpPackageName(),
+                        context.getFeatureId());
 
         //if subscription is part of a group and non-primary, suppress all notifications
         if (info == null || (info.isOpportunistic() && info.getGroupUuid() != null)) {
@@ -4922,7 +4926,8 @@ public class ServiceStateTracker extends Handler {
         if (!isStale) return false;
 
         List<SubscriptionInfo> subInfoList = SubscriptionController.getInstance()
-                .getActiveSubscriptionInfoList(mPhone.getContext().getOpPackageName());
+                .getActiveSubscriptionInfoList(mPhone.getContext().getOpPackageName(),
+                        mPhone.getContext().getFeatureId());
         for (SubscriptionInfo info : subInfoList) {
             // If we have an active opportunistic subscription whose data is IN_SERVICE, we needs
             // to get signal strength to decide data switching threshold. In this case, we poll
