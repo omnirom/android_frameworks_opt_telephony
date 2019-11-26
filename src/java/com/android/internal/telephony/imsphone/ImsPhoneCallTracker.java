@@ -17,6 +17,9 @@
 package com.android.internal.telephony.imsphone;
 
 import static com.android.internal.telephony.Phone.CS_FALLBACK;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING;
+import static com.android.internal.telephony.TelephonyProperties.EXTRAS_IS_CONFERENCE_URI;
 
 import android.annotation.NonNull;
 import android.annotation.UnsupportedAppUsage;
@@ -42,10 +45,10 @@ import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.os.SystemProperties;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
-import android.telecom.ConferenceParticipant;
+import android.sysprop.TelephonyProperties;
+import com.android.ims.internal.ConferenceParticipant;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.telephony.AccessNetworkConstants;
@@ -103,7 +106,6 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.SubscriptionController;
-import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings.DataEnabledChangedReason;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
@@ -1181,9 +1183,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         if (intentExtras != null) {
             isConferenceUri = intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+                    EXTRA_DIAL_CONFERENCE_URI, false);
             isSkipSchemaParsing = intentExtras.getBoolean(
-                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+                    EXTRA_SKIP_SCHEMA_PARSING, false);
         }
 
 
@@ -1209,7 +1211,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             String[] callees = new String[] { conn.getAddress() };
             ImsCallProfile profile = mImsManager.createCallProfile(serviceType, callType);
             profile.setCallExtraInt(ImsCallProfile.EXTRA_OIR, clirMode);
-            profile.setCallExtraBoolean(TelephonyProperties.EXTRAS_IS_CONFERENCE_URI,
+            profile.setCallExtraBoolean(EXTRAS_IS_CONFERENCE_URI,
                     isConferenceUri);
 
             if (isEmergencyCall) {
@@ -1713,9 +1715,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
      * @throws CallStateException
      */
     public void checkForDialIssues() throws CallStateException {
-        String disableCall = SystemProperties.get(
-                TelephonyProperties.PROPERTY_DISABLE_CALL, "false");
-        if (disableCall.equals("true")) {
+        boolean disableCall = TelephonyProperties.disable_call().orElse(false);
+        if (disableCall) {
             throw new CallStateException(CallStateException.ERROR_CALLING_DISABLED,
                     "ro.telephony.disable-call has been used to disable calling.");
         }
@@ -2651,6 +2652,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 }
             }
 
+            if (conn != null) {
+                conn.onRemoteDisconnect(reasonInfo.getExtraMessage());
+            }
+
             if (mHoldSwitchingState == HoldSwapState.SWAPPING_ACTIVE_AND_HELD) {
                 if (DBG) {
                     log("onCallTerminated: Call terminated in the midst of Switching " +
@@ -3482,6 +3487,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             callState = Call.State.DIALING;
         }
         int cause = getDisconnectCauseFromReasonInfo(reasonInfo, callState);
+        if (conn != null) {
+            conn.onRemoteDisconnect(reasonInfo.getExtraMessage());
+        }
 
         processCallStateChange(imsCall, ImsPhoneCall.State.DISCONNECTED, cause);
         mPhone.notifyImsReason(reasonInfo);

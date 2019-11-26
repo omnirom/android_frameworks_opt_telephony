@@ -123,6 +123,8 @@ public class ImsPhoneConnection extends Connection implements
      */
     private boolean mIsMergeInProcess = false;
 
+    private String mVendorCause;
+
     /**
      * Used as an override to determine whether video is locally available for this call.
      * This allows video availability to be overridden in the case that the modem says video is
@@ -379,7 +381,7 @@ public class ImsPhoneConnection extends Connection implements
 
     @Override
     public String getVendorDisconnectCause() {
-      return null;
+      return mVendorCause;
     }
 
     @UnsupportedAppUsage
@@ -476,6 +478,7 @@ public class ImsPhoneConnection extends Connection implements
     void
     onHangupLocal() {
         mCause = DisconnectCause.LOCAL;
+        mVendorCause = null;
     }
 
     /** Called when the connection has been disconnected */
@@ -513,10 +516,18 @@ public class ImsPhoneConnection extends Connection implements
                 }
                 if (mImsCall != null) mImsCall.close();
                 mImsCall = null;
+                if (mImsVideoCallProviderWrapper != null) {
+                    mImsVideoCallProviderWrapper.tearDown();
+                }
             }
         }
         releaseWakeLock();
         return changed;
+    }
+
+    void
+    onRemoteDisconnect(String vendorCause) {
+        this.mVendorCause = vendorCause;
     }
 
     /**

@@ -32,6 +32,7 @@ import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.SystemProperties;
 import android.os.UserHandle;
+import android.sysprop.TelephonyProperties;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -57,7 +58,7 @@ public class EcbmHandler extends Handler {
     private WakeLock mWakeLock;
     private Context mContext;
     // Default Emergency Callback Mode exit timer
-    private static final int DEFAULT_ECM_EXIT_TIMER_VALUE = 300000;
+    private static final long DEFAULT_ECM_EXIT_TIMER_VALUE = 300000;
     public static final int RESTART_ECM_TIMER = 0; // restart Ecm timer
     public static final int CANCEL_ECM_TIMER = 1; // cancel Ecm timer
 
@@ -251,11 +252,12 @@ public class EcbmHandler extends Handler {
 
             // notify change
             sendEmergencyCallbackModeChange();
+            trackers[phoneId].mPhone.notifyEmergencyCallRegistrants(true);
 
             // Post this runnable so we will automatically exit
             // if no one invokes exitEmergencyCallbackMode() directly.
-            long delayInMillis = SystemProperties.getLong(
-                    TelephonyProperties.PROPERTY_ECM_EXIT_TIMER, DEFAULT_ECM_EXIT_TIMER_VALUE);
+            long delayInMillis = TelephonyProperties.ecm_exit_timer()
+                    .orElse(DEFAULT_ECM_EXIT_TIMER_VALUE);
             postDelayed(mExitEcmRunnable, delayInMillis);
             // We don't want to go to sleep while in Ecm
             mWakeLock.acquire();
@@ -299,8 +301,8 @@ public class EcbmHandler extends Handler {
                 mEcmTimerResetRegistrants.notifyResult(Boolean.TRUE);
                 break;
             case RESTART_ECM_TIMER:
-                long delayInMillis = SystemProperties.getLong(
-                        TelephonyProperties.PROPERTY_ECM_EXIT_TIMER, DEFAULT_ECM_EXIT_TIMER_VALUE);
+                long delayInMillis = TelephonyProperties.ecm_exit_timer()
+                        .orElse(DEFAULT_ECM_EXIT_TIMER_VALUE);
                 postDelayed(mExitEcmRunnable, delayInMillis);
                 mEcmTimerResetRegistrants.notifyResult(Boolean.FALSE);
                 break;
@@ -354,13 +356,12 @@ public class EcbmHandler extends Handler {
     }
 
     public void setIsInEcm(boolean isInEcm) {
-        TelephonyManager.setTelephonyProperty(TelephonyProperties.PROPERTY_INECM_MODE,
-                String.valueOf(isInEcm));
+        TelephonyProperties.in_ecm_mode(isInEcm);
         mIsPhoneInEcmState = isInEcm;
     }
 
     public static boolean getInEcmMode() {
-        return SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false);
+        return TelephonyProperties.in_ecm_mode().orElse(false);
     }
 
     private void logd(String s) {
