@@ -16,26 +16,42 @@
 
 package com.android.internal.telephony.gsm;
 
+import static com.android.internal.telephony.gsm.SmsCbConstants.MESSAGE_ID_CMAS_GEO_FENCING_TRIGGER;
+
+import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Message;
+import android.provider.Telephony.CellBroadcasts;
 import android.telephony.CellLocation;
 import android.telephony.SmsCbLocation;
 import android.telephony.SmsCbMessage;
 import android.telephony.TelephonyManager;
 import android.telephony.gsm.GsmCellLocation;
+import android.text.format.DateUtils;
 
+import com.android.internal.telephony.CbGeoUtils.Geometry;
 import com.android.internal.telephony.CellBroadcastHandler;
 import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.gsm.GsmSmsCbMessage.GeoFencingTriggerMessage;
+import com.android.internal.telephony.gsm.GsmSmsCbMessage.GeoFencingTriggerMessage.CellBroadcastIdentity;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 
 /**
  * Handler for 3GPP format Cell Broadcasts. Parent class can also handle CDMA Cell Broadcasts.
  */
 public class GsmCellBroadcastHandler extends CellBroadcastHandler {
     private static final boolean VDBG = false;  // log CB PDU data
+
+    /** Indicates that a message is not being broadcasted. */
+    private static final String MESSAGE_NOT_BROADCASTED = "0";
 
     /** This map holds incomplete concatenated messages waiting for assembly. */
     private final HashMap<SmsCbConcatInfo, byte[][]> mSmsCbPageMap =
@@ -65,29 +81,133 @@ public class GsmCellBroadcastHandler extends CellBroadcastHandler {
     }
 
     /**
+     * Find the cell broadcast messages specify by the geo-fencing trigger message and perform a
+     * geo-fencing check for these messages.
+     * @param geoFencingTriggerMessage the trigger message
+     *
+     * @return {@code True} if geo-fencing is need for some cell broadcast message.
+     */
+    private boolean handleGeoFencingTriggerMessage(
+            GeoFencingTriggerMessage geoFencingTriggerMessage) {
+        final List<SmsCbMessage> cbMessages = new ArrayList<>();
+        final List<Uri> cbMessageUris = new ArrayList<>();
+
+        // Only consider the cell broadcast received within 24 hours.
+        long lastReceivedTime = System.currentTimeMillis() - DateUtils.DAY_IN_MILLIS;
+
+        // Find the cell broadcast message identify by the message identifier and serial number
+        // and is not broadcasted.
+        String where = CellBroadcasts.SERVICE_CATEGORY + "=? AND "
+                + CellBroadcasts.SERIAL_NUMBER + "=? AND "
+                + CellBroadcasts.MESSAGE_BROADCASTED + "=? AND "
+                + CellBroadcasts.RECEIVED_TIME + ">?";
+
+        ContentResolver resolver = mContext.getContentResolver();
+        for (CellBroadcastIdentity identity : geoFencingTriggerMessage.cbIdentifiers) {
+            try (Cursor cursor = resolver.query(CELL_BROADCAST_URI,
+                    CellBroadcasts.QUERY_COLUMNS_FWK,
+                    where,
+                    new String[] { Integer.toString(identity.messageIdentifier),
+                            Integer.toString(identity.serialNumber), MESSAGE_NOT_BROADCASTED,
+                            Long.toString(lastReceivedTime) },
+                    null /* sortOrder */)) {
+                if (cursor != null) {
+                    while (cursor.moveToNext()) {
+                        cbMessages.add(SmsCbMessage.createFromCursor(cursor));
+                        cbMessageUris.add(ContentUris.withAppendedId(CELL_BROADCAST_URI,
+                                cursor.getInt(cursor.getColumnIndex(CellBroadcasts._ID))));
+                    }
+                }
+            }
+        }
+
+        List<Geometry> commonBroadcastArea = new ArrayList<>();
+        if (geoFencingTriggerMessage.shouldShareBroadcastArea()) {
+            for (SmsCbMessage msg : cbMessages) {
+                if (msg.getGeometries() != null) {
+                    commonBroadcastArea.addAll(msg.getGeometries());
+                }
+            }
+        }
+
+        // ATIS doesn't specify the geo fencing maximum wait time for the cell broadcasts specified
+        // in geo fencing trigger message. We will pick the largest maximum wait time among these
+        // cell broadcasts.
+        int maximumWaitTimeSec = 0;
+        for (SmsCbMessage msg : cbMessages) {
+            maximumWaitTimeSec = Math.max(maximumWaitTimeSec, msg.getMaximumWaitingTime());
+        }
+
+        if (DBG) {
+            logd("Geo-fencing trigger message = " + geoFencingTriggerMessage);
+            for (SmsCbMessage msg : cbMessages) {
+                logd(msg.toString());
+            }
+        }
+
+        if (cbMessages.isEmpty()) {
+            if (DBG) logd("No CellBroadcast message need to be broadcasted");
+            return false;
+        }
+
+        requestLocationUpdate(location -> {
+            if (location == null) {
+                // If the location is not available, broadcast the messages directly.
+                broadcastMessage(cbMessages, cbMessageUris);
+            } else {
+                for (int i = 0; i < cbMessages.size(); i++) {
+                    List<Geometry> broadcastArea = !commonBroadcastArea.isEmpty()
+                            ? commonBroadcastArea : cbMessages.get(i).getGeometries();
+                    if (broadcastArea == null || broadcastArea.isEmpty()) {
+                        broadcastMessage(cbMessages.get(i), cbMessageUris.get(i));
+                    } else {
+                        performGeoFencing(cbMessages.get(i), cbMessageUris.get(i), broadcastArea,
+                                location);
+                    }
+                }
+            }
+        }, maximumWaitTimeSec);
+        return true;
+    }
+
+    /**
      * Handle 3GPP-format Cell Broadcast messages sent from radio.
      *
      * @param message the message to process
-     * @return true if an ordered broadcast was sent; false on failure
+     * @return true if need to wait for geo-fencing or an ordered broadcast was sent.
      */
     @Override
     protected boolean handleSmsMessage(Message message) {
         if (message.obj instanceof AsyncResult) {
-            SmsCbMessage cbMessage = handleGsmBroadcastSms((AsyncResult) message.obj);
-            if (cbMessage != null) {
-                handleBroadcastSms(cbMessage);
-                return true;
+            SmsCbHeader header = createSmsCbHeader((AsyncResult) message.obj);
+            if (header == null) return false;
+
+            AsyncResult ar = (AsyncResult) message.obj;
+            byte[] pdu = (byte[]) ar.result;
+            if (header.getServiceCategory() == MESSAGE_ID_CMAS_GEO_FENCING_TRIGGER) {
+                GeoFencingTriggerMessage triggerMessage =
+                        GsmSmsCbMessage.createGeoFencingTriggerMessage(pdu);
+                if (triggerMessage != null) {
+                    return handleGeoFencingTriggerMessage(triggerMessage);
+                }
+            } else {
+                SmsCbMessage cbMessage = handleGsmBroadcastSms(header, ar);
+                if (cbMessage != null) {
+                    handleBroadcastSms(cbMessage);
+                    return true;
+                }
+                if (VDBG) log("Not handled GSM broadcasts.");
             }
-            if (VDBG) log("Not handled GSM broadcasts.");
         }
         return super.handleSmsMessage(message);
     }
 
     /**
      * Handle 3GPP format SMS-CB message.
+     * @param header the cellbroadcast header.
      * @param ar the AsyncResult containing the received PDUs
      */
-    private SmsCbMessage handleGsmBroadcastSms(AsyncResult ar) {
+    private SmsCbMessage handleGsmBroadcastSms(SmsCbHeader header, AsyncResult ar) {
         try {
             byte[] receivedPdu = (byte[]) ar.result;
 
@@ -106,7 +226,6 @@ public class GsmCellBroadcastHandler extends CellBroadcastHandler {
                 }
             }
 
-            SmsCbHeader header = new SmsCbHeader(receivedPdu);
             if (VDBG) log("header=" + header);
             String plmn = TelephonyManager.from(mContext).getNetworkOperatorForPhone(
                     mPhone.getPhoneId());
@@ -193,6 +312,15 @@ public class GsmCellBroadcastHandler extends CellBroadcastHandler {
 
         } catch (RuntimeException e) {
             loge("Error in decoding SMS CB pdu", e);
+            return null;
+        }
+    }
+
+    private SmsCbHeader createSmsCbHeader(AsyncResult ar) {
+        try {
+            return new SmsCbHeader((byte[]) ar.result);
+        } catch (Exception ex) {
+            loge("Can't create SmsCbHeader, ex = " + ex.toString());
             return null;
         }
     }
