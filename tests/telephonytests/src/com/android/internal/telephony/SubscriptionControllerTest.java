@@ -78,6 +78,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @Mock
     private UiccSlot mUiccSlot;
     @Mock
+    private SubscriptionInfo mSubInfo;
+    @Mock
     private ITelephonyRegistry.Stub mTelephonyRegisteryMock;
     @Mock
     private MultiSimSettingController mMultiSimSettingControllerMock;
@@ -319,30 +321,32 @@ public class SubscriptionControllerTest extends TelephonyTest {
         int[] subIds = mSubscriptionControllerUT.getActiveSubIdList(/*visibleOnly*/false);
         assertTrue(subIds != null && subIds.length != 0);
         int subID = subIds[0];
+        doReturn(subID).when(mSubInfo).getSubscriptionId();
+        doReturn(Arrays.asList(mSubInfo)).when(mSubscriptionManager).getAllSubscriptionInfoList();
 
         // Set default void subId.
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION,
+                Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION + subID,
                 subID);
 
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.ENHANCED_4G_MODE_ENABLED,
+                Settings.Global.ENHANCED_4G_MODE_ENABLED + subID,
                 1);
 
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.VT_IMS_ENABLED,
+                Settings.Global.VT_IMS_ENABLED + subID,
                 0);
 
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_ENABLED,
+                Settings.Global.WFC_IMS_ENABLED + subID,
                 1);
 
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_MODE,
+                Settings.Global.WFC_IMS_MODE + subID,
                 2);
 
         Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_ROAMING_MODE,
+                Settings.Global.WFC_IMS_ROAMING_MODE + subID,
                 3);
 
         mSubscriptionControllerUT.migrateImsSettings();
@@ -352,16 +356,16 @@ public class SubscriptionControllerTest extends TelephonyTest {
                 Settings.Global.ENHANCED_4G_MODE_ENABLED + subID));
 
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.VT_IMS_ENABLED));
+                Settings.Global.VT_IMS_ENABLED + subID));
 
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_ENABLED));
+                Settings.Global.WFC_IMS_ENABLED + subID));
 
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_MODE));
+                Settings.Global.WFC_IMS_MODE + subID));
 
         assertEquals(-1,  Settings.Global.getInt(mContext.getContentResolver(),
-                Settings.Global.WFC_IMS_ROAMING_MODE));
+                Settings.Global.WFC_IMS_ROAMING_MODE + subID));
 
         // The values should be migrated to its DB.
         assertEquals("1", mSubscriptionControllerUT.getSubscriptionProperty(
