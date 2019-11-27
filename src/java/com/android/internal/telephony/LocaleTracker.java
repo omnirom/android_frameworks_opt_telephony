@@ -556,7 +556,7 @@ public class LocaleTracker extends Handler {
 
         // If for any reason we can't get country from operator numeric, try to get it from cell
         // info.
-        if (TextUtils.isEmpty(countryIso) && !TEST_MCCS.contains(mcc)) {
+        if (TextUtils.isEmpty(countryIso)) {
             String mcc = getMccFromCellInfo();
             countryIso = MccTable.countryCodeForMcc(mcc);
             countryIsoDebugInfo = "CellInfo: MccTable.countryCodeForMcc(\"" + mcc + "\")";
@@ -607,7 +607,8 @@ public class LocaleTracker extends Handler {
         if (!TextUtils.isEmpty(mOperatorNumeric)) {
             // For a test cell (MCC 001), the NitzStateMachine requires handleCountryDetected("") in
             // order to pass compliance tests. http://b/142840879
-            if (mOperatorNumeric.startsWith("001")) {
+            MccMnc mccMnc = MccMnc.fromOperatorNumeric(mOperatorNumeric);
+            if (mccMnc != null && TEST_MCCS.contains(mccMnc.mcc)) {
                 isTestMcc = true;
                 timeZoneCountryIso = "";
                 timeZoneCountryIsoDebugInfo = "Test cell: " + mOperatorNumeric;
@@ -621,7 +622,7 @@ public class LocaleTracker extends Handler {
         log("updateLocale: timeZoneCountryIso = " + timeZoneCountryIso
                 + ", timeZoneCountryIsoDebugInfo = " + timeZoneCountryIsoDebugInfo);
 
-        if (TextUtils.isEmpty(timeZoneCountryIso) && !isTestMcc && !TEST_MCCS.contains(mcc)) {
+        if (TextUtils.isEmpty(timeZoneCountryIso) && !isTestMcc) {
             mNitzStateMachine.handleCountryUnavailable();
         } else {
             mNitzStateMachine.handleCountryDetected(timeZoneCountryIso);
