@@ -16,6 +16,9 @@
 
 package com.android.internal.telephony.imsphone;
 
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
+
 import android.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.net.Uri;
@@ -46,7 +49,6 @@ import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
-import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 
@@ -240,9 +242,9 @@ public class ImsPhoneConnection extends Connection implements
 
         if (extras != null) {
             isConferenceUri = extras.getBoolean(
-                    TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+                    EXTRA_DIAL_CONFERENCE_URI, false);
             isSkipSchemaParsing = extras.getBoolean(
-                    TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+                    EXTRA_SKIP_SCHEMA_PARSING, false);
         }
 
         mOwner = ct;

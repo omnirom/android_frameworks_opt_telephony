@@ -38,8 +38,8 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_DAT
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
-import static com.android.internal.telephony.TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING;
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
 
 import android.annotation.UnsupportedAppUsage;
 import android.app.Activity;
@@ -64,7 +64,6 @@ import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.ResultReceiver;
 import android.os.UserHandle;
-import android.sysprop.TelephonyProperties;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.CarrierConfigManager;
 import android.telephony.NetworkRegistrationInfo;
@@ -107,7 +106,6 @@ import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneNotifier;
 import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.TelephonyComponentFactory;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;

@@ -17,9 +17,9 @@
 package com.android.internal.telephony.imsphone;
 
 import static com.android.internal.telephony.Phone.CS_FALLBACK;
-import static com.android.internal.telephony.TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING;
-import static com.android.internal.telephony.TelephonyProperties.EXTRAS_IS_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
+import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
+import static com.android.internal.telephony.TelephonyIntents.EXTRAS_IS_CONFERENCE_URI;
 
 import android.annotation.NonNull;
 import android.annotation.UnsupportedAppUsage;
