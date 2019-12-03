@@ -85,7 +85,7 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
 
         mNitzStateMachineImpl = new NewNitzStateMachineImpl(
                 PHONE_ID, mFakeNitzSignalInputFilter, mRealTimeZoneSuggester,
-                mFakeNewTimeServiceHelper, mFakeDeviceState);
+                mFakeNewTimeServiceHelper);
 
         TelephonyTest.logd("NewNitzStateMachineImplTest -Setup!");
     }
@@ -322,8 +322,8 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         // Simulate airplane mode being turned off.
         script.toggleAirplaneMode(false);
 
-        // Verify the time zone suggestion was withdrawn.
-        script.verifyOnlyTimeZoneWasSuggestedAndReset(EMPTY_TIME_ZONE_SUGGESTION);
+        // Verify nothing was suggested: The last suggestion was empty so nothing has changed.
+        script.verifyNothingWasSuggested();
 
         // Check the state that NitzStateMachine must expose.
         assertNull(mNitzStateMachineImpl.getCachedNitzData());
@@ -496,8 +496,6 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
             mFakeDeviceState.ignoreNitz = false;
             mFakeDeviceState.nitzUpdateDiffMillis = 2000;
             mFakeDeviceState.nitzUpdateSpacingMillis = 1000 * 60 * 10;
-
-            mFakeDeviceState.networkCountryIsoForPhone = "";
         }
 
         // Initialization methods for setting simulated device state, usually before simulation.
@@ -530,13 +528,12 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         }
 
         Script countryUnavailable() {
-            mNitzStateMachineImpl.handleNetworkCountryCodeUnavailable();
+            mNitzStateMachineImpl.handleCountryUnavailable();
             return this;
         }
 
         Script countryReceived(String countryIsoCode) {
-            mFakeDeviceState.networkCountryIsoForPhone = countryIsoCode;
-            mNitzStateMachineImpl.handleNetworkCountryCodeSet(true);
+            mNitzStateMachineImpl.handleCountryDetected(countryIsoCode);
             return this;
         }
 

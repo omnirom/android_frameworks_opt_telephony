@@ -4406,23 +4406,25 @@ public class DcTracker extends Handler {
                 return;
             }
             for (ApnContext apnContext : mApnContexts.values()) {
-                ArrayList<ApnSetting> currentWaitingApns = apnContext.getWaitingApns();
-                ArrayList<ApnSetting> waitingApns = buildWaitingApns(
-                        apnContext.getApnType(), getDataRat());
-                if (VDBG) log("new waitingApns:" + waitingApns);
-                if ((currentWaitingApns != null)
-                        && ((waitingApns.size() != currentWaitingApns.size())
-                        // Check if the existing waiting APN list can cover the newly built APN
-                        // list. If yes, then we don't need to tear down the existing data call.
-                        // TODO: We probably need to rebuild APN list when roaming status changes.
-                        || !containsAllApns(currentWaitingApns, waitingApns))) {
-                    if (VDBG) log("new waiting apn is different for " + apnContext);
-                    apnContext.setWaitingApns(waitingApns);
-                    if (!apnContext.isDisconnected()
-                            && isCleanUpConnectionRequired(apnContext, waitingApns)) {
-                        if (VDBG) log("cleanUpConnectionsOnUpdatedApns for " + apnContext);
-                        apnContext.setReason(reason);
-                        cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
+                if (!apnContext.isDisconnected()) {
+                    ArrayList<ApnSetting> currentWaitingApns = apnContext.getWaitingApns();
+                    ArrayList<ApnSetting> waitingApns = buildWaitingApns(
+                            apnContext.getApnType(), getDataRat());
+                    if (VDBG) log("new waitingApns:" + waitingApns);
+                    if ((currentWaitingApns != null)
+                            && ((waitingApns.size() != currentWaitingApns.size())
+                            // Check if the existing waiting APN list can cover the newly built APN
+                            // list. If yes, then we don't need to tear down the existing data call.
+                            // TODO: We probably need to rebuild APN list when roaming status
+                            //  changes.
+                            || !containsAllApns(currentWaitingApns, waitingApns))) {
+                        if (VDBG) log("new waiting apn is different for " + apnContext);
+                        apnContext.setWaitingApns(waitingApns);
+                        if (isCleanUpConnectionRequired(apnContext, waitingApns)) {
+                            if (VDBG) log("cleanUpConnectionsOnUpdatedApns for " + apnContext);
+                            apnContext.setReason(reason);
+                            cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
+                        }
                     }
                 }
             }
