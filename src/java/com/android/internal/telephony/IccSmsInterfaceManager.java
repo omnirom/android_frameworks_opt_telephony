@@ -129,7 +129,7 @@ public class IccSmsInterfaceManager {
                             markMessagesAsRead((ArrayList<byte[]>) ar.result);
                         } else {
                             if (Rlog.isLoggable("SMS", Log.DEBUG)) {
-                                log("Cannot load Sms records");
+                                loge("Cannot load Sms records");
                             }
                             mSms = null;
                         }
@@ -150,7 +150,7 @@ public class IccSmsInterfaceManager {
                         if (ar.exception == null) {
                             mSmsc = (String) ar.result;
                         } else {
-                            log("Cannot read SMSC");
+                            loge("Cannot read SMSC");
                             mSmsc = null;
                         }
                         mLock.notifyAll();
@@ -197,7 +197,7 @@ public class IccSmsInterfaceManager {
             //shouldn't really happen, as messages are marked as read, only
             //after importing it from icc.
             if (Rlog.isLoggable("SMS", Log.DEBUG)) {
-                log("markMessagesAsRead - aborting, no icc card present.");
+                loge("markMessagesAsRead - aborting, no icc card present.");
             }
             return;
         }
@@ -279,7 +279,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to update by index");
+                loge("interrupted while trying to update by index");
             }
         }
         return mSuccess;
@@ -320,7 +320,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to update by index");
+                loge("interrupted while trying to update by index");
             }
         }
         return mSuccess;
@@ -347,7 +347,7 @@ public class IccSmsInterfaceManager {
 
             IccFileHandler fh = mPhone.getIccFileHandler();
             if (fh == null) {
-                Rlog.e(LOG_TAG, "Cannot load Sms records. No icc card?");
+                loge("Cannot load Sms records. No icc card?");
                 mSms = null;
                 return mSms;
             }
@@ -358,7 +358,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to load from the Icc");
+                loge("interrupted while trying to load from the Icc");
             }
         }
         return mSms;
@@ -613,7 +613,7 @@ public class IccSmsInterfaceManager {
                         try {
                             receivedIntent.send(result);
                         } catch (PendingIntent.CanceledException e) {
-                            Rlog.d(LOG_TAG, "receivedIntent cancelled.");
+                            loge("receivedIntent cancelled.");
                         }
                     }
                 }
@@ -842,7 +842,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to read SMSC");
+                loge("interrupted while trying to read SMSC");
             }
         }
         return mSmsc;
@@ -866,7 +866,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to write SMSC");
+                loge("interrupted while trying to write SMSC");
             }
         }
         return mSuccess;
@@ -1122,7 +1122,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to set cell broadcast config");
+                loge("interrupted while trying to set cell broadcast config");
             }
         }
 
@@ -1142,7 +1142,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to set cell broadcast activation");
+                loge("interrupted while trying to set cell broadcast activation");
             }
         }
 
@@ -1163,7 +1163,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to set cdma broadcast config");
+                loge("interrupted while trying to set cdma broadcast config");
             }
         }
 
@@ -1183,7 +1183,7 @@ public class IccSmsInterfaceManager {
             try {
                 mLock.wait();
             } catch (InterruptedException e) {
-                log("interrupted while trying to set cdma broadcast activation");
+                loge("interrupted while trying to set cdma broadcast activation");
             }
         }
 
@@ -1192,7 +1192,15 @@ public class IccSmsInterfaceManager {
 
     @UnsupportedAppUsage
     protected void log(String msg) {
-        Log.d(LOG_TAG, "[IccSmsInterfaceManager] " + msg);
+        Rlog.d(LOG_TAG, msg);
+    }
+
+    protected void loge(String msg) {
+        Rlog.e(LOG_TAG, msg);
+    }
+
+    protected void loge(String msg, Throwable e) {
+        Rlog.e(LOG_TAG, msg, e);
     }
 
     @UnsupportedAppUsage
@@ -1218,13 +1226,13 @@ public class IccSmsInterfaceManager {
         }
         final ContentResolver resolver = mContext.getContentResolver();
         if (!isFailedOrDraft(resolver, messageUri)) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]sendStoredText: not FAILED or DRAFT message");
+            loge("sendStoredText: not FAILED or DRAFT message");
             returnUnspecifiedFailure(sentIntent);
             return;
         }
         final String[] textAndAddress = loadTextAndAddress(resolver, messageUri);
         if (textAndAddress == null) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]sendStoredText: can not load text");
+            loge("sendStoredText: can not load text");
             returnUnspecifiedFailure(sentIntent);
             return;
         }
@@ -1245,20 +1253,19 @@ public class IccSmsInterfaceManager {
         }
         final ContentResolver resolver = mContext.getContentResolver();
         if (!isFailedOrDraft(resolver, messageUri)) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]sendStoredMultipartText: "
-                    + "not FAILED or DRAFT message");
+            loge("sendStoredMultipartText: not FAILED or DRAFT message");
             returnUnspecifiedFailure(sentIntents);
             return;
         }
         final String[] textAndAddress = loadTextAndAddress(resolver, messageUri);
         if (textAndAddress == null) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]sendStoredMultipartText: can not load text");
+            loge("sendStoredMultipartText: can not load text");
             returnUnspecifiedFailure(sentIntents);
             return;
         }
         final ArrayList<String> parts = SmsManager.getDefault().divideMessage(textAndAddress[0]);
         if (parts == null || parts.size() < 1) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]sendStoredMultipartText: can not divide text");
+            loge("sendStoredMultipartText: can not divide text");
             returnUnspecifiedFailure(sentIntents);
             return;
         }
@@ -1330,7 +1337,7 @@ public class IccSmsInterfaceManager {
                         || type == Telephony.Sms.MESSAGE_TYPE_FAILED;
             }
         } catch (SQLiteException e) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]isFailedOrDraft: query message type failed", e);
+            loge("isFailedOrDraft: query message type failed", e);
         } finally {
             if (cursor != null) {
                 cursor.close();
@@ -1361,7 +1368,7 @@ public class IccSmsInterfaceManager {
                 return new String[]{ cursor.getString(0), cursor.getString(1) };
             }
         } catch (SQLiteException e) {
-            Log.e(LOG_TAG, "[IccSmsInterfaceManager]loadText: query message text failed", e);
+            loge("loadText: query message text failed", e);
         } finally {
             if (cursor != null) {
                 cursor.close();

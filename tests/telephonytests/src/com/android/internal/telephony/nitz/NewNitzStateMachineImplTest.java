@@ -16,9 +16,14 @@
 
 package com.android.internal.telephony.nitz;
 
+import static android.app.timezonedetector.PhoneTimeZoneSuggestion.MATCH_TYPE_TEST_NETWORK_OFFSET_ONLY;
+import static android.app.timezonedetector.PhoneTimeZoneSuggestion.QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET;
+
 import static com.android.internal.telephony.NitzStateMachineTestSupport.ARBITRARY_SYSTEM_CLOCK_TIME;
 import static com.android.internal.telephony.NitzStateMachineTestSupport.UNIQUE_US_ZONE_SCENARIO1;
 import static com.android.internal.telephony.NitzStateMachineTestSupport.UNITED_KINGDOM_SCENARIO;
+import static com.android.internal.telephony.NitzStateMachineTestSupport.createEmptyTimeSuggestion;
+import static com.android.internal.telephony.NitzStateMachineTestSupport.createEmptyTimeZoneSuggestion;
 import static com.android.internal.telephony.NitzStateMachineTestSupport.createTimeSuggestionFromNitzSignal;
 
 import static org.junit.Assert.assertEquals;
@@ -29,6 +34,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.timedetector.PhoneTimeSuggestion;
+import android.app.timezonedetector.PhoneTimeZoneSuggestion;
 import android.util.TimestampedValue;
 
 import com.android.internal.telephony.IndentingPrintWriter;
@@ -38,7 +44,6 @@ import com.android.internal.telephony.NitzStateMachineTestSupport.Scenario;
 import com.android.internal.telephony.TelephonyTest;
 import com.android.internal.telephony.TimeZoneLookupHelper;
 import com.android.internal.telephony.nitz.NewNitzStateMachineImpl.NitzSignalInputFilterPredicate;
-import com.android.internal.telephony.nitz.service.PhoneTimeZoneSuggestion;
 
 import org.junit.After;
 import org.junit.Before;
@@ -52,7 +57,9 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
 
     private static final int PHONE_ID = 99999;
     private static final PhoneTimeZoneSuggestion EMPTY_TIME_ZONE_SUGGESTION =
-            new PhoneTimeZoneSuggestion(PHONE_ID);
+            createEmptyTimeZoneSuggestion(PHONE_ID);
+    private static final PhoneTimeSuggestion EMPTY_TIME_SUGGESTION =
+            createEmptyTimeSuggestion(PHONE_ID);
 
     private FakeNewTimeServiceHelper mFakeNewTimeServiceHelper;
     private FakeDeviceState mFakeDeviceState;
@@ -208,9 +215,9 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         PhoneTimeZoneSuggestion expectedTimeZoneSuggestion =
                 mRealTimeZoneSuggester.getTimeZoneSuggestion(
                         PHONE_ID, "" /* countryIsoCode */, nitzSignal);
-        assertEquals(PhoneTimeZoneSuggestion.TEST_NETWORK_OFFSET_ONLY,
+        assertEquals(MATCH_TYPE_TEST_NETWORK_OFFSET_ONLY,
                 expectedTimeZoneSuggestion.getMatchType());
-        assertEquals(PhoneTimeZoneSuggestion.MULTIPLE_ZONES_WITH_SAME_OFFSET,
+        assertEquals(QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET,
                 expectedTimeZoneSuggestion.getQuality());
 
         // Verify the state machine did the right thing.
@@ -252,9 +259,9 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         PhoneTimeZoneSuggestion expectedTimeZoneSuggestion =
                 mRealTimeZoneSuggester.getTimeZoneSuggestion(
                         PHONE_ID, "" /* countryIsoCode */, nitzSignal);
-        assertEquals(PhoneTimeZoneSuggestion.TEST_NETWORK_OFFSET_ONLY,
+        assertEquals(MATCH_TYPE_TEST_NETWORK_OFFSET_ONLY,
                 expectedTimeZoneSuggestion.getMatchType());
-        assertEquals(PhoneTimeZoneSuggestion.MULTIPLE_ZONES_WITH_SAME_OFFSET,
+        assertEquals(QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET,
                 expectedTimeZoneSuggestion.getQuality());
 
         // Verify the state machine did the right thing.
@@ -307,7 +314,8 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
 
         // Verify the state machine did the right thing.
         // Check the time zone suggestion was withdrawn (time is not currently withdrawn).
-        script.verifyOnlyTimeZoneWasSuggestedAndReset(EMPTY_TIME_ZONE_SUGGESTION);
+        script.verifyTimeAndTimeZoneSuggestedAndReset(
+                EMPTY_TIME_SUGGESTION, EMPTY_TIME_ZONE_SUGGESTION);
 
         // Check state that NitzStateMachine must expose.
         assertNull(mNitzStateMachineImpl.getCachedNitzData());
@@ -399,12 +407,12 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         // Simulate network being lost.
         script.networkUnavailable();
 
-        // Verify the state machine did the right thing.
-        // Check the "no NITZ" time zone suggestion is made (time is not currently withdrawn).
+        // Check the "no NITZ" time and time zone suggestions are made.
         PhoneTimeZoneSuggestion expectedMiddleTimeZoneSuggestion =
                 mRealTimeZoneSuggester.getTimeZoneSuggestion(
                         PHONE_ID, countryIsoCode, null /* nitzSignal */);
-        script.verifyOnlyTimeZoneWasSuggestedAndReset(expectedMiddleTimeZoneSuggestion);
+        script.verifyTimeAndTimeZoneSuggestedAndReset(
+                EMPTY_TIME_SUGGESTION, expectedMiddleTimeZoneSuggestion);
 
         // Check state that NitzStateMachine must expose.
         assertNull(mNitzStateMachineImpl.getCachedNitzData());
@@ -652,8 +660,10 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         @Override
         public void suggestDeviceTime(PhoneTimeSuggestion timeSuggestion) {
             suggestedTimes.set(timeSuggestion);
-            // The fake time service just uses the latest suggestion.
-            mFakeDeviceState.currentTimeMillis = timeSuggestion.getUtcTime().getValue();
+            if (timeSuggestion.getUtcTime() != null) {
+                // The fake time service just uses the latest suggestion.
+                mFakeDeviceState.currentTimeMillis = timeSuggestion.getUtcTime().getValue();
+            }
         }
 
         @Override
