@@ -408,7 +408,7 @@ public class MultiSimSettingController extends Handler {
         if (DBG) log("onSubscriptionGroupChanged");
 
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
-                groupUuid, mContext.getOpPackageName());
+                groupUuid, mContext.getOpPackageName(), mContext.getFeatureId());
         if (infoList == null || infoList.isEmpty()) return;
 
         // Get a reference subscription to copy settings from.
@@ -471,7 +471,8 @@ public class MultiSimSettingController extends Handler {
         if (!isReadyToReevaluate()) return;
 
         List<SubscriptionInfo> activeSubInfos = mSubController
-                .getActiveSubscriptionInfoList(mContext.getOpPackageName());
+                .getActiveSubscriptionInfoList(mContext.getOpPackageName(),
+                        mContext.getFeatureId());
 
         if (ArrayUtils.isEmpty(activeSubInfos)) {
             mPrimarySubList.clear();
@@ -645,7 +646,8 @@ public class MultiSimSettingController extends Handler {
             if (phone != null && phone.isCdmaSubscriptionAppPresent()) {
                 cdmaPhoneCount++;
                 String simName = mSubController.getActiveSubscriptionInfo(
-                        subId, mContext.getOpPackageName()).getDisplayName().toString();
+                        subId, mContext.getOpPackageName(), mContext.getFeatureId())
+                        .getDisplayName().toString();
                 if (TextUtils.isEmpty(simName)) {
                     // Fall back to carrier name.
                     simName = phone.getCarrierName();
@@ -701,7 +703,8 @@ public class MultiSimSettingController extends Handler {
     protected void setUserDataEnabledForGroup(int subId, boolean enable) {
         log("setUserDataEnabledForGroup subId " + subId + " enable " + enable);
         List<SubscriptionInfo> infoList = mSubController.getSubscriptionsInGroup(
-                mSubController.getGroupUuid(subId), mContext.getOpPackageName());
+                mSubController.getGroupUuid(subId), mContext.getOpPackageName(),
+                mContext.getFeatureId());
 
         if (infoList == null) return;
 
@@ -731,7 +734,8 @@ public class MultiSimSettingController extends Handler {
     private void setRoamingDataEnabledForGroup(int subId, boolean enable) {
         SubscriptionController subController = SubscriptionController.getInstance();
         List<SubscriptionInfo> infoList = subController.getSubscriptionsInGroup(
-                mSubController.getGroupUuid(subId), mContext.getOpPackageName());
+                mSubController.getGroupUuid(subId), mContext.getOpPackageName(),
+                mContext.getFeatureId());
 
         if (infoList == null) return;
 
@@ -779,7 +783,7 @@ public class MultiSimSettingController extends Handler {
         if (!SubscriptionInfoUpdater.isSubInfoInitialized()) return;
 
         List<SubscriptionInfo> opptSubList = mSubController.getOpportunisticSubscriptions(
-                mContext.getOpPackageName());
+                mContext.getOpPackageName(), mContext.getFeatureId());
 
         if (ArrayUtils.isEmpty(opptSubList)) return;
 

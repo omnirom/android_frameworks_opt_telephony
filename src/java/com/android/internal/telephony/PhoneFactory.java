@@ -28,6 +28,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.LocalServerSocket;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
@@ -38,7 +39,6 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 
-import com.android.internal.os.BackgroundThread;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.dataconnection.TelephonyNetworkFactory;
 import com.android.internal.telephony.euicc.EuiccCardController;
@@ -231,9 +231,11 @@ public class PhoneFactory {
                 sMadeDefaults = true;
 
                 Rlog.i(LOG_TAG, "Creating SubInfoRecordUpdater ");
+                HandlerThread pfhandlerThread = new HandlerThread("PhoneFactoryHandlerThread");
+                pfhandlerThread.start();
                 sSubInfoRecordUpdater = telephonyComponentFactory.inject(
                         SubscriptionInfoUpdater.class.getName()).
-                        makeSubscriptionInfoUpdater(BackgroundThread.get().
+                        makeSubscriptionInfoUpdater(pfhandlerThread.
                         getLooper(), context, sCommandsInterfaces);
 
                 // Only bring up IMS if the device supports having an IMS stack.
