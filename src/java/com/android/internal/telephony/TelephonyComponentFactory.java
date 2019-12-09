@@ -486,4 +486,9 @@ public class TelephonyComponentFactory {
             Phone[] phones, CommandsInterface[] commandsInterfaces) {
         Rlog.d(LOG_TAG, "makeExtTelephonyClasses");
     }
+
+    public CarrierInfoManager makeCarrierInfoManager(Phone phone) {
+        Rlog.i(TAG, " makeCarrierInfoManager ");
+        return new CarrierInfoManager();
+    }
 }
