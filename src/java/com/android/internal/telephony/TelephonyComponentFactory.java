@@ -368,10 +368,9 @@ public class TelephonyComponentFactory {
      */
     public InboundSmsTracker makeInboundSmsTracker(byte[] pdu, long timestamp, int destPort,
             boolean is3gpp2, boolean is3gpp2WapPdu, String address, String displayAddr,
-            String messageBody, boolean isClass0) {
-        Rlog.d(LOG_TAG, "makeInboundSmsTracker");
+            String messageBody, boolean isClass0, int subId) {
         return new InboundSmsTracker(pdu, timestamp, destPort, is3gpp2, is3gpp2WapPdu, address,
-                displayAddr, messageBody, isClass0);
+                displayAddr, messageBody, isClass0, subId);
     }
 
     /**
@@ -380,11 +379,10 @@ public class TelephonyComponentFactory {
     public InboundSmsTracker makeInboundSmsTracker(byte[] pdu, long timestamp, int destPort,
             boolean is3gpp2, String address, String displayAddr, int referenceNumber,
             int sequenceNumber, int messageCount, boolean is3gpp2WapPdu, String messageBody,
-            boolean isClass0) {
-        Rlog.d(LOG_TAG, "makeInboundSmsTracker");
+            boolean isClass0, int subId) {
         return new InboundSmsTracker(pdu, timestamp, destPort, is3gpp2, address, displayAddr,
                 referenceNumber, sequenceNumber, messageCount, is3gpp2WapPdu, messageBody,
-                isClass0);
+                isClass0, subId);
     }
 
     /**

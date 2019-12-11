@@ -83,19 +83,19 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
             "T-mobile", 0, 255, "12345", 0, null, "310", "260",
             "156", false, null, null, -1, false, mGroupUuid1.toString(), false,
             TelephonyManager.UNKNOWN_CARRIER_ID, SubscriptionManager.PROFILE_CLASS_DEFAULT,
-            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null);
+            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null, null);
 
     private SubscriptionInfo mSubInfo3 = new SubscriptionInfo(3, "subInfo3 IccId", -1, "T-mobile",
             "T-mobile", 0, 255, "12345", 0, null, "310", "260",
             "156", false, null, null, -1, false, mGroupUuid1.toString(), false,
             TelephonyManager.UNKNOWN_CARRIER_ID, SubscriptionManager.PROFILE_CLASS_DEFAULT,
-            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null);
+            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null, null);
 
     private SubscriptionInfo mSubInfo4 = new SubscriptionInfo(4, "subInfo4 IccId", -1, "T-mobile",
             "T-mobile", 0, 255, "12345", 0, null, "310", "260",
             "156", false, null, null, -1, false, mGroupUuid1.toString(), false,
             TelephonyManager.UNKNOWN_CARRIER_ID, SubscriptionManager.PROFILE_CLASS_DEFAULT,
-            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null);
+            SubscriptionManager.SUBSCRIPTION_TYPE_LOCAL_SIM, null, null);
 
     @Before
     public void setUp() throws Exception {
@@ -491,7 +491,7 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
         mMultiSimSettingControllerUT.notifySubscriptionGroupChanged(mGroupUuid1);
         waitABit();
         // This should result in setting sync.
-        verify(mDataEnabledSettingsMock1).setUserDataEnabled(false);
+        verify(mDataEnabledSettingsMock1).setUserDataEnabled(false, false);
         assertFalse(GlobalSettingsHelper.getBoolean(
                 mContext, Settings.Global.DATA_ROAMING, 1, true));
 
@@ -500,7 +500,7 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
         // Turning data on on sub 2. Sub 1 should also be turned on.
         mMultiSimSettingControllerUT.notifyUserDataEnabled(2, true);
         waitABit();
-        verify(mDataEnabledSettingsMock1).setUserDataEnabled(true);
+        verify(mDataEnabledSettingsMock1).setUserDataEnabled(true, false);
         // No user selection needed, no intent should be sent.
         verify(mContext, never()).sendBroadcast(any());
     }
@@ -531,7 +531,7 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
         mMultiSimSettingControllerUT.notifySubscriptionGroupChanged(mGroupUuid1);
         waitABit();
         // This should result in setting sync.
-        verify(mDataEnabledSettingsMock2).setUserDataEnabled(true);
+        verify(mDataEnabledSettingsMock2).setUserDataEnabled(true, false);
         assertFalse(GlobalSettingsHelper.getBoolean(
                 mContext, Settings.Global.DATA_ROAMING, 2, true));
         verify(mSubControllerMock).setDataRoaming(/*enable*/0, /*subId*/1);
@@ -540,7 +540,7 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
         doReturn(false).when(mPhoneMock1).isUserDataEnabled();
         mMultiSimSettingControllerUT.notifyUserDataEnabled(1, false);
         waitABit();
-        verify(mDataEnabledSettingsMock2).setUserDataEnabled(false);
+        verify(mDataEnabledSettingsMock2).setUserDataEnabled(false, false);
     }
 
     @Test

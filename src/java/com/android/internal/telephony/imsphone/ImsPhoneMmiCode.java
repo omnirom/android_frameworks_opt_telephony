@@ -1007,6 +1007,8 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                     throw new RuntimeException ("Invalid or Unsupported MMI Code");
                 }
             } else if (mPoundString != null) {
+                // USSD codes are not supported over IMS due to modem limitations; send over the CS
+                // pipe instead.  This should be fixed in the future.
                 Rlog.i(LOG_TAG, "processCode: Sending ussd string '"
                         + Rlog.pii(LOG_TAG, mPoundString) + "' over CS pipe.");
                 throw new CallStateException(Phone.CS_FALLBACK);
