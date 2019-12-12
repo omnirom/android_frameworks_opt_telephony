@@ -22,9 +22,7 @@ import android.content.Context;
 import android.content.res.XmlResourceParser;
 import android.database.Cursor;
 import android.os.Handler;
-import android.os.IDeviceIdleController;
 import android.os.Looper;
-import android.os.ServiceManager;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -424,12 +422,6 @@ public class TelephonyComponentFactory {
                                              int what, Object obj) {
         Rlog.d(LOG_TAG, "getCdmaSubscriptionSourceManagerInstance");
         return CdmaSubscriptionSourceManager.getInstance(context, ci, h, what, obj);
-    }
-
-    public IDeviceIdleController getIDeviceIdleController() {
-        Rlog.d(LOG_TAG, "getIDeviceIdleController");
-        return IDeviceIdleController.Stub.asInterface(
-                ServiceManager.getService(Context.DEVICE_IDLE_CONTROLLER));
     }
 
     public LocaleTracker makeLocaleTracker(Phone phone, NitzStateMachine nitzStateMachine,

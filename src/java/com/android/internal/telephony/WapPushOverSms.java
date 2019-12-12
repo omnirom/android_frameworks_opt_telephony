@@ -37,7 +37,7 @@ import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.IDeviceIdleController;
+import android.os.PowerWhitelistManager;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -73,8 +73,7 @@ public class WapPushOverSms implements ServiceConnection {
 
     @UnsupportedAppUsage
     private final Context mContext;
-    @UnsupportedAppUsage
-    private IDeviceIdleController mDeviceIdleController;
+    PowerWhitelistManager mPowerWhitelistManager;
 
     private String mWapPushManagerPackage;
 
@@ -136,8 +135,8 @@ public class WapPushOverSms implements ServiceConnection {
 
     public WapPushOverSms(Context context) {
         mContext = context;
-        mDeviceIdleController = TelephonyComponentFactory.getInstance()
-                .inject(IDeviceIdleController.class.getName()).getIDeviceIdleController();
+        mPowerWhitelistManager =
+                (PowerWhitelistManager) mContext.getSystemService(Context.POWER_WHITELIST_MANAGER);
 
         UserManager userManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
 
@@ -351,8 +350,8 @@ public class WapPushOverSms implements ServiceConnection {
                     if (DBG) Rlog.w(TAG, "wap push manager not found!");
                 } else {
                     synchronized (this) {
-                        mDeviceIdleController.addPowerSaveTempWhitelistAppForMms(
-                                mWapPushManagerPackage, 0, "mms-mgr");
+                        mPowerWhitelistManager.whitelistAppTemporarilyForEvent(
+                                mWapPushManagerPackage, PowerWhitelistManager.EVENT_MMS, "mms-mgr");
                     }
 
                     Intent intent = new Intent();
@@ -409,18 +408,15 @@ public class WapPushOverSms implements ServiceConnection {
             intent.setComponent(componentName);
             if (DBG) Rlog.v(TAG, "Delivering MMS to: " + componentName.getPackageName() +
                     " " + componentName.getClassName());
-            try {
-                long duration = mDeviceIdleController.addPowerSaveTempWhitelistAppForMms(
-                        componentName.getPackageName(), 0, "mms-app");
-                BroadcastOptions bopts = BroadcastOptions.makeBasic();
-                bopts.setTemporaryAppWhitelistDuration(duration);
-                options = bopts.toBundle();
-            } catch (RemoteException e) {
-            }
+            long duration = mPowerWhitelistManager.whitelistAppTemporarilyForEvent(
+                    componentName.getPackageName(), PowerWhitelistManager.EVENT_MMS, "mms-app");
+            BroadcastOptions bopts = BroadcastOptions.makeBasic();
+            bopts.setTemporaryAppWhitelistDuration(duration);
+            options = bopts.toBundle();
         }
 
         handler.dispatchIntent(intent, getPermissionForType(result.mimeType),
-                getAppOpsPermissionForIntent(result.mimeType), options, receiver,
+                getAppOpsStringPermissionForIntent(result.mimeType), options, receiver,
                 UserHandle.SYSTEM, subId);
         return Activity.RESULT_OK;
     }
@@ -611,12 +607,17 @@ public class WapPushOverSms implements ServiceConnection {
         return permission;
     }
 
-    public static int getAppOpsPermissionForIntent(String mimeType) {
-        int appOp;
+    /**
+     * Return a appOps String for the given MIME type.
+     * @param mimeType MIME type of the Intent
+     * @return The appOps String
+     */
+    public static String getAppOpsStringPermissionForIntent(String mimeType) {
+        String appOp;
         if (WspTypeDecoder.CONTENT_TYPE_B_MMS.equals(mimeType)) {
-            appOp = AppOpsManager.OP_RECEIVE_MMS;
+            appOp = AppOpsManager.OPSTR_RECEIVE_MMS;
         } else {
-            appOp = AppOpsManager.OP_RECEIVE_WAP_PUSH;
+            appOp = AppOpsManager.OPSTR_RECEIVE_WAP_PUSH;
         }
         return appOp;
     }
