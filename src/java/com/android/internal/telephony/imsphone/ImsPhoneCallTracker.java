@@ -1396,6 +1396,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 && mRingingCall.getState() == ImsPhoneCall.State.WAITING;
         if (switchingWithWaitingCall) {
             ImsCall callToHold = mForegroundCall.getImsCall();
+            mCallExpectedToResume = mRingingCall.getImsCall();
             mHoldSwitchingState = HoldSwapState.HOLDING_TO_ANSWER_INCOMING;
             mForegroundCall.switchWith(mBackgroundCall);
             logHoldSwapState("holdActiveCallForWaitingCall");
@@ -2620,12 +2621,20 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 // Check to see which call got terminated. If it's the one that was gonna get held,
                 // ignore it. If it's the one that was gonna get answered, restore the one that
                 // possibly got held.
-                if (imsCall == mCallExpectedToResume) {
+                // If holding the active call is still in progress when the waiting call terminates
+                // resume the held call in onCallHeld. Else resume the call here.
+                if ((imsCall == mCallExpectedToResume) &&
+                            mBackgroundCall.getState() == ImsPhoneCall.State.HOLDING) {
                     mForegroundCall.switchWith(mBackgroundCall);
                     mCallExpectedToResume = null;
                     mHoldSwitchingState = HoldSwapState.INACTIVE;
                     logHoldSwapState("onCallTerminated hold to answer case");
                     sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
+                } else if (mRingingCall.getState() == ImsPhoneCall.State.WAITING) {
+                    //In case of the call to be HELD being terminated answer the ringing call
+                    //before ACTIVE call session gets closed as there will be no onCallHoldFailed
+                    //callback triggered to answer waiting call
+                    sendEmptyMessage(EVENT_ANSWER_WAITING_CALL);
                 }
             } else if (mHoldSwitchingState == HoldSwapState.HOLDING_TO_DIAL_OUTGOING ||
                     mHoldSwitchingState == HoldSwapState.ENDING_TO_DIAL_OUTGOING) {
@@ -2696,6 +2705,16 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
                         mHoldSwitchingState = HoldSwapState.INACTIVE;
                         logHoldSwapState("onCallHeld auto resume");
+                    } else if (mRingingCall.getState() == ImsPhoneCall.State.IDLE
+                              && mHoldSwitchingState == HoldSwapState.HOLDING_TO_ANSWER_INCOMING) {
+                        //Handle the case where waiting call gets terminated while HOLDING of ACTIVE
+                        //call is still in progress and the held call is not resumed in
+                        //onCallTerminated.
+                        mForegroundCall.switchWith(mBackgroundCall);
+                        sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
+                        mHoldSwitchingState = HoldSwapState.INACTIVE;
+                        mCallExpectedToResume = null;
+                        logHoldSwapState("onCallHeld premature termination of waiting call");
                     } else {
                         // In this case there will be no call resumed, so we can assume that we
                         // are done switching fg and bg calls now.
