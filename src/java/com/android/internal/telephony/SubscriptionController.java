@@ -77,6 +77,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -114,6 +115,7 @@ public class SubscriptionController extends ISub.Stub {
 
     /* Similar to mCacheActiveSubInfoList but only caching opportunistic subscriptions. */
     private List<SubscriptionInfo> mCacheOpportunisticSubInfoList = new ArrayList<>();
+    private AtomicBoolean mOpptSubInfoListChangedDirtyBit = new AtomicBoolean();
 
     private static final Comparator<SubscriptionInfo> SUBSCRIPTION_INFO_COMPARATOR =
             (arg0, arg1) -> {
@@ -148,6 +150,18 @@ public class SubscriptionController extends ISub.Stub {
     @UnsupportedAppUsage
     private int[] colorArr;
     private long mLastISubServiceRegTime;
+
+    // The properties that should be shared and synced across grouped subscriptions.
+    private static final Set<String> GROUP_SHARING_PROPERTIES = new HashSet<>(Arrays.asList(
+            SubscriptionManager.ENHANCED_4G_MODE_ENABLED,
+            SubscriptionManager.VT_IMS_ENABLED,
+            SubscriptionManager.WFC_IMS_ENABLED,
+            SubscriptionManager.WFC_IMS_MODE,
+            SubscriptionManager.WFC_IMS_ROAMING_MODE,
+            SubscriptionManager.WFC_IMS_ROAMING_ENABLED,
+            SubscriptionManager.DATA_ROAMING,
+            SubscriptionManager.DISPLAY_NAME,
+            SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES));
 
     public static SubscriptionController init(Phone phone) {
         synchronized (SubscriptionController.class) {
@@ -329,6 +343,10 @@ public class SubscriptionController extends ISub.Stub {
         synchronized (mSubInfoListLock) {
             subInfos = new ArrayList<>(mCacheActiveSubInfoList);
         }
+
+        if (mOpptSubInfoListChangedDirtyBit.getAndSet(false)) {
+            notifyOpportunisticSubscriptionInfoChanged();
+        }
         metrics.updateActiveSubscriptionInfoList(subInfos);
     }
 
@@ -389,6 +407,8 @@ public class SubscriptionController extends ISub.Stub {
         } else {
             accessRules = null;
         }
+        UiccAccessRule[] carrierConfigAccessRules = UiccAccessRule.decodeRules(cursor.getBlob(
+            cursor.getColumnIndexOrThrow(SubscriptionManager.ACCESS_RULES_FROM_CARRIER_CONFIGS)));
         boolean isOpportunistic = cursor.getInt(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.IS_OPPORTUNISTIC)) == 1;
         String groupUUID = cursor.getString(cursor.getColumnIndexOrThrow(
@@ -409,9 +429,11 @@ public class SubscriptionController extends ISub.Stub {
                     + " dataRoaming:" + dataRoaming + " mcc:" + mcc + " mnc:" + mnc
                     + " countIso:" + countryIso + " isEmbedded:"
                     + isEmbedded + " accessRules:" + Arrays.toString(accessRules)
+                    + " carrierConfigAccessRules: " + Arrays.toString(carrierConfigAccessRules)
                     + " cardId:" + cardIdToPrint + " publicCardId:" + publicCardId
                     + " isOpportunistic:" + isOpportunistic + " groupUUID:" + groupUUID
-                    + " profileClass:" + profileClass + " subscriptionType: " + subType);
+                    + " profileClass:" + profileClass + " subscriptionType: " + subType
+                    + " carrierConfigAccessRules:" + carrierConfigAccessRules);
         }
 
         // If line1number has been set to a different number, use it instead.
@@ -423,7 +445,7 @@ public class SubscriptionController extends ISub.Stub {
                 carrierName, nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc,
                 countryIso, isEmbedded, accessRules, cardId, publicCardId, isOpportunistic,
                 groupUUID, false /* isGroupDisabled */, carrierId, profileClass, subType,
-                groupOwner);
+                groupOwner, carrierConfigAccessRules);
         info.setAssociatedPlmns(ehplmns, hplmns);
         return info;
     }
@@ -743,7 +765,7 @@ public class SubscriptionController extends ISub.Stub {
             }
 
             // Refresh cached opportunistic sub list and detect whether it's changed.
-            opptSubListChanged = refreshCachedOpportunisticSubscriptionInfoList();
+            refreshCachedOpportunisticSubscriptionInfoList();
 
             if (DBG_CACHE) {
                 if (!mCacheActiveSubInfoList.isEmpty()) {
@@ -755,11 +777,6 @@ public class SubscriptionController extends ISub.Stub {
                     logdl("[refreshCachedActiveSubscriptionInfoList]- no info return");
                 }
             }
-        }
-
-        // Send notification outside synchronization.
-        if (opptSubListChanged) {
-            notifyOpportunisticSubscriptionInfoChanged();
         }
     }
 
@@ -1639,8 +1656,7 @@ public class SubscriptionController extends ISub.Stub {
                             mContext, 0 /* requestCode */, new Intent(), 0 /* flags */));
             }
 
-            int result = mContext.getContentResolver().update(
-                    SubscriptionManager.getUriForSubscriptionId(subId), value, null, null);
+            int result = updateDatabase(value, subId, true);
 
             // Refresh the Cache of Active Subscription Info List
             refreshCachedActiveSubscriptionInfoList();
@@ -1754,7 +1770,7 @@ public class SubscriptionController extends ISub.Stub {
             value.put(SubscriptionManager.DATA_ROAMING, roaming);
             if (DBG) logd("[setDataRoaming]- roaming:" + roaming + " set");
 
-            int result = databaseUpdateHelper(value, subId, true);
+            int result = updateDatabase(value, subId, true);
 
             // Refresh the Cache of Active Subscription Info List
             refreshCachedActiveSubscriptionInfoList();
@@ -1767,18 +1783,54 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-
     public void syncGroupedSetting(int refSubId) {
-        // Currently it only syncs allow MMS. Sync other settings as well if needed.
-        String dataEnabledOverrideRules = getSubscriptionProperty(
-                refSubId, SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES);
+        logd("syncGroupedSetting");
+        try (Cursor cursor = mContext.getContentResolver().query(
+                SubscriptionManager.CONTENT_URI, null,
+                SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "=?",
+                new String[] {String.valueOf(refSubId)}, null)) {
+            if (cursor == null || !cursor.moveToFirst()) {
+                logd("[syncGroupedSetting] failed. Can't find refSubId " + refSubId);
+                return;
+            }
 
-        ContentValues value = new ContentValues(1);
-        value.put(SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES, dataEnabledOverrideRules);
-        databaseUpdateHelper(value, refSubId, true);
+            ContentValues values = new ContentValues(GROUP_SHARING_PROPERTIES.size());
+            for (String propKey : GROUP_SHARING_PROPERTIES) {
+                copyDataFromCursorToContentValue(propKey, cursor, values);
+            }
+            updateDatabase(values, refSubId, true);
+        }
     }
 
-    private int databaseUpdateHelper(ContentValues value, int subId, boolean updateEntireGroup) {
+    private void copyDataFromCursorToContentValue(String propKey, Cursor cursor,
+            ContentValues values) {
+        int columnIndex = cursor.getColumnIndex(propKey);
+        if (columnIndex == -1) {
+            logd("[copyDataFromCursorToContentValue] can't find column " + propKey);
+            return;
+        }
+
+        switch (propKey) {
+            case SubscriptionManager.ENHANCED_4G_MODE_ENABLED:
+            case SubscriptionManager.VT_IMS_ENABLED:
+            case SubscriptionManager.WFC_IMS_ENABLED:
+            case SubscriptionManager.WFC_IMS_MODE:
+            case SubscriptionManager.WFC_IMS_ROAMING_MODE:
+            case SubscriptionManager.WFC_IMS_ROAMING_ENABLED:
+            case SubscriptionManager.DATA_ROAMING:
+                values.put(propKey, cursor.getInt(columnIndex));
+                break;
+            case SubscriptionManager.DISPLAY_NAME:
+            case SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES:
+                values.put(propKey, cursor.getString(columnIndex));
+                break;
+            default:
+                loge("[copyDataFromCursorToContentValue] invalid propKey " + propKey);
+        }
+    }
+
+    // TODO: replace all updates with this helper method.
+    private int updateDatabase(ContentValues value, int subId, boolean updateEntireGroup) {
         List<SubscriptionInfo> infoList = getSubscriptionsInGroup(getGroupUuid(subId),
                 mContext.getOpPackageName());
         if (!updateEntireGroup || infoList == null || infoList.size() == 0) {
@@ -2628,9 +2680,10 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private static int setSubscriptionPropertyIntoContentResolver(
+    private int setSubscriptionPropertyIntoContentResolver(
             int subId, String propKey, String propValue, ContentResolver resolver) {
         ContentValues value = new ContentValues();
+        boolean updateEntireGroup = GROUP_SHARING_PROPERTIES.contains(propKey);
         switch (propKey) {
             case SubscriptionManager.CB_EXTREME_THREAT_ALERT:
             case SubscriptionManager.CB_SEVERE_THREAT_ALERT:
@@ -2658,8 +2711,7 @@ public class SubscriptionController extends ISub.Stub {
                 break;
         }
 
-        return resolver.update(SubscriptionManager.getUriForSubscriptionId(subId),
-                value, null, null);
+        return updateDatabase(value, subId, updateEntireGroup);
     }
 
     /**
@@ -3332,7 +3384,7 @@ public class SubscriptionController extends ISub.Stub {
             int subId = info.getSubscriptionId();
             return TelephonyPermissions.checkCallingOrSelfReadPhoneState(mContext, subId,
                     callingPackage, "getSubscriptionsInGroup")
-                    || (info.isEmbedded() && info.canManageSubscription(mContext, callingPackage));
+                    || info.canManageSubscription(mContext, callingPackage);
         }).collect(Collectors.toList());
     }
 
@@ -3688,7 +3740,7 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private boolean refreshCachedOpportunisticSubscriptionInfoList() {
+    private void refreshCachedOpportunisticSubscriptionInfoList() {
         synchronized (mSubInfoListLock) {
             List<SubscriptionInfo> oldOpptCachedList = mCacheOpportunisticSubInfoList;
 
@@ -3708,13 +3760,6 @@ public class SubscriptionController extends ISub.Stub {
             for (SubscriptionInfo info : mCacheOpportunisticSubInfoList) {
                 if (shouldDisableSubGroup(info.getGroupUuid())) {
                     info.setGroupDisabled(true);
-                    // TODO: move it to ONS.
-                    if (isActiveSubId(info.getSubscriptionId()) && isSubInfoReady()) {
-                        logd("[refreshCachedOpportunisticSubscriptionInfoList] "
-                                + "Deactivating grouped opportunistic subscription "
-                                + info.getSubscriptionId());
-                        deactivateSubscription(info);
-                    }
                 }
             }
 
@@ -3729,7 +3774,9 @@ public class SubscriptionController extends ISub.Stub {
                 }
             }
 
-            return !oldOpptCachedList.equals(mCacheOpportunisticSubInfoList);
+            if (!oldOpptCachedList.equals(mCacheOpportunisticSubInfoList)) {
+                mOpptSubInfoListChangedDirtyBit.set(true);
+            }
         }
     }
 
@@ -3743,17 +3790,6 @@ public class SubscriptionController extends ISub.Stub {
         }
 
         return true;
-    }
-
-    private void deactivateSubscription(SubscriptionInfo info) {
-        // TODO: b/120439488 deactivate pSIM.
-        if (info.isEmbedded()) {
-            logd("[deactivateSubscription] eSIM profile " + info.getSubscriptionId());
-            EuiccManager euiccManager = (EuiccManager)
-                    mContext.getSystemService(Context.EUICC_SERVICE);
-            euiccManager.switchToSubscription(SubscriptionManager.INVALID_SUBSCRIPTION_ID,
-                    PendingIntent.getService(mContext, 0, new Intent(), 0));
-        }
     }
 
     // TODO: This method should belong to Telephony manager like other data enabled settings and
@@ -3791,7 +3827,7 @@ public class SubscriptionController extends ISub.Stub {
         ContentValues value = new ContentValues(1);
         value.put(SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES, rules);
 
-        boolean result = databaseUpdateHelper(value, subId, true) > 0;
+        boolean result = updateDatabase(value, subId, true) > 0;
 
         if (result) {
             // Refresh the Cache of Active Subscription Info List
