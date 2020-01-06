@@ -253,7 +253,7 @@ public class DcTracker extends Handler {
     // Default sent packets without ack which triggers initial recovery steps
     private static final int NUMBER_SENT_PACKETS_OF_HANG = 10;
 
-    private static final int EVENT_SIM_RECORDS_LOADED = 100;
+    private static final int EVENT_ESSENTIAL_SIM_RECORDS_LOADED = 100;
 
     // Default for the data stall alarm while non-aggressive stall detection
     private static final int DATA_STALL_ALARM_NON_AGGRESSIVE_DELAY_IN_MS_DEFAULT = 1000 * 60 * 6;
@@ -1314,7 +1314,8 @@ public class DcTracker extends Handler {
             radioStateFromCarrier = true;
         }
 
-        boolean recordsLoaded = mIccRecords.get() != null && mIccRecords.get().getRecordsLoaded();
+        boolean recordsLoaded = mIccRecords.get() != null
+                && mIccRecords.get().getEssentialRecordsLoaded();
 
         boolean defaultDataSelected = SubscriptionManager.isValidSubscriptionId(
                 SubscriptionManager.getDefaultDataSubscriptionId());
@@ -3493,7 +3494,7 @@ public class DcTracker extends Handler {
         if (mSubscriptionManager.isActiveSubId(subId)) {
             onRecordsLoadedOrSubIdChanged();
         } else {
-            log("Ignoring EVENT_RECORDS_LOADED as subId is not valid: " + subId);
+            log("Ignoring EVENT_ESSENTIAL_SIM_RECORDS_LOADED as subId is not valid: " + subId);
         }
     }
 
@@ -3510,16 +3511,18 @@ public class DcTracker extends Handler {
             case DctConstants.EVENT_RECORDS_LOADED:
                 mSimRecords = mPhone.getSIMRecords();
                 if ((mIccRecords.get() instanceof RuimRecords) && (mSimRecords != null)) {
-                    mSimRecords.registerForRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
+                    mSimRecords.registerForEssentialRecordsLoaded(
+                        this, EVENT_ESSENTIAL_SIM_RECORDS_LOADED, null);
                 } else {
                     onRecordsLoaded();
                 }
                 break;
 
-            case EVENT_SIM_RECORDS_LOADED:
+            case EVENT_ESSENTIAL_SIM_RECORDS_LOADED:
+                if (DBG) log("EVENT_ESSENTIAL_SIM_RECORDS_LOADED");
                 onRecordsLoaded();
                 if (mSimRecords != null) {
-                    mSimRecords.unregisterForRecordsLoaded(this);
+                    mSimRecords.unregisterForEssentialRecordsLoaded(this);
                     mSimRecords = null;
                 }
                 break;
@@ -3940,7 +3943,7 @@ public class DcTracker extends Handler {
                 if (mSubscriptionManager.isActiveSubId(mPhone.getSubId())) {
                     log("New records found.");
                     mIccRecords.set(newIccRecords);
-                    newIccRecords.registerForRecordsLoaded(
+                    newIccRecords.registerForEssentialRecordsLoaded(
                             this, DctConstants.EVENT_RECORDS_LOADED, null);
                 }
             } else {
