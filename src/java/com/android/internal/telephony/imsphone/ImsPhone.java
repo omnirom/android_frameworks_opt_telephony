@@ -42,12 +42,12 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOI
 import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
 import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
 
-import android.annotation.UnsupportedAppUsage;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -359,6 +359,11 @@ public class ImsPhone extends ImsPhoneBase {
             mRcsManagerConnector.disconnect();
             mRcsManagerConnector = null;
         }
+
+        if (mRcsManager != null) {
+            mRcsManager.release();
+            mRcsManager = null;
+        }
     }
 
     private BroadcastReceiver mCarrierConfigChangedReceiver = new BroadcastReceiver() {
@@ -403,18 +408,19 @@ public class ImsPhone extends ImsPhoneBase {
 
             @Override
             public RcsFeatureManager getFeatureManager() {
+                logd("Create RcsFeatureManager instance");
                 return new RcsFeatureManager(mContext, mPhoneId);
             }
 
             @Override
             public void connectionReady(RcsFeatureManager manager) throws ImsException {
-                logd("RcsFeatureManager is ready");
+                logi("RcsFeatureManager is ready");
                 mRcsManager = manager;
             }
 
             @Override
             public void connectionUnavailable() {
-                logd("RcsFeatureManager is unavailable");
+                logi("RcsFeatureManager is unavailable");
                 mRcsManager = null;
             }
         };
@@ -422,6 +428,10 @@ public class ImsPhone extends ImsPhoneBase {
         mRcsManagerConnector = new FeatureConnector<>(mContext, mPhoneId,
                 mRcsFeatureConnectorListener, mContext.getMainExecutor(), LOG_TAG);
         mRcsManagerConnector.connect();
+    }
+
+    public RcsFeatureManager getRcsManager() {
+        return mRcsManager;
     }
 
     @UnsupportedAppUsage
@@ -436,7 +446,7 @@ public class ImsPhone extends ImsPhoneBase {
         boolean isVoiceRegStateChanged = false;
 
         synchronized (this) {
-            isVoiceRegStateChanged = mSS.getVoiceRegState() != state;
+            isVoiceRegStateChanged = mSS.getState() != state;
             mSS.setVoiceRegState(state);
         }
         updateDataServiceState();
@@ -1590,7 +1600,7 @@ public class ImsPhone extends ImsPhoneBase {
         if (mSS != null && mDefaultPhone.getServiceStateTracker() != null
                 && mDefaultPhone.getServiceStateTracker().mSS != null) {
             ServiceState ss = mDefaultPhone.getServiceStateTracker().mSS;
-            mSS.setDataRegState(ss.getDataRegState());
+            mSS.setDataRegState(ss.getDataRegistrationState());
             List<NetworkRegistrationInfo> nriList =
                     ss.getNetworkRegistrationInfoListForDomain(NetworkRegistrationInfo.DOMAIN_PS);
             for (NetworkRegistrationInfo nri : nriList) {
@@ -1689,6 +1699,8 @@ public class ImsPhone extends ImsPhoneBase {
                 if (DBG) logd("EVENT_CARRIER_CONFIG_CHANGED");
                 if (mRcsManager == null) {
                     initRcsFeatureManager();
+                } else {
+                    mRcsManager.updateCapabilities();
                 }
                 break;
 
@@ -1985,8 +1997,8 @@ public class ImsPhone extends ImsPhoneBase {
         if (mRoaming == newRoamingState) {
             return;
         }
-        boolean isInService = (ss.getVoiceRegState() == ServiceState.STATE_IN_SERVICE
-                || ss.getDataRegState() == ServiceState.STATE_IN_SERVICE);
+        boolean isInService = (ss.getState() == ServiceState.STATE_IN_SERVICE
+                || ss.getDataRegistrationState() == ServiceState.STATE_IN_SERVICE);
         // If we are not IN_SERVICE for voice or data, ignore change roaming state, as we always
         // move to home in this case.
         if (!isInService) {

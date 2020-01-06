@@ -16,14 +16,14 @@
 
 package com.android.internal.telephony;
 
-import android.annotation.UnsupportedAppUsage;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
-import android.telephony.Annotation.RilRadioTechnology;
 import android.telephony.DisconnectCause;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
+import android.telephony.ServiceState.RilRadioTechnology;
 import android.telephony.emergency.EmergencyNumber;
 import android.util.Log;
 
@@ -1092,6 +1092,7 @@ public abstract class Connection {
     public void setAllowHoldingVideoCall(boolean allowHoldingVideoCall) {
         mAllowHoldingVideoCall = allowHoldingVideoCall;
     }
+
     /**
      * Sets whether the connection is the result of an external call which was pulled to the local
      * device.

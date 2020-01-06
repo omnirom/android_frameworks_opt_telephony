@@ -24,6 +24,7 @@ import android.annotation.Nullable;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.InetAddresses;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
@@ -32,7 +33,6 @@ import android.net.NetworkFactory;
 import android.net.NetworkInfo;
 import android.net.NetworkMisc;
 import android.net.NetworkRequest;
-import android.net.NetworkUtils;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.SocketKeepalive;
@@ -613,7 +613,7 @@ public class DataConnection extends StateMachine {
         mId = id;
         mCid = -1;
         ServiceState ss = mPhone.getServiceState();
-        mDataRegState = mPhone.getServiceState().getDataRegState();
+        mDataRegState = mPhone.getServiceState().getDataRegistrationState();
         int networkType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
 
         NetworkRegistrationInfo nri = ss.getNetworkRegistrationInfo(
@@ -1307,6 +1307,10 @@ public class DataConnection extends StateMachine {
                         result.addCapability(NetworkCapabilities.NET_CAPABILITY_MCX);
                         break;
                     }
+                    case PhoneConstants.APN_TYPE_XCAP: {
+                        result.addCapability(NetworkCapabilities.NET_CAPABILITY_XCAP);
+                        break;
+                    }
                     default:
                 }
             }
@@ -1471,7 +1475,7 @@ public class DataConnection extends StateMachine {
                         if (dnsAddr.isEmpty()) continue;
                         InetAddress ia;
                         try {
-                            ia = NetworkUtils.numericToInetAddress(dnsAddr);
+                            ia = InetAddresses.parseNumericAddress(dnsAddr);
                         } catch (IllegalArgumentException e) {
                             throw new UnknownHostException("Non-numeric dns addr=" + dnsAddr);
                         }
@@ -3002,7 +3006,7 @@ public class DataConnection extends StateMachine {
         for (ApnContext apnContext : mApnContexts.keySet()) {
             for (NetworkRequest networkRequest : apnContext.getNetworkRequests()) {
                 if (networkRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                        && networkRequest.networkCapabilities.getNetworkSpecifier() == null) {
+                        && networkRequest.getNetworkSpecifier() == null) {
                     score = DEFAULT_INTERNET_CONNECTION_SCORE;
                     break;
                 }

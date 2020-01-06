@@ -21,8 +21,8 @@ import static android.telephony.TelephonyManager.UNSUPPORTED_CARD_ID;
 
 import static java.util.Arrays.copyOf;
 
-import android.annotation.UnsupportedAppUsage;
 import android.app.BroadcastOptions;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -450,12 +450,11 @@ public class UiccController extends Handler {
     @UnsupportedAppUsage
     public void registerForIccChanged(Handler h, int what, Object obj) {
         synchronized (mLock) {
-            Registrant r = new Registrant (h, what, obj);
-            mIccChangedRegistrants.add(r);
-            //Notify registrant right after registering, so that it will get the latest ICC status,
-            //otherwise which may not happen until there is an actual change in ICC status.
-            r.notifyRegistrant();
+            mIccChangedRegistrants.addUnique(h, what, obj);
         }
+        //Notify registrant right after registering, so that it will get the latest ICC status,
+        //otherwise which may not happen until there is an actual change in ICC status.
+        Message.obtain(h, what, new AsyncResult(obj, null, null)).sendToTarget();
     }
 
     public void unregisterForIccChanged(Handler h) {

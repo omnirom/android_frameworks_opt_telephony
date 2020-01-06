@@ -24,7 +24,6 @@ import static android.provider.Telephony.Sms.Intents.RESULT_SMS_NULL_PDU;
 import static android.service.carrier.CarrierMessagingService.RECEIVE_OPTIONS_SKIP_NOTIFY_WHEN_CREDENTIAL_PROTECTED_STORAGE_UNAVAILABLE;
 import static android.telephony.TelephonyManager.PHONE_TYPE_CDMA;
 
-import android.annotation.UnsupportedAppUsage;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AppOpsManager;
@@ -32,6 +31,7 @@ import android.app.BroadcastOptions;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -46,7 +46,6 @@ import android.database.SQLException;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
 import android.os.PowerManager;
@@ -70,6 +69,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.SmsConstants.MessageClass;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.util.NotificationChannelController;
+import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.internal.util.HexDump;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -230,9 +230,6 @@ public abstract class InboundSmsHandler extends StateMachine {
     protected Phone mPhone;
 
     @UnsupportedAppUsage
-    protected CellBroadcastHandler mCellBroadcastHandler;
-
-    @UnsupportedAppUsage
     private UserManager mUserManager;
 
     protected TelephonyMetrics mMetrics = TelephonyMetrics.getInstance();
@@ -240,8 +237,6 @@ public abstract class InboundSmsHandler extends StateMachine {
     private LocalLog mLocalLog = new LocalLog(64);
 
     PowerWhitelistManager mPowerWhitelistManager;
-
-    protected static boolean sEnableCbModule = true;
 
     protected CellBroadcastServiceManager mCellBroadcastServiceManager;
 
@@ -267,13 +262,12 @@ public abstract class InboundSmsHandler extends StateMachine {
      * @param storageMonitor the SmsStorageMonitor to check for storage availability
      */
     protected InboundSmsHandler(String name, Context context, SmsStorageMonitor storageMonitor,
-            Phone phone, CellBroadcastHandler cellBroadcastHandler) {
+            Phone phone) {
         super(name);
 
         mContext = context;
         mStorageMonitor = storageMonitor;
         mPhone = phone;
-        mCellBroadcastHandler = cellBroadcastHandler;
         mResolver = context.getContentResolver();
         mWapPush = new WapPushOverSms(context);
 
@@ -337,7 +331,7 @@ public abstract class InboundSmsHandler extends StateMachine {
                 default: {
                     String errorText = "processMessage: unhandled message type " + msg.what +
                         " currState=" + getCurrentState().getName();
-                    if (Build.IS_DEBUGGABLE) {
+                    if (TelephonyUtils.IS_DEBUGGABLE) {
                         loge("---- Dumping InboundSmsHandler ----");
                         loge("Total records=" + getLogRecCount());
                         for (int i = Math.max(getLogRecSize() - 20, 0); i < getLogRecSize(); i++) {
@@ -1726,9 +1720,6 @@ public abstract class InboundSmsHandler extends StateMachine {
     @Override
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         super.dump(fd, pw, args);
-        if (mCellBroadcastHandler != null) {
-            mCellBroadcastHandler.dump(fd, pw, args);
-        }
         if (mCellBroadcastServiceManager != null) {
             mCellBroadcastServiceManager.dump(fd, pw, args);
         }
@@ -1815,15 +1806,11 @@ public abstract class InboundSmsHandler extends StateMachine {
     protected abstract class CbTestBroadcastReceiver extends BroadcastReceiver {
 
         protected abstract void handleTestAction(Intent intent);
-        protected abstract void handleToggleEnable();
-        protected abstract void handleToggleDisable(Context context);
 
         protected final String mTestAction;
-        protected final String mToggleAction;
 
-        public CbTestBroadcastReceiver(String testAction, String toggleAction) {
+        public CbTestBroadcastReceiver(String testAction) {
             mTestAction = testAction;
-            mToggleAction = toggleAction;
         }
 
         @Override
@@ -1837,19 +1824,6 @@ public abstract class InboundSmsHandler extends StateMachine {
                     return;
                 }
                 handleTestAction(intent);
-            } else if (intent.getAction().equals(mToggleAction)) {
-                if (intent.hasExtra("enable")) {
-                    sEnableCbModule = intent.getBooleanExtra("enable", false);
-                } else {
-                    sEnableCbModule = !sEnableCbModule;
-                }
-                if (sEnableCbModule) {
-                    log("enabling CB module");
-                    handleToggleEnable();
-                } else {
-                    log("enabling legacy platform CB handling");
-                    handleToggleDisable(context);
-                }
             }
         }
     }
