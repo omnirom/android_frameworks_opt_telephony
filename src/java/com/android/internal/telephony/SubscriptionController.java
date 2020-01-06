@@ -46,6 +46,7 @@ import android.telephony.RadioAccessFamily;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.SubscriptionManager.SimDisplayNameSource;
 import android.telephony.TelephonyManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.UiccSlotInfo;
@@ -61,8 +62,8 @@ import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
-import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.internal.telephony.util.ArrayUtils;
+import com.android.internal.telephony.util.TelephonyUtils;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -1554,30 +1555,27 @@ public class SubscriptionController extends ISub.Stub {
      * @param nameSource Source of display name
      * @return int representing the priority. Higher value means higher priority.
      */
-    public static int getNameSourcePriority(int nameSource) {
-        switch (nameSource) {
-            case SubscriptionManager.NAME_SOURCE_USER_INPUT:
-                return 3;
-            case SubscriptionManager.NAME_SOURCE_CARRIER:
-                return 2;
-            case SubscriptionManager.NAME_SOURCE_SIM_SOURCE:
-                return 1;
-            case SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE:
-            default:
-                return 0;
-        }
+    public static int getNameSourcePriority(@SimDisplayNameSource int nameSource) {
+        int index = Arrays.asList(
+                SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE,
+                SubscriptionManager.NAME_SOURCE_SIM_PNN,
+                SubscriptionManager.NAME_SOURCE_SIM_SPN,
+                SubscriptionManager.NAME_SOURCE_CARRIER,
+                SubscriptionManager.NAME_SOURCE_USER_INPUT // user has highest priority.
+        ).indexOf(nameSource);
+        return (index < 0) ? 0 : index;
     }
 
     /**
      * Set display name by simInfo index with name source
      * @param displayName the display name of SIM card
      * @param subId the unique SubInfoRecord index in database
-     * @param nameSource 0: NAME_SOURCE_DEFAULT_SOURCE, 1: NAME_SOURCE_SIM_SOURCE,
-     *                   2: NAME_SOURCE_USER_INPUT, 3: NAME_SOURCE_CARRIER
+     * @param nameSource SIM display name source
      * @return the number of records updated
      */
     @Override
-    public int setDisplayNameUsingSrc(String displayName, int subId, int nameSource) {
+    public int setDisplayNameUsingSrc(String displayName, int subId,
+                                      @SimDisplayNameSource int nameSource) {
         if (DBG) {
             logd("[setDisplayName]+  displayName:" + displayName + " subId:" + subId
                 + " nameSource:" + nameSource);
@@ -1597,6 +1595,10 @@ public class SubscriptionController extends ISub.Stub {
                         && (getNameSourcePriority(subInfo.getNameSource())
                                 > getNameSourcePriority(nameSource)
                         || (displayName != null && displayName.equals(subInfo.getDisplayName())))) {
+                    logd("Name source " + subInfo.getNameSource() + "'s priority "
+                            + getNameSourcePriority(subInfo.getNameSource()) + " is greater than "
+                            + "name source " + nameSource + "'s priority "
+                            + getNameSourcePriority(nameSource) + ", return now.");
                     return 0;
                 }
             }
@@ -3393,6 +3395,9 @@ public class SubscriptionController extends ISub.Stub {
                         "setSubscriptionEnabled not usable subId " + subId);
             }
 
+            // Nothing to do if it's already active or inactive.
+            if (enable == isActiveSubscriptionId(subId)) return true;
+
             SubscriptionInfo info = SubscriptionController.getInstance()
                     .getAllSubInfoList(mContext.getOpPackageName(), mContext.getFeatureId())
                     .stream()
@@ -3405,6 +3410,8 @@ public class SubscriptionController extends ISub.Stub {
                 return false;
             }
 
+            // TODO: make sure after slot mapping, we enable the uicc applications for the
+            // subscription we are enabling.
             if (info.isEmbedded()) {
                 return enableEmbeddedSubscription(info, enable);
             } else {
@@ -3436,46 +3443,43 @@ public class SubscriptionController extends ISub.Stub {
         // updateEnabledSubscriptionGlobalSetting(subId, physicalSlotIndex);
     }
 
-    private static boolean isInactiveInsertedPSim(UiccSlotInfo slotInfo, String cardId) {
-        return !slotInfo.getIsEuicc() && !slotInfo.getIsActive()
-                && slotInfo.getCardStateInfo() == CARD_STATE_INFO_PRESENT
-                && TextUtils.equals(slotInfo.getCardId(), cardId);
-    }
-
     private boolean enablePhysicalSubscription(SubscriptionInfo info, boolean enable) {
-        if (enable && info.getSimSlotIndex() == SubscriptionManager.INVALID_SIM_SLOT_INDEX) {
-            UiccSlotInfo[] slotsInfo = mTelephonyManager.getUiccSlotsInfo();
-            if (slotsInfo == null) return false;
-            boolean foundMatch = false;
-            for (int i = 0; i < slotsInfo.length; i++) {
-                UiccSlotInfo slotInfo = slotsInfo[i];
-                if (isInactiveInsertedPSim(slotInfo, info.getCardString())) {
-                    // We need to send intents to Euicc if we are turning on an inactive pSIM.
-                    // Euicc will decide whether to ask user to switch to DSDS, or change SIM
-                    // slot mapping.
-                    enableSubscriptionOverEuiccManager(info.getSubscriptionId(), enable, i);
-                    foundMatch = true;
-                    break;
-                }
-            }
-
-            if (!foundMatch) {
-                logdl("enablePhysicalSubscription subId " + info.getSubscriptionId()
-                        + " is not inserted.");
-            }
-            // returning false to indicate state is not changed yet. If intent is sent to LPA and
-            // user consents switching, caller needs to listen to subscription info change.
+        if (info == null || !SubscriptionManager.isValidSubscriptionId(info.getSubscriptionId())) {
             return false;
-        } else {
-            return mTelephonyManager.enableModemForSlot(info.getSimSlotIndex(), enable);
         }
 
-        // TODO: uncomment or clean up if we decide whether to support standalone CBRS for Q.
-        // updateEnabledSubscriptionGlobalSetting(
-        //        enable ? subId : SubscriptionManager.INVALID_SUBSCRIPTION_ID,
-        //        physicalSlotIndex);
-        // updateModemStackEnabledGlobalSetting(enable, physicalSlotIndex);
-        // refreshCachedActiveSubscriptionInfoList();
+        int subId = info.getSubscriptionId();
+
+        UiccSlotInfo slotInfo = null;
+        int physicalSlotIndex = SubscriptionManager.INVALID_SIM_SLOT_INDEX;
+        UiccSlotInfo[] slotsInfo = mTelephonyManager.getUiccSlotsInfo();
+        if (slotsInfo == null) return false;
+        for (int i = 0; i < slotsInfo.length; i++) {
+            UiccSlotInfo curSlotInfo = slotsInfo[i];
+            if (curSlotInfo.getCardStateInfo() == CARD_STATE_INFO_PRESENT
+                    && TextUtils.equals(curSlotInfo.getCardId(), info.getCardString())) {
+                slotInfo = curSlotInfo;
+                physicalSlotIndex = i;
+                break;
+            }
+        }
+
+        // Can't find the existing SIM.
+        if (slotInfo == null) return false;
+
+        if (enable && !slotInfo.getIsActive()) {
+            // We need to send intents to Euicc if we are turning on an inactive slot.
+            // Euicc will decide whether to ask user to switch to DSDS, or change SIM
+            // slot mapping.
+            enableSubscriptionOverEuiccManager(subId, enable, physicalSlotIndex);
+            return true;
+        } else {
+            // Enable / disable uicc applications.
+            Phone phone = PhoneFactory.getPhone(slotInfo.getLogicalSlotIdx());
+            if (phone == null) return false;
+            phone.enableUiccApplications(enable, null);
+            return true;
+        }
     }
 
     private void enableSubscriptionOverEuiccManager(int subId, boolean enable,
@@ -3855,8 +3859,8 @@ public class SubscriptionController extends ISub.Stub {
 
         final long identity = Binder.clearCallingIdentity();
         try {
-            // TODO: b/133379187
-            return false;
+            Phone phone = PhoneFactory.getDefaultPhone();
+            return phone != null && phone.canDisablePhysicalSubscription();
         } finally {
             Binder.restoreCallingIdentity(identity);
         }

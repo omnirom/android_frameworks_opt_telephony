@@ -68,12 +68,14 @@ import android.telephony.CellIdentityTdscdma;
 import android.telephony.CellIdentityWcdma;
 import android.telephony.CellInfo;
 import android.telephony.CellLocation;
+import android.telephony.CellSignalStrengthNr;
 import android.telephony.DataSpecificRegistrationInfo;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
+import android.telephony.SignalThresholdInfo;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
@@ -109,8 +111,8 @@ import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccProfile;
-import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.telephony.util.ArrayUtils;
+import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
@@ -813,6 +815,10 @@ public class ServiceStateTracker extends Handler {
         return mDesiredPowerState;
     }
     public boolean getPowerStateFromCarrier() { return !mRadioDisabledByCarrier; }
+
+    public List<PhysicalChannelConfig> getPhysicalChannelConfigList() {
+        return mLastPhysicalChannelConfigList;
+    }
 
     private SignalStrength mLastSignalStrength = null;
     @UnsupportedAppUsage
@@ -2212,8 +2218,6 @@ public class ServiceStateTracker extends Handler {
             }
 
             case EVENT_POLL_STATE_OPERATOR: {
-                String brandOverride = getOperatorBrandOverride();
-                mCdnr.updateEfForBrandOverride(brandOverride);
                 if (mPhone.isPhoneTypeGsm()) {
                     String opNames[] = (String[]) ar.result;
 
@@ -2221,6 +2225,8 @@ public class ServiceStateTracker extends Handler {
                         mNewSS.setOperatorAlphaLongRaw(opNames[0]);
                         mNewSS.setOperatorAlphaShortRaw(opNames[1]);
                         // FIXME: Giving brandOverride higher precedence, is this desired?
+                        String brandOverride = getOperatorBrandOverride();
+                        mCdnr.updateEfForBrandOverride(brandOverride);
                         if (brandOverride != null) {
                             log("EVENT_POLL_STATE_OPERATOR: use brandOverride=" + brandOverride);
                             mNewSS.setOperatorName(brandOverride, brandOverride, opNames[2]);
@@ -2250,6 +2256,8 @@ public class ServiceStateTracker extends Handler {
                             // NV device (as opposed to CSIM)
                             mNewSS.setOperatorName(opNames[0], opNames[1], opNames[2]);
                         } else {
+                            String brandOverride = getOperatorBrandOverride();
+                            mCdnr.updateEfForBrandOverride(brandOverride);
                             if (brandOverride != null) {
                                 mNewSS.setOperatorName(brandOverride, brandOverride, opNames[2]);
                             } else {
@@ -4737,15 +4745,32 @@ public class ServiceStateTracker extends Handler {
     }
 
     private void updateReportingCriteria(PersistableBundle config) {
-        mPhone.setSignalStrengthReportingCriteria(
+        mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_RSRP,
                 config.getIntArray(CarrierConfigManager.KEY_LTE_RSRP_THRESHOLDS_INT_ARRAY),
-                AccessNetworkType.EUTRAN);
-        mPhone.setSignalStrengthReportingCriteria(
+                AccessNetworkType.EUTRAN, true);
+        mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_RSCP,
                 config.getIntArray(CarrierConfigManager.KEY_WCDMA_RSCP_THRESHOLDS_INT_ARRAY),
-                AccessNetworkType.UTRAN);
-        mPhone.setSignalStrengthReportingCriteria(
+                AccessNetworkType.UTRAN, true);
+        mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_RSSI,
                 config.getIntArray(CarrierConfigManager.KEY_GSM_RSSI_THRESHOLDS_INT_ARRAY),
-                AccessNetworkType.GERAN);
+                AccessNetworkType.GERAN, true);
+
+        if (mPhone.getHalVersion().greaterOrEqual(RIL.RADIO_HAL_VERSION_1_5)) {
+            int measurementEnabled = config.getInt(CarrierConfigManager
+                    .KEY_PARAMETERS_USE_FOR_5G_NR_SIGNAL_BAR_INT, CellSignalStrengthNr.USE_SSRSRP);
+            mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_SSRSRP,
+                    config.getIntArray(CarrierConfigManager.KEY_5G_NR_SSRSRP_THRESHOLDS_INT_ARRAY),
+                    AccessNetworkType.NGRAN,
+                    (measurementEnabled & CellSignalStrengthNr.USE_SSRSRP) != 0);
+            mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_SSRSRQ,
+                    config.getIntArray(CarrierConfigManager.KEY_5G_NR_SSRSRQ_THRESHOLDS_INT_ARRAY),
+                    AccessNetworkType.NGRAN,
+                    (measurementEnabled & CellSignalStrengthNr.USE_SSRSRQ) != 0);
+            mPhone.setSignalStrengthReportingCriteria(SignalThresholdInfo.SIGNAL_SSSINR,
+                    config.getIntArray(CarrierConfigManager.KEY_5G_NR_SSSINR_THRESHOLDS_INT_ARRAY),
+                    AccessNetworkType.NGRAN,
+                    (measurementEnabled & CellSignalStrengthNr.USE_SSSINR) != 0);
+        }
     }
 
     private void updateServiceStateLteEarfcnBoost(ServiceState serviceState, int lteEarfcn) {
@@ -5215,7 +5240,7 @@ public class ServiceStateTracker extends Handler {
             if (currentServiceState.getVoiceRoaming()) {
                 if (mPhone.isPhoneTypeGsm()) {
                     // check roaming type by MCC
-                    if (inSameCountry(currentServiceState.getVoiceOperatorNumeric())) {
+                    if (inSameCountry(currentServiceState.getOperatorNumeric())) {
                         currentServiceState.setVoiceRoamingType(
                                 ServiceState.ROAMING_TYPE_DOMESTIC);
                     } else {
@@ -5239,7 +5264,7 @@ public class ServiceStateTracker extends Handler {
                         }
                     } else {
                         // check roaming type by MCC
-                        if (inSameCountry(currentServiceState.getVoiceOperatorNumeric())) {
+                        if (inSameCountry(currentServiceState.getOperatorNumeric())) {
                             currentServiceState.setVoiceRoamingType(
                                     ServiceState.ROAMING_TYPE_DOMESTIC);
                         } else {
@@ -5286,7 +5311,7 @@ public class ServiceStateTracker extends Handler {
                         }
                     } else {
                         // take it as 3GPP roaming
-                        if (inSameCountry(currentServiceState.getDataOperatorNumeric())) {
+                        if (inSameCountry(currentServiceState.getOperatorNumeric())) {
                             currentServiceState.setDataRoamingType(ServiceState.ROAMING_TYPE_DOMESTIC);
                         } else {
                             currentServiceState.setDataRoamingType(

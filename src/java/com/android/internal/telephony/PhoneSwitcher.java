@@ -1118,6 +1118,8 @@ public class PhoneSwitcher extends Handler {
 
     @VisibleForTesting
     protected boolean isPhoneActive(int phoneId) {
+        if (phoneId >= mActiveModemCount)
+            return false;
         return mPhoneStates[phoneId].active;
     }
 

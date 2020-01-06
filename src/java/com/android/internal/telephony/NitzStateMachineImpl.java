@@ -89,8 +89,8 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
     private boolean mNitzTimeZoneDetectionSuccessful = false;
 
     // Miscellaneous dependencies and helpers not related to detection state.
-    private final LocalLog mTimeLog = new LocalLog(30);
-    private final LocalLog mTimeZoneLog = new LocalLog(30);
+    private final LocalLog mTimeLog = new LocalLog(30, false /* useLocalTimestamps */);
+    private final LocalLog mTimeZoneLog = new LocalLog(30, false /* useLocalTimestamps */);
     private final Phone mPhone;
     private final DeviceState mDeviceState;
     private final TimeServiceHelper mTimeServiceHelper;
@@ -253,7 +253,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
             // Set state as needed.
             if (zoneId != null) {
                 if (mTimeServiceHelper.isTimeZoneDetectionEnabled()) {
-                    setAndBroadcastNetworkSetTimeZone(zoneId, logMsg);
+                    setTimeZone(zoneId, logMsg);
                 } else {
                     if (DBG) {
                         logMsg += " [Not setting device time zone]";
@@ -402,7 +402,8 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
     }
 
     private void sendEmptyTimeSuggestion(String reason) {
-        PhoneTimeSuggestion timeSuggestion = new PhoneTimeSuggestion(mPhone.getPhoneId());
+        PhoneTimeSuggestion timeSuggestion =
+                new PhoneTimeSuggestion.Builder(mPhone.getPhoneId()).build();
         timeSuggestion.addDebugInfo("Empty suggestion, reason=" + reason);
         mTimeServiceHelper.suggestDeviceTime(timeSuggestion);
     }
@@ -484,9 +485,11 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
                 Rlog.d(LOG_TAG, logMsg);
             }
             mTimeLog.log(logMsg);
-            PhoneTimeSuggestion phoneTimeSuggestion = new PhoneTimeSuggestion(mPhone.getPhoneId());
-            phoneTimeSuggestion.setUtcTime(newNitzTime);
-            phoneTimeSuggestion.addDebugInfo(logMsg);
+            PhoneTimeSuggestion phoneTimeSuggestion =
+                    new PhoneTimeSuggestion.Builder(mPhone.getPhoneId())
+                            .setUtcTime(newNitzTime)
+                            .addDebugInfo(logMsg)
+                            .build();
             mTimeServiceHelper.suggestDeviceTime(phoneTimeSuggestion);
 
             TelephonyMetrics.getInstance().writeNITZEvent(
@@ -501,7 +504,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
         }
     }
 
-    private void setAndBroadcastNetworkSetTimeZone(String zoneId, String logMessage) {
+    private void setTimeZone(String zoneId, String logMessage) {
         logMessage += " [Setting device time zone to zoneId=" + zoneId + "]";
         if (DBG) {
             Rlog.d(LOG_TAG, logMessage);
@@ -528,7 +531,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
         String logMsg = "handleAutoTimeZoneEnabled: "
                 + " mSavedTimeZoneId=" + mSavedTimeZoneId;
         if (mSavedTimeZoneId != null) {
-            setAndBroadcastNetworkSetTimeZone(mSavedTimeZoneId, logMsg);
+            setTimeZone(mSavedTimeZoneId, logMsg);
         } else {
             if (DBG) {
                 logMsg += " [Not setting device time zone]";
@@ -587,7 +590,7 @@ public final class NitzStateMachineImpl implements NitzStateMachine {
 
             String zoneId = lookupResult.zoneId;
             if (mTimeServiceHelper.isTimeZoneDetectionEnabled()) {
-                setAndBroadcastNetworkSetTimeZone(zoneId, logMsg);
+                setTimeZone(zoneId, logMsg);
             } else {
                 if (DBG) {
                     logMsg += " [Not setting device time zone]";

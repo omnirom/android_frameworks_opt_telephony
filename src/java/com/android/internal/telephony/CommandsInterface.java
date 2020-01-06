@@ -26,6 +26,7 @@ import android.telephony.CarrierRestrictionRules;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.NetworkScanRequest;
+import android.telephony.SignalThresholdInfo;
 import android.telephony.data.DataProfile;
 import android.telephony.emergency.EmergencyNumber;
 
@@ -653,6 +654,22 @@ public interface CommandsInterface {
      void registerForRilConnected(Handler h, int what, Object obj);
      @UnsupportedAppUsage
      void unregisterForRilConnected(Handler h);
+
+    /**
+     * Registers the handler for RIL_UNSOL_SIM_DETACH_FROM_NETWORK_CONFIG_CHANGED events.
+     *
+     * @param h Handler for notification message.
+     * @param what User-defined message code.
+     * @param obj User object.
+     */
+    default void registerUiccApplicationEnablementChanged(Handler h, int what, Object obj) {};
+
+    /**
+     * Unregisters the handler for RIL_UNSOL_SIM_DETACH_FROM_NETWORK_CONFIG_CHANGED events.
+     *
+     * @param h Handler for notification message.
+     */
+    default void unregisterUiccApplicationEnablementChanged(Handler h) {};
 
     /**
      * Supply the ICC PIN to the ICC card
@@ -2232,17 +2249,30 @@ public interface CommandsInterface {
     void setUnsolResponseFilter(int filter, Message result);
 
     /**
-     * Send the signal strength reporting criteria to the modem.
+     * Sets the signal strength reporting criteria.
      *
-     * @param hysteresisMs A hysteresis time in milliseconds. A value of 0 disables hysteresis.
-     * @param hysteresisDb An interval in dB defining the required magnitude change between reports.
-     *     A value of 0 disables hysteresis.
-     * @param thresholdsDbm An array of trigger thresholds in dBm. A size of 0 disables thresholds.
-     * @param ran RadioAccessNetwork for which to apply criteria.
+     * The resulting reporting rules are the AND of all the supplied criteria. For each RAN
+     * The hysteresisDb and thresholds apply to only the following measured quantities:
+     * -GERAN    - RSSI
+     * -CDMA2000 - RSSI
+     * -UTRAN    - RSCP
+     * -EUTRAN   - RSRP/RSRQ/RSSNR
+     * -NGRAN    - SSRSRP/SSRSRQ/SSSINR
+     *
+     * Note: Reporting criteria must be individually set for each RAN. For any unset reporting
+     * criteria, the value is implementation-defined.
+     *
+     * Response callback is
+     * IRadioResponse.setSignalStrengthReportingCriteriaResponse_1_5()
+     *
+     * @param signalThresholdInfo Signal threshold info including the threshold values,
+     *                            hysteresisDb, and hysteresisMs. See @1.5::SignalThresholdInfo
+     *                            for details.
+     * @param ran The type of network for which to apply these thresholds.
      * @param result callback message contains the information of SUCCESS/FAILURE
      */
-    void setSignalStrengthReportingCriteria(int hysteresisMs, int hysteresisDb, int[] thresholdsDbm,
-            int ran, Message result);
+    void setSignalStrengthReportingCriteria(SignalThresholdInfo signalThresholdInfo, int ran,
+            Message result);
 
     /**
      * Send the link capacity reporting criteria to the modem
@@ -2380,6 +2410,28 @@ public interface CommandsInterface {
      * @param result a Message to return to the requester
      */
     default void getModemStatus(Message result) {};
+
+    /**
+     * Enable or disable uicc applications on the SIM.
+     *
+     * @param enable enable or disable UiccApplications on the SIM.
+     * @param onCompleteMessage a Message to return to the requester
+     */
+    default void enableUiccApplications(boolean enable, Message onCompleteMessage) {}
+
+    /**
+     * Whether uicc applications are enabled or not.
+     *
+     * @param onCompleteMessage a Message to return to the requester
+     */
+    default void areUiccApplicationsEnabled(Message onCompleteMessage) {}
+
+    /**
+     * Whether {@link #enableUiccApplications} is supported, based on IRadio version.
+     */
+    default boolean canToggleUiccApplicationsEnablement() {
+        return false;
+    }
 
     default List<ClientRequestStats> getClientRequestStats() {
         return null;
