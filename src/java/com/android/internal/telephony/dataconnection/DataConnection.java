@@ -194,10 +194,12 @@ public class DataConnection extends StateMachine {
         @RequestNetworkType
         final int mRequestType;
         final int mSubId;
+        final boolean mIsApnPreferred;
 
         ConnectionParams(ApnContext apnContext, int profileId, int rilRadioTechnology,
                          Message onCompletedMsg, int connectionGeneration,
-                         @RequestNetworkType int requestType, int subId) {
+                         @RequestNetworkType int requestType, int subId,
+                         boolean isApnPreferred) {
             mApnContext = apnContext;
             mProfileId = profileId;
             mRilRat = rilRadioTechnology;
@@ -205,6 +207,7 @@ public class DataConnection extends StateMachine {
             mConnectionGeneration = connectionGeneration;
             mRequestType = requestType;
             mSubId = subId;
+            mIsApnPreferred = isApnPreferred;
         }
 
         @Override
@@ -215,6 +218,7 @@ public class DataConnection extends StateMachine {
                     + " mOnCompletedMsg=" + msgToString(mOnCompletedMsg)
                     + " mRequestType=" + DcTracker.requestTypeToString(mRequestType)
                     + " mSubId=" + mSubId
+                    + " mIsApnPreferred=" + mIsApnPreferred
                     + "}";
         }
     }
@@ -668,8 +672,8 @@ public class DataConnection extends StateMachine {
         Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
         msg.obj = cp;
 
-        DataProfile dp = DcTracker.createDataProfile(mApnSetting, cp.mProfileId,
-                mApnSetting.equals(mDct.getPreferredApn()));
+        DataProfile dp =
+                DcTracker.createDataProfile(mApnSetting, cp.mProfileId, cp.mIsApnPreferred);
 
         // We need to use the actual modem roaming state instead of the framework roaming state
         // here. This flag is only passed down to ril_service for picking the correct protocol (for
@@ -2567,16 +2571,17 @@ public class DataConnection extends StateMachine {
      *                             ignored if obsolete.
      * @param requestType Data request type
      * @param subId the subscription id associated with this data connection.
+     * @param isApnPreferred determine if this Apn is preferred.
      */
     public void bringUp(ApnContext apnContext, int profileId, int rilRadioTechnology,
                         Message onCompletedMsg, int connectionGeneration,
-                        @RequestNetworkType int requestType, int subId) {
+                        @RequestNetworkType int requestType, int subId, boolean isApnPreferred) {
         if (DBG) {
             log("bringUp: apnContext=" + apnContext + " onCompletedMsg=" + onCompletedMsg);
         }
         sendMessage(DataConnection.EVENT_CONNECT,
                 new ConnectionParams(apnContext, profileId, rilRadioTechnology, onCompletedMsg,
-                        connectionGeneration, requestType, subId));
+                        connectionGeneration, requestType, subId, isApnPreferred));
     }
 
     /**
