@@ -85,6 +85,7 @@ public class TelephonyComponentFactory {
         private static final String TAG_COMPONENT = "component";
         private static final String SYSTEM = "/system/";
         private static final String PRODUCT = "/product/";
+        private static final String SYSTEM_EXT = "/system_ext/";
 
         private final Set<String> mComponentNames = new HashSet<>();
         private TelephonyComponentFactory mInjectedInstance;
@@ -103,7 +104,8 @@ public class TelephonyComponentFactory {
             }
             // filter out invalid paths
             return Arrays.stream(mJarPath.split(File.pathSeparator))
-                    .filter(s -> (s.startsWith(SYSTEM) || s.startsWith(PRODUCT)))
+                    .filter(s -> (s.startsWith(SYSTEM) || s.startsWith(PRODUCT)
+                            || s.startsWith(SYSTEM_EXT)))
                     .filter(s -> {
                         try {
                             // This will also throw an error if the target doesn't exist.
