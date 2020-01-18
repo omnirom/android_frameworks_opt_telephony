@@ -22,10 +22,7 @@ import static android.net.NetworkPolicyManager.OVERRIDE_UNMETERED;
 import android.annotation.IntDef;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
@@ -1879,6 +1876,14 @@ public class DataConnection extends StateMachine {
                     mApnSetting != null
                         ? mApnSetting.canHandleType(ApnSetting.TYPE_DEFAULT) : false);
             setHandoverState(HANDOVER_STATE_IDLE);
+            // restricted evaluation depends on network requests from apnContext. The evaluation
+            // should happen once entering connecting state rather than active state because it's
+            // possible that restricted network request can be released during the connecting window
+            // and if we wait for connection established, then we might mistakenly
+            // consider it as un-restricted. ConnectivityService then will immediately
+            // tear down the connection through networkAgent unwanted callback if all requests for
+            // this connection are going away.
+            mRestrictedNetworkOverride = shouldRestrictNetwork();
         }
         @Override
         public boolean processMessage(Message msg) {
@@ -2036,7 +2041,6 @@ public class DataConnection extends StateMachine {
             // set skip464xlat if it is not default otherwise
             misc.skip464xlat = shouldSkip464Xlat();
 
-            mRestrictedNetworkOverride = shouldRestrictNetwork();
             mUnmeteredUseOnly = isUnmeteredUseOnly();
 
             if (DBG) {
@@ -2076,6 +2080,9 @@ public class DataConnection extends StateMachine {
                             DataConnection.this);
                     mNetworkAgent.sendLinkProperties(mLinkProperties, DataConnection.this);
                     mHandoverSourceNetworkAgent = null;
+                } else if (dc != null) {
+                    logd("Create network agent as source DC did not create it");
+                    createDcNetorkAgent(misc);
                 } else {
                     String logStr = "Failed to get network agent from original data connection";
                     loge(logStr);
@@ -2083,16 +2090,7 @@ public class DataConnection extends StateMachine {
                     return;
                 }
             } else {
-                mScore = calculateScore();
-                final NetworkFactory factory = PhoneFactory.getNetworkFactory(
-                        mPhone.getPhoneId());
-                final int factorySerialNumber = (null == factory)
-                        ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
-
-                mDisabledApnTypeBitMask |= getDisallowedApnTypes();
-
-                mNetworkAgent = DcNetworkAgent.createDcNetworkAgent(DataConnection.this,
-                        mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
+                createDcNetorkAgent(misc);
             }
 
             if (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) {
@@ -2103,6 +2101,17 @@ public class DataConnection extends StateMachine {
             }
             TelephonyMetrics.getInstance().writeRilDataCallEvent(mPhone.getPhoneId(),
                     mCid, mApnSetting.getApnTypeBitmask(), RilDataCall.State.CONNECTED);
+        }
+
+        private void createDcNetorkAgent(NetworkMisc misc) {
+            mScore = calculateScore();
+            final NetworkFactory factory = PhoneFactory.getNetworkFactory(
+                    mPhone.getPhoneId());
+            final int factorySerialNumber = (null == factory)
+                    ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
+            mDisabledApnTypeBitMask |= getDisallowedApnTypes();
+            mNetworkAgent = DcNetworkAgent.createDcNetworkAgent(DataConnection.this,
+                    mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
         }
 
         @Override

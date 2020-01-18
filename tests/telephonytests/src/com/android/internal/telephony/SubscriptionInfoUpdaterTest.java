@@ -48,6 +48,7 @@ import android.service.euicc.GetEuiccProfileInfoListResult;
 import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.UiccAccessRule;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -55,6 +56,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.uicc.IccFileHandler;
 import com.android.internal.telephony.uicc.IccRecords;
+import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccSlot;
 
 import org.junit.After;
@@ -76,6 +78,7 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
     private static final int FAKE_SUB_ID_1 = 0;
     private static final int FAKE_SUB_ID_2 = 1;
     private static final int FAKE_CARD_ID = 0;
+    private static final String FAKE_EID = "89049032000001000000031328322874";
     private static final String FAKE_MCC_MNC_1 = "123456";
     private static final String FAKE_MCC_MNC_2 = "456789";
 
@@ -500,6 +503,8 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
     @SmallTest
     public void testUpdateEmbeddedSubscriptions_listSuccess() throws Exception {
         when(mEuiccManager.isEnabled()).thenReturn(true);
+        when(mEuiccManager.createForCardId(anyInt())).thenReturn(mEuiccManager);
+        when(mEuiccManager.getEid()).thenReturn(FAKE_EID);
 
         EuiccProfileInfo[] euiccProfiles = new EuiccProfileInfo[] {
                 new EuiccProfileInfo("1", null /* accessRules */, null /* nickname */),
@@ -767,5 +772,48 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
                 SubscriptionManager.IS_OPPORTUNISTIC).intValue());
         assertNull(cvCaptor.getValue().getAsString(SubscriptionManager.GROUP_UUID));
         assertEquals(2, cvCaptor.getValue().size());
+    }
+
+    @Test
+    @SmallTest
+    public void testUpdateFromCarrierConfigCarrierCertificates() {
+        String[] certs = new String[2];
+        certs[0] = "d1f1";
+        certs[1] = "b5d6";
+
+        UiccAccessRule[] carrierConfigAccessRules = new UiccAccessRule[certs.length];
+        for (int i = 0; i < certs.length; i++) {
+            carrierConfigAccessRules[i] = new UiccAccessRule(
+                IccUtils.hexStringToBytes(certs[i]), null, 0);
+        }
+
+        final int phoneId = mPhone.getPhoneId();
+        PersistableBundle carrierConfig = new PersistableBundle();
+        carrierConfig.putStringArray(
+                CarrierConfigManager.KEY_CARRIER_CERTIFICATE_STRING_ARRAY, certs);
+
+        String carrierPackageName = "FakeCarrierPackageName";
+
+        doReturn(FAKE_SUB_ID_1).when(mSubscriptionController).getSubIdUsingPhoneId(phoneId);
+        doReturn(mSubInfo).when(mSubscriptionController).getSubscriptionInfo(eq(FAKE_SUB_ID_1));
+        doReturn(false).when(mSubInfo).isOpportunistic();
+        doReturn(Collections.singletonList(carrierPackageName)).when(mTelephonyManager)
+                .getCarrierPackageNamesForIntentAndPhone(any(), eq(phoneId));
+        ((MockContentResolver) mContext.getContentResolver()).addProvider(
+                SubscriptionManager.CONTENT_URI.getAuthority(),
+                new FakeSubscriptionContentProvider());
+
+        mUpdater.updateSubscriptionByCarrierConfig(mPhone.getPhoneId(),
+                carrierPackageName, carrierConfig);
+
+        ArgumentCaptor<ContentValues> cvCaptor = ArgumentCaptor.forClass(ContentValues.class);
+        verify(mContentProvider, times(1)).update(
+                eq(SubscriptionManager.getUriForSubscriptionId(FAKE_SUB_ID_1)),
+                cvCaptor.capture(), eq(null), eq(null));
+        assertEquals(carrierConfigAccessRules, UiccAccessRule.decodeRules(cvCaptor.getValue()
+                .getAsByteArray(SubscriptionManager.ACCESS_RULES_FROM_CARRIER_CONFIGS)));
+        assertEquals(1, cvCaptor.getValue().size());
+        verify(mSubscriptionController, times(1)).refreshCachedActiveSubscriptionInfoList();
+        verify(mSubscriptionController, times(1)).notifySubscriptionInfoChanged();
     }
 }

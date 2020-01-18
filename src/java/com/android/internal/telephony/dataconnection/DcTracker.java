@@ -248,7 +248,7 @@ public class DcTracker extends Handler {
     // Default sent packets without ack which triggers initial recovery steps
     private static final int NUMBER_SENT_PACKETS_OF_HANG = 10;
 
-    private static final int EVENT_SIM_RECORDS_LOADED = 100;
+    private static final int EVENT_ESSENTIAL_SIM_RECORDS_LOADED = 100;
 
     // Default for the data stall alarm while non-aggressive stall detection
     private static final int DATA_STALL_ALARM_NON_AGGRESSIVE_DELAY_IN_MS_DEFAULT = 1000 * 60 * 6;
@@ -1279,7 +1279,8 @@ public class DcTracker extends Handler {
             radioStateFromCarrier = true;
         }
 
-        boolean recordsLoaded = mIccRecords.get() != null && mIccRecords.get().getRecordsLoaded();
+        boolean recordsLoaded = mIccRecords.get() != null
+                && mIccRecords.get().getEssentialRecordsLoaded();
 
         boolean defaultDataSelected = SubscriptionManager.isValidSubscriptionId(
                 SubscriptionManager.getDefaultDataSubscriptionId());
@@ -2439,8 +2440,7 @@ public class DcTracker extends Handler {
                     return;
                 case CONNECTED:
                     if (DBG) log("onEnableApn: 'CONNECTED' so return");
-                    apnContext.requestLog("onEnableApn state=CONNECTED, so return");
-
+                    // Don't add to local log since this is so common
                     sendRequestNetworkCompleteMsg(onCompleteMsg, true, mTransportType,
                             requestType, DataFailCause.NONE);
                     return;
@@ -3524,7 +3524,7 @@ public class DcTracker extends Handler {
         if (mSubscriptionManager.isActiveSubId(subId)) {
             onRecordsLoadedOrSubIdChanged();
         } else {
-            log("Ignoring EVENT_RECORDS_LOADED as subId is not valid: " + subId);
+            log("Ignoring EVENT_ESSENTIAL_SIM_RECORDS_LOADED as subId is not valid: " + subId);
         }
     }
 
@@ -3541,16 +3541,18 @@ public class DcTracker extends Handler {
             case DctConstants.EVENT_RECORDS_LOADED:
                 mSimRecords = mPhone.getSIMRecords();
                 if ((mIccRecords.get() instanceof RuimRecords) && (mSimRecords != null)) {
-                    mSimRecords.registerForRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
+                    mSimRecords.registerForEssentialRecordsLoaded(
+                        this, EVENT_ESSENTIAL_SIM_RECORDS_LOADED, null);
                 } else {
                     onRecordsLoaded();
                 }
                 break;
 
-            case EVENT_SIM_RECORDS_LOADED:
+            case EVENT_ESSENTIAL_SIM_RECORDS_LOADED:
+                if (DBG) log("EVENT_ESSENTIAL_SIM_RECORDS_LOADED");
                 onRecordsLoaded();
                 if (mSimRecords != null) {
-                    mSimRecords.unregisterForRecordsLoaded(this);
+                    mSimRecords.unregisterForEssentialRecordsLoaded(this);
                     mSimRecords = null;
                 }
                 break;
@@ -3958,7 +3960,7 @@ public class DcTracker extends Handler {
                 if (mSubscriptionManager.isActiveSubId(mPhone.getSubId())) {
                     log("New records found.");
                     mIccRecords.set(newIccRecords);
-                    newIccRecords.registerForRecordsLoaded(
+                    newIccRecords.registerForEssentialRecordsLoaded(
                             this, DctConstants.EVENT_RECORDS_LOADED, null);
                 }
             } else {
@@ -3982,23 +3984,27 @@ public class DcTracker extends Handler {
         mPhone.updateCurrentCarrierInProvider();
     }
 
-    /**
-     * For non DDS phone, mAutoAttachEnabled should be true because it may be detached
-     * automatically from network only because it's idle for too long. In this case, we should
-     * try setting up data call even if it's not attached for 2G or 3G networks. And doing so will
-     * trigger PS attach if possible.
-     */
     @VisibleForTesting
     public boolean shouldAutoAttach() {
         if (mAutoAttachEnabled.get()) return true;
 
         PhoneSwitcher phoneSwitcher = PhoneSwitcher.getInstance();
         ServiceState serviceState = mPhone.getServiceState();
-        return phoneSwitcher != null && serviceState != null
-                && mPhone.getPhoneId() != phoneSwitcher.getPreferredDataPhoneId()
-                && serviceState.getVoiceRegState() == ServiceState.STATE_IN_SERVICE
-                && serviceState.getVoiceNetworkType() != NETWORK_TYPE_LTE
-                && serviceState.getVoiceNetworkType() != NETWORK_TYPE_NR;
+
+        if (phoneSwitcher == null || serviceState == null) return false;
+
+        // If voice is also not in service, don't auto attach.
+        if (serviceState.getVoiceRegState() != ServiceState.STATE_IN_SERVICE) return false;
+
+        // If voice is on LTE or NR, don't auto attach as for LTE / NR data would be attached.
+        if (serviceState.getVoiceNetworkType() == NETWORK_TYPE_LTE
+                || serviceState.getVoiceNetworkType() == NETWORK_TYPE_NR) return false;
+
+        // If phone is non default phone, modem may have detached from data for optimization.
+        // If phone is in voice call, for DSDS case DDS switch may be limited so we do try our
+        // best to setup data connection and allow auto-attach.
+        return (mPhone.getPhoneId() != phoneSwitcher.getPreferredDataPhoneId()
+                || mPhone.getState() != PhoneConstants.State.IDLE);
     }
 
     private void notifyAllDataDisconnected() {

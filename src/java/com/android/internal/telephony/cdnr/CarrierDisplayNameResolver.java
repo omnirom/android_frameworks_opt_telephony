@@ -39,6 +39,7 @@ import android.util.LocalLog;
 import android.util.SparseArray;
 
 import com.android.internal.telephony.GsmCdmaPhone;
+import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.cdnr.EfData.EFSource;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppState;
 import com.android.internal.telephony.uicc.IccRecords;
@@ -376,12 +377,11 @@ public class CarrierDisplayNameResolver {
         String plmn = null;
         boolean isSimReady = mPhone.getUiccCardApplication() != null
                 && mPhone.getUiccCardApplication().getState() == AppState.APPSTATE_READY;
-        boolean forceDisplayNoService = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_display_no_service_when_sim_unready)
-                && !isSimReady;
+        boolean forceDisplayNoService =
+                mPhone.getServiceStateTracker().shouldForceDisplayNoService() && !isSimReady;
         ServiceState ss = getServiceState();
-        if (ss.getVoiceRegState() == ServiceState.STATE_POWER_OFF || !ss.isEmergencyOnly()
-                || forceDisplayNoService) {
+        if (ss.getVoiceRegState() == ServiceState.STATE_POWER_OFF
+                || forceDisplayNoService || !Phone.isEmergencyCallOnly()) {
             plmn = mContext.getResources().getString(
                     com.android.internal.R.string.lockscreen_carrier_default);
         } else {
