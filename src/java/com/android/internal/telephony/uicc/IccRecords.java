@@ -18,7 +18,7 @@ package com.android.internal.telephony.uicc;
 
 import android.annotation.IntDef;
 import android.annotation.Nullable;
-import android.annotation.UnsupportedAppUsage;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.os.AsyncResult;
 import android.os.Handler;
@@ -152,10 +152,10 @@ public abstract class IccRecords extends Handler implements IccConstants {
     protected int mMncLength = UNINITIALIZED;
     protected int mMailboxIndex = 0; // 0 is no mailbox dailing number associated
 
+    protected int mSmsCountOnIcc = 0;
+
     @UnsupportedAppUsage
     private String mSpn;
-
-    protected int mSmsCountOnIcc = -1;
 
     @UnsupportedAppUsage
     protected String mGid1;
@@ -940,10 +940,12 @@ public abstract class IccRecords extends Handler implements IccConstants {
                 }
 
                 break;
+
             case EVENT_GET_SMS_RECORD_SIZE_DONE:
                 ar = (AsyncResult) msg.obj;
 
                 if (ar.exception != null) {
+                    onRecordLoaded();
                     loge("Exception in EVENT_GET_SMS_RECORD_SIZE_DONE " + ar.exception);
                     break;
                 }
@@ -958,8 +960,11 @@ public abstract class IccRecords extends Handler implements IccConstants {
                             + " total " + recordSize[1]
                                     + " record " + recordSize[2]);
                 } catch (ArrayIndexOutOfBoundsException exc) {
+                    mSmsCountOnIcc = -1;
                     loge("ArrayIndexOutOfBoundsException in EVENT_GET_SMS_RECORD_SIZE_DONE: "
                             + exc.toString());
+                } finally {
+                    onRecordLoaded();
                 }
                 break;
 
@@ -1211,12 +1216,6 @@ public abstract class IccRecords extends Handler implements IccConstants {
         return null;
     }
 
-    protected void setSystemProperty(String key, String val) {
-        TelephonyManager.getDefault().setTelephonyProperty(mParentApp.getPhoneId(), key, val);
-
-        log("[key, value]=" + key + ", " +  val);
-    }
-
     /**
      * Returns the response of the SIM application on the UICC to authentication
      * challenge/response algorithm. The data string and challenge response are
@@ -1307,7 +1306,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
     }
 
     /**
-     * To get SMS capacity count on ICC card.
+     * Get SMS capacity count on ICC card.
      */
     public int getSmsCapacityOnIcc() {
         if (DBG) log("getSmsCapacityOnIcc: " + mSmsCountOnIcc);

@@ -21,9 +21,9 @@ import static android.telephony.SmsManager.STATUS_ON_ICC_READ;
 import static android.telephony.SmsManager.STATUS_ON_ICC_UNREAD;
 
 import android.Manifest;
-import android.annotation.UnsupportedAppUsage;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -56,6 +56,7 @@ import com.android.internal.telephony.uicc.IccConstants;
 import com.android.internal.telephony.uicc.IccFileHandler;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccController;
+import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.util.HexDump;
 
@@ -1338,6 +1339,28 @@ public class IccSmsInterfaceManager {
                 SMS_MESSAGE_PERIOD_NOT_SPECIFIED);
     }
 
+    public int getSmsCapacityOnIcc() {
+        mContext.enforceCallingOrSelfPermission(
+                android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE,
+                "getSmsCapacityOnIcc");
+
+        int numberOnIcc = 0;
+        if (mPhone.getIccRecordsLoaded()) {
+            final UiccProfile uiccProfile = UiccController.getInstance()
+                    .getUiccProfileForPhone(mPhone.getPhoneId());
+            if(uiccProfile != null) {
+                numberOnIcc = uiccProfile.getIccRecords().getSmsCapacityOnIcc();
+            } else {
+                loge("uiccProfile is null");
+            }
+        } else {
+            loge("getSmsCapacityOnIcc - aborting, no icc card present.");
+        }
+
+        log("getSmsCapacityOnIcc().numberOnIcc = " + numberOnIcc);
+        return numberOnIcc;
+    }
+
     private boolean isFailedOrDraft(ContentResolver resolver, Uri messageUri) {
         // Clear the calling identity and query the database using the phone user id
         // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
@@ -1437,19 +1460,5 @@ public class IccSmsInterfaceManager {
         pw.println("SMS dispatcher controller log:");
         mDispatchersController.dump(fd, pw, args);
         pw.flush();
-    }
-
-    public int getSmsCapacityOnIcc() {
-        int numberOnIcc = -1;
-        IccRecords ir = mPhone.getIccRecords();
-
-        if (ir != null) {
-            numberOnIcc = ir.getSmsCapacityOnIcc();
-        } else {
-            log("getSmsCapacityOnIcc - aborting, no icc card present.");
-        }
-
-        log("getSmsCapacityOnIcc().numberOnIcc = " + numberOnIcc);
-        return numberOnIcc;
     }
 }
