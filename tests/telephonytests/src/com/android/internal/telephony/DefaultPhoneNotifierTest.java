@@ -22,17 +22,18 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import android.os.Bundle;
+import android.telephony.CellIdentityGsm;
 import android.telephony.CellInfo;
+import android.telephony.DataFailCause;
 import android.telephony.DisconnectCause;
 import android.telephony.PreciseCallState;
 import android.telephony.PreciseDisconnectCause;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
-import android.telephony.gsm.GsmCellLocation;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.internal.telephony.PhoneInternalInterface.DataActivityState;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -164,15 +165,21 @@ public class DefaultPhoneNotifierTest extends TelephonyTest {
 
     @Test @SmallTest
     public void testNotifyDataConnectionFailed() throws Exception {
-        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "APN_0");
-        verify(mTelephonyRegistryManager).notifyDataConnectionFailed(0, 0, "APN_0");
+        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "default", "APN_0",
+                DataFailCause.INSUFFICIENT_RESOURCES);
+        verify(mTelephonyRegistryManager).notifyPreciseDataConnectionFailed(
+                eq(0), eq(0), eq("default"), eq("APN_0"), eq(DataFailCause.INSUFFICIENT_RESOURCES));
 
-        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "APN_1");
-        verify(mTelephonyRegistryManager).notifyDataConnectionFailed(0, 0, "APN_1");
+        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "default", "APN_1",
+                DataFailCause.INSUFFICIENT_RESOURCES);
+        verify(mTelephonyRegistryManager).notifyPreciseDataConnectionFailed(
+                eq(0), eq(0), eq("default"), eq("APN_1"), eq(DataFailCause.INSUFFICIENT_RESOURCES));
 
         doReturn(1).when(mPhone).getSubId();
-        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "APN_1");
-        verify(mTelephonyRegistryManager).notifyDataConnectionFailed(1,0, "APN_1");
+        mDefaultPhoneNotifierUT.notifyDataConnectionFailed(mPhone, "default", "APN_1",
+                DataFailCause.INSUFFICIENT_RESOURCES);
+        verify(mTelephonyRegistryManager).notifyPreciseDataConnectionFailed(
+                eq(1), eq(0), eq("default"), eq("APN_1"), eq(DataFailCause.INSUFFICIENT_RESOURCES));
     }
 
     @Test @SmallTest
@@ -237,37 +244,24 @@ public class DefaultPhoneNotifierTest extends TelephonyTest {
     @Test @SmallTest
     public void testNotifyCellLocation() throws Exception {
         // mock gsm cell location
-        GsmCellLocation mGsmCellLocation = new GsmCellLocation();
-        mGsmCellLocation.setLacAndCid(2, 3);
-        doReturn(mGsmCellLocation).when(mPhone).getCellLocation();
-        ArgumentCaptor<Bundle> cellLocationCapture =
-                ArgumentCaptor.forClass(Bundle.class);
+        CellIdentityGsm mGsmCellLocation = new CellIdentityGsm(2, 3, 0, 0, null, null, null, null);
+        doReturn(mGsmCellLocation).when(mPhone).getCellIdentity();
+        ArgumentCaptor<CellIdentityGsm> cellLocationCapture =
+                ArgumentCaptor.forClass(CellIdentityGsm.class);
 
         mDefaultPhoneNotifierUT.notifyCellLocation(mPhone, mGsmCellLocation);
         verify(mTelephonyRegistryManager).notifyCellLocation(eq(0),
                 cellLocationCapture.capture());
-        assertEquals(2, cellLocationCapture.getValue().getInt("lac"));
-        assertEquals(3, cellLocationCapture.getValue().getInt("cid"));
-        assertEquals(-1, cellLocationCapture.getValue().getInt("psc"));
+        assertEquals(2, cellLocationCapture.getValue().asCellLocation().getLac());
+        assertEquals(3, cellLocationCapture.getValue().asCellLocation().getCid());
+        assertEquals(-1, cellLocationCapture.getValue().asCellLocation().getPsc());
 
         doReturn(1).when(mPhone).getSubId();
-        mGsmCellLocation.setPsc(5);
         mDefaultPhoneNotifierUT.notifyCellLocation(mPhone, mGsmCellLocation);
         verify(mTelephonyRegistryManager).notifyCellLocation(eq(1),
                 cellLocationCapture.capture());
-        assertEquals(2, cellLocationCapture.getValue().getInt("lac"));
-        assertEquals(3, cellLocationCapture.getValue().getInt("cid"));
-        assertEquals(5, cellLocationCapture.getValue().getInt("psc"));
-    }
-
-    @Test @SmallTest
-    public void testNotifyOtaspChanged() throws Exception {
-        mDefaultPhoneNotifierUT.notifyOtaspChanged(mPhone, TelephonyManager.OTASP_NEEDED);
-        verify(mTelephonyRegistryManager).notifyOtaspChanged(eq(mPhone.getSubId()),
-                eq(TelephonyManager.OTASP_NEEDED));
-
-        mDefaultPhoneNotifierUT.notifyOtaspChanged(mPhone, TelephonyManager.OTASP_UNKNOWN);
-        verify(mTelephonyRegistryManager).notifyOtaspChanged(eq(mPhone.getSubId()),
-                eq(TelephonyManager.OTASP_UNKNOWN));
+        assertEquals(2, cellLocationCapture.getValue().asCellLocation().getLac());
+        assertEquals(3, cellLocationCapture.getValue().asCellLocation().getCid());
+        assertEquals(-1, cellLocationCapture.getValue().asCellLocation().getPsc());
     }
 }

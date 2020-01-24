@@ -94,6 +94,12 @@ public class TelephonyEventBuilder {
         return this;
     }
 
+    public TelephonyEventBuilder setSignalStrength(int signalstrength) {
+        mEvent.type = TelephonyEvent.Type.SIGNAL_STRENGTH;
+        mEvent.signalStrength = signalstrength;
+        return this;
+    }
+
     public TelephonyEventBuilder setSetupDataCall(RilSetupDataCall request) {
         mEvent.type = TelephonyEvent.Type.DATA_CALL_SETUP;
         mEvent.setupDataCall = request;
@@ -149,9 +155,11 @@ public class TelephonyEventBuilder {
      * Set and build EMERGENCY_NUMBER_REPORT event
      */
     public TelephonyEventBuilder setUpdatedEmergencyNumber(
-            EmergencyNumberInfo emergencyNumberInfo) {
+            EmergencyNumberInfo emergencyNumberInfo,
+            int emergencyNumberDbVersion) {
         mEvent.type = TelephonyEvent.Type.EMERGENCY_NUMBER_REPORT;
         mEvent.updatedEmergencyNumber = emergencyNumberInfo;
+        mEvent.emergencyNumberDatabaseVersion = emergencyNumberDbVersion;
         return this;
     }
 

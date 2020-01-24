@@ -67,6 +67,7 @@ import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierConfigManager;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
+import android.telephony.SignalStrength;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionPlan;
@@ -117,7 +118,8 @@ public class DcTrackerTest extends TelephonyTest {
             "mobile_supl,3,0,2,60000,true", "mobile_dun,4,0,2,60000,true",
             "mobile_hipri,5,0,3,60000,true", "mobile_fota,10,0,2,60000,true",
             "mobile_ims,11,0,2,60000,true", "mobile_cbs,12,0,2,60000,true",
-            "mobile_ia,14,0,2,-1,true", "mobile_emergency,15,0,2,-1,true"};
+            "mobile_ia,14,0,2,-1,true", "mobile_emergency,15,0,2,-1,true",
+            "mobile_xcap,18,0,2,-1,true"};
 
     public static final String FAKE_APN1 = "FAKE APN 1";
     public static final String FAKE_APN2 = "FAKE APN 2";
@@ -1092,9 +1094,26 @@ public class DcTrackerTest extends TelephonyTest {
         waitForMs(200);
 
         verify(mSimulatedCommandsVerifier, times(1)).setupDataCall(
-                eq(AccessNetworkType.EUTRAN), any(DataProfile.class),
-                eq(false), eq(false), eq(DataService.REQUEST_REASON_NORMAL), any(),
-                any(Message.class));
+                eq(AccessNetworkType.EUTRAN), any(DataProfile.class), eq(false), eq(false),
+                eq(DataService.REQUEST_REASON_NORMAL), any(), any(Message.class));
+    }
+
+    // Test the XCAP APN setup.
+    @Test
+    @SmallTest
+    public void testTrySetupDataXcapApn() throws Exception {
+        initApns(PhoneConstants.APN_TYPE_XCAP, new String[]{PhoneConstants.APN_TYPE_ALL});
+
+        logd("Sending EVENT_DATA_CONNECTION_ATTACHED");
+        mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_DATA_CONNECTION_ATTACHED, null));
+        waitForMs(200);
+
+        mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_TRY_SETUP_DATA, mApnContext));
+        waitForMs(200);
+
+        verify(mSimulatedCommandsVerifier, times(1)).setupDataCall(
+                eq(AccessNetworkType.EUTRAN), any(DataProfile.class), eq(false), eq(false),
+                eq(DataService.REQUEST_REASON_NORMAL), any(), any(Message.class));
     }
 
     @Test
@@ -1324,6 +1343,7 @@ public class DcTrackerTest extends TelephonyTest {
 
     // Test update waiting apn list when on data rat change
     @FlakyTest /* flakes 0.86% of the time */
+    @Ignore
     @Test
     @SmallTest
     public void testUpdateWaitingApnListOnDataRatChange() throws Exception {
@@ -1631,6 +1651,7 @@ public class DcTrackerTest extends TelephonyTest {
         ContentResolver resolver = mContext.getContentResolver();
         Settings.Global.putInt(resolver, Settings.Global.DATA_STALL_RECOVERY_ON_BAD_NETWORK, 1);
         Settings.System.putInt(resolver, "radio.data.stall.recovery.action", 0);
+        doReturn(new SignalStrength()).when(mPhone).getSignalStrength();
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
@@ -1674,6 +1695,7 @@ public class DcTrackerTest extends TelephonyTest {
         Settings.Global.putLong(resolver,
                 Settings.Global.MIN_DURATION_BETWEEN_RECOVERY_STEPS_IN_MS, 100);
         Settings.System.putInt(resolver, "radio.data.stall.recovery.action", 1);
+        doReturn(new SignalStrength()).when(mPhone).getSignalStrength();
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
@@ -1715,6 +1737,7 @@ public class DcTrackerTest extends TelephonyTest {
         Settings.Global.putLong(resolver,
                 Settings.Global.MIN_DURATION_BETWEEN_RECOVERY_STEPS_IN_MS, 100);
         Settings.System.putInt(resolver, "radio.data.stall.recovery.action", 2);
+        doReturn(new SignalStrength()).when(mPhone).getSignalStrength();
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});
@@ -1752,6 +1775,7 @@ public class DcTrackerTest extends TelephonyTest {
         Settings.Global.putLong(resolver,
                 Settings.Global.MIN_DURATION_BETWEEN_RECOVERY_STEPS_IN_MS, 100);
         Settings.System.putInt(resolver, "radio.data.stall.recovery.action", 3);
+        doReturn(new SignalStrength()).when(mPhone).getSignalStrength();
 
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[]{PhoneConstants.APN_TYPE_DEFAULT, PhoneConstants.APN_TYPE_MMS});

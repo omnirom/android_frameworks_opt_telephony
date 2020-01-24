@@ -19,7 +19,7 @@ package com.android.internal.telephony;
 import static com.android.internal.telephony.RILConstants.*;
 import static com.android.internal.util.Preconditions.checkNotNull;
 
-import android.annotation.UnsupportedAppUsage;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.hardware.radio.V1_0.Carrier;
 import android.hardware.radio.V1_0.CarrierRestrictions;
@@ -56,9 +56,7 @@ import android.net.ConnectivityManager;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
-import android.net.NetworkUtils;
 import android.os.AsyncResult;
-import android.os.Build;
 import android.os.Handler;
 import android.os.HwBinder;
 import android.os.Message;
@@ -114,6 +112,9 @@ import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
 import com.android.internal.telephony.uicc.IccUtils;
+import com.android.internal.telephony.util.TelephonyUtils;
+
+import libcore.net.InetAddressUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -131,6 +132,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * RIL implementation of the CommandsInterface.
@@ -1490,6 +1492,43 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     /**
+     * Convert to DataProfileInfo defined in radio/1.5/types.hal
+     * @param dp Data profile
+     * @return A converted data profile
+     */
+    private static android.hardware.radio.V1_5.DataProfileInfo convertToHalDataProfile15(
+            DataProfile dp) {
+        android.hardware.radio.V1_5.DataProfileInfo dpi =
+                new android.hardware.radio.V1_5.DataProfileInfo();
+
+        dpi.base.apn = dp.getApn();
+        dpi.base.protocol = dp.getProtocolType();
+        dpi.base.roamingProtocol = dp.getRoamingProtocolType();
+        dpi.base.authType = dp.getAuthType();
+        dpi.base.user = dp.getUserName();
+        dpi.base.password = dp.getPassword();
+        dpi.base.type = dp.getType();
+        dpi.base.maxConnsTime = dp.getMaxConnectionsTime();
+        dpi.base.maxConns = dp.getMaxConnections();
+        dpi.base.waitTime = dp.getWaitTime();
+        dpi.base.enabled = dp.isEnabled();
+        dpi.supportedApnTypesBitmap = dp.getSupportedApnTypesBitmask();
+        // Shift by 1 bit due to the discrepancy between
+        // android.hardware.radio.V1_0.RadioAccessFamily and the bitmask version of
+        // ServiceState.RIL_RADIO_TECHNOLOGY_XXXX.
+        dpi.base.bearerBitmap = ServiceState.convertNetworkTypeBitmaskToBearerBitmask(
+            dp.getBearerBitmask()) << 1;
+        dpi.base.mtu = dp.getMtu();
+        dpi.base.persistent = dp.isPersistent();
+        dpi.base.preferred = dp.isPreferred();
+
+        // profile id is only meaningful when it's persistent on the modem.
+        dpi.base.profileId = (dpi.base.persistent) ? dp.getProfileId() : DataProfileId.INVALID;
+
+        return dpi;
+    }
+
+    /**
      * Convert NV reset type into ResetNvType defined in types.hal.
      * @param resetType NV reset type.
      * @return Converted reset type in integer or -1 if param is invalid.
@@ -1533,7 +1572,39 @@ public class RIL extends BaseCommands implements CommandsInterface {
             }
 
             try {
-                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
+                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_5)) {
+                    // IRadio V1.5
+                    android.hardware.radio.V1_5.IRadio radioProxy15 =
+                            (android.hardware.radio.V1_5.IRadio) radioProxy;
+
+                    // Convert to HAL data profile
+                    android.hardware.radio.V1_5.DataProfileInfo dpi =
+                            convertToHalDataProfile15(dataProfile);
+
+                    ArrayList<android.hardware.radio.V1_5.LinkAddress> addresses15 =
+                            new ArrayList<>();
+                    if (linkProperties != null) {
+                        for (LinkAddress la : linkProperties.getAllLinkAddresses()) {
+                            android.hardware.radio.V1_5.LinkAddress linkAddress =
+                                    new android.hardware.radio.V1_5.LinkAddress();
+                            linkAddress.address = la.getAddress().getHostAddress();
+                            linkAddress.properties = la.getFlags();
+                            // TODO: Add deprecated time and expired time support here.
+                            addresses15.add(linkAddress);
+                        }
+                    }
+
+                    if (RILJ_LOGD) {
+                        riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                                + ",accessNetworkType="
+                                + AccessNetworkType.toString(accessNetworkType) + ",isRoaming="
+                                + isRoaming + ",allowRoaming=" + allowRoaming + "," + dataProfile
+                                + ",addresses=" + addresses15 + ",dnses=" + dnses);
+                    }
+
+                    radioProxy15.setupDataCall_1_5(rr.mSerial, accessNetworkType, dpi, allowRoaming,
+                            reason, addresses15, dnses);
+                } else if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
                     // IRadio V1.4
                     android.hardware.radio.V1_4.IRadio radioProxy14 =
                             (android.hardware.radio.V1_4.IRadio) radioProxy;
@@ -1622,7 +1693,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                if (Build.IS_DEBUGGABLE) {
+                if (TelephonyUtils.IS_DEBUGGABLE) {
                     riljLog(rr.serialString() + "> iccIO: "
                             + requestToString(rr.mRequest) + " command = 0x"
                             + Integer.toHexString(command) + " fileId = 0x"
@@ -2621,7 +2692,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             if (RILJ_LOGD) {
                 riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " contents = "
-                        + (Build.IS_DEBUGGABLE ? contents : censoredTerminalResponse(contents)));
+                        + (TelephonyUtils.IS_DEBUGGABLE
+                            ? contents : censoredTerminalResponse(contents)));
             }
 
             try {
@@ -3608,7 +3680,13 @@ public class RIL extends BaseCommands implements CommandsInterface {
             }
 
             try {
-                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
+                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_5)) {
+                    // v1.5
+                    android.hardware.radio.V1_5.IRadio radioProxy15 =
+                            (android.hardware.radio.V1_5.IRadio) radioProxy;
+                    radioProxy15.setInitialAttachApn_1_5(rr.mSerial,
+                            convertToHalDataProfile15(dataProfile));
+                } else if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
                     // v1.4
                     android.hardware.radio.V1_4.IRadio radioProxy14 =
                             (android.hardware.radio.V1_4.IRadio) radioProxy;
@@ -3724,7 +3802,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                if (Build.IS_DEBUGGABLE) {
+                if (TelephonyUtils.IS_DEBUGGABLE) {
                     riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
                             + String.format(" cla = 0x%02X ins = 0x%02X", cla, instruction)
                             + String.format(" p1 = 0x%02X p2 = 0x%02X p3 = 0x%02X", p1, p2, p3)
@@ -3751,7 +3829,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                if (Build.IS_DEBUGGABLE) {
+                if (TelephonyUtils.IS_DEBUGGABLE) {
                     riljLog(rr.serialString() + "> " + requestToString(rr.mRequest) + " aid = " + aid
                             + " p2 = " + p2);
                 } else {
@@ -3802,7 +3880,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     mRILDefaultWorkSource);
 
             if (RILJ_LOGD) {
-                if (Build.IS_DEBUGGABLE) {
+                if (TelephonyUtils.IS_DEBUGGABLE) {
                     riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
                             + String.format(" channel = %d", channel)
                             + String.format(" cla = 0x%02X ins = 0x%02X", cla, instruction)
@@ -4011,7 +4089,29 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             RILRequest rr = null;
             try {
-                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
+                if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_5)) {
+                    // V1.5
+                    android.hardware.radio.V1_5.IRadio radioProxy15 =
+                            (android.hardware.radio.V1_5.IRadio) radioProxy;
+
+                    rr = obtainRequest(RIL_REQUEST_SET_DATA_PROFILE, result,
+                            mRILDefaultWorkSource);
+
+                    ArrayList<android.hardware.radio.V1_5.DataProfileInfo> dpis = new ArrayList<>();
+                    for (DataProfile dp : dps) {
+                        dpis.add(convertToHalDataProfile15(dp));
+                    }
+
+                    if (RILJ_LOGD) {
+                        riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
+                                + " with data profiles : ");
+                        for (DataProfile profile : dps) {
+                            riljLog(profile.toString());
+                        }
+                    }
+
+                    radioProxy15.setDataProfile_1_5(rr.mSerial, dpis);
+                } else if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
                     // V1.4
                     android.hardware.radio.V1_4.IRadio radioProxy14 =
                             (android.hardware.radio.V1_4.IRadio) radioProxy;
@@ -4510,6 +4610,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         signalThresholdInfoHal.hysteresisDb = signalThresholdInfo.getHysteresisDb();
         signalThresholdInfoHal.thresholds = primitiveArrayToArrayList(
                 signalThresholdInfo.getThresholds());
+        signalThresholdInfoHal.isEnabled = signalThresholdInfo.isEnabled();
         return signalThresholdInfoHal;
     }
 
@@ -6231,6 +6332,10 @@ public class RIL extends BaseCommands implements CommandsInterface {
         String[] dnses = null;
         String[] gateways = null;
         String[] pcscfs = null;
+
+        List<LinkAddress> laList = new ArrayList<>();
+        int version = 0;
+
         if (dcResult instanceof android.hardware.radio.V1_0.SetupDataCallResult) {
             final android.hardware.radio.V1_0.SetupDataCallResult result =
                     (android.hardware.radio.V1_0.SetupDataCallResult) dcResult;
@@ -6253,6 +6358,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 pcscfs = result.pcscf.split("\\s+");
             }
             mtu = result.mtu;
+            version = 0;
         } else if (dcResult instanceof android.hardware.radio.V1_4.SetupDataCallResult) {
             final android.hardware.radio.V1_4.SetupDataCallResult result =
                     (android.hardware.radio.V1_4.SetupDataCallResult) dcResult;
@@ -6267,32 +6373,52 @@ public class RIL extends BaseCommands implements CommandsInterface {
             gateways = result.gateways.stream().toArray(String[]::new);
             pcscfs = result.pcscf.stream().toArray(String[]::new);
             mtu = result.mtu;
+            version = 4;
+        } else if (dcResult instanceof android.hardware.radio.V1_5.SetupDataCallResult) {
+            final android.hardware.radio.V1_5.SetupDataCallResult result =
+                    (android.hardware.radio.V1_5.SetupDataCallResult) dcResult;
+            cause = result.cause;
+            suggestedRetryTime = result.suggestedRetryTime;
+            cid = result.cid;
+            active = result.active;
+            protocolType = result.type;
+            ifname = result.ifname;
+            //addresses = result.addresses.stream().toArray(String[]::new);
+            laList = result.addresses.stream().map(a -> new LinkAddress(
+                    InetAddressUtils.parseNumericAddress(a.address), 0, a.properties, 0))
+                    .collect(Collectors.toList());
+            dnses = result.dnses.stream().toArray(String[]::new);
+            gateways = result.gateways.stream().toArray(String[]::new);
+            pcscfs = result.pcscf.stream().toArray(String[]::new);
+            mtu = result.mtu;
+            version = 5;
         } else {
             Rlog.e(RILJ_LOG_TAG, "Unsupported SetupDataCallResult " + dcResult);
             return null;
         }
 
-        // Process address
-        List<LinkAddress> laList = new ArrayList<>();
-        if (addresses != null) {
-            for (String address : addresses) {
-                address = address.trim();
-                if (address.isEmpty()) continue;
+        if (version < 5) {
+            // Process address
+            if (addresses != null) {
+                for (String address : addresses) {
+                    address = address.trim();
+                    if (address.isEmpty()) continue;
 
-                try {
-                    LinkAddress la;
-                    // Check if the address contains prefix length. If yes, LinkAddress
-                    // can parse that.
-                    if (address.split("/").length == 2) {
-                        la = new LinkAddress(address);
-                    } else {
-                        InetAddress ia = NetworkUtils.numericToInetAddress(address);
-                        la = new LinkAddress(ia, (ia instanceof Inet4Address) ? 32 : 128);
+                    try {
+                        LinkAddress la;
+                        // Check if the address contains prefix length. If yes, LinkAddress
+                        // can parse that.
+                        if (address.split("/").length == 2) {
+                            la = new LinkAddress(address);
+                        } else {
+                            InetAddress ia = InetAddressUtils.parseNumericAddress(address);
+                            la = new LinkAddress(ia, (ia instanceof Inet4Address) ? 32 : 128);
+                        }
+
+                        laList.add(la);
+                    } catch (IllegalArgumentException e) {
+                        Rlog.e(RILJ_LOG_TAG, "Unknown address: " + address, e);
                     }
-
-                    laList.add(la);
-                } catch (IllegalArgumentException e) {
-                    Rlog.e(RILJ_LOG_TAG, "Unknown address: " + address, e);
                 }
             }
         }
@@ -6304,7 +6430,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 dns = dns.trim();
                 InetAddress ia;
                 try {
-                    ia = NetworkUtils.numericToInetAddress(dns);
+                    ia = InetAddressUtils.parseNumericAddress(dns);
                     dnsList.add(ia);
                 } catch (IllegalArgumentException e) {
                     Rlog.e(RILJ_LOG_TAG, "Unknown dns: " + dns, e);
@@ -6319,7 +6445,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 gateway = gateway.trim();
                 InetAddress ia;
                 try {
-                    ia = NetworkUtils.numericToInetAddress(gateway);
+                    ia = InetAddressUtils.parseNumericAddress(gateway);
                     gatewayList.add(ia);
                 } catch (IllegalArgumentException e) {
                     Rlog.e(RILJ_LOG_TAG, "Unknown gateway: " + gateway, e);
@@ -6334,7 +6460,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 pcscf = pcscf.trim();
                 InetAddress ia;
                 try {
-                    ia = NetworkUtils.numericToInetAddress(pcscf);
+                    ia = InetAddressUtils.parseNumericAddress(pcscf);
                     pcscfList.add(ia);
                 } catch (IllegalArgumentException e) {
                     Rlog.e(RILJ_LOG_TAG, "Unknown pcscf: " + pcscf, e);

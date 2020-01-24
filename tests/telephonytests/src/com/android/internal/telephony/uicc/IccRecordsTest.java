@@ -33,6 +33,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.*;
 
+import android.content.Context;
+import android.os.AsyncResult;
 import android.os.HandlerThread;
 import android.os.Message;
 import android.util.Pair;
@@ -124,7 +126,7 @@ public class IccRecordsTest extends TelephonyTest {
         fetchCapacityDone.sendToTarget();
 
         // verify whether the count is 500
-        waitForMs(200);
+        waitForLastHandlerAction(mIccRecords);
         assertEquals(mIccRecords.getSmsCapacityOnIcc(), 500);
     }
 }

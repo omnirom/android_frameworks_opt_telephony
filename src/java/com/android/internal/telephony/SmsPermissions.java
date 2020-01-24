@@ -17,8 +17,8 @@
 package com.android.internal.telephony;
 
 import android.Manifest;
-import android.annotation.UnsupportedAppUsage;
 import android.app.AppOpsManager;
+import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -96,7 +96,8 @@ public class SmsPermissions {
             }
         }
 
-        TelephonyPermissions.enforceCallingOrSelfCarrierPrivilege(mPhone.getSubId(), message);
+        TelephonyPermissions.enforceCallingOrSelfCarrierPrivilege(
+                mContext, mPhone.getSubId(), message);
     }
 
     /**
