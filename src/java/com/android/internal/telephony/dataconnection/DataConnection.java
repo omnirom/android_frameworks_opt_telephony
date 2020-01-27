@@ -429,6 +429,10 @@ public class DataConnection extends StateMachine {
         return mHandoverState == HANDOVER_STATE_COMPLETED;
     }
 
+    boolean isBeingInTransferring() {
+        return mHandoverState == HANDOVER_STATE_BEING_TRANSFERRED;
+    }
+
     int getCid() {
         return mCid;
     }
@@ -2060,13 +2064,8 @@ public class DataConnection extends StateMachine {
                 DcTracker dcTracker = mPhone.getDcTracker(getHandoverSourceTransport());
                 DataConnection dc = dcTracker.getDataConnectionByApnType(
                         mConnectionParams.mApnContext.getApnType());
-                // It's possible that the source data connection has been disconnected by the modem
-                // already. If not, set its handover state to completed.
-                if (dc != null) {
-                    // Transfer network agent from the original data connection as soon as the
-                    // new handover data connection is connected.
-                    dc.setHandoverState(HANDOVER_STATE_COMPLETED);
-                }
+                // Don't move the handover state of the source transport to COMPLETED immediately
+                // because of ensuring to send deactivating data call for source transport.
 
                 if (mHandoverSourceNetworkAgent != null) {
                     String logStr = "Transfer network agent successfully.";
