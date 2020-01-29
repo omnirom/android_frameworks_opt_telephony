@@ -16,8 +16,8 @@
 
 package com.android.internal.telephony.dataconnection;
 
-import static android.net.NetworkPolicyManager.OVERRIDE_CONGESTED;
-import static android.net.NetworkPolicyManager.OVERRIDE_UNMETERED;
+import static android.net.NetworkPolicyManager.SUBSCRIPTION_OVERRIDE_CONGESTED;
+import static android.net.NetworkPolicyManager.SUBSCRIPTION_OVERRIDE_UNMETERED;
 
 import android.annotation.IntDef;
 import android.annotation.Nullable;
@@ -28,15 +28,16 @@ import android.net.InetAddresses;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
+import android.net.NetworkAgentConfig;
 import android.net.NetworkCapabilities;
 import android.net.NetworkFactory;
 import android.net.NetworkInfo;
-import android.net.NetworkMisc;
+import android.net.NetworkProvider;
 import android.net.NetworkRequest;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.SocketKeepalive;
-import android.net.StringNetworkSpecifier;
+import android.net.TelephonyNetworkSpecifier;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.os.PersistableBundle;
@@ -50,7 +51,6 @@ import android.telephony.Annotation.DataFailureCause;
 import android.telephony.CarrierConfigManager;
 import android.telephony.DataFailCause;
 import android.telephony.NetworkRegistrationInfo;
-import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -76,7 +76,6 @@ import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.RetryManager;
 import com.android.internal.telephony.ServiceStateTracker;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.dataconnection.DcTracker.ReleaseNetworkType;
 import com.android.internal.telephony.dataconnection.DcTracker.RequestNetworkType;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
@@ -86,8 +85,7 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
-
-import libcore.net.InetAddressUtils;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -629,8 +627,6 @@ public class DataConnection extends StateMachine {
 
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_MOBILE,
                 networkType, NETWORK_TYPE, TelephonyManager.getNetworkTypeName(networkType));
-        mNetworkInfo.setRoaming(ss.getDataRoaming());
-        mNetworkInfo.setIsAvailable(true);
 
         addState(mDefaultState);
             addState(mInactiveState, mDefaultState);
@@ -669,10 +665,13 @@ public class DataConnection extends StateMachine {
 
         // Check if we should fake an error.
         if (mDcTesterFailBringUpAll.getDcFailBringUp().mCounter  > 0) {
-            DataCallResponse response = new DataCallResponse(
-                    mDcTesterFailBringUpAll.getDcFailBringUp().mFailCause,
-                    mDcTesterFailBringUpAll.getDcFailBringUp().mSuggestedRetryTime, 0, 0, 0, "",
-                    null, null, null, null, PhoneConstants.UNSET_MTU);
+            DataCallResponse response = new DataCallResponse.Builder()
+                    .setCause(mDcTesterFailBringUpAll.getDcFailBringUp().mFailCause)
+                    .setSuggestedRetryTime(
+                            mDcTesterFailBringUpAll.getDcFailBringUp().mSuggestedRetryTime)
+                    .setMtuV4(PhoneConstants.UNSET_MTU)
+                    .setMtuV6(PhoneConstants.UNSET_MTU)
+                    .build();
 
             Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
             AsyncResult.forMessage(msg, response, null);
@@ -1243,6 +1242,11 @@ public class DataConnection extends StateMachine {
     }
 
     /**
+     * Get the network capabilities for this data connection.
+     *
+     * Note that this method reads fields from mNetworkInfo, so its output is only as fresh
+     * as mNetworkInfo. Call updateNetworkInfoSuspendState before calling this.
+     *
      * @return the {@link NetworkCapabilities} of this data connection.
      */
     public NetworkCapabilities getNetworkCapabilities() {
@@ -1362,7 +1366,8 @@ public class DataConnection extends StateMachine {
         result.setLinkUpstreamBandwidthKbps(up);
         result.setLinkDownstreamBandwidthKbps(down);
 
-        result.setNetworkSpecifier(new StringNetworkSpecifier(Integer.toString(mSubId)));
+        result.setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
+                .setSubscriptionId(mSubId).build());
 
         result.setCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING,
                 !mPhone.getServiceState().getDataRoaming());
@@ -1370,10 +1375,10 @@ public class DataConnection extends StateMachine {
         result.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED);
 
         // Override values set above when requested by policy
-        if ((mSubscriptionOverride & OVERRIDE_UNMETERED) != 0) {
+        if ((mSubscriptionOverride & SUBSCRIPTION_OVERRIDE_UNMETERED) != 0) {
             result.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
         }
-        if ((mSubscriptionOverride & OVERRIDE_CONGESTED) != 0) {
+        if ((mSubscriptionOverride & SUBSCRIPTION_OVERRIDE_CONGESTED) != 0) {
             result.removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED);
         }
 
@@ -1381,6 +1386,10 @@ public class DataConnection extends StateMachine {
         if (mUnmeteredOverride) {
             result.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
         }
+
+        final boolean suspended =
+                mNetworkInfo.getDetailedState() == NetworkInfo.DetailedState.SUSPENDED;
+        result.setCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED, !suspended);
 
         return result;
     }
@@ -1427,7 +1436,7 @@ public class DataConnection extends StateMachine {
         if (address.startsWith("[") && address.endsWith("]") && address.indexOf(':') != -1) {
             address = address.substring(1, address.length() - 1);
         }
-        return InetAddressUtils.isNumericAddress(address);
+        return InetAddresses.isNumericAddress(address);
     }
 
     private SetupResult setLinkProperties(DataCallResponse response,
@@ -1499,14 +1508,17 @@ public class DataConnection extends StateMachine {
                 }
 
                 for (InetAddress gateway : response.getGatewayAddresses()) {
+                    int mtu = linkProperties.hasGlobalIPv6Address() ? response.getMtuV6()
+                            : response.getMtuV4();
                     // Allow 0.0.0.0 or :: as a gateway;
                     // this indicates a point-to-point interface.
                     linkProperties.addRoute(new RouteInfo(null, gateway, null,
-                            RouteInfo.RTN_UNICAST));
+                            RouteInfo.RTN_UNICAST, mtu));
                 }
 
                 // set interface MTU
                 // this may clobber the setting read from the APN db, but that's ok
+                // TODO: remove once LinkProperties#setMtu is deprecated
                 linkProperties.setMtu(response.getMtu());
 
                 result = SetupResult.SUCCESS;
@@ -1730,7 +1742,6 @@ public class DataConnection extends StateMachine {
         }
 
         mNetworkInfo.setSubtype(subtype, TelephonyManager.getNetworkTypeName(subtype));
-        mNetworkInfo.setRoaming(state.getDataRoaming());
     }
 
     private void updateNetworkInfoSuspendState() {
@@ -2113,17 +2124,25 @@ public class DataConnection extends StateMachine {
             mNetworkInfo.setExtraInfo(mApnSetting.getApnName());
             updateTcpBufferSizes(mRilRat);
 
-            final NetworkMisc misc = new NetworkMisc();
+            final NetworkAgentConfig.Builder configBuilder = new NetworkAgentConfig.Builder();
+            configBuilder.setLegacyType(ConnectivityManager.TYPE_MOBILE);
+            configBuilder.setLegacyTypeName(NETWORK_TYPE);
             final CarrierSignalAgent carrierSignalAgent = mPhone.getCarrierSignalAgent();
-            if (carrierSignalAgent.hasRegisteredReceivers(TelephonyIntents
+            if (carrierSignalAgent.hasRegisteredReceivers(TelephonyManager
                     .ACTION_CARRIER_SIGNAL_REDIRECTED)) {
                 // carrierSignal Receivers will place the carrier-specific provisioning notification
-                misc.provisioningNotificationDisabled = true;
+                configBuilder.disableProvisioningNotification();
             }
-            misc.subscriberId = mPhone.getSubscriberId();
+
+            final String subscriberId = mPhone.getSubscriberId();
+            if (!TextUtils.isEmpty(subscriberId)) {
+                configBuilder.setSubscriberId(subscriberId);
+            }
 
             // set skip464xlat if it is not default otherwise
-            misc.skip464xlat = shouldSkip464Xlat();
+            if (shouldSkip464Xlat()) {
+                configBuilder.disableNat64Detection();
+            }
 
             mUnmeteredUseOnly = isUnmeteredUseOnly();
 
@@ -2175,13 +2194,17 @@ public class DataConnection extends StateMachine {
                 mScore = calculateScore();
                 final NetworkFactory factory = PhoneFactory.getNetworkFactory(
                         mPhone.getPhoneId());
-                final int factorySerialNumber = (null == factory)
-                        ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
+                final NetworkProvider provider = (null == factory) ? null : factory.getProvider();
 
                 mDisabledApnTypeBitMask |= getDisallowedApnTypes();
 
                 mNetworkAgent = new DcNetworkAgent(DataConnection.this,
-                        mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
+                        mPhone, mNetworkInfo, mScore, configBuilder.build(), provider,
+                        mTransportType);
+                // All network agents start out in CONNECTING mode, but DcNetworkAgents are
+                // created when the network is already connected. Hence, send the connected
+                // notification immediately.
+                mNetworkAgent.setConnected();
             }
 
             if (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) {

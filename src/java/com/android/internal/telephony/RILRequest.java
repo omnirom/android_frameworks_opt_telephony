@@ -22,7 +22,7 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.os.WorkSource;
 import android.os.WorkSource.WorkChain;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 
 import java.util.List;
 import java.util.Random;
@@ -148,7 +148,7 @@ public class RILRequest {
         final List<WorkChain> workChains = mWorkSource.getWorkChains();
         if (workChains != null && !workChains.isEmpty()) {
             final WorkChain workChain = workChains.get(0);
-            return workChain.getAttributionUid() + ":" + workChain.getTags()[0];
+            return workChain.toString();
         }
 
         return null;

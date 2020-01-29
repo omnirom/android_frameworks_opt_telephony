@@ -48,7 +48,7 @@ import android.telephony.AccessNetworkConstants;
 import android.telephony.CallQuality;
 import android.telephony.DisconnectCause;
 import android.telephony.NetworkRegistrationInfo;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
@@ -2126,6 +2126,9 @@ public class TelephonyMetrics {
             cq.averageRelativeJitterMillis = callQuality.getAverageRelativeJitter();
             cq.maxRelativeJitterMillis = callQuality.getMaxRelativeJitter();
             cq.codecType = convertImsCodec(callQuality.getCodecType());
+            cq.rtpInactivityDetected = callQuality.isRtpInactivityDetected();
+            cq.rxSilenceDetected = callQuality.isIncomingSilenceDetected();
+            cq.txSilenceDetected = callQuality.isOutgoingSilenceDetected();
         }
         return cq;
     }

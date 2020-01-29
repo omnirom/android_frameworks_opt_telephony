@@ -21,7 +21,7 @@ import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 import android.net.NetworkCapabilities;
 import android.net.NetworkFactory;
 import android.net.NetworkRequest;
-import android.net.StringNetworkSpecifier;
+import android.net.TelephonyNetworkSpecifier;
 import android.os.AsyncResult;
 import android.os.Bundle;
 import android.os.Handler;
@@ -29,7 +29,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.Annotation.ApnType;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
@@ -149,7 +149,8 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_EIMS);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-        nc.setNetworkSpecifier(new StringNetworkSpecifier(String.valueOf(subscriptionId)));
+        nc.setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
+                .setSubscriptionId(subscriptionId).build());
         return nc;
     }
 

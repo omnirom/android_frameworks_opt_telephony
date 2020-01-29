@@ -25,10 +25,10 @@ import android.database.MatrixCursor;
 import android.database.MergeCursor;
 import android.net.Uri;
 import android.os.RemoteException;
-import android.os.ServiceManager;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.text.TextUtils;
 
 import com.android.internal.telephony.uicc.AdnRecord;
@@ -433,7 +433,10 @@ public class IccProvider extends ContentProvider {
         List<AdnRecord> adnRecords = null;
         try {
             IIccPhoneBook iccIpb = IIccPhoneBook.Stub.asInterface(
-                    ServiceManager.getService("simphonebook"));
+                    TelephonyFrameworkInitializer
+                            .getTelephonyServiceManager()
+                            .getIccPhoneBookServiceRegisterer()
+                            .get());
             if (iccIpb != null) {
                 adnRecords = iccIpb.getAdnRecordsInEfForSubscriber(subId, efType);
             }
@@ -475,7 +478,10 @@ public class IccProvider extends ContentProvider {
 
         try {
             IIccPhoneBook iccIpb = IIccPhoneBook.Stub.asInterface(
-                    ServiceManager.getService("simphonebook"));
+                    TelephonyFrameworkInitializer
+                            .getTelephonyServiceManager()
+                            .getIccPhoneBookServiceRegisterer()
+                            .get());
             if (iccIpb != null) {
                 success = iccIpb.updateAdnRecordsInEfBySearchForSubscriber(subId, efType,
                         "", "", name, number, pin2);
@@ -497,7 +503,10 @@ public class IccProvider extends ContentProvider {
                     ", values: [ "+ values + " ], subId:" + subId);
         try {
             IIccPhoneBook iccIpb = IIccPhoneBook.Stub.asInterface(
-                    ServiceManager.getService("simphonebook"));
+                    TelephonyFrameworkInitializer
+                            .getTelephonyServiceManager()
+                            .getIccPhoneBookServiceRegisterer()
+                            .get());
             if (iccIpb != null) {
                 success = iccIpb
                         .updateAdnRecordsWithContentValuesInEfBySearchUsingSubId(
@@ -523,7 +532,10 @@ public class IccProvider extends ContentProvider {
 
         try {
             IIccPhoneBook iccIpb = IIccPhoneBook.Stub.asInterface(
-                    ServiceManager.getService("simphonebook"));
+                    TelephonyFrameworkInitializer
+                            .getTelephonyServiceManager()
+                            .getIccPhoneBookServiceRegisterer()
+                            .get());
             if (iccIpb != null) {
                 success = iccIpb.updateAdnRecordsInEfBySearchForSubscriber(subId, efType,
                           name, number, "", "", pin2);

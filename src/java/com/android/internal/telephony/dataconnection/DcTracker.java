@@ -19,6 +19,8 @@ package com.android.internal.telephony.dataconnection;
 import static android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_LTE;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_NR;
+import static android.telephony.data.ApnSetting.PROTOCOL_IPV4V6;
+import static android.telephony.data.ApnSetting.TYPE_DEFAULT;
 
 import static com.android.internal.telephony.RILConstants.DATA_PROFILE_DEFAULT;
 import static com.android.internal.telephony.RILConstants.DATA_PROFILE_INVALID;
@@ -41,11 +43,9 @@ import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
-import android.net.INetworkPolicyListener;
 import android.net.LinkProperties;
 import android.net.NetworkAgent;
 import android.net.NetworkCapabilities;
-import android.net.NetworkConfig;
 import android.net.NetworkPolicyManager;
 import android.net.NetworkRequest;
 import android.net.ProxyInfo;
@@ -58,7 +58,6 @@ import android.os.HandlerThread;
 import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.RegistrantList;
-import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.preference.PreferenceManager;
@@ -76,12 +75,12 @@ import android.telephony.DataFailCause;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.PcoData;
 import android.telephony.PreciseDataConnectionState;
-import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.ServiceState.RilRadioTechnology;
 import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.telephony.SubscriptionPlan;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
 import android.telephony.cdma.CdmaCellLocation;
 import android.telephony.data.ApnSetting;
@@ -105,7 +104,6 @@ import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.PhoneSwitcher;
 import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.SettingsObserver;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons.DataAllowedReasonType;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons.DataDisallowedReasonType;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings.DataEnabledChangedReason;
@@ -117,6 +115,7 @@ import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.util.ArrayUtils;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.internal.util.AsyncChannel;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -124,6 +123,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -145,26 +145,6 @@ public class DcTracker extends Handler {
     private static final boolean VDBG = false; // STOPSHIP if true
     private static final boolean VDBG_STALL = false; // STOPSHIP if true
     private static final boolean RADIO_TESTS = false;
-
-    /**
-     * These constants exist here because ConnectivityManager.TYPE_xxx constants are deprecated and
-     * new ones will not be added (for instance NETWORK_TYPE_MCX below).
-     * For backward compatibility, the values here need to be the same as
-     * ConnectivityManager.TYPE_xxx because networkAttributes overlay uses those values.
-     */
-    private static final int NETWORK_TYPE_DEFAULT = ConnectivityManager.TYPE_MOBILE;
-    private static final int NETWORK_TYPE_MMS = ConnectivityManager.TYPE_MOBILE_MMS;
-    private static final int NETWORK_TYPE_SUPL = ConnectivityManager.TYPE_MOBILE_SUPL;
-    private static final int NETWORK_TYPE_DUN = ConnectivityManager.TYPE_MOBILE_DUN;
-    private static final int NETWORK_TYPE_HIPRI = ConnectivityManager.TYPE_MOBILE_HIPRI;
-    private static final int NETWORK_TYPE_FOTA = ConnectivityManager.TYPE_MOBILE_FOTA;
-    private static final int NETWORK_TYPE_IMS = ConnectivityManager.TYPE_MOBILE_IMS;
-    private static final int NETWORK_TYPE_CBS = ConnectivityManager.TYPE_MOBILE_CBS;
-    private static final int NETWORK_TYPE_IA = ConnectivityManager.TYPE_MOBILE_IA;
-    private static final int NETWORK_TYPE_EMERGENCY = ConnectivityManager.TYPE_MOBILE_EMERGENCY;
-    // far away from ConnectivityManager.TYPE_xxx constants as the APNs below aren't defined there.
-    private static final int NETWORK_TYPE_MCX = 1001;
-    private static final int NETWORK_TYPE_XCAP = 1002;
 
     @IntDef(value = {
             REQUEST_TYPE_NORMAL,
@@ -291,7 +271,7 @@ public class DcTracker extends Handler {
             new PriorityQueue<ApnContext>(5,
             new Comparator<ApnContext>() {
                 public int compare(ApnContext c1, ApnContext c2) {
-                    return c2.priority - c1.priority;
+                    return c2.getPriority() - c1.getPriority();
                 }
             } );
 
@@ -456,8 +436,8 @@ public class DcTracker extends Handler {
     };
 
     private NetworkPolicyManager mNetworkPolicyManager;
-    private final INetworkPolicyListener mNetworkPolicyListener =
-            new NetworkPolicyManager.Listener() {
+    private final NetworkPolicyManager.SubscriptionCallback mSubscriptionCallback =
+            new NetworkPolicyManager.SubscriptionCallback() {
         @Override
         public void onSubscriptionOverride(int subId, int overrideMask, int overrideValue) {
             if (mPhone == null || mPhone.getSubId() != subId) return;
@@ -758,8 +738,9 @@ public class DcTracker extends Handler {
         mSubscriptionManager = SubscriptionManager.from(mPhone.getContext());
         mSubscriptionManager.addOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
 
-        mNetworkPolicyManager = NetworkPolicyManager.from(mPhone.getContext());
-        mNetworkPolicyManager.registerListener(mNetworkPolicyListener);
+        mNetworkPolicyManager = (NetworkPolicyManager) mPhone.getContext()
+                .getSystemService(Context.NETWORK_POLICY_SERVICE);
+        mNetworkPolicyManager.registerSubscriptionCallback(mSubscriptionCallback);
 
         HandlerThread dcHandlerThread = new HandlerThread("DcHandlerThread");
         dcHandlerThread.start();
@@ -874,7 +855,7 @@ public class DcTracker extends Handler {
 
         mSubscriptionManager
                 .removeOnSubscriptionsChangedListener(mOnSubscriptionsChangedListener);
-        mNetworkPolicyManager.unregisterListener(mNetworkPolicyListener);
+        mNetworkPolicyManager.unregisterSubscriptionCallback(mSubscriptionCallback);
         mDcc.dispose();
         mDcTesterFailBringUpAll.dispose();
 
@@ -960,7 +941,11 @@ public class DcTracker extends Handler {
 
     // Turn telephony radio on or off.
     private void setRadio(boolean on) {
-        final ITelephony phone = ITelephony.Stub.asInterface(ServiceManager.checkService("phone"));
+        final ITelephony phone = ITelephony.Stub.asInterface(
+                TelephonyFrameworkInitializer
+                        .getTelephonyServiceManager()
+                        .getTelephonyServiceRegisterer()
+                        .get());
         try {
             phone.setRadio(on);
         } catch (Exception e) {
@@ -1027,68 +1012,30 @@ public class DcTracker extends Handler {
         if(DBG && mPhone != null) log("finalize");
     }
 
-    private ApnContext addApnContext(String type, NetworkConfig networkConfig) {
-        ApnContext apnContext = new ApnContext(mPhone, type, mLogTag, networkConfig, this);
-        mApnContexts.put(type, apnContext);
-        mApnContextsByType.put(ApnSetting.getApnTypesBitmaskFromString(type), apnContext);
-        mPrioritySortedApnContexts.add(apnContext);
-        return apnContext;
-    }
-
     private void initApnContexts() {
-        log("initApnContexts: E");
-        // Load device network attributes from resources
-        String[] networkConfigStrings = mPhone.getContext().getResources().getStringArray(
-                com.android.internal.R.array.networkAttributes);
-        for (String networkConfigString : networkConfigStrings) {
-            NetworkConfig networkConfig = new NetworkConfig(networkConfigString);
-            ApnContext apnContext;
-
-            switch (networkConfig.type) {
-                case NETWORK_TYPE_DEFAULT:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_DEFAULT, networkConfig);
-                    break;
-                case NETWORK_TYPE_MMS:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_MMS, networkConfig);
-                    break;
-                case NETWORK_TYPE_SUPL:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_SUPL, networkConfig);
-                    break;
-                case NETWORK_TYPE_DUN:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_DUN, networkConfig);
-                    break;
-                case NETWORK_TYPE_HIPRI:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_HIPRI, networkConfig);
-                    break;
-                case NETWORK_TYPE_FOTA:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_FOTA, networkConfig);
-                    break;
-                case NETWORK_TYPE_IMS:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_IMS, networkConfig);
-                    break;
-                case NETWORK_TYPE_CBS:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_CBS, networkConfig);
-                    break;
-                case NETWORK_TYPE_IA:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_IA, networkConfig);
-                    break;
-                case NETWORK_TYPE_EMERGENCY:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_EMERGENCY, networkConfig);
-                    break;
-                case NETWORK_TYPE_MCX:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_MCX, networkConfig);
-                    break;
-                case NETWORK_TYPE_XCAP:
-                    apnContext = addApnContext(PhoneConstants.APN_TYPE_XCAP, networkConfig);
-                    break;
-                default:
-                    log("initApnContexts: skipping unknown type=" + networkConfig.type);
-                    continue;
-            }
-            log("initApnContexts: apnContext=" + apnContext);
+        if (!mTelephonyManager.isDataCapable()) {
+            log("initApnContexts: isDataCapable == false.  No Apn Contexts loaded");
+            return;
         }
 
+        log("initApnContexts: E");
+        // Load device network attributes from resources
+        final Collection<ApnConfigType> types = ApnConfigTypeRepository.getDefault().getTypes();
+        for (ApnConfigType apnConfigType : types) {
+            addApnContext(apnConfigType);
+            log("initApnContexts: apnContext=" + ApnSetting.getApnTypeString(
+                    apnConfigType.getType()));
+        }
         if (VDBG) log("initApnContexts: X mApnContexts=" + mApnContexts);
+    }
+
+    private void addApnContext(ApnConfigType apnContextType) {
+        ApnContext apnContext = new ApnContext(mPhone, apnContextType.getType(), mLogTag, this,
+                apnContextType.getPriority());
+        mApnContexts.put(apnContext.getApnType(), apnContext);
+        mApnContextsByType.put(ApnSetting.getApnTypesBitmaskFromString(apnContext.getApnType()),
+                apnContext);
+        mPrioritySortedApnContexts.add(apnContext);
     }
 
     public LinkProperties getLinkProperties(String apnType) {
@@ -1131,6 +1078,11 @@ public class DcTracker extends Handler {
         }
 
         return result.toArray(new String[0]);
+    }
+
+    @VisibleForTesting
+    public Collection<ApnContext> getApnContexts() {
+        return mApnContexts.values();
     }
 
     /** Return active ApnSetting of a specific apnType */
@@ -2100,7 +2052,7 @@ public class DcTracker extends Handler {
             // Search for Initial APN setting and the first apn that can handle default
             for (ApnSetting apn : mAllApnSettings) {
                 if (firstNonEmergencyApnSetting == null
-                        && !apn.canHandleType(ApnSetting.TYPE_EMERGENCY)) {
+                        && !apn.isEmergencyApn()) {
                     firstNonEmergencyApnSetting = apn;
                     log("setInitialApn: firstNonEmergencyApnSetting="
                             + firstNonEmergencyApnSetting);
@@ -2909,11 +2861,13 @@ public class DcTracker extends Handler {
                         final byte[] value = new byte[1];
                         value[0] = (byte) pcoVal;
                         final Intent intent =
-                                new Intent(TelephonyIntents.ACTION_CARRIER_SIGNAL_PCO_VALUE);
-                        intent.putExtra(TelephonyIntents.EXTRA_APN_TYPE_KEY, "default");
-                        intent.putExtra(TelephonyIntents.EXTRA_APN_PROTO_KEY, "IPV4V6");
-                        intent.putExtra(TelephonyIntents.EXTRA_PCO_ID_KEY, 0xFF00);
-                        intent.putExtra(TelephonyIntents.EXTRA_PCO_VALUE_KEY, value);
+                                new Intent(TelephonyManager.ACTION_CARRIER_SIGNAL_PCO_VALUE);
+                        intent.putExtra(TelephonyManager.EXTRA_APN_TYPE, "default");
+                        intent.putExtra(TelephonyManager.EXTRA_APN_TYPE_INT, TYPE_DEFAULT);
+                        intent.putExtra(TelephonyManager.EXTRA_APN_PROTOCOL, "IPV4V6");
+                        intent.putExtra(TelephonyManager.EXTRA_APN_PROTOCOL_INT, PROTOCOL_IPV4V6);
+                        intent.putExtra(TelephonyManager.EXTRA_PCO_ID, 0xFF00);
+                        intent.putExtra(TelephonyManager.EXTRA_PCO_VALUE, value);
                         mPhone.getCarrierSignalAgent().notifyCarrierSignalReceivers(intent);
                     }
                 }
@@ -2935,10 +2889,12 @@ public class DcTracker extends Handler {
                     apn != null ? apn.getApnName() : null, cause);
 
             // Compose broadcast intent send to the specific carrier signaling receivers
-            Intent intent = new Intent(TelephonyIntents
+            Intent intent = new Intent(TelephonyManager
                     .ACTION_CARRIER_SIGNAL_REQUEST_NETWORK_FAILED);
-            intent.putExtra(TelephonyIntents.EXTRA_ERROR_CODE_KEY, cause);
-            intent.putExtra(TelephonyIntents.EXTRA_APN_TYPE_KEY, apnContext.getApnType());
+            intent.putExtra(TelephonyManager.EXTRA_ERROR_CODE, cause);
+            intent.putExtra(TelephonyManager.EXTRA_APN_TYPE, apnContext.getApnType());
+            intent.putExtra(TelephonyManager.EXTRA_APN_TYPE_INT,
+                    ApnSetting.getApnTypesBitmaskFromString(apnContext.getApnType()));
             mPhone.getCarrierSignalAgent().notifyCarrierSignalReceivers(intent);
 
             if (DataFailCause.isRadioRestartFailure(mPhone.getContext(), cause, mPhone.getSubId())
@@ -2998,12 +2954,12 @@ public class DcTracker extends Handler {
      */
     private void onNetworkStatusChanged(int status, int cid, String redirectUrl) {
         if (!TextUtils.isEmpty(redirectUrl)) {
-            Intent intent = new Intent(TelephonyIntents.ACTION_CARRIER_SIGNAL_REDIRECTED);
-            intent.putExtra(TelephonyIntents.EXTRA_REDIRECTION_URL_KEY, redirectUrl);
+            Intent intent = new Intent(TelephonyManager.ACTION_CARRIER_SIGNAL_REDIRECTED);
+            intent.putExtra(TelephonyManager.EXTRA_REDIRECTION_URL, redirectUrl);
             mPhone.getCarrierSignalAgent().notifyCarrierSignalReceivers(intent);
             log("Notify carrier signal receivers with redirectUrl: " + redirectUrl);
         } else {
-            final boolean isValid = status == NetworkAgent.VALID_NETWORK;
+            final boolean isValid = status == NetworkAgent.VALIDATION_STATUS_VALID;
             final DataConnection dc = getDataConnectionByContextId(cid);
             if (!mDsRecoveryHandler.isRecoveryOnBadNetworkEnabled()) {
                 if (DBG) log("Skip data stall recovery on network status change with in threshold");
@@ -4616,11 +4572,15 @@ public class DcTracker extends Handler {
             for (ApnContext apnContext : apnContextList) {
                 String apnType = apnContext.getApnType();
 
-                final Intent intent = new Intent(TelephonyIntents.ACTION_CARRIER_SIGNAL_PCO_VALUE);
-                intent.putExtra(TelephonyIntents.EXTRA_APN_TYPE_KEY, apnType);
-                intent.putExtra(TelephonyIntents.EXTRA_APN_PROTO_KEY, pcoData.bearerProto);
-                intent.putExtra(TelephonyIntents.EXTRA_PCO_ID_KEY, pcoData.pcoId);
-                intent.putExtra(TelephonyIntents.EXTRA_PCO_VALUE_KEY, pcoData.contents);
+                final Intent intent = new Intent(TelephonyManager.ACTION_CARRIER_SIGNAL_PCO_VALUE);
+                intent.putExtra(TelephonyManager.EXTRA_APN_TYPE, apnType);
+                intent.putExtra(TelephonyManager.EXTRA_APN_TYPE_INT,
+                        ApnSetting.getApnTypesBitmaskFromString(apnType));
+                intent.putExtra(TelephonyManager.EXTRA_APN_PROTOCOL, pcoData.bearerProto);
+                intent.putExtra(TelephonyManager.EXTRA_APN_PROTOCOL_INT,
+                        ApnSetting.getProtocolIntFromString(pcoData.bearerProto));
+                intent.putExtra(TelephonyManager.EXTRA_PCO_ID, pcoData.pcoId);
+                intent.putExtra(TelephonyManager.EXTRA_PCO_VALUE, pcoData.contents);
                 mPhone.getCarrierSignalAgent().notifyCarrierSignalReceivers(intent);
             }
         }

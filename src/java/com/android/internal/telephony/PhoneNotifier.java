@@ -16,10 +16,12 @@
 
 package com.android.internal.telephony;
 
+import android.annotation.NonNull;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.telephony.Annotation.DataFailureCause;
 import android.telephony.Annotation.RadioPowerState;
 import android.telephony.Annotation.SrvccState;
+import android.telephony.BarringInfo;
 import android.telephony.CallQuality;
 import android.telephony.CellIdentity;
 import android.telephony.CellInfo;
@@ -84,9 +86,6 @@ public interface PhoneNotifier {
     /** Send a notification that the users mobile data setting has changed */
     void notifyUserMobileDataStateChanged(Phone sender, boolean state);
 
-    /** Send a notification with an OEM hook payload */
-    void notifyOemHookRawEventForSubscriber(Phone sender, byte[] rawData);
-
     /** Send a notification that the phone capability has changed */
     void notifyPhoneCapabilityChanged(PhoneCapability capability);
 
@@ -103,4 +102,11 @@ public interface PhoneNotifier {
 
     /** Notify of a change to the call quality of an active foreground call. */
     void notifyCallQualityChanged(Phone sender, CallQuality callQuality, int callNetworkType);
+
+    /** Notify registration failed */
+    void notifyRegistrationFailed(Phone sender, @NonNull CellIdentity cellIdentity,
+            @NonNull String chosenPlmn, int domain, int causeCode, int additionalCauseCode);
+
+    /** Notify barring info has changed */
+    void notifyBarringInfoChanged(Phone sender, @NonNull BarringInfo barringInfo);
 }

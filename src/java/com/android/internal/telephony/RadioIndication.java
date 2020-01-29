@@ -85,11 +85,13 @@ import android.hardware.radio.V1_0.StkCcUnsolSsResult;
 import android.hardware.radio.V1_0.SuppSvcNotification;
 import android.hardware.radio.V1_2.CellConnectionStatus;
 import android.hardware.radio.V1_4.IRadioIndication;
-import android.hardware.radio.V1_4.RadioFrequencyInfo.hidl_discriminator;
 import android.os.AsyncResult;
 import android.sysprop.TelephonyProperties;
 import android.telephony.Annotation.RadioPowerState;
+import android.telephony.BarringInfo;
+import android.telephony.CellIdentity;
 import android.telephony.CellInfo;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.PcoData;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.ServiceState;
@@ -973,6 +975,51 @@ public class RadioIndication extends IRadioIndication.Stub {
     }
 
     /**
+     * Indicate that a registration failure has occurred.
+     *
+     * @param cellIdentity a CellIdentity the CellIdentity of the Cell
+     * @param chosenPlmn a 5 or 6 digit alphanumeric string indicating the PLMN on which
+     *        registration failed
+     * @param domain the domain of the failed procedure: CS, PS, or both
+     * @param causeCode the primary failure cause code of the procedure
+     * @param additionalCauseCode an additional cause code if applicable
+     */
+    public void registrationFailed(int indicationType,
+            android.hardware.radio.V1_5.CellIdentity cellIdentity, String chosenPlmn,
+            @NetworkRegistrationInfo.Domain int domain,
+            int causeCode, int additionalCauseCode) {
+        mRil.processIndication(indicationType);
+
+        CellIdentity ci = CellIdentity.create(cellIdentity);
+
+        mRil.mRegistrationFailedRegistrant.notifyRegistrant(
+                new AsyncResult(
+                        null,
+                        new RegistrationFailedEvent(ci, chosenPlmn, domain,
+                                causeCode, additionalCauseCode),
+                        null));
+    }
+
+    /**
+     * Indicate that BarringInfo has changed for the current cell and user.
+     *
+     * @param cellIdentity a CellIdentity the CellIdentity of the Cell
+     * @param barringInfos the updated barring information from the current cell, filtered for the
+     *        current PLMN and access class / access category.
+     */
+    public void barringInfoChanged(int indicationType,
+            android.hardware.radio.V1_5.CellIdentity cellIdentity,
+            List<android.hardware.radio.V1_5.BarringInfo> barringInfos) {
+        mRil.processIndication(indicationType);
+
+        CellIdentity ci = CellIdentity.create(cellIdentity);
+        BarringInfo cbi = BarringInfo.create(cellIdentity, barringInfos);
+
+        mRil.mBarringInfoChangedRegistrants.notifyRegistrants(
+                new AsyncResult(null, cbi, null));
+    }
+
+    /**
      * @param stateInt
      * @return {@link RadioPowerState RadioPowerState}
      */
@@ -1006,10 +1053,10 @@ public class RadioIndication extends IRadioIndication.Stub {
             android.hardware.radio.V1_4.PhysicalChannelConfig config) {
 
         switch (config.rfInfo.getDiscriminator()) {
-            case hidl_discriminator.range:
+            case android.hardware.radio.V1_4.RadioFrequencyInfo.hidl_discriminator.range:
                 builder.setFrequencyRange(config.rfInfo.range());
                 break;
-            case hidl_discriminator.channelNumber:
+            case android.hardware.radio.V1_4.RadioFrequencyInfo.hidl_discriminator.channelNumber:
                 builder.setChannelNumber(config.rfInfo.channelNumber());
                 break;
             default:
