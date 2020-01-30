@@ -65,7 +65,6 @@ java_library {
         "android.hardware.radio-V1.5-java",
         "voip-common",
         "ims-common",
-        "telephony-ext",
         "services",
         "unsupportedappusage",
     ],
