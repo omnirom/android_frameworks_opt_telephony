@@ -22,10 +22,7 @@ import static android.net.NetworkPolicyManager.OVERRIDE_UNMETERED;
 import android.annotation.IntDef;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.KeepalivePacketData;
 import android.net.LinkAddress;
@@ -197,10 +194,12 @@ public class DataConnection extends StateMachine {
         @RequestNetworkType
         final int mRequestType;
         final int mSubId;
+        final boolean mIsApnPreferred;
 
         ConnectionParams(ApnContext apnContext, int profileId, int rilRadioTechnology,
                          Message onCompletedMsg, int connectionGeneration,
-                         @RequestNetworkType int requestType, int subId) {
+                         @RequestNetworkType int requestType, int subId,
+                         boolean isApnPreferred) {
             mApnContext = apnContext;
             mProfileId = profileId;
             mRilRat = rilRadioTechnology;
@@ -208,6 +207,7 @@ public class DataConnection extends StateMachine {
             mConnectionGeneration = connectionGeneration;
             mRequestType = requestType;
             mSubId = subId;
+            mIsApnPreferred = isApnPreferred;
         }
 
         @Override
@@ -218,6 +218,7 @@ public class DataConnection extends StateMachine {
                     + " mOnCompletedMsg=" + msgToString(mOnCompletedMsg)
                     + " mRequestType=" + DcTracker.requestTypeToString(mRequestType)
                     + " mSubId=" + mSubId
+                    + " mIsApnPreferred=" + mIsApnPreferred
                     + "}";
         }
     }
@@ -426,6 +427,10 @@ public class DataConnection extends StateMachine {
 
     boolean hasBeenTransferred() {
         return mHandoverState == HANDOVER_STATE_COMPLETED;
+    }
+
+    boolean isBeingInTransferring() {
+        return mHandoverState == HANDOVER_STATE_BEING_TRANSFERRED;
     }
 
     int getCid() {
@@ -671,8 +676,8 @@ public class DataConnection extends StateMachine {
         Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
         msg.obj = cp;
 
-        DataProfile dp = DcTracker.createDataProfile(mApnSetting, cp.mProfileId,
-                mApnSetting.equals(mDct.getPreferredApn()));
+        DataProfile dp =
+                DcTracker.createDataProfile(mApnSetting, cp.mProfileId, cp.mIsApnPreferred);
 
         // We need to use the actual modem roaming state instead of the framework roaming state
         // here. This flag is only passed down to ril_service for picking the correct protocol (for
@@ -1879,6 +1884,14 @@ public class DataConnection extends StateMachine {
                     mApnSetting != null
                         ? mApnSetting.canHandleType(ApnSetting.TYPE_DEFAULT) : false);
             setHandoverState(HANDOVER_STATE_IDLE);
+            // restricted evaluation depends on network requests from apnContext. The evaluation
+            // should happen once entering connecting state rather than active state because it's
+            // possible that restricted network request can be released during the connecting window
+            // and if we wait for connection established, then we might mistakenly
+            // consider it as un-restricted. ConnectivityService then will immediately
+            // tear down the connection through networkAgent unwanted callback if all requests for
+            // this connection are going away.
+            mRestrictedNetworkOverride = shouldRestrictNetwork();
         }
         @Override
         public boolean processMessage(Message msg) {
@@ -2036,7 +2049,6 @@ public class DataConnection extends StateMachine {
             // set skip464xlat if it is not default otherwise
             misc.skip464xlat = shouldSkip464Xlat();
 
-            mRestrictedNetworkOverride = shouldRestrictNetwork();
             mUnmeteredUseOnly = isUnmeteredUseOnly();
 
             if (DBG) {
@@ -2052,13 +2064,8 @@ public class DataConnection extends StateMachine {
                 DcTracker dcTracker = mPhone.getDcTracker(getHandoverSourceTransport());
                 DataConnection dc = dcTracker.getDataConnectionByApnType(
                         mConnectionParams.mApnContext.getApnType());
-                // It's possible that the source data connection has been disconnected by the modem
-                // already. If not, set its handover state to completed.
-                if (dc != null) {
-                    // Transfer network agent from the original data connection as soon as the
-                    // new handover data connection is connected.
-                    dc.setHandoverState(HANDOVER_STATE_COMPLETED);
-                }
+                // Don't move the handover state of the source transport to COMPLETED immediately
+                // because of ensuring to send deactivating data call for source transport.
 
                 if (mHandoverSourceNetworkAgent != null) {
                     String logStr = "Transfer network agent successfully.";
@@ -2076,6 +2083,9 @@ public class DataConnection extends StateMachine {
                             DataConnection.this);
                     mNetworkAgent.sendLinkProperties(mLinkProperties, DataConnection.this);
                     mHandoverSourceNetworkAgent = null;
+                } else if (dc != null) {
+                    logd("Create network agent as source DC did not create it");
+                    createDcNetorkAgent(misc);
                 } else {
                     String logStr = "Failed to get network agent from original data connection";
                     loge(logStr);
@@ -2083,16 +2093,7 @@ public class DataConnection extends StateMachine {
                     return;
                 }
             } else {
-                mScore = calculateScore();
-                final NetworkFactory factory = PhoneFactory.getNetworkFactory(
-                        mPhone.getPhoneId());
-                final int factorySerialNumber = (null == factory)
-                        ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
-
-                mDisabledApnTypeBitMask |= getDisallowedApnTypes();
-
-                mNetworkAgent = DcNetworkAgent.createDcNetworkAgent(DataConnection.this,
-                        mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
+                createDcNetorkAgent(misc);
             }
 
             if (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN) {
@@ -2103,6 +2104,17 @@ public class DataConnection extends StateMachine {
             }
             TelephonyMetrics.getInstance().writeRilDataCallEvent(mPhone.getPhoneId(),
                     mCid, mApnSetting.getApnTypeBitmask(), RilDataCall.State.CONNECTED);
+        }
+
+        private void createDcNetorkAgent(NetworkMisc misc) {
+            mScore = calculateScore();
+            final NetworkFactory factory = PhoneFactory.getNetworkFactory(
+                    mPhone.getPhoneId());
+            final int factorySerialNumber = (null == factory)
+                    ? NetworkFactory.SerialNumber.NONE : factory.getSerialNumber();
+            mDisabledApnTypeBitMask |= getDisallowedApnTypes();
+            mNetworkAgent = DcNetworkAgent.createDcNetworkAgent(DataConnection.this,
+                    mPhone, mNetworkInfo, mScore, misc, factorySerialNumber, mTransportType);
         }
 
         @Override
@@ -2558,16 +2570,17 @@ public class DataConnection extends StateMachine {
      *                             ignored if obsolete.
      * @param requestType Data request type
      * @param subId the subscription id associated with this data connection.
+     * @param isApnPreferred determine if this Apn is preferred.
      */
     public void bringUp(ApnContext apnContext, int profileId, int rilRadioTechnology,
                         Message onCompletedMsg, int connectionGeneration,
-                        @RequestNetworkType int requestType, int subId) {
+                        @RequestNetworkType int requestType, int subId, boolean isApnPreferred) {
         if (DBG) {
             log("bringUp: apnContext=" + apnContext + " onCompletedMsg=" + onCompletedMsg);
         }
         sendMessage(DataConnection.EVENT_CONNECT,
                 new ConnectionParams(apnContext, profileId, rilRadioTechnology, onCompletedMsg,
-                        connectionGeneration, requestType, subId));
+                        connectionGeneration, requestType, subId, isApnPreferred));
     }
 
     /**

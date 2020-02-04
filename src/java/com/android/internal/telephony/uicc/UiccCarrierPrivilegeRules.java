@@ -316,7 +316,7 @@ public class UiccCarrierPrivilegeRules extends Handler {
             // is disabled by default, and some other component wants to enable it when it has
             // gained carrier privileges (as an indication that a matching SIM has been inserted).
             PackageInfo pInfo = packageManager.getPackageInfo(packageName,
-                    PackageManager.GET_SIGNATURES
+                    PackageManager.GET_SIGNING_CERTIFICATES
                             | PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS
                             | PackageManager.MATCH_HIDDEN_UNTIL_INSTALLED_COMPONENTS);
             return getCarrierPrivilegeStatus(pInfo);
@@ -489,6 +489,8 @@ public class UiccCarrierPrivilegeRules extends Handler {
                             mRules += IccUtils.bytesToHexString(response.payload)
                                     .toUpperCase(Locale.US);
                             if (isDataComplete()) {
+                                //TODO: here's where AccessRules are being updated from the psim
+                                // b/139133814
                                 mAccessRules.addAll(parseRules(mRules));
                                 if (mAIDInUse == ARAD) {
                                     mCheckedRules = true;

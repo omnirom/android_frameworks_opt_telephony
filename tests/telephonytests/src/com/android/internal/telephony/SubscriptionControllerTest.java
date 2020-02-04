@@ -831,6 +831,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mFakeTelephonyProvider.update(SubscriptionManager.CONTENT_URI, values,
                 SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "=" + 2, null);
         mSubscriptionControllerUT.refreshCachedActiveSubscriptionInfoList();
+        mSubscriptionControllerUT.notifySubscriptionInfoChanged();
 
         verify(mTelephonyRegisteryMock, times(1))
                 .notifyOpportunisticSubscriptionInfoChanged();
@@ -841,6 +842,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
                 subIdList, mContext.getOpPackageName());
         assertNotEquals(null, groupId);
 
+        mSubscriptionControllerUT.notifySubscriptionInfoChanged();
         verify(mTelephonyRegisteryMock, times(2))
                 .notifyOpportunisticSubscriptionInfoChanged();
         List<SubscriptionInfo> opptSubList = mSubscriptionControllerUT
@@ -855,6 +857,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mFakeTelephonyProvider.update(SubscriptionManager.CONTENT_URI, values,
                 SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "=" + 1, null);
         mSubscriptionControllerUT.refreshCachedActiveSubscriptionInfoList();
+        mSubscriptionControllerUT.notifySubscriptionInfoChanged();
 
         verify(mTelephonyRegisteryMock, times(3))
                 .notifyOpportunisticSubscriptionInfoChanged();
