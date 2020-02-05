@@ -21,8 +21,8 @@ import android.annotation.Nullable;
 import android.content.Context;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.telephony.Rlog;
-import android.util.TimestampedValue;
+import android.os.TimestampedValue;
+import com.android.telephony.Rlog;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.NitzData;

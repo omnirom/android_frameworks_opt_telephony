@@ -319,6 +319,8 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
                 .getSubInfoUsingSlotIndexPrivileged(eq(FAKE_SUB_ID_1));
         doReturn("89012604200000000000").when(mIccRecord).getFullIccId();
         doReturn(FAKE_MCC_MNC_1).when(mPhone).getOperatorNumeric();
+        when(mActivityManager.updateMccMncConfiguration(anyString(), anyString())).thenReturn(
+                true);
 
         mUpdater.updateInternalIccState(
                 IccCardConstants.INTENT_VALUE_ICC_LOADED, null, FAKE_SUB_ID_1, false);
@@ -460,6 +462,8 @@ public class SubscriptionInfoUpdaterTest extends TelephonyTest {
         // Mock there is no sim inserted before
         doReturn(null).when(mSubscriptionController)
                 .getSubInfoUsingSlotIndexPrivileged(anyInt());
+        when(mActivityManager.updateMccMncConfiguration(anyString(), anyString())).thenReturn(
+                true);
         doReturn(FAKE_MCC_MNC_1).when(mTelephonyManager).getSimOperatorNumeric(eq(FAKE_SUB_ID_1));
         doReturn(FAKE_MCC_MNC_2).when(mTelephonyManager).getSimOperatorNumeric(eq(FAKE_SUB_ID_2));
         verify(mSubscriptionController, times(0)).clearSubInfo();

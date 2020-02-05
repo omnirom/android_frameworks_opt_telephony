@@ -109,18 +109,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class DcTrackerTest extends TelephonyTest {
-
-    private final static String[] sNetworkAttributes = new String[]{
-            "mobile,0,0,0,-1,true", "mobile_mms,2,0,2,60000,true",
-            "mobile_supl,3,0,2,60000,true", "mobile_dun,4,0,2,60000,true",
-            "mobile_hipri,5,0,3,60000,true", "mobile_fota,10,0,2,60000,true",
-            "mobile_ims,11,0,2,60000,true", "mobile_cbs,12,0,2,60000,true",
-            "mobile_ia,14,0,2,-1,true", "mobile_emergency,15,0,2,-1,true",
-            "mobile_xcap,18,0,2,-1,true"};
-
     public static final String FAKE_APN1 = "FAKE APN 1";
     public static final String FAKE_APN2 = "FAKE APN 2";
     public static final String FAKE_APN3 = "FAKE APN 3";
@@ -449,7 +442,7 @@ public class DcTrackerTest extends TelephonyTest {
 
                     return mc;
                 }
-            } else if (uri.isPathPrefixMatch(
+            } else if (isPathPrefixMatch(uri,
                     Uri.withAppendedPath(Telephony.Carriers.CONTENT_URI, "preferapnset"))) {
                 MatrixCursor mc = new MatrixCursor(
                         new String[]{Telephony.Carriers.APN_SET_ID});
@@ -480,8 +473,6 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
 
-        mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
-                sNetworkAttributes);
         mContextFixture.putStringArrayResource(com.android.internal.R.array.
                 config_mobile_tcp_buffers, new String[]{
                 "umts:131072,262144,1452032,4096,16384,399360",
@@ -829,7 +820,25 @@ public class DcTrackerTest extends TelephonyTest {
                 eq(AccessNetworkType.EUTRAN), dpCaptor.capture(),
                 eq(false), eq(false), eq(DataService.REQUEST_REASON_NORMAL), any(),
                 any(Message.class));
-        verifyDataProfile(dpCaptor.getValue(), FAKE_APN1, 0, 21, 1, NETWORK_TYPE_LTE_BITMASK);
+
+
+        List<DataProfile> dataProfiles = dpCaptor.getAllValues();
+        assertEquals(2, dataProfiles.size());
+
+        //Verify FAKE_APN1
+        Optional<DataProfile> fakeApn1 = dataProfiles.stream()
+                .filter(dp -> dp.getApn().equals(FAKE_APN1))
+                .findFirst();
+        assertTrue(fakeApn1.isPresent());
+        verifyDataProfile(fakeApn1.get(), FAKE_APN1, 0, 21, 1, NETWORK_TYPE_LTE_BITMASK);
+
+        //Verify FAKE_APN6
+        Optional<DataProfile> fakeApn6 = dataProfiles.stream()
+                .filter(dp -> dp.getApn().equals(FAKE_APN6))
+                .findFirst();
+        assertTrue(fakeApn6.isPresent());
+        verifyDataProfile(fakeApn6.get(), FAKE_APN6, 0, 2, 1, NETWORK_TYPE_LTE_BITMASK);
+
 
         logd("Sending DATA_DISABLED_CMD for default data");
         doReturn(false).when(mDataEnabledSettings).isDataEnabled();
@@ -2024,5 +2033,46 @@ public class DcTrackerTest extends TelephonyTest {
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_SERVICE_STATE_CHANGED));
         waitForLastHandlerAction(mDcTrackerTestHandler.getThreadHandler());
         assertFalse(getWatchdogStatus());
+    }
+
+    /**
+     * Test if this is a path prefix match against the given Uri. Verifies that
+     * scheme, authority, and atomic path segments match.
+     *
+     * Copied from frameworks/base/core/java/android/net/Uri.java
+     */
+    private boolean isPathPrefixMatch(Uri uriA, Uri uriB) {
+        if (!Objects.equals(uriA.getScheme(), uriB.getScheme())) return false;
+        if (!Objects.equals(uriA.getAuthority(), uriB.getAuthority())) return false;
+
+        List<String> segA = uriA.getPathSegments();
+        List<String> segB = uriB.getPathSegments();
+
+        final int size = segB.size();
+        if (segA.size() < size) return false;
+
+        for (int i = 0; i < size; i++) {
+            if (!Objects.equals(segA.get(i), segB.get(i))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+    @Test
+    public void testNoApnContextsWhenDataIsDisabled() {
+        doReturn(false).when(mTelephonyManager).isDataCapable();
+        mDcTrackerTestHandler = new DcTrackerTestHandler(getClass().getSimpleName());
+        setReady(false);
+        mDcTrackerTestHandler.start();
+        waitUntilReady();
+        assertTrue(mDct.getApnContexts().size() == 0);
+
+        doReturn(true).when(mTelephonyManager).isDataCapable();
+        mDcTrackerTestHandler = new DcTrackerTestHandler(getClass().getSimpleName());
+        setReady(false);
+        mDcTrackerTestHandler.start();
+        waitUntilReady();
+        assertTrue(mDct.getApnContexts().size() > 0);
     }
 }

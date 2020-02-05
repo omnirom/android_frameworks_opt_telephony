@@ -15,6 +15,8 @@
  */
 package com.android.internal.telephony;
 
+import static com.android.internal.telephony.uicc.IccCardStatus.CardState.CARDSTATE_PRESENT;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -24,7 +26,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.times;
@@ -47,6 +48,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import androidx.test.filters.FlakyTest;
 
+import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccSlot;
@@ -1091,18 +1093,6 @@ public class SubscriptionControllerTest extends TelephonyTest {
                 UiccSlotInfo.CARD_STATE_INFO_PRESENT, logicalSlotIndex, true, true);
     }
 
-    // TODO: Move this test once SubscriptionManager.setAlwaysAllowMmsData is moved to telephony
-    // manager.
-    @Test
-    @SmallTest
-    public void testSetAlwaysAllowMmsData() throws Exception {
-        mSubscriptionControllerUT.setAlwaysAllowMmsData(0, true);
-        verify(mDataEnabledSettings).setAlwaysAllowMmsData(eq(true));
-        clearInvocations(mDataEnabledSettings);
-        mSubscriptionControllerUT.setAlwaysAllowMmsData(0, false);
-        verify(mDataEnabledSettings).setAlwaysAllowMmsData(eq(false));
-    }
-
     @Test
     @SmallTest
     public void testNameSourcePriority() throws Exception {
@@ -1124,6 +1114,42 @@ public class SubscriptionControllerTest extends TelephonyTest {
         assertTrue(mSubscriptionControllerUT.getNameSourcePriority(
                 SubscriptionManager.NAME_SOURCE_SIM_PNN)
                 > mSubscriptionControllerUT.getNameSourcePriority(
-                SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE));
+                SubscriptionManager.NAME_SOURCE_DEFAULT));
+    }
+
+
+    @Test
+    @SmallTest
+    public void testGetAvailableSubscriptionList() throws Exception {
+        // TODO b/123300875 slot index 1 is not expected to be valid
+        mSubscriptionControllerUT.addSubInfoRecord("123", 1);   // sub 1
+        mSubscriptionControllerUT.addSubInfoRecord("456", 0);   // sub 2
+
+        List<SubscriptionInfo> infoList = mSubscriptionControllerUT
+                .getAvailableSubscriptionInfoList(mCallingPackage, mCallingFeature);
+        assertEquals(2, infoList.size());
+        assertEquals("456", infoList.get(0).getIccId());
+        assertEquals("123", infoList.get(1).getIccId());
+
+        // Remove "123" from active sim list but have it inserted.
+        UiccSlot[] uiccSlots = {mUiccSlot};
+        IccCardStatus.CardState cardState = CARDSTATE_PRESENT;
+        doReturn(uiccSlots).when(mUiccController).getUiccSlots();
+        doReturn(cardState).when(mUiccSlot).getCardState();
+        doReturn("123").when(mUiccSlot).getIccId();
+        mSubscriptionControllerUT.clearSubInfoRecord(1);
+
+        // Active sub list should return 1 now.
+        infoList = mSubscriptionControllerUT
+                .getActiveSubscriptionInfoList(mCallingPackage, mCallingFeature);
+        assertEquals(1, infoList.size());
+        assertEquals("456", infoList.get(0).getIccId());
+
+        // Available sub list should still return two.
+        infoList = mSubscriptionControllerUT
+                .getAvailableSubscriptionInfoList(mCallingPackage, mCallingFeature);
+        assertEquals(2, infoList.size());
+        assertEquals("123", infoList.get(0).getIccId());
+        assertEquals("456", infoList.get(1).getIccId());
     }
 }

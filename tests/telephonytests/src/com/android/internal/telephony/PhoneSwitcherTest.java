@@ -47,8 +47,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
+import android.net.NetworkProvider;
 import android.net.NetworkRequest;
-import android.net.StringNetworkSpecifier;
+import android.net.TelephonyNetworkSpecifier;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Looper;
@@ -75,13 +76,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 @RunWith(AndroidTestingRunner.class)
 @TestableLooper.RunWithLooper
 public class PhoneSwitcherTest extends TelephonyTest {
-    private static final String[] sNetworkAttributes = new String[] {
-            "mobile,0,0,0,-1,true", "mobile_mms,2,0,2,60000,true",
-            "mobile_supl,3,0,2,60000,true", "mobile_dun,4,0,2,60000,true",
-            "mobile_hipri,5,0,3,60000,true", "mobile_fota,10,0,2,60000,true",
-            "mobile_ims,11,0,2,60000,true", "mobile_cbs,12,0,2,60000,true",
-            "mobile_ia,14,0,2,-1,true", "mobile_emergency,15,0,2,-1,true"};
-
     private static final int ACTIVE_PHONE_SWITCH = 1;
 
     @Mock
@@ -111,7 +105,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
     private SubscriptionManager.OnSubscriptionsChangedListener mSubChangedListener;
     private ConnectivityManager mConnectivityManager;
     // The messenger of PhoneSwitcher used to receive network requests.
-    private Messenger mNetworkFactoryMessenger = null;
+    private Messenger mNetworkProviderMessenger = null;
     private int mDefaultDataSub = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     private int[][] mSlotIndexToSubId;
     private boolean[] mDataAllowed;
@@ -122,8 +116,8 @@ public class PhoneSwitcherTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
-
-        PhoneCapability phoneCapability = new PhoneCapability(1, 1, 0, null, false);
+        PhoneCapability phoneCapability = new PhoneCapability(0, 0, 0, 0, 0, 0,
+                null, null, null, null, null, null, null);
         doReturn(phoneCapability).when(mPhoneConfigurationManager).getCurrentPhoneCapability();
 
         doReturn(Call.State.ACTIVE).when(mActiveCall).getState();
@@ -332,7 +326,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
         assertTrue("data not allowed", mDataAllowed[0]);
         assertFalse("data allowed", mDataAllowed[1]);
 
-        // now start a higher priority conneciton on the other sub
+        // now start a higher priority connection on the other sub
         addMmsNetworkRequest(1);
 
         // After gain of network request, mActivePhoneSwitchHandler should be notified 2 times.
@@ -342,7 +336,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
     }
 
     /**
-     * Verify we don't send spurious DATA_ALLOWED calls when another NetworkFactory
+     * Verify we don't send spurious DATA_ALLOWED calls when another NetworkProvider
      * wins (ie, switch to wifi).
      */
     @Test
@@ -1011,9 +1005,6 @@ public class PhoneSwitcherTest extends TelephonyTest {
     }
 
     private void initialize() throws Exception {
-        mContextFixture.putStringArrayResource(com.android.internal.R.array.networkAttributes,
-                sNetworkAttributes);
-
         setNumPhones(mActiveModemCount, mSupportedModemCount);
 
         initializeSubControllerMock();
@@ -1094,7 +1085,7 @@ public class PhoneSwitcherTest extends TelephonyTest {
     }
 
     /**
-     * Capture mNetworkFactoryMessenger so that testing can request or release
+     * Capture mNetworkProviderMessenger so that testing can request or release
      * network requests on PhoneSwitcher.
      */
     private void initializeConnManagerMock() {
@@ -1102,13 +1093,14 @@ public class PhoneSwitcherTest extends TelephonyTest {
                 mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
 
         doAnswer(invocation -> {
-            mNetworkFactoryMessenger = invocation.getArgument(0);
+            mNetworkProviderMessenger =
+                    ((NetworkProvider) invocation.getArgument(0)).getMessenger();
             return null;
-        }).when(mConnectivityManager).registerNetworkFactory(any(), any());
+        }).when(mConnectivityManager).registerNetworkProvider(any());
     }
 
     /**
-     * Capture mNetworkFactoryMessenger so that testing can request or release
+     * Capture mNetworkProviderMessenger so that testing can request or release
      * network requests on PhoneSwitcher.
      */
     private void initializeSubControllerMock() {
@@ -1163,16 +1155,17 @@ public class PhoneSwitcherTest extends TelephonyTest {
         }
 
         if (subId != null) {
-            netCap.setNetworkSpecifier(new StringNetworkSpecifier(Integer.toString(subId)));
+            netCap.setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
+                    .setSubscriptionId(subId).build());
         }
         NetworkRequest networkRequest = new NetworkRequest(netCap, ConnectivityManager.TYPE_NONE,
                 0, NetworkRequest.Type.REQUEST);
 
         Message message = Message.obtain();
-        message.what = android.net.NetworkFactory.CMD_REQUEST_NETWORK;
+        message.what = android.net.NetworkProvider.CMD_REQUEST_NETWORK;
         message.arg1 = score;
         message.obj = networkRequest;
-        mNetworkFactoryMessenger.send(message);
+        mNetworkProviderMessenger.send(message);
         processAllMessages();
 
         return networkRequest;
@@ -1186,18 +1179,18 @@ public class PhoneSwitcherTest extends TelephonyTest {
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
                 .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
-        netCap.setNetworkSpecifier(new StringNetworkSpecifier(Integer.toString(subId)));
         if (subId != null) {
-            netCap.setNetworkSpecifier(new StringNetworkSpecifier(Integer.toString(subId)));
+            netCap.setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
+                    .setSubscriptionId(subId).build());
         }
         NetworkRequest networkRequest = new NetworkRequest(netCap, ConnectivityManager.TYPE_NONE,
                 1, NetworkRequest.Type.REQUEST);
 
         Message message = Message.obtain();
-        message.what = android.net.NetworkFactory.CMD_REQUEST_NETWORK;
+        message.what = android.net.NetworkProvider.CMD_REQUEST_NETWORK;
         message.arg1 = 50; // Score
         message.obj = networkRequest;
-        mNetworkFactoryMessenger.send(message);
+        mNetworkProviderMessenger.send(message);
         processAllMessages();
 
         return networkRequest;
@@ -1208,9 +1201,9 @@ public class PhoneSwitcherTest extends TelephonyTest {
      */
     private void releaseNetworkRequest(NetworkRequest networkRequest) throws Exception {
         Message message = Message.obtain();
-        message.what = android.net.NetworkFactory.CMD_CANCEL_REQUEST;
+        message.what = android.net.NetworkProvider.CMD_CANCEL_REQUEST;
         message.obj = networkRequest;
-        mNetworkFactoryMessenger.send(message);
+        mNetworkProviderMessenger.send(message);
         processAllMessages();
     }
 }

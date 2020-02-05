@@ -33,13 +33,14 @@ import static org.mockito.Mockito.when;
 
 import android.content.Intent;
 import android.net.LinkProperties;
-import android.os.ServiceManager;
 import android.telephony.Annotation;
 import android.telephony.PhoneCapability;
 import android.telephony.PhoneStateListener;
 import android.telephony.PreciseDataConnectionState;
 import android.telephony.SubscriptionInfo;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
+import android.telephony.data.ApnSetting;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
@@ -111,7 +112,10 @@ public class TelephonyRegistryTest extends TelephonyTest {
         mPhoneStateListener = new PhoneStateListenerWrapper();
         processAllMessages();
         assertEquals(mTelephonyRegistry.asBinder(),
-                ServiceManager.getService("telephony.registry"));
+                TelephonyFrameworkInitializer
+                        .getTelephonyServiceManager()
+                        .getTelephonyRegistryServiceRegisterer()
+                        .get());
     }
 
     @After
@@ -125,16 +129,17 @@ public class TelephonyRegistryTest extends TelephonyTest {
         doReturn(mMockSubInfo).when(mSubscriptionManager).getActiveSubscriptionInfo(anyInt());
         doReturn(0/*slotIndex*/).when(mMockSubInfo).getSimSlotIndex();
         // mTelephonyRegistry.listen with notifyNow = true should trigger callback immediately.
-        PhoneCapability phoneCapability = new PhoneCapability(1, 2, 3, null, false);
+        PhoneCapability phoneCapability = new PhoneCapability(1, 2, 3, 4, 5, 6,
+                null, null, null, null, null, null, null);
         mTelephonyRegistry.notifyPhoneCapabilityChanged(phoneCapability);
         mTelephonyRegistry.listenWithFeature(mContext.getOpPackageName(), mContext.getFeatureId(),
-                mPhoneStateListener.callback,
-                LISTEN_PHONE_CAPABILITY_CHANGE, true);
+                mPhoneStateListener.callback, LISTEN_PHONE_CAPABILITY_CHANGE, true);
         processAllMessages();
         assertEquals(phoneCapability, mPhoneCapability);
 
         // notifyPhoneCapabilityChanged with a new capability. Callback should be triggered.
-        phoneCapability = new PhoneCapability(3, 2, 2, null, false);
+        phoneCapability = new PhoneCapability(6, 5, 4, 3, 2, 1,
+                null, null, null, null, null, null, null);
         mTelephonyRegistry.notifyPhoneCapabilityChanged(phoneCapability);
         processAllMessages();
         assertEquals(phoneCapability, mPhoneCapability);
@@ -250,7 +255,7 @@ public class TelephonyRegistryTest extends TelephonyTest {
         doReturn(0/*slotIndex*/).when(mMockSubInfo).getSimSlotIndex();
         // Initialize the PSL with a PreciseDataConnection
         mTelephonyRegistry.notifyDataConnectionForSubscriber(
-                /*phoneId*/ 0, subId, "default",
+                /*phoneId*/ 0, subId, ApnSetting.TYPE_DEFAULT,
                 new PreciseDataConnectionState(
                     0, 0, 0, "default", new LinkProperties(), 0, null));
         mTelephonyRegistry.listenForSubscriber(subId, mContext.getOpPackageName(),
@@ -262,7 +267,7 @@ public class TelephonyRegistryTest extends TelephonyTest {
 
         // Add IMS APN and verify that the listener is invoked for the IMS APN
         mTelephonyRegistry.notifyDataConnectionForSubscriber(
-                /*phoneId*/ 0, subId, "ims",
+                /*phoneId*/ 0, subId, ApnSetting.TYPE_IMS,
                 new PreciseDataConnectionState(
                     0, 0, 0, "ims", new LinkProperties(), 0, null));
         processAllMessages();
@@ -285,10 +290,51 @@ public class TelephonyRegistryTest extends TelephonyTest {
         // Send a duplicate event to the TelephonyRegistry and verify that the listener isn't
         // invoked.
         mTelephonyRegistry.notifyDataConnectionForSubscriber(
-                /*phoneId*/ 0, subId, "ims",
+                /*phoneId*/ 0, subId, ApnSetting.TYPE_IMS,
                 new PreciseDataConnectionState(
                     0, 0, 0, "ims", new LinkProperties(), 0, null));
         processAllMessages();
         assertEquals(mPhoneStateListener.invocationCount.get(), 4);
+    }
+
+    /**
+     * Validate that SecuirtyException is thrown when we try to listen without permission
+     * READ_PRECISE_PHONE_STATE.
+     */
+    @Test
+    @SmallTest
+    public void testListenWithoutPermission() {
+        // Clear all permission grants for test.
+        mContextFixture.addCallingOrSelfPermission("");
+
+        assertThrowSecurityExceptionWhenListenWithoutPermission(
+                PhoneStateListener.LISTEN_PRECISE_CALL_STATE,
+                "LISTEN_PRECISE_CALL_STATE");
+
+        assertThrowSecurityExceptionWhenListenWithoutPermission(
+                PhoneStateListener.LISTEN_PRECISE_DATA_CONNECTION_STATE,
+                "LISTEN_PRECISE_DATA_CONNECTION_STATE");
+
+        assertThrowSecurityExceptionWhenListenWithoutPermission(
+                PhoneStateListener.LISTEN_CALL_DISCONNECT_CAUSES,
+                "LISTEN_CALL_DISCONNECT_CAUSES");
+
+        assertThrowSecurityExceptionWhenListenWithoutPermission(
+                PhoneStateListener.LISTEN_CALL_ATTRIBUTES_CHANGED,
+                "LISTEN_CALL_ATTRIBUTES_CHANGED");
+
+        assertThrowSecurityExceptionWhenListenWithoutPermission(
+                PhoneStateListener.LISTEN_IMS_CALL_DISCONNECT_CAUSES,
+                "LISTEN_IMS_CALL_DISCONNECT_CAUSES");
+    }
+
+    private void assertThrowSecurityExceptionWhenListenWithoutPermission(int event,
+            String eventDesc) {
+        try {
+            mTelephonyRegistry.listen(mContext.getOpPackageName(),
+                    mPhoneStateListener.callback, event, true);
+            fail("SecurityException should throw when listen " + eventDesc + " without permission");
+        } catch (SecurityException expected) {
+        }
     }
 }

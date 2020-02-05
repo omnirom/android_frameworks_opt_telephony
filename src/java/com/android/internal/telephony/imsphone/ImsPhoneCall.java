@@ -18,7 +18,7 @@ package com.android.internal.telephony.imsphone;
 
 import android.compat.annotation.UnsupportedAppUsage;
 import android.telephony.DisconnectCause;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.ims.ImsStreamMediaProfile;
 import android.util.Log;
 
@@ -198,7 +198,9 @@ public class ImsPhoneCall extends Call {
             }
 
             if (hasOnlyDisconnectedConnections) {
-                mState = State.DISCONNECTED;
+                synchronized(this) {
+                    mState = State.DISCONNECTED;
+                }
                 if (VDBG) {
                     Rlog.v(LOG_TAG, "connectionDisconnected : " + mCallContext + " state = " +
                             mState);
@@ -234,13 +236,17 @@ public class ImsPhoneCall extends Call {
      * Called when this Call is being hung up locally (eg, user pressed "end")
      */
     @UnsupportedAppUsage
-    void
-    onHangupLocal() {
+    @VisibleForTesting
+    public void onHangupLocal() {
         for (int i = 0, s = mConnections.size(); i < s; i++) {
             ImsPhoneConnection cn = (ImsPhoneConnection)mConnections.get(i);
             cn.onHangupLocal();
         }
-        mState = State.DISCONNECTING;
+        synchronized(this) {
+            if (mState.isAlive()) {
+                mState = State.DISCONNECTING;
+            }
+        }
         if (VDBG) {
             Rlog.v(LOG_TAG, "onHangupLocal : " + mCallContext + " state = " + mState);
         }

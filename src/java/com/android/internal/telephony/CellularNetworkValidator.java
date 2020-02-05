@@ -21,6 +21,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.TelephonyNetworkSpecifier;
 import android.os.Handler;
 import android.telephony.SubscriptionManager;
 import android.util.Log;
@@ -101,7 +102,7 @@ public class CellularNetworkValidator {
      */
     public boolean isValidationFeatureSupported() {
         return PhoneConfigurationManager.getInstance().getCurrentPhoneCapability()
-                .validationBeforeSwitchSupported;
+                .getPsDataConnectionLingerTimeMillis() > 0;
     }
 
     @VisibleForTesting
@@ -193,7 +194,8 @@ public class CellularNetworkValidator {
         return new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-                .setNetworkSpecifier(String.valueOf(mSubId))
+                .setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
+                        .setSubscriptionId(mSubId).build())
                 .build();
     }
 

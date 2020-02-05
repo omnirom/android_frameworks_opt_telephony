@@ -54,7 +54,7 @@ import android.telephony.PhoneStateListener;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.PreciseDataConnectionState;
 import android.telephony.RadioAccessFamily;
-import android.telephony.Rlog;
+import android.telephony.RadioAccessSpecifier;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionManager;
@@ -90,6 +90,7 @@ import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UsimServiceTable;
 import com.android.internal.telephony.util.TelephonyUtils;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -207,8 +208,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_UICC_APPS_ENABLEMENT_CHANGED   = 53;
     protected static final int EVENT_GET_UICC_APPS_ENABLEMENT_DONE  = 54;
     protected static final int EVENT_REAPPLY_UICC_APPS_ENABLEMENT_DONE = 55;
+    protected static final int EVENT_REGISTRATION_FAILED = 56;
+    protected static final int EVENT_BARRING_INFO_CHANGED = 57;
 
-    protected static final int EVENT_LAST = EVENT_ALL_DATA_DISCONNECTED;
+    protected static final int EVENT_LAST = EVENT_BARRING_INFO_CHANGED;
 
     // For shared prefs.
     private static final String GSM_ROAMING_LIST_OVERRIDE_PREFIX = "gsm_roaming_list_";
@@ -324,8 +327,20 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * TODO: Replace this with a proper exception; {@link CallStateException} doesn't make sense.
      */
     public static final String CS_FALLBACK = "cs_fallback";
-    public static final String EXTRA_KEY_ALERT_TITLE = "alertTitle";
-    public static final String EXTRA_KEY_ALERT_MESSAGE = "alertMessage";
+    /**
+     * @deprecated Use {@link android.telephony.ims.ImsManager#EXTRA_WFC_REGISTRATION_FAILURE_TITLE}
+     * instead.
+     */
+    @Deprecated
+    public static final String EXTRA_KEY_ALERT_TITLE =
+            android.telephony.ims.ImsManager.EXTRA_WFC_REGISTRATION_FAILURE_TITLE;
+    /**
+     * @deprecated Use
+     * {@link android.telephony.ims.ImsManager#EXTRA_WFC_REGISTRATION_FAILURE_MESSAGE} instead.
+     */
+    @Deprecated
+    public static final String EXTRA_KEY_ALERT_MESSAGE =
+            android.telephony.ims.ImsManager.EXTRA_WFC_REGISTRATION_FAILURE_MESSAGE;
     public static final String EXTRA_KEY_ALERT_SHOW = "alertShow";
     public static final String EXTRA_KEY_NOTIFICATION_MESSAGE = "notificationMessage";
 
@@ -507,8 +522,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         * This will be false on "data only" devices which can't make voice
         * calls and don't support any in-call UI.
         */
-        mIsVoiceCapable = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_voice_capable);
+        mIsVoiceCapable = ((TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE))
+                .isVoiceCapable();
 
         /**
          *  Some RIL's don't always send RIL_UNSOL_CALL_RING so it needs
@@ -692,13 +707,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 break;
 
             case EVENT_UNSOL_OEM_HOOK_RAW:
-                ar = (AsyncResult)msg.obj;
-                if (ar.exception == null) {
-                    byte[] data = (byte[])ar.result;
-                    mNotifier.notifyOemHookRawEventForSubscriber(this, data);
-                } else {
-                    Rlog.e(LOG_TAG, "OEM hook raw exception: " + ar.exception);
-                }
+                // deprecated, ignore
                 break;
 
             case EVENT_CONFIG_LCE:
@@ -1375,7 +1384,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         nsm.operatorAlphaShort = network.getOperatorAlphaShort();
 
         Message msg = obtainMessage(EVENT_SET_NETWORK_MANUAL_COMPLETE, nsm);
-        mCi.setNetworkSelectionModeManual(network.getOperatorNumeric(), msg);
+        mCi.setNetworkSelectionModeManual(network.getOperatorNumeric(), network.getRan(), msg);
 
         if (persistSelection) {
             updateSavedNetworkOperator(nsm);
@@ -2344,6 +2353,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCi.nvResetConfig(2 /* erase NV */, response);
     }
 
+    public void setSystemSelectionChannels(List<RadioAccessSpecifier> specifiers,
+            Message response) {
+        mCi.setSystemSelectionChannels(specifiers, response);
+    }
+
     public void notifyDataActivity() {
         mNotifier.notifyDataActivity(this);
     }
@@ -3292,6 +3306,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                     + " token=" + token
                     + " mCallRingContinueToken=" + mCallRingContinueToken
                     + " mIsVoiceCapable=" + mIsVoiceCapable);
+        }
+    }
+
+    /**
+     * Enable or disable always reporting signal strength changes from radio.
+     *
+     * @param isEnable {@code true} for enabling; {@code false} for disabling.
+     */
+    public void setAlwaysReportSignalStrength(boolean isEnable) {
+        if (mDeviceStateMonitor != null) {
+            mDeviceStateMonitor.setAlwaysReportSignalStrength(isEnable);
         }
     }
 
