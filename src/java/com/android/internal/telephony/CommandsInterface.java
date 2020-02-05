@@ -16,16 +16,19 @@
 
 package com.android.internal.telephony;
 
+import android.annotation.NonNull;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.net.KeepalivePacketData;
 import android.net.LinkProperties;
 import android.os.Handler;
 import android.os.Message;
 import android.os.WorkSource;
+import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierRestrictionRules;
 import android.telephony.ClientRequestStats;
 import android.telephony.ImsiEncryptionInfo;
 import android.telephony.NetworkScanRequest;
+import android.telephony.RadioAccessSpecifier;
 import android.telephony.SignalThresholdInfo;
 import android.telephony.data.DataProfile;
 import android.telephony.emergency.EmergencyNumber;
@@ -480,6 +483,20 @@ public interface CommandsInterface {
      */
     void setOnSs(Handler h, int what, Object obj);
     void unSetOnSs(Handler h);
+
+    /**
+     * Register for unsolicited NATT Keepalive Status Indications
+     *
+     * @param h Handler for notification message.
+     * @param what User-defined message code.
+     * @param obj User object.
+     */
+    default void setOnRegistrationFailed(Handler h, int what, Object obj) {}
+
+    /**
+     * @param h Handler for notification message.
+     */
+    default void unSetOnRegistrationFailed(Handler h) {}
 
     /**
      * Sets the handler for Event Notifications for CDMA Display Info.
@@ -1362,8 +1379,15 @@ public interface CommandsInterface {
     @UnsupportedAppUsage
     void setNetworkSelectionModeAutomatic(Message response);
 
+    /**
+     * Ask the radio to connect to the input network with specific RadioAccessNetwork
+     * and change selection mode to manual.
+     * @param operatorNumeric PLMN ID of the network to select.
+     * @param ran radio access network type (see {@link AccessNetworkType}).
+     * @param response callback message.
+     */
     @UnsupportedAppUsage
-    void setNetworkSelectionModeManual(String operatorNumeric, Message response);
+    void setNetworkSelectionModeManual(String operatorNumeric, int ran, Message response);
 
     /**
      * Queries whether the current network selection mode is automatic
@@ -2420,6 +2444,20 @@ public interface CommandsInterface {
     default void enableUiccApplications(boolean enable, Message onCompleteMessage) {}
 
     /**
+     * Specify which bands modem's background scan must act on.
+     * If {@code specifiers} is non-empty, the scan will be restricted to the bands specified.
+     * Otherwise, it scans all bands.
+     *
+     * For example, CBRS is only on LTE band 48. By specifying this band,
+     * modem saves more power.
+     *
+     * @param specifiers which bands to scan.
+     * @param onComplete a message to send when complete.
+     */
+    default void setSystemSelectionChannels(@NonNull List<RadioAccessSpecifier> specifiers,
+            Message onComplete) {}
+
+    /**
      * Whether uicc applications are enabled or not.
      *
      * @param onCompleteMessage a Message to return to the requester
@@ -2436,4 +2474,21 @@ public interface CommandsInterface {
     default List<ClientRequestStats> getClientRequestStats() {
         return null;
     }
+
+    /**
+     * Registers the handler for RIL_UNSOL_BARRING_INFO_CHANGED events.
+     *
+     * @param h Handler for notification message.
+     * @param what User-defined message code.
+     * @param obj User object.
+     */
+    default void registerForBarringInfoChanged(Handler h, int what, Object obj) {};
+
+    /**
+     * Unregisters the handler for RIL_UNSOL_BARRING_INFO_CHANGED events.
+     *
+     * @param h Handler for notification message.
+     */
+    default void unregisterForBarringInfoChanged(Handler h) {};
+
 }

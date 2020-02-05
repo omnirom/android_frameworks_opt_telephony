@@ -268,6 +268,7 @@ public abstract class TelephonyTest {
     @Mock
     protected IccCard mIccCard;
 
+    protected ActivityManager mActivityManager;
     protected ImsCallProfile mImsCallProfile;
     protected TelephonyManager mTelephonyManager;
     protected TelephonyRegistryManager mTelephonyRegistryManager;
@@ -398,6 +399,7 @@ public abstract class TelephonyTest {
         doReturn(mUiccProfile).when(mUiccCard).getUiccProfile();
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        mActivityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
         mTelephonyRegistryManager = (TelephonyRegistryManager) mContext.getSystemService(
             Context.TELEPHONY_REGISTRY_SERVICE);
         mSubscriptionManager = (SubscriptionManager) mContext.getSystemService(
@@ -545,6 +547,8 @@ public abstract class TelephonyTest {
                 nullable(Intent[].class), nullable(String[].class), anyInt(),
                 nullable(Bundle.class), anyInt());
         doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
+        doReturn(true).when(mTelephonyManager).isDataCapable();
+
         doReturn(TelephonyManager.PHONE_TYPE_GSM).when(mTelephonyManager).getPhoneType();
         doReturn(mServiceState).when(mSST).getServiceState();
         mSST.mSS = mServiceState;
@@ -708,8 +712,6 @@ public abstract class TelephonyTest {
     protected void setupMockPackagePermissionChecks() throws Exception {
         doReturn(new String[]{TAG}).when(mPackageManager).getPackagesForUid(anyInt());
         doReturn(mPackageInfo).when(mPackageManager).getPackageInfo(eq(TAG), anyInt());
-        doReturn(mPackageInfo).when(mPackageManager).getPackageInfoAsUser(
-                eq(TAG), anyInt(), anyInt());
     }
 
     protected void setupMocksForTelephonyPermissions() throws Exception {

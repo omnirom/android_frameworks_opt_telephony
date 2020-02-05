@@ -35,7 +35,6 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.ParcelUuid;
 import android.os.PersistableBundle;
-import android.os.ServiceManager;
 import android.permission.IPermissionManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
@@ -47,15 +46,17 @@ import android.service.euicc.EuiccProfileInfo;
 import android.service.euicc.EuiccService;
 import android.service.euicc.GetEuiccProfileInfoListResult;
 import android.telephony.CarrierConfigManager;
-import android.telephony.Rlog;
+import android.telephony.RadioAccessFamily;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.euicc.EuiccManager;
 import android.text.TextUtils;
 import android.util.Pair;
 
+import com.android.telephony.Rlog;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
@@ -141,7 +142,11 @@ public class SubscriptionInfoUpdater extends Handler {
     // rather than invoking the static getter all over the place.
     public SubscriptionInfoUpdater(Looper looper, Context context, CommandsInterface[] ci) {
         this(looper, context, ci, IPackageManager.Stub.asInterface(
-                ServiceManager.getService("package")), AppGlobals.getPermissionManager());
+                TelephonyFrameworkInitializer
+                        .getTelephonyServiceManager()
+                        .getPackageManagerServiceRegisterer()
+                        .get()),
+                AppGlobals.getPermissionManager());
     }
 
     @VisibleForTesting public SubscriptionInfoUpdater(Looper looper, Context context,
@@ -181,7 +186,7 @@ public class SubscriptionInfoUpdater extends Handler {
                     mCurrentlyActiveUserId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, 0);
                     CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
                             mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                            sContext.getContentResolver(), mCurrentlyActiveUserId);
+                            mCurrentlyActiveUserId, sContext);
                 }
             }
         }, new IntentFilter(Intent.ACTION_USER_FOREGROUND), null, null);
@@ -189,7 +194,7 @@ public class SubscriptionInfoUpdater extends Handler {
         mCurrentlyActiveUserId = am.getCurrentUser();
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
                 mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                sContext.getContentResolver(), mCurrentlyActiveUserId);
+                mCurrentlyActiveUserId, sContext);
     }
 
     /**
@@ -556,6 +561,18 @@ public class SubscriptionInfoUpdater extends Handler {
                     }
 
                     // Set the modem network mode
+                    long allowedNetworkTypes = -1;
+                    try {
+                        allowedNetworkTypes = Long.parseLong(
+                                SubscriptionController.getInstance().getSubscriptionProperty(subId,
+                                        SubscriptionManager.ALLOWED_NETWORK_TYPES));
+                    } catch (NumberFormatException err) {
+                        logd("NumberFormat exception");
+                    }
+
+                    long networkTypeBitMask = RadioAccessFamily.getRafFromNetworkType(networkType);
+                    networkType = RadioAccessFamily.getNetworkTypeFromRaf(
+                            (int) (networkTypeBitMask & allowedNetworkTypes));
                     PhoneFactory.getPhone(phoneId).setPreferredNetworkType(networkType, null);
 
                     // Only support automatic selection mode on SIM change.
@@ -572,7 +589,7 @@ public class SubscriptionInfoUpdater extends Handler {
                 // Update set of enabled carrier apps now that the privilege rules may have changed.
                 CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
                         mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                        sContext.getContentResolver(), mCurrentlyActiveUserId);
+                        mCurrentlyActiveUserId, sContext);
 
                 if (mIsRecordLoaded[phoneId] == true) {
                     broadcastSimStateChanged(phoneId, IccCardConstants.
@@ -588,7 +605,7 @@ public class SubscriptionInfoUpdater extends Handler {
         // Update set of enabled carrier apps now that the privilege rules may have changed.
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
                 mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                sContext.getContentResolver(), mCurrentlyActiveUserId);
+                mCurrentlyActiveUserId, sContext);
 
         /**
          * The sim loading sequence will be
@@ -852,7 +869,7 @@ public class SubscriptionInfoUpdater extends Handler {
             int index =
                     findSubscriptionInfoForIccid(existingSubscriptions, embeddedProfile.getIccid());
             int prevCarrierId = TelephonyManager.UNKNOWN_CARRIER_ID;
-            int nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE;
+            int nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT;
             if (index < 0) {
                 // No existing entry for this ICCID; create an empty one.
                 SubscriptionController.getInstance().insertEmptySubInfoRecord(
@@ -1113,7 +1130,7 @@ public class SubscriptionInfoUpdater extends Handler {
         SubscriptionManager.putPhoneIdAndSubIdExtra(i, phoneId);
         logd("Broadcasting intent ACTION_SIM_STATE_CHANGED " + state + " reason " + reason +
                 " for phone: " + phoneId);
-        IntentBroadcaster.getInstance().broadcastStickyIntent(i, phoneId);
+        IntentBroadcaster.getInstance().broadcastStickyIntent(sContext, i, phoneId);
     }
 
     private void broadcastSimCardStateChanged(int phoneId, int state) {

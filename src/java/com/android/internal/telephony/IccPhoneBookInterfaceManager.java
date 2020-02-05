@@ -24,7 +24,7 @@ import android.os.HandlerThread;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.text.TextUtils;
 
 import com.android.internal.telephony.uicc.AdnRecord;

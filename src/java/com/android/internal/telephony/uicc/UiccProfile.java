@@ -38,7 +38,7 @@ import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.telephony.CarrierConfigManager;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -401,7 +401,7 @@ public class UiccProfile extends IccCard {
                     nameSource = SubscriptionManager.NAME_SOURCE_SIM_PNN;
                 } else {
                     newCarrierName = phone.getCarrierName();    // Get the name from carrier id.
-                    nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT_SOURCE;
+                    nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT;
                 }
             }
         }

@@ -54,10 +54,13 @@ import android.os.PersistableBundle;
 import android.sysprop.TelephonyProperties;
 import android.telephony.CarrierConfigManager;
 import android.telephony.ServiceState;
+import android.telephony.TelephonyManager;
 import android.telephony.ims.ImsCallProfile;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.RegistrationManager;
+import android.telephony.ims.aidl.IImsRegistrationCallback;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
+import android.telephony.ims.stub.ImsUtImplBase;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
@@ -66,7 +69,6 @@ import androidx.test.filters.FlakyTest;
 
 import com.android.ims.FeatureConnector;
 import com.android.ims.ImsEcbmStateListener;
-import com.android.ims.ImsManager;
 import com.android.ims.ImsUtInterface;
 import com.android.ims.RcsFeatureManager;
 import com.android.internal.telephony.Call;
@@ -136,7 +138,7 @@ public class ImsPhoneTest extends TelephonyTest {
         doReturn(Call.State.IDLE).when(mRingingCall).getState();
         doReturn(mExecutor).when(mContext).getMainExecutor();
 
-        mContextFixture.putBooleanResource(com.android.internal.R.bool.config_voice_capable, true);
+        doReturn(true).when(mTelephonyManager).isVoiceCapable();
 
         mImsPhoneUT = new ImsPhone(mContext, mNotifier, mPhone, true);
 
@@ -538,20 +540,21 @@ public class ImsPhoneTest extends TelephonyTest {
                 CommandsInterface.SERVICE_CLASS_NONE);
 
         ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(mImsUtInterface).queryCallBarring(eq(ImsUtInterface.CB_BAOC),
+        verify(mImsUtInterface).queryCallBarring(eq(ImsUtImplBase.CALL_BARRING_ALL_OUTGOING),
                 messageArgumentCaptor.capture(), eq(CommandsInterface.SERVICE_CLASS_NONE));
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
 
         mImsPhoneUT.setCallBarring(CommandsInterface.CB_FACILITY_BAOIC, true, "abc", msg,
                 CommandsInterface.SERVICE_CLASS_NONE);
-        verify(mImsUtInterface).updateCallBarring(eq(ImsUtInterface.CB_BOIC),
+        verify(mImsUtInterface).updateCallBarring(eq(ImsUtImplBase.CALL_BARRING_OUTGOING_INTL),
                 eq(CommandsInterface.CF_ACTION_ENABLE), messageArgumentCaptor.capture(),
                 (String[]) eq(null), eq(CommandsInterface.SERVICE_CLASS_NONE));
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
 
         mImsPhoneUT.setCallBarring(CommandsInterface.CB_FACILITY_BAOICxH, false, "abc", msg,
                 CommandsInterface.SERVICE_CLASS_NONE);
-        verify(mImsUtInterface).updateCallBarring(eq(ImsUtInterface.CB_BOIC_EXHC),
+        verify(mImsUtInterface).updateCallBarring(
+                eq(ImsUtImplBase.CALL_BARRING_OUTGOING_INTL_EXCL_HOME),
                 eq(CommandsInterface.CF_ACTION_DISABLE), messageArgumentCaptor.capture(),
                 (String[])eq(null), eq(CommandsInterface.SERVICE_CLASS_NONE));
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
@@ -585,7 +588,8 @@ public class ImsPhoneTest extends TelephonyTest {
 
         Intent intent = intentArgumentCaptor.getValue();
         assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
-        assertEquals(true, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, false));
+        assertEquals(true, intent.getBooleanExtra(
+                TelephonyManager.EXTRA_PHONE_IN_ECM_STATE, false));
 
         // verify that wakeLock is acquired in ECM
         assertEquals(true, mImsPhoneUT.getWakeLock().isHeld());
@@ -613,7 +617,8 @@ public class ImsPhoneTest extends TelephonyTest {
 
         intent = intentArgumentCaptor.getValue();
         assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
-        assertEquals(false, intent.getBooleanExtra(PhoneConstants.PHONE_IN_ECM_STATE, true));
+        assertEquals(false, intent.getBooleanExtra(
+                TelephonyManager.EXTRA_PHONE_IN_ECM_STATE, true));
 
         ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
 
@@ -626,15 +631,14 @@ public class ImsPhoneTest extends TelephonyTest {
         assertEquals(false, mImsPhoneUT.getWakeLock().isHeld());
     }
 
-    @FlakyTest
     @Test
     @SmallTest
-    @Ignore
     public void testProcessDisconnectReason() throws Exception {
         // set up CarrierConfig
         PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
         bundle.putStringArray(CarrierConfigManager.KEY_WFC_OPERATOR_ERROR_CODES_STRING_ARRAY,
                 new String[]{"REG09|0"});
+        doReturn(true).when(mImsManager).isWfcEnabledByUser();
 
         // set up overlays
         String title = "title";
@@ -651,20 +655,40 @@ public class ImsPhoneTest extends TelephonyTest {
         mImsPhoneUT.processDisconnectReason(
                 new ImsReasonInfo(ImsReasonInfo.CODE_REGISTRATION_ERROR, 0, "REG09"));
 
-        // TODO: Verify that WFC has been turned off (can't do it right now because
-        // setWfcSetting is static).
-        //verify(mImsManager).setWfcSetting(any(), eq(false));
-
         ArgumentCaptor<Intent> intent = ArgumentCaptor.forClass(Intent.class);
         verify(mContext).sendOrderedBroadcast(
                 intent.capture(), nullable(String.class), any(BroadcastReceiver.class),
                 nullable(Handler.class), eq(Activity.RESULT_OK), nullable(String.class),
                 nullable(Bundle.class));
-        assertEquals(ImsManager.ACTION_IMS_REGISTRATION_ERROR, intent.getValue().getAction());
-        assertEquals(title, intent.getValue().getStringExtra(Phone.EXTRA_KEY_ALERT_TITLE));
-        assertEquals(messageAlert, intent.getValue().getStringExtra(Phone.EXTRA_KEY_ALERT_MESSAGE));
+        assertEquals(android.telephony.ims.ImsManager.ACTION_WFC_IMS_REGISTRATION_ERROR,
+                intent.getValue().getAction());
+        assertEquals(title, intent.getValue().getStringExtra(
+                android.telephony.ims.ImsManager.EXTRA_WFC_REGISTRATION_FAILURE_TITLE));
+        assertEquals(messageAlert, intent.getValue().getStringExtra(
+                android.telephony.ims.ImsManager.EXTRA_WFC_REGISTRATION_FAILURE_MESSAGE));
         assertEquals(messageNotification,
                 intent.getValue().getStringExtra(Phone.EXTRA_KEY_NOTIFICATION_MESSAGE));
+    }
+
+    @Test
+    @SmallTest
+    public void testRegisteringImsRcsRegistrationCallback() throws Exception {
+        RcsFeatureManager rcsFeatureManager = mock(RcsFeatureManager.class);
+
+        // When initialized RcsFeatureManager and
+        mImsPhoneUT.initRcsFeatureManager();
+        assertNotNull(mImsPhoneUT.mRcsManagerConnector);
+
+        // When connection is ready, the register IMS registration callback should be called.
+        mImsPhoneUT.mRcsFeatureConnectorListener.connectionReady(rcsFeatureManager);
+        verify(rcsFeatureManager).registerImsRegistrationCallback(
+                any(IImsRegistrationCallback.class));
+
+        // When connection is unavailable, the IMS registration state should be not registered.
+        mImsPhoneUT.mRcsFeatureConnectorListener.connectionUnavailable();
+        Consumer<Integer> registrationState = mock(Consumer.class);
+        mImsPhoneUT.getImsRcsRegistrationState(registrationState);
+        verify(registrationState).accept(RegistrationManager.REGISTRATION_STATE_NOT_REGISTERED);
     }
 
     @Test

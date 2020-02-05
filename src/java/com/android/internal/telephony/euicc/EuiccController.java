@@ -15,6 +15,8 @@
  */
 package com.android.internal.telephony.euicc;
 
+import static com.android.internal.telephony.euicc.EuiccConnector.BIND_TIMEOUT_MILLIS;
+
 import android.Manifest;
 import android.Manifest.permission;
 import android.annotation.Nullable;
@@ -27,7 +29,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Bundle;
-import android.os.ServiceManager;
 import android.provider.Settings;
 import android.service.euicc.DownloadSubscriptionResult;
 import android.service.euicc.EuiccService;
@@ -36,6 +37,7 @@ import android.service.euicc.GetDownloadableSubscriptionMetadataResult;
 import android.service.euicc.GetEuiccProfileInfoListResult;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.UiccCardInfo;
@@ -55,6 +57,7 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Backing implementation of {@link android.telephony.euicc.EuiccManager}. */
@@ -109,7 +112,8 @@ public class EuiccController extends IEuiccController.Stub {
 
     private EuiccController(Context context) {
         this(context, new EuiccConnector(context));
-        ServiceManager.addService("econtroller", this);
+        TelephonyFrameworkInitializer
+                .getTelephonyServiceManager().getEuiccControllerService().register(this);
     }
 
     @VisibleForTesting
@@ -1110,12 +1114,37 @@ public class EuiccController extends IEuiccController.Stub {
     }
 
     @Override
-    public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+    public void dump(FileDescriptor fd, final PrintWriter pw, String[] args) {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.DUMP, "Requires DUMP");
         final long token = Binder.clearCallingIdentity();
+        pw.println("===== BEGIN EUICC CLINIC =====");
         try {
+            pw.println("===== EUICC CONNECTOR =====");
             mConnector.dump(fd, pw, args);
+            final CountDownLatch countDownLatch = new CountDownLatch(1);
+            mConnector.dumpEuiccService(new EuiccConnector.DumpEuiccServiceCommandCallback() {
+                @Override
+                public void onDumpEuiccServiceComplete(String logs) {
+                    pw.println("===== EUICC SERVICE =====");
+                    pw.println(logs);
+                    countDownLatch.countDown();
+                }
+
+                @Override
+                public void onEuiccServiceUnavailable() {
+                    pw.println("===== EUICC SERVICE UNAVAILABLE =====");
+                    countDownLatch.countDown();
+                }
+            });
+
+            // Wait up to 30 seconds
+            if (!countDownLatch.await(BIND_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                pw.println("===== EUICC SERVICE TIMEOUT =====");
+            }
+        } catch (InterruptedException e) {
+            pw.println("===== EUICC SERVICE INTERRUPTED =====");
         } finally {
+            pw.println("===== END EUICC CLINIC =====");
             Binder.restoreCallingIdentity(token);
         }
     }

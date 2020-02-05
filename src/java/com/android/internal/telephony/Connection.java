@@ -21,7 +21,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.telephony.DisconnectCause;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.ServiceState.RilRadioTechnology;
 import android.telephony.emergency.EmergencyNumber;
@@ -30,6 +30,7 @@ import android.util.Log;
 import com.android.ims.internal.ConferenceParticipant;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
+import com.android.internal.telephony.util.TelephonyUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1034,7 +1035,7 @@ public abstract class Connection {
             int previousCount = mExtras.size();
             // Prevent vendors from passing in extras other than primitive types and android API
             // parcelables.
-            mExtras = mExtras.filterValues();
+            mExtras = TelephonyUtils.filterValues(mExtras);
             int filteredCount = mExtras.size();
             if (filteredCount != previousCount) {
                 Rlog.i(TAG, "setConnectionExtras: filtering " + (previousCount - filteredCount)

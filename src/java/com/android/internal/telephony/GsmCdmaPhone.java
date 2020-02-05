@@ -30,7 +30,6 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOI
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
-import android.app.ActivityManager;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.ContentValues;
@@ -59,6 +58,7 @@ import android.sysprop.TelephonyProperties;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.BarringInfo;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellIdentity;
 import android.telephony.DataFailCause;
@@ -66,7 +66,6 @@ import android.telephony.ImsiEncryptionInfo;
 import android.telephony.NetworkScanRequest;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.PreciseDataConnectionState;
-import android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.telephony.ServiceState.RilRadioTechnology;
 import android.telephony.SignalThresholdInfo;
@@ -105,6 +104,7 @@ import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.UiccSlot;
 import com.android.internal.telephony.util.ArrayUtils;
+import com.android.telephony.Rlog;
 import com.android.internal.telephony.util.QtiImsUtils;
 
 import java.io.FileDescriptor;
@@ -328,6 +328,8 @@ public class GsmCdmaPhone extends Phone {
         mCi.registerUiccApplicationEnablementChanged(this, EVENT_UICC_APPS_ENABLEMENT_CHANGED,
                 null);
         mCi.setOnSuppServiceNotification(this, EVENT_SSN, null);
+        mCi.setOnRegistrationFailed(this, EVENT_REGISTRATION_FAILED, null);
+        mCi.registerForBarringInfoChanged(this, EVENT_BARRING_INFO_CHANGED, null);
 
         //GSM
         mCi.setOnUSSD(this, EVENT_USSD, null);
@@ -775,9 +777,9 @@ public class GsmCdmaPhone extends Phone {
         }
         if (mBroadcastEmergencyCallStateChanges) {
             Intent intent = new Intent(TelephonyIntents.ACTION_EMERGENCY_CALL_STATE_CHANGED);
-            intent.putExtra(PhoneConstants.PHONE_IN_EMERGENCY_CALL, callActive);
+            intent.putExtra(TelephonyManager.EXTRA_PHONE_IN_EMERGENCY_CALL, callActive);
             SubscriptionManager.putPhoneIdAndSubIdExtra(intent, getPhoneId());
-            ActivityManager.broadcastStickyIntent(intent, UserHandle.USER_ALL);
+            mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
             if (DBG) Rlog.d(LOG_TAG, "sendEmergencyCallStateChange: callActive " + callActive);
         }
     }
@@ -1313,7 +1315,8 @@ public class GsmCdmaPhone extends Phone {
         if (mSST != null
                 && mSST.mSS.getState() == ServiceState.STATE_OUT_OF_SERVICE /* CS out of service */
                 && !(mSST.mSS.getDataRegistrationState() == ServiceState.STATE_IN_SERVICE
-                && ServiceState.isPsTech(mSST.mSS.getRilDataRadioTechnology())) /* PS not in LTE/NR */
+                && ServiceState.isPsOnlyTech(
+                        mSST.mSS.getRilDataRadioTechnology())) /* PS not in LTE/NR */
                 && !VideoProfile.isVideo(dialArgs.videoState) /* voice call */
                 && !isEmergency /* non-emergency call */) {
             throw new CallStateException(
@@ -2786,6 +2789,21 @@ public class GsmCdmaPhone extends Phone {
                 }
                 break;
 
+            case EVENT_REGISTRATION_FAILED:
+                logd("Event RegistrationFailed Received");
+                ar = (AsyncResult) msg.obj;
+                RegistrationFailedEvent rfe = (RegistrationFailedEvent) ar.result;
+                mNotifier.notifyRegistrationFailed(this, rfe.cellIdentity, rfe.chosenPlmn,
+                        rfe.domain, rfe.causeCode, rfe.additionalCauseCode);
+                break;
+
+            case EVENT_BARRING_INFO_CHANGED:
+                logd("Event BarringInfoChanged Received");
+                ar = (AsyncResult) msg.obj;
+                BarringInfo barringInfo = (BarringInfo) ar.result;
+                mNotifier.notifyBarringInfoChanged(this, barringInfo);
+                break;
+
             case EVENT_SET_CALL_FORWARD_DONE:
                 ar = (AsyncResult)msg.obj;
                 IccRecords r = mIccRecords.get();
@@ -3564,8 +3582,8 @@ public class GsmCdmaPhone extends Phone {
     protected void phoneObjectUpdater(int newVoiceRadioTech) {
         logd("phoneObjectUpdater: newVoiceRadioTech=" + newVoiceRadioTech);
 
-        // Check for a voice over lte replacement
-        if (ServiceState.isPsTech(newVoiceRadioTech)
+        // Check for a voice over LTE/NR replacement
+        if (ServiceState.isPsOnlyTech(newVoiceRadioTech)
                 || (newVoiceRadioTech == ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN)) {
             CarrierConfigManager configMgr = (CarrierConfigManager)
                     getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
@@ -3661,7 +3679,7 @@ public class GsmCdmaPhone extends Phone {
         Intent intent = new Intent(TelephonyIntents.ACTION_RADIO_TECHNOLOGY_CHANGED);
         intent.putExtra(PhoneConstants.PHONE_NAME_KEY, getPhoneName());
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhoneId);
-        ActivityManager.broadcastStickyIntent(intent, UserHandle.USER_ALL);
+        mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
     private void switchVoiceRadioTech(int newVoiceRadioTech) {

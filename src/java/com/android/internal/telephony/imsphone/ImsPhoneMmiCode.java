@@ -35,17 +35,17 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.ResultReceiver;
 import android.telephony.PhoneNumberUtils;
-import android.telephony.Rlog;
+import com.android.telephony.Rlog;
 import android.telephony.ims.ImsCallForwardInfo;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.ImsSsData;
 import android.telephony.ims.ImsSsInfo;
 import android.telephony.ims.ImsUtListener;
+import android.telephony.ims.stub.ImsUtImplBase;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 
 import com.android.ims.ImsException;
-import com.android.ims.ImsUtInterface;
 import com.android.internal.telephony.CallForwardInfo;
 import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.CommandException;
@@ -975,9 +975,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
             } else if (mSc != null && (mSc.equals(SC_BS_MT))) {
                 try {
                     if (isInterrogate()) {
-                        mPhone.mCT.getUtInterface()
-                        .queryCallBarring(ImsUtInterface.CB_BS_MT,
-                                          obtainMessage(EVENT_QUERY_ICB_COMPLETE,this));
+                        mPhone.mCT.getUtInterface().queryCallBarring(
+                                ImsUtImplBase.CALL_BARRING_SPECIFIC_INCOMING_CALLS,
+                                obtainMessage(EVENT_QUERY_ICB_COMPLETE, this));
                     } else {
                         processIcbMmiCodeForUpdate();
                     }
@@ -990,9 +990,9 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                 // TODO: Should we route through queryCallBarring() here?
                 try {
                     if (isInterrogate()) {
-                        mPhone.mCT.getUtInterface()
-                        .queryCallBarring(ImsUtInterface.CB_BIC_ACR,
-                                          obtainMessage(EVENT_QUERY_ICB_COMPLETE,this));
+                        mPhone.mCT.getUtInterface().queryCallBarring(
+                                ImsUtImplBase.CALL_BARRING_ANONYMOUS_INCOMING,
+                                obtainMessage(EVENT_QUERY_ICB_COMPLETE, this));
                     } else {
                         if (isActivate()) {
                             callAction = CommandsInterface.CF_ACTION_ENABLE;
@@ -1000,7 +1000,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                             callAction = CommandsInterface.CF_ACTION_DISABLE;
                         }
                         mPhone.mCT.getUtInterface()
-                                .updateCallBarring(ImsUtInterface.CB_BIC_ACR,
+                                .updateCallBarring(ImsUtImplBase.CALL_BARRING_ANONYMOUS_INCOMING,
                                 callAction,
                                 obtainMessage(EVENT_SET_COMPLETE,this),
                                 null);
@@ -1200,11 +1200,11 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         callAction = callBarAction(dialingNumber);
 
         try {
-            mPhone.mCT.getUtInterface()
-            .updateCallBarring(ImsUtInterface.CB_BS_MT,
-                               callAction,
-                               obtainMessage(EVENT_SET_COMPLETE,this),
-                               icbNum);
+            mPhone.mCT.getUtInterface().updateCallBarring(
+                    ImsUtImplBase.CALL_BARRING_SPECIFIC_INCOMING_CALLS,
+                    callAction,
+                    obtainMessage(EVENT_SET_COMPLETE, this),
+                    icbNum);
         } catch (ImsException e) {
             Rlog.d(LOG_TAG, "processIcbMmiCodeForUpdate:Could not get UT handle for updating ICB.");
         }
@@ -1688,9 +1688,8 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
         StringBuilder sb = new StringBuilder(getScString());
         sb.append("\n");
 
+        mState = State.FAILED;
         if (ar.exception != null) {
-            mState = State.FAILED;
-
             if (ar.exception instanceof ImsException) {
                 sb.append(getImsErrorMessage(ar));
             } else {
@@ -1703,19 +1702,21 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
             if (ints.length != 0) {
                 if (ints[0] == 0) {
                     sb.append(mContext.getText(com.android.internal.R.string.serviceDisabled));
+                    mState = State.COMPLETE;
                 } else if (mSc.equals(SC_WAIT)) {
                     // Call Waiting includes additional data in the response.
                     sb.append(createQueryCallWaitingResultMessage(ints[1]));
+                    mState = State.COMPLETE;
                 } else if (ints[0] == 1) {
                     // for all other services, treat it as a boolean
                     sb.append(mContext.getText(com.android.internal.R.string.serviceEnabled));
+                    mState = State.COMPLETE;
                 } else {
                     sb.append(mContext.getText(com.android.internal.R.string.mmiError));
                 }
             } else {
                 sb.append(mContext.getText(com.android.internal.R.string.mmiError));
             }
-            mState = State.COMPLETE;
         }
 
         mMessage = sb;

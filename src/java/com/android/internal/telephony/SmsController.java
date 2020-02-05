@@ -27,16 +27,20 @@ import android.app.PendingIntent;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.net.Uri;
+import android.os.BaseBundle;
 import android.os.Binder;
-import android.os.ServiceManager;
+import android.os.Bundle;
+import android.os.TelephonyServiceManager.ServiceRegisterer;
 import android.provider.Telephony.Sms.Intents;
-import android.telephony.Rlog;
+import android.telephony.CarrierConfigManager;
 import android.telephony.SmsManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
 
 import com.android.internal.util.IndentingPrintWriter;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -53,8 +57,11 @@ public class SmsController extends ISmsImplBase {
 
     protected SmsController(Context context) {
         mContext = context;
-        if (ServiceManager.getService("isms") == null) {
-            ServiceManager.addService("isms", this);
+        ServiceRegisterer smsServiceRegisterer = TelephonyFrameworkInitializer
+                .getTelephonyServiceManager()
+                .getSmsServiceRegisterer();
+        if (smsServiceRegisterer.get() == null) {
+            smsServiceRegisterer.register(this);
         }
     }
 
@@ -77,6 +84,9 @@ public class SmsController extends ISmsImplBase {
     @Override
     public boolean updateMessageOnIccEfForSubscriber(int subId, String callingPackage, int index,
             int status, byte[] pdu) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             return iccSmsIntMgr.updateMessageOnIccEf(callingPackage, index, status, pdu);
@@ -91,6 +101,9 @@ public class SmsController extends ISmsImplBase {
     @Override
     public boolean copyMessageToIccEfForSubscriber(int subId, String callingPackage, int status,
             byte[] pdu, byte[] smsc) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             return iccSmsIntMgr.copyMessageToIccEf(callingPackage, status, pdu, smsc);
@@ -104,6 +117,9 @@ public class SmsController extends ISmsImplBase {
     @UnsupportedAppUsage
     @Override
     public List<SmsRawData> getAllMessagesFromIccEfForSubscriber(int subId, String callingPackage) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             return iccSmsIntMgr.getAllMessagesFromIccEf(callingPackage);
@@ -119,6 +135,9 @@ public class SmsController extends ISmsImplBase {
     public void sendDataForSubscriber(int subId, String callingPackage, String destAddr,
             String scAddr, int destPort, byte[] data, PendingIntent sentIntent,
             PendingIntent deliveryIntent) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendData(callingPackage, destAddr, scAddr, destPort, data,
@@ -153,16 +172,22 @@ public class SmsController extends ISmsImplBase {
         }
     }
 
+    private String getCallingPackage() {
+        return mContext.getPackageManager().getPackagesForUid(Binder.getCallingUid())[0];
+    }
+
     @Override
     public void sendTextForSubscriber(int subId, String callingPackage, String destAddr,
             String scAddr, String text, PendingIntent sentIntent, PendingIntent deliveryIntent,
-            boolean persistMessageForNonDefaultSmsApp) {
+            boolean persistMessageForNonDefaultSmsApp, long messageId) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         if (!getSmsPermissions(subId).checkCallingCanSendText(persistMessageForNonDefaultSmsApp,
                 callingPackage, "Sending SMS message")) {
             sendErrorInPendingIntent(sentIntent, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
             return;
         }
-
         long token = Binder.clearCallingIdentity();
         SubscriptionInfo info;
         try {
@@ -174,7 +199,7 @@ public class SmsController extends ISmsImplBase {
             sendBluetoothText(info, destAddr, text, sentIntent, deliveryIntent);
         } else {
             sendIccText(subId, callingPackage, destAddr, scAddr, text, sentIntent, deliveryIntent,
-                    persistMessageForNonDefaultSmsApp);
+                    persistMessageForNonDefaultSmsApp, messageId);
         }
     }
 
@@ -191,14 +216,16 @@ public class SmsController extends ISmsImplBase {
 
     private void sendIccText(int subId, String callingPackage, String destAddr,
             String scAddr, String text, PendingIntent sentIntent, PendingIntent deliveryIntent,
-            boolean persistMessageForNonDefaultSmsApp) {
+            boolean persistMessageForNonDefaultSmsApp, long messageId) {
+        Rlog.d(LOG_TAG, "sendTextForSubscriber iccSmsIntMgr"
+                + " Subscription: " + subId + " id: " + messageId);
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendText(callingPackage, destAddr, scAddr, text, sentIntent,
-                    deliveryIntent, persistMessageForNonDefaultSmsApp);
+                    deliveryIntent, persistMessageForNonDefaultSmsApp, messageId);
         } else {
             Rlog.e(LOG_TAG, "sendTextForSubscriber iccSmsIntMgr is null for"
-                    + " Subscription: " + subId);
+                    + " Subscription: " + subId + " id: " + messageId);
             sendErrorInPendingIntent(sentIntent, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
@@ -230,6 +257,9 @@ public class SmsController extends ISmsImplBase {
             String destAddr, String scAddr, String parts, PendingIntent sentIntent,
             PendingIntent deliveryIntent, boolean persistMessage, int priority,
             boolean expectMore, int validityPeriod) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendTextWithOptions(callingPackage, destAddr, scAddr, parts, sentIntent,
@@ -244,14 +274,20 @@ public class SmsController extends ISmsImplBase {
     @Override
     public void sendMultipartTextForSubscriber(int subId, String callingPackage, String destAddr,
             String scAddr, List<String> parts, List<PendingIntent> sentIntents,
-            List<PendingIntent> deliveryIntents, boolean persistMessageForNonDefaultSmsApp) {
+            List<PendingIntent> deliveryIntents, boolean persistMessageForNonDefaultSmsApp,
+            long messageId) {
+        // This is different from the checking of other method. It prefers the package name
+        // returned by getCallPackage() for backward-compatibility.
+        if (getCallingPackage() != null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendMultipartText(callingPackage, destAddr, scAddr, parts, sentIntents,
-                    deliveryIntents, persistMessageForNonDefaultSmsApp);
+                    deliveryIntents, persistMessageForNonDefaultSmsApp, messageId);
         } else {
             Rlog.e(LOG_TAG, "sendMultipartTextForSubscriber iccSmsIntMgr is null for"
-                    + " Subscription: " + subId);
+                    + " Subscription: " + subId + " id: " + messageId);
             sendErrorInPendingIntents(sentIntents, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
         }
     }
@@ -261,11 +297,14 @@ public class SmsController extends ISmsImplBase {
             String destAddr, String scAddr, List<String> parts, List<PendingIntent> sentIntents,
             List<PendingIntent> deliveryIntents, boolean persistMessage, int priority,
             boolean expectMore, int validityPeriod) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             iccSmsIntMgr.sendMultipartTextWithOptions(callingPackage, destAddr, scAddr, parts,
                     sentIntents, deliveryIntents, persistMessage, priority, expectMore,
-                    validityPeriod);
+                    validityPeriod, 0L /* messageId */);
         } else {
             Rlog.e(LOG_TAG, "sendMultipartTextWithOptions iccSmsIntMgr is null for"
                     + " Subscription: " + subId);
@@ -499,20 +538,153 @@ public class SmsController extends ISmsImplBase {
     }
 
     @Override
+    public Bundle getCarrierConfigValuesForSubscriber(int subId) {
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            final CarrierConfigManager configManager =
+                    (CarrierConfigManager)
+                            mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+            return getMmsConfig(configManager.getConfigForSubId(subId));
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    /**
+     * Filters a bundle to only contain MMS config variables.
+     *
+     * This is for use with bundles returned by CarrierConfigManager which contain MMS config and
+     * unrelated config. It is assumed that all MMS_CONFIG_* keys are present in the supplied
+     * bundle.
+     *
+     * @param config a Bundle that contains MMS config variables and possibly more.
+     * @return a new Bundle that only contains the MMS_CONFIG_* keys defined in SmsManager.
+     */
+    private static Bundle getMmsConfig(BaseBundle config) {
+        Bundle filtered = new Bundle();
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_APPEND_TRANSACTION_ID,
+                config.getBoolean(SmsManager.MMS_CONFIG_APPEND_TRANSACTION_ID));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_MMS_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_MMS_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_NOTIFY_WAP_MMSC_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_NOTIFY_WAP_MMSC_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_ALIAS_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_ALIAS_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_ALLOW_ATTACH_AUDIO,
+                config.getBoolean(SmsManager.MMS_CONFIG_ALLOW_ATTACH_AUDIO));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_MULTIPART_SMS_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_MULTIPART_SMS_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_SMS_DELIVERY_REPORT_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_SMS_DELIVERY_REPORT_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION,
+                config.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES,
+                config.getBoolean(SmsManager.MMS_CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_MMS_READ_REPORT_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_MMS_READ_REPORT_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_MMS_DELIVERY_REPORT_ENABLED,
+                config.getBoolean(SmsManager.MMS_CONFIG_MMS_DELIVERY_REPORT_ENABLED));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_CLOSE_CONNECTION,
+                config.getBoolean(SmsManager.MMS_CONFIG_CLOSE_CONNECTION));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
+                config.getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_MAX_IMAGE_WIDTH,
+                config.getInt(SmsManager.MMS_CONFIG_MAX_IMAGE_WIDTH));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_MAX_IMAGE_HEIGHT,
+                config.getInt(SmsManager.MMS_CONFIG_MAX_IMAGE_HEIGHT));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_RECIPIENT_LIMIT,
+                config.getInt(SmsManager.MMS_CONFIG_RECIPIENT_LIMIT));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_ALIAS_MIN_CHARS,
+                config.getInt(SmsManager.MMS_CONFIG_ALIAS_MIN_CHARS));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_ALIAS_MAX_CHARS,
+                config.getInt(SmsManager.MMS_CONFIG_ALIAS_MAX_CHARS));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_SMS_TO_MMS_TEXT_THRESHOLD,
+                config.getInt(SmsManager.MMS_CONFIG_SMS_TO_MMS_TEXT_THRESHOLD));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_SMS_TO_MMS_TEXT_LENGTH_THRESHOLD,
+                config.getInt(SmsManager.MMS_CONFIG_SMS_TO_MMS_TEXT_LENGTH_THRESHOLD));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_MESSAGE_TEXT_MAX_SIZE,
+                config.getInt(SmsManager.MMS_CONFIG_MESSAGE_TEXT_MAX_SIZE));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_SUBJECT_MAX_LENGTH,
+                config.getInt(SmsManager.MMS_CONFIG_SUBJECT_MAX_LENGTH));
+        filtered.putInt(
+                SmsManager.MMS_CONFIG_HTTP_SOCKET_TIMEOUT,
+                config.getInt(SmsManager.MMS_CONFIG_HTTP_SOCKET_TIMEOUT));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_UA_PROF_TAG_NAME,
+                config.getString(SmsManager.MMS_CONFIG_UA_PROF_TAG_NAME));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_USER_AGENT,
+                config.getString(SmsManager.MMS_CONFIG_USER_AGENT));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_UA_PROF_URL,
+                config.getString(SmsManager.MMS_CONFIG_UA_PROF_URL));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_HTTP_PARAMS,
+                config.getString(SmsManager.MMS_CONFIG_HTTP_PARAMS));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_EMAIL_GATEWAY_NUMBER,
+                config.getString(SmsManager.MMS_CONFIG_EMAIL_GATEWAY_NUMBER));
+        filtered.putString(
+                SmsManager.MMS_CONFIG_NAI_SUFFIX,
+                config.getString(SmsManager.MMS_CONFIG_NAI_SUFFIX));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_SHOW_CELL_BROADCAST_APP_LINKS,
+                config.getBoolean(SmsManager.MMS_CONFIG_SHOW_CELL_BROADCAST_APP_LINKS));
+        filtered.putBoolean(
+                SmsManager.MMS_CONFIG_SUPPORT_HTTP_CHARSET_HEADER,
+                config.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_HTTP_CHARSET_HEADER));
+        return filtered;
+    }
+
+    @Override
     public String createAppSpecificSmsTokenWithPackageInfo(
             int subId, String callingPkg, String prefixes, PendingIntent intent) {
+        if (callingPkg == null) {
+            callingPkg = getCallingPackage();
+        }
         return getPhone(subId).getAppSmsManager().createAppSpecificSmsTokenWithPackageInfo(
                 subId, callingPkg, prefixes, intent);
     }
 
     @Override
     public String createAppSpecificSmsToken(int subId, String callingPkg, PendingIntent intent) {
+        if (callingPkg == null) {
+            callingPkg = getCallingPackage();
+        }
         return getPhone(subId).getAppSmsManager().createAppSpecificSmsToken(callingPkg, intent);
     }
 
     @Override
     public int checkSmsShortCodeDestination(int subId, String callingPackage,
             String callingFeatureId, String destAddress, String countryIso) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         if (!TelephonyPermissions.checkCallingOrSelfReadPhoneState(getPhone(subId).getContext(),
                 subId, callingPackage, callingFeatureId, "checkSmsShortCodeDestination")) {
             return SmsManager.SMS_CATEGORY_NOT_SHORT_CODE;
@@ -543,6 +715,9 @@ public class SmsController extends ISmsImplBase {
 
     @Override
     public String getSmscAddressFromIccEfForSubscriber(int subId, String callingPackage) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             return iccSmsIntMgr.getSmscAddressFromIccEf(callingPackage);
@@ -556,6 +731,9 @@ public class SmsController extends ISmsImplBase {
     @Override
     public boolean setSmscAddressOnIccEfForSubscriber(
             String smsc, int subId, String callingPackage) {
+        if (callingPackage == null) {
+            callingPackage = getCallingPackage();
+        }
         IccSmsInterfaceManager iccSmsIntMgr = getIccSmsInterfaceManager(subId);
         if (iccSmsIntMgr != null) {
             return iccSmsIntMgr.setSmscAddressOnIccEf(callingPackage, smsc);
