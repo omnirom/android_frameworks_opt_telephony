@@ -36,7 +36,6 @@ import com.android.internal.telephony.SmsMessageBase;
 import com.android.internal.telephony.util.SMSDispatcherUtil;
 import com.android.telephony.Rlog;
 
-
 public class CdmaSMSDispatcher extends SMSDispatcher {
     private static final String TAG = "CdmaSMSDispatcher";
     private static final boolean VDBG = false;
@@ -164,7 +163,11 @@ public class CdmaSMSDispatcher extends SMSDispatcher {
         //   SMS over IMS is being handled by the ImsSmsDispatcher implementation and has indicated
         //   that the message should fall back to sending over CS.
         if (0 == tracker.mImsRetry && !isIms() || imsSmsDisabled || tracker.mUsesImsServiceForIms) {
-            mCi.sendCdmaSms(pdu, reply, tracker.mRetryCount == 0 && tracker.mExpectMore);
+            if (tracker.mRetryCount == 0 && tracker.mExpectMore) {
+                mCi.sendCdmaSMSExpectMore(pdu, reply);
+            } else {
+                mCi.sendCdmaSms(pdu, reply);
+            }
         } else {
             mCi.sendImsCdmaSms(pdu, tracker.mImsRetry, tracker.mMessageRef, reply);
             // increment it here, so in case of SMS_FAIL_RETRY over IMS

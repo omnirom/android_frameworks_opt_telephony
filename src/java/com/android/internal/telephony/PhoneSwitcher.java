@@ -51,7 +51,6 @@ import android.os.RemoteException;
 import android.telephony.CarrierConfigManager;
 import android.telephony.PhoneCapability;
 import android.telephony.PhoneStateListener;
-import com.android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.TelephonyRegistryManager;
@@ -64,8 +63,8 @@ import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.DataSwitch;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.OnDemandDataSwitch;
-import com.android.internal.telephony.util.HandlerExecutor;
 import com.android.internal.util.IndentingPrintWriter;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -160,8 +159,6 @@ public class PhoneSwitcher extends Handler {
     private final LocalLog mLocalLog;
     protected PhoneState[] mPhoneStates;
     protected int[] mPhoneSubscriptions;
-    @VisibleForTesting
-    public final PhoneStateListener mPhoneStateListener;
     protected final CellularNetworkValidator mValidator;
     @VisibleForTesting
     public final CellularNetworkValidator.ValidationCallback mValidationCallback =
@@ -339,14 +336,6 @@ public class PhoneSwitcher extends Handler {
 
         mSubscriptionController = SubscriptionController.getInstance();
         mRadioConfig = RadioConfig.getInstance(mContext);
-
-        mPhoneStateListener = new PhoneStateListener(new HandlerExecutor(this)) {
-            @Override
-            public void onPhoneCapabilityChanged(PhoneCapability capability) {
-                onPhoneCapabilityChangedInternal(capability);
-            }
-        };
-
         mValidator = CellularNetworkValidator.getInstance();
 
         mActivePhoneRegistrants = new RegistrantList();
@@ -673,27 +662,32 @@ public class PhoneSwitcher extends Handler {
     }
 
     private void onRequestNetwork(NetworkRequest networkRequest) {
-        final DcRequest dcRequest = new DcRequest(networkRequest, mContext);
+        final DcRequest dcRequest = DcRequest.create(networkRequest);
         if (networkRequest.type != NetworkRequest.Type.REQUEST) {
            log("Skip non REQUEST type request - " + networkRequest);
            return;
         }
 
-        if (!mPrioritizedDcRequests.contains(dcRequest)) {
-            collectRequestNetworkMetrics(networkRequest);
-            mPrioritizedDcRequests.add(dcRequest);
-            Collections.sort(mPrioritizedDcRequests);
-            onEvaluate(REQUESTS_CHANGED, "netRequest");
+        if (dcRequest != null) {
+            if (!mPrioritizedDcRequests.contains(dcRequest)) {
+                collectRequestNetworkMetrics(networkRequest);
+                mPrioritizedDcRequests.add(dcRequest);
+                Collections.sort(mPrioritizedDcRequests);
+                onEvaluate(REQUESTS_CHANGED, "netRequest");
+                log("Added DcRequest, size: " + mPrioritizedDcRequests.size());
+            }
         }
     }
 
     private void onReleaseNetwork(NetworkRequest networkRequest) {
-        final DcRequest dcRequest = new DcRequest(networkRequest, mContext);
-
-        if (mPrioritizedDcRequests.contains(dcRequest) &&
-                mPrioritizedDcRequests.remove(dcRequest)) {
-            onEvaluate(REQUESTS_CHANGED, "netReleased");
-            collectReleaseNetworkMetrics(networkRequest);
+        final DcRequest dcRequest = DcRequest.create(networkRequest);
+        if (dcRequest != null) {
+            if (mPrioritizedDcRequests.contains(dcRequest) &&
+                    mPrioritizedDcRequests.remove(dcRequest)) {
+                onEvaluate(REQUESTS_CHANGED, "netReleased");
+                collectReleaseNetworkMetrics(networkRequest);
+                log("Removed DcRequest, size: " + mPrioritizedDcRequests.size());
+            }
         }
     }
 
@@ -717,7 +711,7 @@ public class PhoneSwitcher extends Handler {
     private void collectRequestNetworkMetrics(NetworkRequest networkRequest) {
         // Request network for MMS will temporary disable the network on default data subscription,
         // this only happen on multi-sim device.
-        if (mActiveModemCount > 1 && networkRequest.networkCapabilities.hasCapability(
+        if (mActiveModemCount > 1 && networkRequest.hasCapability(
                 NetworkCapabilities.NET_CAPABILITY_MMS)) {
             OnDemandDataSwitch onDemandDataSwitch = new OnDemandDataSwitch();
             onDemandDataSwitch.apn = TelephonyEvent.ApnType.APN_TYPE_MMS;
@@ -729,7 +723,7 @@ public class PhoneSwitcher extends Handler {
     private void collectReleaseNetworkMetrics(NetworkRequest networkRequest) {
         // Release network for MMS will recover the network on default data subscription, this only
         // happen on multi-sim device.
-        if (mActiveModemCount > 1 && networkRequest.networkCapabilities.hasCapability(
+        if (mActiveModemCount > 1 && networkRequest.hasCapability(
                 NetworkCapabilities.NET_CAPABILITY_MMS)) {
             OnDemandDataSwitch onDemandDataSwitch = new OnDemandDataSwitch();
             onDemandDataSwitch.apn = TelephonyEvent.ApnType.APN_TYPE_MMS;
@@ -1319,6 +1313,12 @@ public class PhoneSwitcher extends Handler {
      */
     public int getActiveDataSubId() {
         return mPreferredDataSubId;
+    }
+
+    // TODO (b/148396668): add an internal callback method to monitor phone capability change,
+    // and hook this call to that callback.
+    private void onPhoneCapabilityChanged(PhoneCapability capability) {
+        onPhoneCapabilityChangedInternal(capability);
     }
 
     public void dump(FileDescriptor fd, PrintWriter writer, String[] args) {

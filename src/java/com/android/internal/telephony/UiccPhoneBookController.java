@@ -21,11 +21,10 @@ package com.android.internal.telephony;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.ContentValues;
 import android.os.TelephonyServiceManager.ServiceRegisterer;
-import com.android.telephony.Rlog;
 import android.telephony.TelephonyFrameworkInitializer;
 
-import com.android.internal.telephony.IIccPhoneBook;
 import com.android.internal.telephony.uicc.AdnRecord;
+import com.android.telephony.Rlog;
 
 import java.util.List;
 

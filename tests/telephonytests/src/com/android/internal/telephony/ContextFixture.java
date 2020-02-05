@@ -59,7 +59,6 @@ import android.net.Network;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
-import android.os.BatteryStatsManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IInterface;
@@ -270,11 +269,10 @@ public class ContextFixture implements TestFixture<Context> {
                 case Context.TELEPHONY_REGISTRY_SERVICE:
                     return mTelephonyRegistryManager;
                 case Context.BATTERY_STATS_SERVICE:
-                    return mBatteryStatsManager;
                 case Context.DISPLAY_SERVICE:
                 case Context.POWER_SERVICE:
                 case Context.PERMISSION_SERVICE:
-                    // PowerManager and DisplayManager are final classes so cannot be mocked,
+                    // These are final classes so cannot be mocked,
                     // return real services.
                     return TestApplication.getAppContext().getSystemService(name);
                 case Context.POWER_WHITELIST_MANAGER:
@@ -294,6 +292,10 @@ public class ContextFixture implements TestFixture<Context> {
                 return Context.TELECOM_SERVICE;
             } else if (serviceClass == UserManager.class) {
                 return Context.USER_SERVICE;
+            } else if (serviceClass == ConnectivityManager.class) {
+                return Context.CONNECTIVITY_SERVICE;
+            } else if (serviceClass == PowerWhitelistManager.class) {
+                return Context.POWER_WHITELIST_MANAGER;
             }
             return super.getSystemServiceName(serviceClass);
         }
@@ -358,6 +360,11 @@ public class ContextFixture implements TestFixture<Context> {
         public Intent registerReceiverAsUser(BroadcastReceiver receiver, UserHandle user,
                 IntentFilter filter, String broadcastPermission, Handler scheduler) {
             return registerReceiverFakeImpl(receiver, filter);
+        }
+
+        @Override
+        public Context createPackageContext(String packageName, int flags) {
+            return this;
         }
 
         private Intent registerReceiverFakeImpl(BroadcastReceiver receiver, IntentFilter filter) {
@@ -625,7 +632,6 @@ public class ContextFixture implements TestFixture<Context> {
     private final PackageInfo mPackageInfo = mock(PackageInfo.class);
     private final TelephonyRegistryManager mTelephonyRegistryManager =
         mock(TelephonyRegistryManager.class);
-    private final BatteryStatsManager mBatteryStatsManager = mock(BatteryStatsManager.class);
     private final PowerWhitelistManager mPowerWhitelistManager = mock(PowerWhitelistManager.class);
 
     private final ContentProvider mContentProvider = spy(new FakeContentProvider());
@@ -678,7 +684,7 @@ public class ContextFixture implements TestFixture<Context> {
         doReturn(mBundle).when(mCarrierConfigManager).getConfig();
 
         doReturn(mock(Network.class)).when(mConnectivityManager).registerNetworkAgent(
-                any(), any(), any(), any(), anyInt(), any(), anyInt());
+                any(), any(), any(), any(), any(), any(), anyInt());
 
         doReturn(true).when(mEuiccManager).isEnabled();
 

@@ -70,7 +70,6 @@ import android.util.SparseArray;
 import com.android.ims.ImsCall;
 import com.android.ims.ImsConfig;
 import com.android.ims.ImsManager;
-import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.dataconnection.DataConnectionReasons;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
@@ -89,6 +88,7 @@ import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UsimServiceTable;
+import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.telephony.Rlog;
 
@@ -253,7 +253,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * if we are looking for automatic selection. operatorAlphaLong is the
      * corresponding operator name.
      */
-    private static class NetworkSelectMessage {
+    protected static class NetworkSelectMessage {
         public Message message;
         public String operatorNumeric;
         public String operatorAlphaLong;
@@ -1390,6 +1390,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             updateSavedNetworkOperator(nsm);
         } else {
             clearSavedNetworkSelection();
+            updateManualNetworkSelection(nsm);
         }
     }
 
@@ -1432,6 +1433,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Update non-perisited manual network selection.
+     *
+     * @param nsm PLMN info of the selected network
+     */
+    protected void updateManualNetworkSelection(NetworkSelectMessage nsm)  {
+        Rlog.e(LOG_TAG, "updateManualNetworkSelection() should be overridden");
+    }
+
+    /**
      * Used to track the settings upon completion of the network change.
      */
     private void handleSetSelectNetwork(AsyncResult ar) {
@@ -1455,7 +1465,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /**
      * Method to retrieve the saved operator from the Shared Preferences
      */
-    private OperatorInfo getSavedNetworkSelection() {
+    @NonNull
+    public OperatorInfo getSavedNetworkSelection() {
         // open the shared preferences and search with our key.
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(getContext());
         String numeric = sp.getString(NETWORK_SELECTION_KEY + getSubId(), "");
@@ -1682,8 +1693,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             return null;
         }
 
-        CharSequence[] carrierLocales = mContext.getResources().getTextArray(
-                R.array.carrier_properties);
+        CharSequence[] carrierLocales = TelephonyResourceUtils.getTelephonyResources(mContext)
+                .getTextArray(com.android.telephony.resources.R.array.carrier_properties);
 
         for (int i = 0; i < carrierLocales.length; i+=3) {
             String c = carrierLocales[i].toString();
@@ -1913,6 +1924,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public boolean getMessageWaitingIndicator() {
         return mVmCount != 0;
     }
+
+    /**
+     *  Retrieves manually selected network info.
+     */
+    public String getManualNetworkSelectionPlmn() {
+        return "";
+    }
+
 
     private int getCallForwardingIndicatorFromSharedPref() {
         int status = IccRecords.CALL_FORWARDING_STATUS_DISABLED;
@@ -2636,7 +2655,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent intent = new Intent(TelephonyIntents.SECRET_CODE_ACTION,
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(
-                    Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND | Intent.FLAG_RECEIVER_FOREGROUND);
+                    Intent.FLAG_RECEIVER_FOREGROUND);
             mContext.sendBroadcast(intent, null, options.toBundle());
 
             // {@link TelephonyManager.ACTION_SECRET_CODE} will replace {@link
@@ -2645,7 +2664,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
                     Uri.parse("android_secret_code://" + code));
             secrectCodeIntent.addFlags(
-                    Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND | Intent.FLAG_RECEIVER_FOREGROUND);
+                    Intent.FLAG_RECEIVER_FOREGROUND);
             mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
         }
     }
@@ -3844,8 +3863,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mRadioCapability.set(rc);
 
         if (SubscriptionManager.isValidSubscriptionId(getSubId())) {
-            boolean restoreSelection = !mContext.getResources().getBoolean(
-                    com.android.internal.R.bool.skip_restoring_network_selection);
+            boolean restoreSelection = !TelephonyResourceUtils.getTelephonyResources(mContext)
+                    .getBoolean(com.android.telephony.resources.R.bool
+                            .skip_restoring_network_selection);
             sendSubscriptionSettings(restoreSelection);
         }
     }

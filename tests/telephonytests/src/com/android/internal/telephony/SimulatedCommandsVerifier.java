@@ -842,7 +842,7 @@ public class SimulatedCommandsVerifier implements CommandsInterface {
     }
 
     @Override
-    public void sendCdmaSms(byte[] pdu, Message response, boolean expectMore) {
+    public void sendCdmaSMSExpectMore(byte[] pdu, Message response) {
 
     }
 

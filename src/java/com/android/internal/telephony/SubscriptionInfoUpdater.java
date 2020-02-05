@@ -19,7 +19,6 @@ package com.android.internal.telephony;
 import android.Manifest;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
-import android.app.AppGlobals;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
@@ -28,14 +27,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.content.pm.IPackageManager;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.ParcelUuid;
 import android.os.PersistableBundle;
-import android.permission.IPermissionManager;
+import android.os.UserHandle;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.provider.Settings.Global;
@@ -49,14 +47,12 @@ import android.telephony.CarrierConfigManager;
 import android.telephony.RadioAccessFamily;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.euicc.EuiccManager;
 import android.text.TextUtils;
 import android.util.Pair;
 
-import com.android.telephony.Rlog;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
@@ -65,6 +61,7 @@ import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccSlot;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -115,9 +112,6 @@ public class SubscriptionInfoUpdater extends Handler {
     private static boolean sIsSubInfoInitialized = false;
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
-    @UnsupportedAppUsage
-    private IPackageManager mPackageManager;
-    private IPermissionManager mPermissionManager;
     private Handler mBackgroundHandler;
 
     // The current foreground user ID.
@@ -140,25 +134,14 @@ public class SubscriptionInfoUpdater extends Handler {
 
     // TODO: The SubscriptionController instance should be passed in here from PhoneFactory
     // rather than invoking the static getter all over the place.
-    public SubscriptionInfoUpdater(Looper looper, Context context, CommandsInterface[] ci) {
-        this(looper, context, ci, IPackageManager.Stub.asInterface(
-                TelephonyFrameworkInitializer
-                        .getTelephonyServiceManager()
-                        .getPackageManagerServiceRegisterer()
-                        .get()),
-                AppGlobals.getPermissionManager());
-    }
-
     @VisibleForTesting public SubscriptionInfoUpdater(Looper looper, Context context,
-            CommandsInterface[] ci, IPackageManager packageMgr, IPermissionManager permissionMgr) {
+            CommandsInterface[] ci) {
         logd("Constructor invoked");
         mBackgroundHandler = new Handler(looper);
 
         sContext = context;
         mSubscriptionManager = SubscriptionManager.from(sContext);
         mEuiccManager = (EuiccManager) sContext.getSystemService(Context.EUICC_SERVICE);
-        mPackageManager = packageMgr;
-        mPermissionManager = permissionMgr;
 
         mCarrierServiceBindHelper = new CarrierServiceBindHelper(sContext);
         initializeCarrierApps();
@@ -182,19 +165,18 @@ public class SubscriptionInfoUpdater extends Handler {
             public void onReceive(Context context, Intent intent) {
                 // Remove this line after testing
                 if (Intent.ACTION_USER_FOREGROUND.equals(intent.getAction())) {
+                    UserHandle userHandle = intent.getParcelableExtra(Intent.EXTRA_USER);
                     // If couldn't get current user ID, guess it's 0.
-                    mCurrentlyActiveUserId = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, 0);
+                    mCurrentlyActiveUserId = userHandle != null ? userHandle.getIdentifier() : 0;
                     CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
-                            mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                            mCurrentlyActiveUserId, sContext);
+                            TelephonyManager.getDefault(), mCurrentlyActiveUserId, sContext);
                 }
             }
         }, new IntentFilter(Intent.ACTION_USER_FOREGROUND), null, null);
         ActivityManager am = (ActivityManager) sContext.getSystemService(Context.ACTIVITY_SERVICE);
         mCurrentlyActiveUserId = am.getCurrentUser();
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
-                mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                mCurrentlyActiveUserId, sContext);
+                TelephonyManager.getDefault(), mCurrentlyActiveUserId, sContext);
     }
 
     /**
@@ -604,8 +586,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
         // Update set of enabled carrier apps now that the privilege rules may have changed.
         CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
-                mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                mCurrentlyActiveUserId, sContext);
+                TelephonyManager.getDefault(), mCurrentlyActiveUserId, sContext);
 
         /**
          * The sim loading sequence will be
@@ -1138,7 +1119,6 @@ public class SubscriptionInfoUpdater extends Handler {
             sSimCardState[phoneId] = state;
             Intent i = new Intent(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
             i.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-            i.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             i.putExtra(TelephonyManager.EXTRA_SIM_STATE, state);
             SubscriptionManager.putPhoneIdAndSubIdExtra(i, phoneId);
             // TODO(b/130664115) we manually populate this intent with the slotId. In the future we
@@ -1165,7 +1145,6 @@ public class SubscriptionInfoUpdater extends Handler {
         if (state != sSimApplicationState[phoneId] && (!isUnknownToNotReady || emptyProfile)) {
             sSimApplicationState[phoneId] = state;
             Intent i = new Intent(TelephonyManager.ACTION_SIM_APPLICATION_STATE_CHANGED);
-            i.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             i.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
             i.putExtra(TelephonyManager.EXTRA_SIM_STATE, state);
             SubscriptionManager.putPhoneIdAndSubIdExtra(i, phoneId);
