@@ -570,8 +570,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
                 // Update set of enabled carrier apps now that the privilege rules may have changed.
                 CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
-                        mPackageManager, mPermissionManager, TelephonyManager.getDefault(),
-                        mCurrentlyActiveUserId, sContext);
+                        TelephonyManager.getDefault(), mCurrentlyActiveUserId, sContext);
 
                 if (mIsRecordLoaded[phoneId] == true) {
                     broadcastSimStateChanged(phoneId, IccCardConstants.
