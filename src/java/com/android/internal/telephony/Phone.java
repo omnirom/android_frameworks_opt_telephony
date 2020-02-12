@@ -581,6 +581,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                         this, EVENT_INITIATE_SILENT_REDIAL, null);
             }
         }
+        if (mEcbmHandler != null) {
+            mEcbmHandler.updateImsPhone(mImsPhone, mPhoneId);
+        }
     }
 
     /**
