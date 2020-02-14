@@ -2754,10 +2754,18 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     mHoldSwitchingState = HoldSwapState.INACTIVE;
                     logHoldSwapState("onCallTerminated hold to answer case");
                     sendEmptyMessage(EVENT_RESUME_NOW_FOREGROUND_CALL);
-                } else if (mRingingCall.getState() == ImsPhoneCall.State.WAITING) {
-                    //In case of the call to be HELD being terminated answer the ringing call
-                    //before ACTIVE call session gets closed as there will be no onCallHoldFailed
-                    //callback triggered to answer waiting call
+                } else if (!mBackgroundCall.getState().isAlive() &&
+                        mRingingCall.getState() == ImsPhoneCall.State.WAITING) {
+                    // Answer ringing call only if user accepted the waiting call received on top
+                    // of ACTIVE call and call to be HELD being terminated and received call END
+                    // before HOLD response. If onCallHoldFailed is received before call END then
+                    // ringing call will be answered in onCallHoldFailed.
+
+                    // Do not trigger answer for ringing call if background call is alive which will
+                    // be the case for accepting third incoming call. In case of third incoming call
+                    // HOLD call will be ended first so need to check for background call here
+                    // explicitly to avoid sending ANSWER for third incoming call before ACTIVE call
+                    // becomes HELD.
                     sendEmptyMessage(EVENT_ANSWER_WAITING_CALL);
                 }
             } else if (mHoldSwitchingState == HoldSwapState.HOLDING_TO_DIAL_OUTGOING ||
