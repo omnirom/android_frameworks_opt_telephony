@@ -109,7 +109,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mCallingFeature = mContext.getFeatureId();
 
         doReturn(1).when(mProxyController).getMaxRafSupported();
-        mContextFixture.putIntArrayResource(com.android.internal.R.array.sim_colors, new int[]{5});
+        mContextFixture.putIntArrayResource(android.R.array.simColors, new int[]{5});
     }
 
     @After
@@ -462,7 +462,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testOpptSubInfoListChanged() throws Exception {
         registerMockTelephonyRegistry();
-        verify(mTelephonyRegisteryMock, times(0))
+        verify(mTelephonyRegistryManager, times(0))
                 .notifyOpportunisticSubscriptionInfoChanged();
 
         testInsertSim();
@@ -474,13 +474,13 @@ public class SubscriptionControllerTest extends TelephonyTest {
                 .getOpportunisticSubscriptions(mCallingPackage, mCallingFeature);
 
         assertTrue(opptSubList.isEmpty());
-        verify(mTelephonyRegisteryMock, times(0))
+        verify(mTelephonyRegistryManager, times(0))
                 .notifyOpportunisticSubscriptionInfoChanged();
 
         // Setting sub2 as opportunistic should trigger callback.
         mSubscriptionControllerUT.setOpportunistic(true, 2, mCallingPackage);
 
-        verify(mTelephonyRegisteryMock, times(1))
+        verify(mTelephonyRegistryManager, times(1))
                 .notifyOpportunisticSubscriptionInfoChanged();
         opptSubList = mSubscriptionControllerUT
                 .getOpportunisticSubscriptions(mCallingPackage, mCallingFeature);
@@ -490,12 +490,12 @@ public class SubscriptionControllerTest extends TelephonyTest {
         // Changing non-opportunistic sub1 shouldn't trigger callback.
         mSubscriptionControllerUT.setDisplayNameUsingSrc("DisplayName", 1,
                 SubscriptionManager.NAME_SOURCE_SIM_SPN);
-        verify(mTelephonyRegisteryMock, times(1))
+        verify(mTelephonyRegistryManager, times(1))
                 .notifyOpportunisticSubscriptionInfoChanged();
 
         mSubscriptionControllerUT.setDisplayNameUsingSrc("DisplayName", 2,
                 SubscriptionManager.NAME_SOURCE_SIM_SPN);
-        verify(mTelephonyRegisteryMock, times(2))
+        verify(mTelephonyRegistryManager, times(2))
                 .notifyOpportunisticSubscriptionInfoChanged();
     }
 
@@ -898,7 +898,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mSubscriptionControllerUT.refreshCachedActiveSubscriptionInfoList();
         mSubscriptionControllerUT.notifySubscriptionInfoChanged();
 
-        verify(mTelephonyRegisteryMock, times(1))
+        verify(mTelephonyRegistryManager, times(1))
                 .notifyOpportunisticSubscriptionInfoChanged();
 
         // Set sub 1 and 2 into same group.
@@ -908,7 +908,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         assertNotEquals(null, groupId);
 
         mSubscriptionControllerUT.notifySubscriptionInfoChanged();
-        verify(mTelephonyRegisteryMock, times(2))
+        verify(mTelephonyRegistryManager, times(2))
                 .notifyOpportunisticSubscriptionInfoChanged();
         List<SubscriptionInfo> opptSubList = mSubscriptionControllerUT
                 .getOpportunisticSubscriptions(mCallingPackage, mCallingFeature);
@@ -924,7 +924,7 @@ public class SubscriptionControllerTest extends TelephonyTest {
         mSubscriptionControllerUT.refreshCachedActiveSubscriptionInfoList();
         mSubscriptionControllerUT.notifySubscriptionInfoChanged();
 
-        verify(mTelephonyRegisteryMock, times(3))
+        verify(mTelephonyRegistryManager, times(3))
                 .notifyOpportunisticSubscriptionInfoChanged();
         opptSubList = mSubscriptionControllerUT.getOpportunisticSubscriptions(mCallingPackage,
                 mCallingFeature);

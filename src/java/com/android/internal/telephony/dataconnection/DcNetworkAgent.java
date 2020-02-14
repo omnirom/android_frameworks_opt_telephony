@@ -25,10 +25,13 @@ import android.net.NetworkAgentConfig;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkProvider;
+import android.net.NetworkScore;
 import android.net.SocketKeepalive;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.NetworkRegistrationInfo;
+import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 import android.util.SparseArray;
@@ -70,7 +73,7 @@ public class DcNetworkAgent extends NetworkAgent {
 
     private NetworkInfo mNetworkInfo;
 
-    DcNetworkAgent(DataConnection dc, Phone phone, NetworkInfo ni, int score,
+    DcNetworkAgent(DataConnection dc, Phone phone, NetworkInfo ni, NetworkScore score,
             NetworkAgentConfig config, NetworkProvider networkProvider, int transportType) {
         super(phone.getContext(), dc.getHandler().getLooper(), "DcNetworkAgent",
                 dc.getNetworkCapabilities(), dc.getLinkProperties(), score, config,
@@ -81,7 +84,7 @@ public class DcNetworkAgent extends NetworkAgent {
         mNetworkCapabilities = dc.getNetworkCapabilities();
         mTransportType = transportType;
         mDataConnection = dc;
-        mNetworkInfo = ni;
+        mNetworkInfo = new NetworkInfo(ni);
         logd(mTag + " created for data connection " + dc.getName());
     }
 
@@ -234,7 +237,7 @@ public class DcNetworkAgent extends NetworkAgent {
      * @param score The network score.
      * @param dc The data connection that invokes this method.
      */
-    public synchronized void sendNetworkScore(int score, DataConnection dc) {
+    public synchronized void sendNetworkScore(NetworkScore score, DataConnection dc) {
         if (!isOwned(dc, "sendNetworkScore")) return;
         sendNetworkScore(score);
     }
@@ -249,18 +252,28 @@ public class DcNetworkAgent extends NetworkAgent {
         if (!isOwned(dc, "sendNetworkInfo")) return;
         final NetworkInfo.State oldState = mNetworkInfo.getState();
         final NetworkInfo.State state = networkInfo.getState();
-        if (mNetworkInfo.getExtraInfo() != networkInfo.getExtraInfo()) {
-            setLegacyExtraInfo(networkInfo.getExtraInfo());
+        String extraInfo = dc.getApnSetting().getApnName();
+        if (mNetworkInfo.getExtraInfo() != extraInfo) {
+            setLegacyExtraInfo(extraInfo);
         }
-        final int subType = networkInfo.getSubtype();
+
+        final ServiceState serviceState = mPhone.getServiceState();
+        NetworkRegistrationInfo nri = serviceState.getNetworkRegistrationInfo(
+                NetworkRegistrationInfo.DOMAIN_PS, mTransportType);
+        int subType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
+        if (nri != null) {
+            subType = nri.getAccessNetworkTechnology();
+        }
+
         if (mNetworkInfo.getSubtype() != subType) {
             setLegacySubtype(subType, TelephonyManager.getNetworkTypeName(subType));
         }
         if ((oldState == NetworkInfo.State.SUSPENDED || oldState == NetworkInfo.State.CONNECTED)
                 && state == NetworkInfo.State.DISCONNECTED) {
+            logd("Unregister from connectivity service");
             unregister();
         }
-        mNetworkInfo = networkInfo;
+        mNetworkInfo = new NetworkInfo(networkInfo);
     }
 
     /**
@@ -381,11 +394,11 @@ public class DcNetworkAgent extends NetworkAgent {
         void handleKeepaliveStarted(final int slot, KeepaliveStatus ks) {
             switch (ks.statusCode) {
                 case KeepaliveStatus.STATUS_INACTIVE:
-                    DcNetworkAgent.this.onSocketKeepaliveEvent(slot,
+                    DcNetworkAgent.this.sendSocketKeepaliveEvent(slot,
                             keepaliveStatusErrorToPacketKeepaliveError(ks.errorCode));
                     break;
                 case KeepaliveStatus.STATUS_ACTIVE:
-                    DcNetworkAgent.this.onSocketKeepaliveEvent(
+                    DcNetworkAgent.this.sendSocketKeepaliveEvent(
                             slot, SocketKeepalive.SUCCESS);
                     // fall through to add record
                 case KeepaliveStatus.STATUS_PENDING:
@@ -416,13 +429,13 @@ public class DcNetworkAgent extends NetworkAgent {
             switch (kr.currentStatus) {
                 case KeepaliveStatus.STATUS_INACTIVE:
                     logd("Inactive Keepalive received status!");
-                    DcNetworkAgent.this.onSocketKeepaliveEvent(
+                    DcNetworkAgent.this.sendSocketKeepaliveEvent(
                             kr.slotId, SocketKeepalive.ERROR_HARDWARE_ERROR);
                     break;
                 case KeepaliveStatus.STATUS_PENDING:
                     switch (ks.statusCode) {
                         case KeepaliveStatus.STATUS_INACTIVE:
-                            DcNetworkAgent.this.onSocketKeepaliveEvent(kr.slotId,
+                            DcNetworkAgent.this.sendSocketKeepaliveEvent(kr.slotId,
                                     keepaliveStatusErrorToPacketKeepaliveError(ks.errorCode));
                             kr.currentStatus = KeepaliveStatus.STATUS_INACTIVE;
                             mKeepalives.remove(ks.sessionHandle);
@@ -430,7 +443,7 @@ public class DcNetworkAgent extends NetworkAgent {
                         case KeepaliveStatus.STATUS_ACTIVE:
                             logd("Pending Keepalive received active status!");
                             kr.currentStatus = KeepaliveStatus.STATUS_ACTIVE;
-                            DcNetworkAgent.this.onSocketKeepaliveEvent(
+                            DcNetworkAgent.this.sendSocketKeepaliveEvent(
                                     kr.slotId, SocketKeepalive.SUCCESS);
                             break;
                         case KeepaliveStatus.STATUS_PENDING:
@@ -444,7 +457,7 @@ public class DcNetworkAgent extends NetworkAgent {
                     switch (ks.statusCode) {
                         case KeepaliveStatus.STATUS_INACTIVE:
                             logd("Keepalive received stopped status!");
-                            DcNetworkAgent.this.onSocketKeepaliveEvent(
+                            DcNetworkAgent.this.sendSocketKeepaliveEvent(
                                     kr.slotId, SocketKeepalive.SUCCESS);
 
                             kr.currentStatus = KeepaliveStatus.STATUS_INACTIVE;

@@ -30,7 +30,6 @@ import android.os.AsyncResult;
 import android.os.Message;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
-import com.android.telephony.Rlog;
 import android.telephony.ServiceState;
 import android.text.TextUtils;
 
@@ -40,6 +39,7 @@ import com.android.internal.telephony.Connection;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneNotifier;
+import com.android.telephony.Rlog;
 
 import java.text.ParseException;
 import java.util.List;
@@ -183,6 +183,12 @@ public class SipPhone extends SipPhoneBase {
                 throw new CallStateException("phone not ringing");
             }
         }
+    }
+
+    @Override
+    public Connection startConference(String[] participantsToDial, DialArgs dialArgs)
+            throws CallStateException {
+        throw new CallStateException("startConference: not supported");
     }
 
     @Override
@@ -541,6 +547,16 @@ public class SipPhone extends SipPhoneBase {
                             + ": " + this + " on phone " + getPhone());
                 }
             }
+        }
+
+        /**
+         * Hangup the ringing call with a specified reason; reason is not supported on SIP.
+         * @param rejectReason
+         */
+        @Override
+        public void hangup(@android.telecom.Call.RejectReason int rejectReason)
+                throws CallStateException  {
+            hangup();
         }
 
         SipConnection initIncomingCall(SipAudioCall sipAudioCall, boolean makeCallWait) {

@@ -30,6 +30,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.TetheringManager;
 import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.Message;
@@ -226,9 +227,9 @@ public class DeviceStateMonitor extends Handler {
                     msg = obtainMessage(EVENT_CHARGING_STATE_CHANGED);
                     msg.arg1 = 0;   // not charging
                     break;
-                case ConnectivityManager.ACTION_TETHER_STATE_CHANGED:
+                case TetheringManager.ACTION_TETHER_STATE_CHANGED:
                     ArrayList<String> activeTetherIfaces = intent.getStringArrayListExtra(
-                            ConnectivityManager.EXTRA_ACTIVE_TETHER);
+                            TetheringManager.EXTRA_ACTIVE_TETHER);
 
                     boolean isTetheringOn = activeTetherIfaces != null
                             && activeTetherIfaces.size() > 0;
@@ -818,30 +819,30 @@ public class DeviceStateMonitor extends Handler {
          * List of dB thresholds for NGRAN {@link AccessNetworkType} RSRSRP
          */
         public static final int[] NGRAN_RSRSRP = new int[] {
-            -125, /* SIGNAL_STRENGTH_POOR */
-            -115, /* SIGNAL_STRENGTH_MODERATE */
-            -105, /* SIGNAL_STRENGTH_GOOD */
-            -95,  /* SIGNAL_STRENGTH_GREAT */
+            -110, /* SIGNAL_STRENGTH_POOR */
+            -90, /* SIGNAL_STRENGTH_MODERATE */
+            -80, /* SIGNAL_STRENGTH_GOOD */
+            -65,  /* SIGNAL_STRENGTH_GREAT */
         };
 
         /**
          * List of dB thresholds for NGRAN {@link AccessNetworkType} RSRSRP
          */
         public static final int[] NGRAN_RSRSRQ = new int[] {
-            -14, /* SIGNAL_STRENGTH_POOR */
-            -12, /* SIGNAL_STRENGTH_MODERATE */
-            -10, /* SIGNAL_STRENGTH_GOOD */
-            -8  /* SIGNAL_STRENGTH_GREAT */
+            -16, /* SIGNAL_STRENGTH_POOR */
+            -11, /* SIGNAL_STRENGTH_MODERATE */
+            -9, /* SIGNAL_STRENGTH_GOOD */
+            -7  /* SIGNAL_STRENGTH_GREAT */
         };
 
         /**
          * List of dB thresholds for NGRAN {@link AccessNetworkType} SSSINR
          */
         public static final int[] NGRAN_SSSINR = new int[] {
-            -8, /* SIGNAL_STRENGTH_POOR */
-            0, /* SIGNAL_STRENGTH_MODERATE */
-            8, /* SIGNAL_STRENGTH_GOOD */
-            16  /* SIGNAL_STRENGTH_GREAT */
+            -5, /* SIGNAL_STRENGTH_POOR */
+            5, /* SIGNAL_STRENGTH_MODERATE */
+            15, /* SIGNAL_STRENGTH_GOOD */
+            30  /* SIGNAL_STRENGTH_GREAT */
         };
     }
 

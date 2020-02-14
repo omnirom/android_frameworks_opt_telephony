@@ -61,11 +61,11 @@ import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Pair;
 
-import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.SmsConstants.MessageClass;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.util.NotificationChannelController;
+import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.internal.util.HexDump;
 import com.android.internal.util.State;
@@ -270,9 +270,10 @@ public abstract class InboundSmsHandler extends StateMachine {
         mResolver = context.getContentResolver();
         mWapPush = new WapPushOverSms(context);
 
-        boolean smsCapable = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_sms_capable);
-        mSmsReceiveDisabled = !TelephonyManager.from(mContext).getSmsReceiveCapableForPhone(
+        TelephonyManager tm =
+                (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        boolean smsCapable = tm.isSmsCapable();
+        mSmsReceiveDisabled = !tm.getSmsReceiveCapableForPhone(
                 mPhone.getPhoneId(), smsCapable);
 
         PowerManager pm = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
@@ -723,9 +724,6 @@ public abstract class InboundSmsHandler extends StateMachine {
             Intent intent = new Intent(Intents.SMS_REJECTED_ACTION);
             intent.putExtra("result", result);
             intent.putExtra("subId", mPhone.getSubId());
-            // Allow registered broadcast receivers to get this intent even
-            // when they are in the background.
-            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
             mContext.sendBroadcast(intent, android.Manifest.permission.RECEIVE_SMS);
         }
         acknowledgeLastIncomingSms(success, result, response);
@@ -941,7 +939,7 @@ public abstract class InboundSmsHandler extends StateMachine {
         String format = tracker.getFormat();
         if (!isWapPush) {
             mMetrics.writeIncomingSmsSession(mPhone.getPhoneId(), mLastSmsWasInjected,
-                    format, timestamps, block);
+                    format, timestamps, block, tracker.getMessageId());
         }
 
         // Do not process null pdu(s). Check for that and return false in that case.
@@ -968,7 +966,8 @@ public abstract class InboundSmsHandler extends StateMachine {
                                 + " id: "
                                 + tracker.getMessageId());
                         mMetrics.writeIncomingWapPush(mPhone.getPhoneId(), mLastSmsWasInjected,
-                                SmsConstants.FORMAT_3GPP, timestamps, false);
+                                SmsConstants.FORMAT_3GPP, timestamps, false,
+                                tracker.getMessageId());
                         return false;
                     }
                 }
@@ -994,10 +993,10 @@ public abstract class InboundSmsHandler extends StateMachine {
             // needs to be ignored, so treating it as a success case.
             if (result == Activity.RESULT_OK || result == Intents.RESULT_SMS_HANDLED) {
                 mMetrics.writeIncomingWapPush(mPhone.getPhoneId(), mLastSmsWasInjected,
-                        format, timestamps, true);
+                        format, timestamps, true, tracker.getMessageId());
             } else {
                 mMetrics.writeIncomingWapPush(mPhone.getPhoneId(), mLastSmsWasInjected,
-                        format, timestamps, false);
+                        format, timestamps, false, tracker.getMessageId());
             }
             // result is Activity.RESULT_OK if an ordered broadcast was sent
             if (result == Activity.RESULT_OK) {
@@ -1075,8 +1074,12 @@ public abstract class InboundSmsHandler extends StateMachine {
                 .setAutoCancel(true)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setDefaults(Notification.DEFAULT_ALL)
-                .setContentTitle(mContext.getString(R.string.new_sms_notification_title))
-                .setContentText(mContext.getString(R.string.new_sms_notification_content))
+                .setContentTitle(TelephonyResourceUtils.getTelephonyResourceContext(mContext)
+                        .getString(com.android.telephony.resources.R.string
+                                .new_sms_notification_title))
+                .setContentText(TelephonyResourceUtils.getTelephonyResourceContext(mContext)
+                        .getString(com.android.telephony.resources.R.string
+                                .new_sms_notification_content))
                 .setContentIntent(intent)
                 .setChannelId(NotificationChannelController.CHANNEL_ID_SMS);
         NotificationManager mNotificationManager =
@@ -1147,18 +1150,6 @@ public abstract class InboundSmsHandler extends StateMachine {
             Bundle opts, BroadcastReceiver resultReceiver, UserHandle user, int subId) {
         intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
         final String action = intent.getAction();
-        if (Intents.SMS_DELIVER_ACTION.equals(action)
-                || Intents.SMS_RECEIVED_ACTION.equals(action)
-                || Intents.WAP_PUSH_DELIVER_ACTION.equals(action)
-                || Intents.WAP_PUSH_RECEIVED_ACTION.equals(action)) {
-            // Some intents need to be delivered with high priority:
-            // SMS_DELIVER, SMS_RECEIVED, WAP_PUSH_DELIVER, WAP_PUSH_RECEIVED
-            // In some situations, like after boot up or system under load, normal
-            // intent delivery could take a long time.
-            // This flag should only be set for intents for visible, timely operations
-            // which is true for the intents above.
-            intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-        }
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
 
         // override the subId value in the intent with the values from tracker as they can be
@@ -1189,7 +1180,7 @@ public abstract class InboundSmsHandler extends StateMachine {
             // by user policy.
             for (int i = users.length - 1; i >= 0; i--) {
                 UserHandle targetUser = UserHandle.of(users[i]);
-                if (users[i] != UserHandle.USER_SYSTEM) {
+                if (users[i] != UserHandle.SYSTEM.getIdentifier()) {
                     // Is the user not allowed to use SMS?
                     if (hasUserRestriction(UserManager.DISALLOW_SMS, targetUser)) {
                         continue;
@@ -1199,11 +1190,12 @@ public abstract class InboundSmsHandler extends StateMachine {
                         continue;
                     }
                 }
-                // Only pass in the resultReceiver when the USER_SYSTEM is processed.
+                // Only pass in the resultReceiver when the user SYSTEM is processed.
                 try {
                     mContext.createPackageContextAsUser(mContext.getPackageName(), 0, targetUser)
                             .sendOrderedBroadcast(intent, permission, appOp, opts,
-                                    users[i] == UserHandle.USER_SYSTEM ? resultReceiver : null,
+                                    users[i] == UserHandle.SYSTEM.getIdentifier()
+                                            ? resultReceiver : null,
                                     getHandler(), Activity.RESULT_OK, null /* initialData */,
                                     null /* initialExtras */);
                 } catch (PackageManager.NameNotFoundException ignored) {
@@ -1314,9 +1306,6 @@ public abstract class InboundSmsHandler extends StateMachine {
             Uri uri = Uri.parse("sms://localhost:" + destPort);
             intent.setData(uri);
             intent.setComponent(null);
-            // Allow registered broadcast receivers to get this intent even
-            // when they are in the background.
-            intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
         }
 
         Bundle options = handleSmsWhitelisting(intent.getComponent(), isClass0);
@@ -1508,7 +1497,6 @@ public abstract class InboundSmsHandler extends StateMachine {
                 intent.setAction(Intents.SMS_RECEIVED_ACTION);
                 // Allow registered broadcast receivers to get this intent even
                 // when they are in the background.
-                intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
                 intent.setComponent(null);
                 // All running users will be notified of the received sms.
                 Bundle options = handleSmsWhitelisting(null, false /* bgActivityStartAllowed */);
@@ -1520,9 +1508,6 @@ public abstract class InboundSmsHandler extends StateMachine {
                 // Now dispatch the notification only intent
                 intent.setAction(Intents.WAP_PUSH_RECEIVED_ACTION);
                 intent.setComponent(null);
-                // Allow registered broadcast receivers to get this intent even
-                // when they are in the background.
-                intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
                 // Only the primary user will receive notification of incoming mms.
                 // That app will do the actual downloading of the mms.
                 long duration = mPowerWhitelistManager.whitelistAppTemporarilyForEvent(
