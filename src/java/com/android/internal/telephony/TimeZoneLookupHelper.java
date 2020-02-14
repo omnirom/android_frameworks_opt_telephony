@@ -133,11 +133,18 @@ public class TimeZoneLookupHelper {
         // is DST (if known). NITZ is limited in only being able to express DST offsets in whole
         // hours and the DST info is optional.
         Integer dstAdjustmentMillis = nitzData.getDstAdjustmentMillis();
-        Boolean isDst = dstAdjustmentMillis == null ? null : dstAdjustmentMillis != 0;
-        Integer dstAdjustmentMillisToMatch = null; // Don't try to match the precise DST offset.
-        return countryTimeZones.lookupByOffsetWithBias(
-                nitzData.getLocalOffsetMillis(), isDst, dstAdjustmentMillisToMatch,
-                nitzData.getCurrentTimeInMillis(), bias);
+        if (dstAdjustmentMillis == null) {
+            return countryTimeZones.lookupByOffsetWithBias(
+                    nitzData.getCurrentTimeInMillis(), bias, nitzData.getLocalOffsetMillis());
+
+        } else {
+            // We don't try to match the exact DST offset given, we just use it to work out if
+            // the country is in DST.
+            boolean isDst = dstAdjustmentMillis != 0;
+            return countryTimeZones.lookupByOffsetWithBias(
+                    nitzData.getCurrentTimeInMillis(), bias,
+                    nitzData.getLocalOffsetMillis(), isDst);
+        }
     }
 
     /**
@@ -233,10 +240,6 @@ public class TimeZoneLookupHelper {
             }
 
             TimeZone timeZone = timeZoneMapping.getTimeZone();
-            if (timeZone == null) {
-                continue;
-            }
-
             int candidateOffset = timeZone.getOffset(whenMillis);
             if (countryDefaultOffset != candidateOffset) {
                 return true;
@@ -308,7 +311,7 @@ public class TimeZoneLookupHelper {
         // be strong consistency across calls.
         synchronized (this) {
             if (mLastCountryTimeZones != null) {
-                if (mLastCountryTimeZones.isForCountryCode(isoCountryCode)) {
+                if (mLastCountryTimeZones.matchesCountryCode(isoCountryCode)) {
                     return mLastCountryTimeZones;
                 }
             }
