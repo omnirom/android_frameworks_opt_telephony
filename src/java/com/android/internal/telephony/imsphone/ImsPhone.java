@@ -121,6 +121,7 @@ import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.telephony.util.QtiImsUtils;
+import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.telephony.Rlog;
 
@@ -860,6 +861,18 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
+    public Connection startConference(String[] participantsToDial, DialArgs dialArgs)
+            throws CallStateException {
+         ImsDialArgs.Builder imsDialArgsBuilder;
+         if (!(dialArgs instanceof ImsDialArgs)) {
+             imsDialArgsBuilder = ImsDialArgs.Builder.from(dialArgs);
+         } else {
+             imsDialArgsBuilder = ImsDialArgs.Builder.from((ImsDialArgs) dialArgs);
+         }
+         return mCT.startConference(participantsToDial, imsDialArgsBuilder.build());
+    }
+
+    @Override
     public Connection dial(String dialString, DialArgs dialArgs) throws CallStateException {
         return dialInternal(dialString, dialArgs, null);
     }
@@ -1287,7 +1300,7 @@ public class ImsPhone extends ImsPhoneBase {
 
     @Override
     public void setCallBarring(String facility, boolean lockState, String password,
-            Message onComplete,  int serviceClass) {
+            Message onComplete, int serviceClass) {
         if (DBG) {
             logd("setCallBarring facility=" + facility
                     + ", lockState=" + lockState + ", serviceClass = " + serviceClass);
@@ -1305,9 +1318,8 @@ public class ImsPhone extends ImsPhoneBase {
 
         try {
             ImsUtInterface ut = mCT.getUtInterface();
-            // password is not required with Ut interface
             ut.updateCallBarring(getCBTypeFromFacility(facility), action,
-                    resp, null,  serviceClass);
+                    resp, null, serviceClass, password);
         } catch (ImsException e) {
             sendErrorResponse(onComplete, e);
         }
@@ -1936,11 +1948,12 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         final String[] wfcOperatorErrorAlertMessages =
-                mContext.getResources().getStringArray(
-                        com.android.internal.R.array.wfcOperatorErrorAlertMessages);
+                TelephonyResourceUtils.getTelephonyResources(mContext).getStringArray(
+                        com.android.telephony.resources.R.array.wfcOperatorErrorAlertMessages);
         final String[] wfcOperatorErrorNotificationMessages =
-                mContext.getResources().getStringArray(
-                        com.android.internal.R.array.wfcOperatorErrorNotificationMessages);
+                TelephonyResourceUtils.getTelephonyResources(mContext).getStringArray(
+                        com.android.telephony.resources.R.array
+                            .wfcOperatorErrorNotificationMessages);
 
         for (int i = 0; i < wfcOperatorErrorCodes.length; i++) {
             String[] codes = wfcOperatorErrorCodes[i].split("\\|");
@@ -1969,8 +1982,8 @@ public class ImsPhone extends ImsPhoneBase {
                 }
             }
 
-            final CharSequence title = mContext.getText(
-                    com.android.internal.R.string.wfcRegErrorTitle);
+            final CharSequence title = TelephonyResourceUtils.getTelephonyResourceContext(mContext)
+                    .getText(com.android.telephony.resources.R.string.wfcRegErrorTitle);
 
             int idx = Integer.parseInt(codes[1]);
             if (idx < 0

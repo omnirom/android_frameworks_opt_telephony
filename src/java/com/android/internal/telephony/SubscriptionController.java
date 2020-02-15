@@ -35,7 +35,6 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.ParcelUuid;
-import android.os.RemoteException;
 import android.os.TelephonyServiceManager.ServiceRegisterer;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -48,6 +47,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionManager.SimDisplayNameSource;
 import android.telephony.TelephonyFrameworkInitializer;
 import android.telephony.TelephonyManager;
+import android.telephony.TelephonyRegistryManager;
 import android.telephony.UiccAccessRule;
 import android.telephony.UiccSlotInfo;
 import android.telephony.euicc.EuiccManager;
@@ -64,6 +64,7 @@ import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccSlot;
 import com.android.internal.telephony.util.ArrayUtils;
+import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.telephony.Rlog;
 
@@ -164,7 +165,8 @@ public class SubscriptionController extends ISub.Stub {
             SubscriptionManager.DATA_ROAMING,
             SubscriptionManager.DISPLAY_NAME,
             SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES,
-            SubscriptionManager.UICC_APPLICATIONS_ENABLED));
+            SubscriptionManager.UICC_APPLICATIONS_ENABLED,
+            SubscriptionManager.IMS_RCS_UCE_ENABLED));
 
     public static SubscriptionController init(Context c) {
         synchronized (SubscriptionController.class) {
@@ -277,17 +279,11 @@ public class SubscriptionController extends ISub.Stub {
      */
     @UnsupportedAppUsage
     public void notifySubscriptionInfoChanged() {
-        ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(
-                TelephonyFrameworkInitializer
-                        .getTelephonyServiceManager()
-                        .getTelephonyRegistryServiceRegisterer()
-                        .get());
-        try {
-            if (DBG) logd("notifySubscriptionInfoChanged:");
-            tr.notifySubscriptionInfoChanged();
-        } catch (RemoteException ex) {
-            // Should never happen because its always available.
-        }
+        TelephonyRegistryManager trm =
+                (TelephonyRegistryManager)
+                        mContext.getSystemService(Context.TELEPHONY_REGISTRY_SERVICE);
+        if (DBG) logd("notifySubscriptionInfoChanged:");
+        trm.notifySubscriptionInfoChanged();
 
         // FIXME: Remove if listener technique accepted.
         broadcastSimInfoContentChanged();
@@ -331,8 +327,9 @@ public class SubscriptionController extends ISub.Stub {
         int dataRoaming = cursor.getInt(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.DATA_ROAMING));
         // Get the blank bitmap for this SubInfoRecord
-        Bitmap iconBitmap = BitmapFactory.decodeResource(mContext.getResources(),
-                com.android.internal.R.drawable.ic_sim_card_multi_24px_clr);
+        Bitmap iconBitmap = BitmapFactory.decodeResource(TelephonyResourceUtils
+                        .getTelephonyResources(mContext),
+                com.android.telephony.resources.R.drawable.ic_sim_card_multi_24px_clr);
         String mcc = cursor.getString(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.MCC_STRING));
         String mnc = cursor.getString(cursor.getColumnIndexOrThrow(
@@ -473,7 +470,7 @@ public class SubscriptionController extends ISub.Stub {
     private int getUnusedColor(String callingPackage, String callingFeatureId) {
         List<SubscriptionInfo> availableSubInfos = getActiveSubscriptionInfoList(callingPackage,
                 callingFeatureId);
-        colorArr = mContext.getResources().getIntArray(com.android.internal.R.array.sim_colors);
+        colorArr = mContext.getResources().getIntArray(android.R.array.simColors);
         int colorIdx = 0;
 
         if (availableSubInfos != null) {
@@ -1504,8 +1501,10 @@ public class SubscriptionController extends ISub.Stub {
                 if (showSpn) {
                     // Need to show both plmn and spn if both are not same.
                     if(!Objects.equals(spn, plmn)) {
-                        String separator = mContext.getString(
-                                com.android.internal.R.string.kg_text_message_separator).toString();
+                        String separator = TelephonyResourceUtils
+                                .getTelephonyResourceContext(mContext).getString(
+                                com.android.telephony.resources.R.string.kg_text_message_separator)
+                                .toString();
                         carrierText = new StringBuilder().append(carrierText).append(separator)
                                 .append(spn).toString();
                     }
@@ -1644,7 +1643,8 @@ public class SubscriptionController extends ISub.Stub {
                             && SubscriptionManager.isValidSlotIndex(getSlotIndex(subId))) {
                         nameToSet = "CARD " + (getSlotIndex(subId) + 1);
                     } else {
-                        nameToSet = mContext.getString(SubscriptionManager.DEFAULT_NAME_RES);
+                        nameToSet = TelephonyResourceUtils.getTelephonyResourceContext(mContext)
+                                .getString(SubscriptionManager.DEFAULT_NAME_RES);
                     }
                 }
             } else {
@@ -1833,6 +1833,7 @@ public class SubscriptionController extends ISub.Stub {
             case SubscriptionManager.WFC_IMS_ROAMING_MODE:
             case SubscriptionManager.WFC_IMS_ROAMING_ENABLED:
             case SubscriptionManager.DATA_ROAMING:
+            case SubscriptionManager.IMS_RCS_UCE_ENABLED:
                 values.put(propKey, cursor.getInt(columnIndex));
                 break;
             case SubscriptionManager.DISPLAY_NAME:
@@ -2253,8 +2254,7 @@ public class SubscriptionController extends ISub.Stub {
         // Broadcast an Intent for default sms sub change
         if (DBG) logdl("[broadcastDefaultSmsSubIdChanged] subId=" + subId);
         Intent intent = new Intent(SubscriptionManager.ACTION_DEFAULT_SMS_SUBSCRIPTION_CHANGED);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING
-                | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
         SubscriptionManager.putSubscriptionIdExtra(intent, subId);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
@@ -2314,8 +2314,7 @@ public class SubscriptionController extends ISub.Stub {
         // Broadcast an Intent for default voice sub change
         if (DBG) logdl("[broadcastDefaultVoiceSubIdChanged] subId=" + subId);
         Intent intent = new Intent(TelephonyIntents.ACTION_DEFAULT_VOICE_SUBSCRIPTION_CHANGED);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING
-                | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
         SubscriptionManager.putSubscriptionIdExtra(intent, subId);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
@@ -2414,8 +2413,7 @@ public class SubscriptionController extends ISub.Stub {
         // Broadcast an Intent for default data sub change
         if (DBG) logdl("[broadcastDefaultDataSubIdChanged] subId=" + subId);
         Intent intent = new Intent(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING
-                | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
         SubscriptionManager.putSubscriptionIdExtra(intent, subId);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
@@ -2463,8 +2461,7 @@ public class SubscriptionController extends ISub.Stub {
         // Broadcast an Intent for default sub change
         int phoneId = SubscriptionManager.getPhoneId(subId);
         Intent intent = new Intent(SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING
-                | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, phoneId, subId);
         if (DBG) {
             logdl("[sendDefaultChangedBroadcast] broadcast default subId changed phoneId="
@@ -2735,6 +2732,7 @@ public class SubscriptionController extends ISub.Stub {
             case SubscriptionManager.WFC_IMS_MODE:
             case SubscriptionManager.WFC_IMS_ROAMING_MODE:
             case SubscriptionManager.WFC_IMS_ROAMING_ENABLED:
+            case SubscriptionManager.IMS_RCS_UCE_ENABLED:
                 value.put(propKey, Integer.parseInt(propValue));
                 break;
             case SubscriptionManager.ALLOWED_NETWORK_TYPES:
@@ -2806,6 +2804,7 @@ public class SubscriptionController extends ISub.Stub {
                         case SubscriptionManager.WFC_IMS_MODE:
                         case SubscriptionManager.WFC_IMS_ROAMING_MODE:
                         case SubscriptionManager.WFC_IMS_ROAMING_ENABLED:
+                        case SubscriptionManager.IMS_RCS_UCE_ENABLED:
                         case SubscriptionManager.IS_OPPORTUNISTIC:
                         case SubscriptionManager.GROUP_UUID:
                         case SubscriptionManager.DATA_ENABLED_OVERRIDE_RULES:
@@ -3776,17 +3775,11 @@ public class SubscriptionController extends ISub.Stub {
     }
 
     private void notifyOpportunisticSubscriptionInfoChanged() {
-        ITelephonyRegistry tr = ITelephonyRegistry.Stub.asInterface(
-                TelephonyFrameworkInitializer
-                        .getTelephonyServiceManager()
-                        .getTelephonyRegistryServiceRegisterer()
-                        .get());
-        try {
-            if (DBG) logd("notifyOpptSubscriptionInfoChanged:");
-            tr.notifyOpportunisticSubscriptionInfoChanged();
-        } catch (RemoteException ex) {
-            // Should never happen because its always available.
-        }
+        TelephonyRegistryManager trm =
+                (TelephonyRegistryManager)
+                        mContext.getSystemService(Context.TELEPHONY_REGISTRY_SERVICE);
+        if (DBG) logd("notifyOpptSubscriptionInfoChanged:");
+        trm.notifyOpportunisticSubscriptionInfoChanged();
     }
 
     private void refreshCachedOpportunisticSubscriptionInfoList() {

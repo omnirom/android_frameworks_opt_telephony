@@ -88,11 +88,11 @@ import android.telephony.cdma.CdmaCellLocation;
 import android.telephony.gsm.GsmCellLocation;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
+import android.text.TextUtils;
 import android.util.Pair;
 
 import androidx.test.filters.FlakyTest;
 
-import com.android.internal.R;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.test.SimulatedCommands;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus;
@@ -220,9 +220,11 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         logd("ServiceStateTrackerTest +Setup!");
         super.setUp("ServiceStateTrackerTest");
 
-        mContextFixture.putResource(R.string.config_wwan_network_service_package,
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.config_wwan_network_service_package,
                 "com.android.phone");
-        mContextFixture.putResource(R.string.config_wlan_network_service_package,
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.config_wlan_network_service_package,
                 "com.xyz.iwlan.networkservice");
         doReturn(mIwlanNetworkServiceStub).when(mIwlanNetworkServiceStub).asBinder();
         addNetworkService();
@@ -266,13 +268,13 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Override SPN related resource
         mContextFixture.putResource(
-                com.android.internal.R.string.lockscreen_carrier_default,
+                com.android.telephony.resources.R.string.lockscreen_carrier_default,
                 CARRIER_NAME_DISPLAY_NO_SERVICE);
         mContextFixture.putResource(
-                com.android.internal.R.string.emergency_calls_only,
+                com.android.telephony.resources.R.string.emergency_calls_only,
                 CARRIER_NAME_DISPLAY_EMERGENCY_CALL);
         mContextFixture.putStringArrayResource(
-                com.android.internal.R.array.wfcSpnFormats,
+                com.android.telephony.resources.R.array.wfcSpnFormats,
                 WIFI_CALLING_FORMATTERS);
 
         mBundle.putBoolean(
@@ -300,29 +302,29 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Do not force display "No service" when sim is not ready in any locales
         mContextFixture.putStringArrayResource(
-                com.android.internal.R.array.config_display_no_service_when_sim_unready,
+                com.android.telephony.resources.R.array.config_display_no_service_when_sim_unready,
                 new String[0]);
 
         mBundle.putIntArray(CarrierConfigManager.KEY_5G_NR_SSRSRP_THRESHOLDS_INT_ARRAY,
                 new int[] {
-                    -125, /* SIGNAL_STRENGTH_POOR */
-                    -115, /* SIGNAL_STRENGTH_MODERATE */
-                    -105, /* SIGNAL_STRENGTH_GOOD */
-                    -95,  /* SIGNAL_STRENGTH_GREAT */
+                    -110, /* SIGNAL_STRENGTH_POOR */
+                    -90, /* SIGNAL_STRENGTH_MODERATE */
+                    -80, /* SIGNAL_STRENGTH_GOOD */
+                    -65,  /* SIGNAL_STRENGTH_GREAT */
                 });
         mBundle.putIntArray(CarrierConfigManager.KEY_5G_NR_SSRSRQ_THRESHOLDS_INT_ARRAY,
                 new int[] {
-                    -14, /* SIGNAL_STRENGTH_POOR */
-                    -12, /* SIGNAL_STRENGTH_MODERATE */
-                    -10, /* SIGNAL_STRENGTH_GOOD */
-                    -8  /* SIGNAL_STRENGTH_GREAT */
+                    -16, /* SIGNAL_STRENGTH_POOR */
+                    -11, /* SIGNAL_STRENGTH_MODERATE */
+                    -9, /* SIGNAL_STRENGTH_GOOD */
+                    -7  /* SIGNAL_STRENGTH_GREAT */
                 });
         mBundle.putIntArray(CarrierConfigManager.KEY_5G_NR_SSSINR_THRESHOLDS_INT_ARRAY,
                 new int[] {
-                    -8, /* SIGNAL_STRENGTH_POOR */
-                    0, /* SIGNAL_STRENGTH_MODERATE */
-                    8, /* SIGNAL_STRENGTH_GOOD */
-                    16  /* SIGNAL_STRENGTH_GREAT */
+                    -5, /* SIGNAL_STRENGTH_POOR */
+                    5, /* SIGNAL_STRENGTH_MODERATE */
+                    15, /* SIGNAL_STRENGTH_GOOD */
+                    30  /* SIGNAL_STRENGTH_GREAT */
                 });
         logd("ServiceStateTrackerTest -Setup!");
     }
@@ -333,6 +335,17 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         mSSTTestHandler.quit();
         mSSTTestHandler.join();
         super.tearDown();
+    }
+
+    private static String getPlmnFromCellIdentity(final CellIdentity ci) {
+        if (ci == null || ci instanceof CellIdentityCdma) return "";
+
+        final String mcc = ci.getMccString();
+        final String mnc = ci.getMncString();
+
+        if (TextUtils.isEmpty(mcc) || TextUtils.isEmpty(mnc)) return "";
+
+        return mcc + mnc;
     }
 
     @Test
@@ -446,22 +459,22 @@ public class ServiceStateTrackerTest extends TelephonyTest {
             logd("  " + intent.getAction());
         }
         Intent intent = intents.get(2);
-        assertEquals(TelephonyIntents.SPN_STRINGS_UPDATED_ACTION, intent.getAction());
+        assertEquals(TelephonyManager.ACTION_SERVICE_PROVIDERS_UPDATED, intent.getAction());
 
         Bundle b = intent.getExtras();
 
         // For boolean we need to make sure the key exists first
-        assertTrue(b.containsKey(TelephonyIntents.EXTRA_SHOW_SPN));
-        assertFalse(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN));
+        assertTrue(b.containsKey(TelephonyManager.EXTRA_SHOW_SPN));
+        assertFalse(b.getBoolean(TelephonyManager.EXTRA_SHOW_SPN));
 
-        assertEquals(null, b.getString(TelephonyIntents.EXTRA_SPN));
-        assertEquals(null, b.getString(TelephonyIntents.EXTRA_DATA_SPN));
+        assertEquals(null, b.getString(TelephonyManager.EXTRA_SPN));
+        assertEquals(null, b.getString(TelephonyManager.EXTRA_DATA_SPN));
 
         // For boolean we need to make sure the key exists first
-        assertTrue(b.containsKey(TelephonyIntents.EXTRA_SHOW_PLMN));
-        assertTrue(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN));
+        assertTrue(b.containsKey(TelephonyManager.EXTRA_SHOW_PLMN));
+        assertTrue(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN));
 
-        assertEquals(SimulatedCommands.FAKE_LONG_NAME, b.getString(TelephonyIntents.EXTRA_PLMN));
+        assertEquals(SimulatedCommands.FAKE_LONG_NAME, b.getString(TelephonyManager.EXTRA_PLMN));
 
         ArgumentCaptor<Integer> intArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
         verify(mTelephonyManager).setDataNetworkTypeForPhone(anyInt(), intArgumentCaptor.capture());
@@ -848,6 +861,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
                 .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
                 .setCellIdentity(cellIdentityGsm)
+                .setRegisteredPlmn("00101")
                 .build();
 
         sst.sendMessage(sst.obtainMessage(ServiceStateTracker.EVENT_GET_LOC_DONE,
@@ -1516,13 +1530,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
-                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+                com.android.telephony.resources.R.bool
+                    .config_user_notification_of_restrictied_mobile_access, true);
         doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
         Drawable mockDrawable = mock(Drawable.class);
         Resources mockResources = mContext.getResources();
         when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
 
-        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnDataTitle, "test1");
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.RestrictedOnDataTitle, "test1");
         sst.setNotification(ServiceStateTracker.PS_ENABLED);
         ArgumentCaptor<Notification> notificationArgumentCaptor =
                 ArgumentCaptor.forClass(Notification.class);
@@ -1548,13 +1564,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
-                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+                com.android.telephony.resources.R.bool
+                    .config_user_notification_of_restrictied_mobile_access, true);
         doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
         Drawable mockDrawable = mock(Drawable.class);
         Resources mockResources = mContext.getResources();
         when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
 
-        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnAllVoiceTitle,
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.RestrictedOnAllVoiceTitle,
                 "test2");
         sst.setNotification(ServiceStateTracker.CS_ENABLED);
         ArgumentCaptor<Notification> notificationArgumentCaptor =
@@ -1581,13 +1599,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
-                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+                com.android.telephony.resources.R.bool
+                    .config_user_notification_of_restrictied_mobile_access, true);
         doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
         Drawable mockDrawable = mock(Drawable.class);
         Resources mockResources = mContext.getResources();
         when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
 
-        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnNormalTitle, "test3");
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.RestrictedOnNormalTitle, "test3");
         sst.setNotification(ServiceStateTracker.CS_NORMAL_ENABLED);
         ArgumentCaptor<Notification> notificationArgumentCaptor =
                 ArgumentCaptor.forClass(Notification.class);
@@ -1613,13 +1633,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
-                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+                com.android.telephony.resources.R.bool
+                    .config_user_notification_of_restrictied_mobile_access, true);
         doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
         Drawable mockDrawable = mock(Drawable.class);
         Resources mockResources = mContext.getResources();
         when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
 
-        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnEmergencyTitle,
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.RestrictedOnEmergencyTitle,
                 "test4");
         sst.setNotification(ServiceStateTracker.CS_EMERGENCY_ENABLED);
         ArgumentCaptor<Notification> notificationArgumentCaptor =
@@ -1647,13 +1669,15 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         final NotificationManager nm = (NotificationManager)
                 mContext.getSystemService(Context.NOTIFICATION_SERVICE);
         mContextFixture.putBooleanResource(
-                R.bool.config_user_notification_of_restrictied_mobile_access, true);
+                com.android.telephony.resources.R.bool
+                    .config_user_notification_of_restrictied_mobile_access, true);
         doReturn(new ApplicationInfo()).when(mContext).getApplicationInfo();
         Drawable mockDrawable = mock(Drawable.class);
         Resources mockResources = mContext.getResources();
         when(mockResources.getDrawable(anyInt(), any())).thenReturn(mockDrawable);
 
-        mContextFixture.putResource(com.android.internal.R.string.RestrictedOnDataTitle, "test1");
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.RestrictedOnDataTitle, "test1");
 
         sst.setNotification(ServiceStateTracker.EVENT_NETWORK_STATE_CHANGED);
         ArgumentCaptor<Notification> notificationArgumentCaptor =
@@ -1859,8 +1883,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                     LteVopsSupportInfo.LTE_STATUS_NOT_AVAILABLE);
         NetworkRegistrationInfo dataResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
-                state, dataRat, 0, false,
-                null, cid, 1, false, false, false, lteVopsSupportInfo, false);
+                state, dataRat, 0, false, null, cid, getPlmnFromCellIdentity(cid),
+                1, false, false, false, lteVopsSupportInfo, false);
         sst.mPollingContext[0] = 2;
         // update data reg state to be in service
         sst.sendMessage(sst.obtainMessage(
@@ -1870,7 +1894,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         NetworkRegistrationInfo voiceResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_CS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 state, voiceRat, 0, false,
-                null, cid, false, 0, 0, 0);
+                null, cid, getPlmnFromCellIdentity(cid), false, 0, 0, 0);
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_CS_CELLULAR_REGISTRATION,
                 new AsyncResult(sst.mPollingContext, voiceResult, null)));
@@ -1887,8 +1911,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // PS WWAN
         NetworkRegistrationInfo dataResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
-                state, dataRat, 0, false,
-                null, cid, 1, false, false, false, lteVopsSupportInfo, false);
+                state, dataRat, 0, false, null, cid, getPlmnFromCellIdentity(cid),
+                1, false, false, false, lteVopsSupportInfo, false);
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_PS_CELLULAR_REGISTRATION,
                 new AsyncResult(sst.mPollingContext, dataResult, null)));
@@ -1897,8 +1921,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // CS WWAN
         NetworkRegistrationInfo voiceResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_CS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
-                state, voiceRat, 0, false,
-                null, cid, false, 0, 0, 0);
+                state, voiceRat, 0, false, null, cid, getPlmnFromCellIdentity(cid), false, 0, 0, 0);
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_CS_CELLULAR_REGISTRATION,
                 new AsyncResult(sst.mPollingContext, voiceResult, null)));
@@ -1908,7 +1931,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         NetworkRegistrationInfo dataIwlanResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WLAN,
                 iwlanState, iwlanDataRat, 0, false,
-                null, null, 1, false, false, false, lteVopsSupportInfo, false);
+                null, null, "", 1, false, false, false, lteVopsSupportInfo, false);
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_PS_IWLAN_REGISTRATION,
                 new AsyncResult(sst.mPollingContext, dataIwlanResult, null)));
@@ -2022,11 +2045,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         NetworkRegistrationInfo dataResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME, TelephonyManager.NETWORK_TYPE_LTE,
-                0, false, null, cellId, 1, false, false, false, lteVopsSupportInfo, false);
+                0, false, null, cellId, getPlmnFromCellIdentity(cellId), 1, false, false, false,
+                lteVopsSupportInfo, false);
         NetworkRegistrationInfo voiceResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_CS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME, TelephonyManager.NETWORK_TYPE_LTE,
-                0, false, null, cellId, false, 0, 0, 0);
+                0, false, null, cellId, getPlmnFromCellIdentity(cellId), false, 0, 0, 0);
         sst.mPollingContext[0] = 2;
         // update data reg state to be in service
         sst.sendMessage(sst.obtainMessage(
@@ -2097,12 +2121,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         NetworkRegistrationInfo dataResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_NOT_REGISTERED_OR_SEARCHING,
-                TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, 1, false, false,
+                TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, "", 1, false, false,
                 false, lteVopsSupportInfo, false);
         NetworkRegistrationInfo voiceResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_CS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_NOT_REGISTERED_OR_SEARCHING,
-                TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, false, 0, 0, 0);
+                TelephonyManager.NETWORK_TYPE_UNKNOWN, 0, false, null, null, "", false, 0, 0, 0);
         sst.mPollingContext[0] = 2;
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_PS_CELLULAR_REGISTRATION,
@@ -2292,7 +2316,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         NetworkRegistrationInfo dataResult = new NetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME, TelephonyManager.NETWORK_TYPE_LTE,
-                0, false, null, cellId, 1, false, false, false, lteVopsSupportInfo, false);
+                0, false, null, cellId, "00101", 1, false, false, false, lteVopsSupportInfo, false);
         sst.mPollingContext[0] = 2;
 
         sst.sendMessage(sst.obtainMessage(
@@ -2302,7 +2326,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 NetworkRegistrationInfo.DOMAIN_CS, AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME,
                 TelephonyManager.NETWORK_TYPE_LTE, 0,
-                false, null, cellId, false, 0, 0, 0);
+                false, null, cellId, "00101", false, 0, 0, 0);
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_CS_CELLULAR_REGISTRATION,
                 new AsyncResult(sst.mPollingContext, voiceResult, null)));
@@ -2321,8 +2345,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         dataResult = new NetworkRegistrationInfo(NetworkRegistrationInfo.DOMAIN_PS,
                 AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME,
-                TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, 1, false, false, false,
-                lteVopsSupportInfo, false);
+                TelephonyManager.NETWORK_TYPE_LTE, 0, false, null, cellId, "00101",
+                1, false, false, false, lteVopsSupportInfo, false);
         sst.mPollingContext[0] = 1;
         sst.sendMessage(sst.obtainMessage(
                 ServiceStateTracker.EVENT_POLL_STATE_PS_CELLULAR_REGISTRATION,
@@ -2368,9 +2392,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Plmn should be shown, and the string is "Emergency call only"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_EMERGENCY_CALL);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2392,9 +2416,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Plmn should be shown, and the string is "No service"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2415,9 +2439,9 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Plmn should be shown, and the string is "No service"
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
                 .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2442,12 +2466,12 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // Only spn should be shown
         String spn = mBundle.getString(CarrierConfigManager.KEY_CARRIER_NAME_STRING);
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_SPN))
+        assertThat(b.getString(TelephonyManager.EXTRA_SPN))
                 .isEqualTo(String.format(WIFI_CALLING_VOICE_FORMAT, spn));
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
-        assertThat(b.getString(TelephonyIntents.EXTRA_DATA_SPN))
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_SPN)).isTrue();
+        assertThat(b.getString(TelephonyManager.EXTRA_DATA_SPN))
                 .isEqualTo(String.format(WIFI_CALLING_DATA_FORMAT, spn));
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isFalse();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isFalse();
     }
 
     @Test
@@ -2476,10 +2500,10 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         String plmn = mBundle.getStringArray(CarrierConfigManager.KEY_PNN_OVERRIDE_STRING_ARRAY)[0];
         plmn = plmn.split("\\s*,\\s*")[0];
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_PLMN))
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
                 .isEqualTo(String.format(WIFI_CALLING_VOICE_FORMAT, plmn));
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isFalse();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_SPN)).isFalse();
     }
 
     @Test
@@ -2505,10 +2529,10 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         String plmn = mBundle.getStringArray(CarrierConfigManager.KEY_PNN_OVERRIDE_STRING_ARRAY)[0];
         plmn = plmn.split("\\s*,\\s*")[0];
         Bundle b = getExtrasFromLastSpnUpdateIntent();
-        assertThat(b.getString(TelephonyIntents.EXTRA_SPN)).isEqualTo(spn);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_SPN)).isTrue();
-        assertThat(b.getString(TelephonyIntents.EXTRA_PLMN)).isEqualTo(plmn);
-        assertThat(b.getBoolean(TelephonyIntents.EXTRA_SHOW_PLMN)).isTrue();
+        assertThat(b.getString(TelephonyManager.EXTRA_SPN)).isEqualTo(spn);
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_SPN)).isTrue();
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN)).isEqualTo(plmn);
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     @Test
@@ -2516,13 +2540,13 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // set up unaffected locale (US) and clear the resource
         doReturn("us").when(mLocaleTracker).getCurrentCountry();
         mContextFixture.putStringArrayResource(
-                com.android.internal.R.array.config_display_no_service_when_sim_unready,
+                com.android.telephony.resources.R.array.config_display_no_service_when_sim_unready,
                 new String[0]);
         assertFalse(sst.shouldForceDisplayNoService());
 
         // set up the resource to include Germany
         mContextFixture.putStringArrayResource(
-                com.android.internal.R.array.config_display_no_service_when_sim_unready,
+                com.android.telephony.resources.R.array.config_display_no_service_when_sim_unready,
                 new String[]{"de"});
         doReturn("us").when(mLocaleTracker).getCurrentCountry();
         assertFalse(sst.shouldForceDisplayNoService());

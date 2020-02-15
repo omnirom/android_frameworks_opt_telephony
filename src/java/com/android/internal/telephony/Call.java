@@ -17,9 +17,9 @@
 package com.android.internal.telephony;
 
 import android.compat.annotation.UnsupportedAppUsage;
-import com.android.telephony.Rlog;
 
 import com.android.ims.internal.ConferenceParticipant;
+import com.android.telephony.Rlog;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,6 +102,8 @@ public abstract class Call {
     @UnsupportedAppUsage
     public abstract void hangup() throws CallStateException;
 
+    public abstract void hangup(@android.telecom.Call.RejectReason int rejectReason)
+            throws CallStateException;
 
     /**
      * hasConnection

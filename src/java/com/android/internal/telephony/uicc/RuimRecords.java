@@ -22,7 +22,6 @@ import android.content.res.Resources;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.sysprop.TelephonyProperties;
-import com.android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
@@ -35,7 +34,9 @@ import com.android.internal.telephony.MccTable;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.cdma.sms.UserData;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
+import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.util.BitwiseInputStream;
+import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -858,8 +859,9 @@ public class RuimRecords extends IccRecords {
     protected void onAllRecordsLoaded() {
         if (DBG) log("record load complete");
 
-        Resources resource = Resources.getSystem();
-        if (resource.getBoolean(com.android.internal.R.bool.config_use_sim_language_file)) {
+        Resources resource = TelephonyResourceUtils.getTelephonyResources(mContext);
+        if (resource.getBoolean(
+                com.android.telephony.resources.R.bool.config_use_sim_language_file)) {
             setSimLanguage(mEFli, mEFpl);
         }
 

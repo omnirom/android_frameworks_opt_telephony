@@ -84,13 +84,10 @@ import android.util.Pair;
 
 import androidx.test.filters.FlakyTest;
 
-import com.android.internal.R;
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.ISub;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.TelephonyTest;
-import com.android.server.pm.PackageManagerService;
-import com.android.server.pm.permission.PermissionManagerService;
 
 import org.junit.After;
 import org.junit.Before;
@@ -145,10 +142,6 @@ public class DcTrackerTest extends TelephonyTest {
     ApnContext mApnContext;
     @Mock
     DataConnection mDataConnection;
-    @Mock
-    PackageManagerService mMockPackageManager;
-    @Mock
-    PermissionManagerService mMockPermissionManager;
     @Mock
     Handler mHandler;
     @Mock
@@ -472,21 +465,22 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn("fake.action_attached").when(mPhone).getActionAttached();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
+        mContextFixture.putStringArrayResource(
+                com.android.telephony.resources.R.array.config_mobile_tcp_buffers,
+                new String[]{
+                    "umts:131072,262144,1452032,4096,16384,399360",
+                    "hspa:131072,262144,2441216,4096,16384,399360",
+                    "hsupa:131072,262144,2441216,4096,16384,399360",
+                    "hsdpa:131072,262144,2441216,4096,16384,399360",
+                    "hspap:131072,262144,2441216,4096,16384,399360",
+                    "edge:16384,32768,131072,4096,16384,65536",
+                    "gprs:4096,8192,24576,4096,8192,24576",
+                    "1xrtt:16384,32768,131070,4096,16384,102400",
+                    "evdo:131072,262144,1048576,4096,16384,524288",
+                    "lte:524288,1048576,8388608,262144,524288,4194304"});
 
-        mContextFixture.putStringArrayResource(com.android.internal.R.array.
-                config_mobile_tcp_buffers, new String[]{
-                "umts:131072,262144,1452032,4096,16384,399360",
-                "hspa:131072,262144,2441216,4096,16384,399360",
-                "hsupa:131072,262144,2441216,4096,16384,399360",
-                "hsdpa:131072,262144,2441216,4096,16384,399360",
-                "hspap:131072,262144,2441216,4096,16384,399360",
-                "edge:16384,32768,131072,4096,16384,65536",
-                "gprs:4096,8192,24576,4096,8192,24576",
-                "1xrtt:16384,32768,131070,4096,16384,102400",
-                "evdo:131072,262144,1048576,4096,16384,524288",
-                "lte:524288,1048576,8388608,262144,524288,4194304"});
-
-        mContextFixture.putResource(R.string.config_wwan_data_service_package,
+        mContextFixture.putResource(
+                com.android.telephony.resources.R.string.config_wwan_data_service_package,
                 "com.android.phone");
 
         ((MockContentResolver) mContext.getContentResolver()).addProvider(
@@ -516,11 +510,9 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn(1).when(mIsub).getDefaultDataSubId();
         doReturn(mIsub).when(mBinder).queryLocalInterface(anyString());
         mServiceManagerMockedServices.put("isub", mBinder);
-        mServiceManagerMockedServices.put("package", mMockPackageManager);
-        mServiceManagerMockedServices.put("permissionmgr", mMockPermissionManager);
 
         mContextFixture.putStringArrayResource(
-                com.android.internal.R.array.config_cell_retries_per_error_code,
+                com.android.telephony.resources.R.array.config_cell_retries_per_error_code,
                 new String[]{"36,2"});
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
@@ -977,7 +969,7 @@ public class DcTrackerTest extends TelephonyTest {
         Settings.Global.putInt(resolver, Settings.Global.DEVICE_PROVISIONED, 1);
 
         mContextFixture.putBooleanResource(
-                com.android.internal.R.bool.config_auto_attach_data_on_creation, true);
+                com.android.telephony.resources.R.bool.config_auto_attach_data_on_creation, true);
 
         mSimulatedCommands.setDataCallResult(true, createSetupDataCallResult());
 
