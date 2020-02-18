@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "3329143b_20eb2742",
+        "filename": "src/java/com/android/internal/telephony/PhoneSwitcher.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 1007,
+      "author": {
+        "id": 1001070
+      },
+      "writtenOn": "2020-02-18T18:59:50Z",
+      "side": 1,
+      "message": "so leave the rest as it was",
+      "revId": "6e5b692a78ef6bd433ccc959b254b6020e147c34",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": true
+    }
+  ]
+}
