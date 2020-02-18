@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "90ae0557_21d7459c",
+        "filename": "src/java/com/android/internal/telephony/RadioResponse.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 1998,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2020-02-18T22:22:27Z",
+      "side": 1,
+      "message": "Comment removed by: Max Weninger",
+      "revId": "cd7e8c2a1d4d099ed5a44b1bd18dca118c047684",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": true
+    }
+  ]
+}
