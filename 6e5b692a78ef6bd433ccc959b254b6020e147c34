@@ -16,6 +16,24 @@
       "revId": "6e5b692a78ef6bd433ccc959b254b6020e147c34",
       "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
       "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "008b3eee_af6787d7",
+        "filename": "src/java/com/android/internal/telephony/PhoneSwitcher.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 1007,
+      "author": {
+        "id": 1000026
+      },
+      "writtenOn": "2020-02-18T22:20:16Z",
+      "side": 1,
+      "message": "yeah - can stay private as before if the API only needs getSubIdFromNetworkRequest",
+      "parentUuid": "3329143b_20eb2742",
+      "revId": "6e5b692a78ef6bd433ccc959b254b6020e147c34",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55",
+      "unresolved": true
     }
   ]
 }
