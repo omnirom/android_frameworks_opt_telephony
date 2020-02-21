@@ -300,7 +300,7 @@ public class TransportManager extends Handler {
     }
 
     private static boolean areNetworksValid(QualifiedNetworks networks) {
-        if (networks.qualifiedNetworks == null) {
+        if (networks.qualifiedNetworks == null || networks.qualifiedNetworks.length == 0) {
             return false;
         }
         for (int network : networks.qualifiedNetworks) {
