@@ -36,6 +36,7 @@ import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Binder;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.os.UserManager;
 import android.provider.Telephony;
@@ -200,11 +201,21 @@ public class IccSmsInterfaceManager {
                             if (mPhone.getPhoneId() == intent.getIntExtra(
                                     CarrierConfigManager.EXTRA_SLOT_INDEX,
                                     SubscriptionManager.INVALID_SIM_SLOT_INDEX)) {
-                                mCellBroadcastRangeManager.updateRanges();
+                                new Thread(() -> {
+                                    log("Carrier config changed. Update ranges.");
+                                    mCellBroadcastRangeManager.updateRanges();
+                                }).start();
                             }
                         }
                     }
                 }, new IntentFilter(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED));
+    }
+
+    private void enforceNotOnHandlerThread(String methodName) {
+        if (Looper.myLooper() == mHandler.getLooper()) {
+            throw new RuntimeException("This method " + methodName + " will deadlock if called from"
+                    + " the handler's thread.");
+        }
     }
 
     protected void markMessagesAsRead(ArrayList<byte[]> messages) {
@@ -276,6 +287,7 @@ public class IccSmsInterfaceManager {
                 "("+ Arrays.toString(pdu) + ")");
         enforceReceiveAndSend("Updating message on Icc");
         enforceAccessMessageOnICC("Updating message on Icc");
+        enforceNotOnHandlerThread("updateMessageOnIccEf");
         if (mAppOps.noteOp(AppOpsManager.OPSTR_WRITE_ICC_SMS, Binder.getCallingUid(),
                 callingPackage) != AppOpsManager.MODE_ALLOWED) {
             return false;
@@ -335,6 +347,7 @@ public class IccSmsInterfaceManager {
                 "pdu=("+ Arrays.toString(pdu) +
                 "), smsc=(" + Arrays.toString(smsc) +")");
         enforceReceiveAndSend("Copying message to Icc");
+        enforceNotOnHandlerThread("copyMessageToIccEf");
         if (mAppOps.noteOp(AppOpsManager.OPSTR_WRITE_ICC_SMS, Binder.getCallingUid(),
                 callingPackage) != AppOpsManager.MODE_ALLOWED) {
             return false;
@@ -374,6 +387,7 @@ public class IccSmsInterfaceManager {
                 Manifest.permission.RECEIVE_SMS,
                 "Reading messages from Icc");
         enforceAccessMessageOnICC("Reading messages from Icc");
+        enforceNotOnHandlerThread("getAllMessagesFromIccEf");
         if (mAppOps.noteOp(AppOpsManager.OPSTR_READ_ICC_SMS, Binder.getCallingUid(),
                 callingPackage) != AppOpsManager.MODE_ALLOWED) {
             return new ArrayList<SmsRawData>();
@@ -881,6 +895,7 @@ public class IccSmsInterfaceManager {
                 callingPackage, "getSmscAddressFromIccEf")) {
             return null;
         }
+        enforceNotOnHandlerThread("getSmscAddressFromIccEf");
         synchronized (mLock) {
             mSmsc = null;
             Message response = mHandler.obtainMessage(EVENT_GET_SMSC_DONE);
@@ -1156,9 +1171,10 @@ public class IccSmsInterfaceManager {
 
     @UnsupportedAppUsage
     private boolean setCellBroadcastConfig(SmsBroadcastConfigInfo[] configs) {
-        if (DBG)
+        if (DBG) {
             log("Calling setGsmBroadcastConfig with " + configs.length + " configurations");
-
+        }
+        enforceNotOnHandlerThread("setCellBroadcastConfig");
         synchronized (mLock) {
             Message response = mHandler.obtainMessage(EVENT_SET_BROADCAST_CONFIG_DONE);
 
@@ -1176,9 +1192,11 @@ public class IccSmsInterfaceManager {
     }
 
     private boolean setCellBroadcastActivation(boolean activate) {
-        if (DBG)
+        if (DBG) {
             log("Calling setCellBroadcastActivation(" + activate + ')');
+        }
 
+        enforceNotOnHandlerThread("setCellBroadcastConfig");
         synchronized (mLock) {
             Message response = mHandler.obtainMessage(EVENT_SET_BROADCAST_ACTIVATION_DONE);
 
@@ -1197,9 +1215,11 @@ public class IccSmsInterfaceManager {
 
     @UnsupportedAppUsage
     private boolean setCdmaBroadcastConfig(CdmaSmsBroadcastConfigInfo[] configs) {
-        if (DBG)
+        if (DBG) {
             log("Calling setCdmaBroadcastConfig with " + configs.length + " configurations");
+        }
 
+        enforceNotOnHandlerThread("setCdmaBroadcastConfig");
         synchronized (mLock) {
             Message response = mHandler.obtainMessage(EVENT_SET_BROADCAST_CONFIG_DONE);
 
@@ -1217,9 +1237,11 @@ public class IccSmsInterfaceManager {
     }
 
     private boolean setCdmaBroadcastActivation(boolean activate) {
-        if (DBG)
+        if (DBG) {
             log("Calling setCdmaBroadcastActivation(" + activate + ")");
+        }
 
+        enforceNotOnHandlerThread("setCdmaBroadcastActivation");
         synchronized (mLock) {
             Message response = mHandler.obtainMessage(EVENT_SET_BROADCAST_ACTIVATION_DONE);
 

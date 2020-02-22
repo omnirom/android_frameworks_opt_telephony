@@ -390,6 +390,7 @@ public abstract class TelephonyTest {
     protected void setUp(String tag) throws Exception {
         TAG = tag;
         MockitoAnnotations.initMocks(this);
+        TelephonyManager.disableServiceHandleCaching();
 
         mPhones = new Phone[] {mPhone};
         mImsCallProfile = new ImsCallProfile();
@@ -548,10 +549,10 @@ public abstract class TelephonyTest {
         doReturn(mPhone).when(mInboundSmsHandler).getPhone();
         doReturn(mImsCallProfile).when(mImsCall).getCallProfile();
         doReturn(mIBinder).when(mIIntentSender).asBinder();
-        doReturn(mIIntentSender).when(mIActivityManager).getIntentSender(anyInt(),
-                nullable(String.class), nullable(IBinder.class), nullable(String.class), anyInt(),
-                nullable(Intent[].class), nullable(String[].class), anyInt(),
-                nullable(Bundle.class), anyInt());
+        doReturn(mIIntentSender).when(mIActivityManager).getIntentSenderWithFeature(anyInt(),
+                nullable(String.class), nullable(String.class), nullable(IBinder.class),
+                nullable(String.class), anyInt(), nullable(Intent[].class),
+                nullable(String[].class), anyInt(), nullable(Bundle.class), anyInt());
         doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
         doReturn(true).when(mTelephonyManager).isDataCapable();
 
@@ -658,6 +659,7 @@ public abstract class TelephonyTest {
         sharedPreferences.edit().clear().commit();
 
         restoreInstances();
+        TelephonyManager.enableServiceHandleCaching();
     }
 
     protected static void logd(String s) {
