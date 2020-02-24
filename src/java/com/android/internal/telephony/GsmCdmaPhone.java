@@ -104,7 +104,6 @@ import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.UiccSlot;
 import com.android.internal.telephony.util.ArrayUtils;
-import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.telephony.Rlog;
 import com.android.internal.telephony.util.QtiImsUtils;
 
@@ -1696,8 +1695,8 @@ public class GsmCdmaPhone extends Phone {
         }
 
         if (ret == null || ret.length() == 0) {
-            return TelephonyResourceUtils.getTelephonyResourceContext(mContext).getText(
-                com.android.telephony.resources.R.string.defaultVoiceMailAlphaTag).toString();
+            return mContext.getText(
+                com.android.internal.R.string.defaultVoiceMailAlphaTag).toString();
         }
 
         return ret;
@@ -2072,15 +2071,15 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
-    public void getCallForwardingOption(int commandInterfaceCFReason,
-            int commandInterfaceServiceClass, Message onComplete) {
+    public void getCallForwardingOption(int commandInterfaceCFReason, int serviceClass,
+            Message onComplete) {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
                     && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
                     || imsPhone.isUtEnabled())) {
-                imsPhone.getCallForwardingOption(commandInterfaceCFReason,
-                            commandInterfaceServiceClass, onComplete);
+                imsPhone.getCallForwardingOption(commandInterfaceCFReason, serviceClass,
+                        onComplete);
                 return;
             }
 
@@ -2092,8 +2091,7 @@ public class GsmCdmaPhone extends Phone {
                 } else {
                     resp = onComplete;
                 }
-                mCi.queryCallForwardStatus(commandInterfaceCFReason,
-                        commandInterfaceServiceClass, null, resp);
+                mCi.queryCallForwardStatus(commandInterfaceCFReason, serviceClass, null, resp);
             }
         } else {
             loge("getCallForwardingOption: not possible in CDMA without IMS");
@@ -2106,18 +2104,15 @@ public class GsmCdmaPhone extends Phone {
             String dialingNumber,
             int timerSeconds,
             Message onComplete) {
-        setCallForwardingOption(commandInterfaceCFAction,
-                commandInterfaceCFReason, dialingNumber,
-                CommandsInterface.SERVICE_CLASS_VOICE,
-                timerSeconds, onComplete);
+        setCallForwardingOption(commandInterfaceCFAction, commandInterfaceCFReason,
+                dialingNumber, CommandsInterface.SERVICE_CLASS_VOICE, timerSeconds, onComplete);
     }
-
 
     @Override
     public void setCallForwardingOption(int commandInterfaceCFAction,
             int commandInterfaceCFReason,
             String dialingNumber,
-            int commandInterfaceServiceClass,
+            int serviceClass,
             int timerSeconds,
             Message onComplete) {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
@@ -2126,8 +2121,8 @@ public class GsmCdmaPhone extends Phone {
                     && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
                     || imsPhone.isUtEnabled())) {
                 imsPhone.setCallForwardingOption(commandInterfaceCFAction,
-                        commandInterfaceCFReason, dialingNumber,
-                        commandInterfaceServiceClass, timerSeconds, onComplete);
+                        commandInterfaceCFReason, dialingNumber, serviceClass,
+                        timerSeconds, onComplete);
                 return;
             }
 
@@ -2144,7 +2139,7 @@ public class GsmCdmaPhone extends Phone {
                 }
                 mCi.setCallForward(commandInterfaceCFAction,
                         commandInterfaceCFReason,
-                        commandInterfaceServiceClass,
+                        serviceClass,
                         dialingNumber,
                         timerSeconds,
                         resp);
@@ -2673,9 +2668,9 @@ public class GsmCdmaPhone extends Phone {
             case EVENT_CARRIER_CONFIG_CHANGED:
                 // Only check for the voice radio tech if it not going to be updated by the voice
                 // registration changes.
-                if (!TelephonyResourceUtils.getTelephonyResources(mContext)
-                        .getBoolean(com.android.telephony.resources.R.bool
-                        .config_switch_phone_on_voice_reg_state_change)) {
+                if (!mContext.getResources().getBoolean(
+                        com.android.internal.R.bool
+                                .config_switch_phone_on_voice_reg_state_change)) {
                     mCi.getVoiceRadioTechnology(obtainMessage(EVENT_REQUEST_VOICE_RADIO_TECH_DONE));
                 }
                 // Force update IMS service if it is available, if it isn't the config will be
@@ -3327,9 +3322,8 @@ public class GsmCdmaPhone extends Phone {
     @UnsupportedAppUsage
     private boolean isManualSelProhibitedInGlobalMode() {
         boolean isProhibited = false;
-        final String configString = TelephonyResourceUtils.getTelephonyResources(getContext())
-                .getString(com.android.telephony.resources.R.string
-                        .prohibit_manual_network_selection_in_gobal_mode);
+        final String configString = getContext().getResources().getString(com.android.internal
+                .R.string.prohibit_manual_network_selection_in_gobal_mode);
 
         if (!TextUtils.isEmpty(configString)) {
             String[] configArray = configString.split(";");

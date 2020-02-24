@@ -53,7 +53,6 @@ import android.compat.annotation.UnsupportedAppUsage;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.net.NetworkStats;
 import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.AsyncResult;
@@ -117,7 +116,6 @@ import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.internal.telephony.util.QtiImsUtils;
-import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.telephony.Rlog;
 
@@ -1024,14 +1022,14 @@ public class ImsPhone extends ImsPhoneBase {
     public void getCallForwardingOption(int commandInterfaceCFReason,
             Message onComplete) {
         getCallForwardingOption(commandInterfaceCFReason,
-            SERVICE_CLASS_VOICE, onComplete);
+                SERVICE_CLASS_VOICE, onComplete);
     }
 
     @Override
-    public void getCallForwardingOption(int commandInterfaceCFReason,
-            int commandInterfaceServiceClass, Message onComplete) {
+    public void getCallForwardingOption(int commandInterfaceCFReason, int serviceClass,
+            Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "getCallForwardingOption reason=" + commandInterfaceCFReason +
-                "serviceclass =" + commandInterfaceServiceClass);
+                "serviceclass =" + serviceClass);
         if (isValidCommandInterfaceCFReason(commandInterfaceCFReason)) {
             if (DBG) Rlog.d(LOG_TAG, "requesting call forwarding query.");
             Message resp;
@@ -1060,6 +1058,7 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @UnsupportedAppUsage
+    @Override
     public void setCallForwardingOption(int commandInterfaceCFAction,
             int commandInterfaceCFReason,
             String dialingNumber,
@@ -1227,6 +1226,8 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     public void sendUSSD(String ussdString, Message response) {
+        Rlog.d(LOG_TAG, "sendUssd ussdString = " + ussdString);
+        mLastDialString = ussdString;
         mCT.sendUSSD(ussdString, response);
     }
 
@@ -1810,12 +1811,11 @@ public class ImsPhone extends ImsPhoneBase {
         }
 
         final String[] wfcOperatorErrorAlertMessages =
-                TelephonyResourceUtils.getTelephonyResources(mContext).getStringArray(
-                        com.android.telephony.resources.R.array.wfcOperatorErrorAlertMessages);
+                mContext.getResources().getStringArray(
+                        com.android.internal.R.array.wfcOperatorErrorAlertMessages);
         final String[] wfcOperatorErrorNotificationMessages =
-                TelephonyResourceUtils.getTelephonyResources(mContext).getStringArray(
-                        com.android.telephony.resources.R.array
-                            .wfcOperatorErrorNotificationMessages);
+                mContext.getResources().getStringArray(
+                        com.android.internal.R.array.wfcOperatorErrorNotificationMessages);
 
         for (int i = 0; i < wfcOperatorErrorCodes.length; i++) {
             String[] codes = wfcOperatorErrorCodes[i].split("\\|");
@@ -1844,8 +1844,8 @@ public class ImsPhone extends ImsPhoneBase {
                 }
             }
 
-            final CharSequence title = TelephonyResourceUtils.getTelephonyResourceContext(mContext)
-                    .getText(com.android.telephony.resources.R.string.wfcRegErrorTitle);
+            final CharSequence title = mContext.getText(
+                    com.android.internal.R.string.wfcRegErrorTitle);
 
             int idx = Integer.parseInt(codes[1]);
             if (idx < 0
@@ -1907,11 +1907,6 @@ public class ImsPhone extends ImsPhoneBase {
     @VisibleForTesting
     public PowerManager.WakeLock getWakeLock() {
         return mWakeLock;
-    }
-
-    @Override
-    public NetworkStats getVtDataUsage(boolean perUidStats) {
-        return mCT.getVtDataUsage(perUidStats);
     }
 
     /**

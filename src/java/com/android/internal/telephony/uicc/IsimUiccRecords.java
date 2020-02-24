@@ -363,6 +363,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
                 mRecordsToLoad++;
 
             default:
+                mLoaded.set(false);
                 fetchIsimRecords();
                 break;
         }
