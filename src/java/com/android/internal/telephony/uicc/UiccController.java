@@ -31,6 +31,7 @@ import android.os.Message;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.storage.StorageManager;
+import android.os.SystemProperties;
 import android.preference.PreferenceManager;
 import android.telephony.CarrierConfigManager;
 import android.telephony.Rlog;
@@ -159,6 +160,7 @@ public class UiccController extends Handler {
     // SharedPreferences key for saving the default euicc card ID
     private static final String DEFAULT_CARD = "default_card";
 
+    static final String PROPERTY_PHYSICAL_SIM_SLOT_COUNT = "persist.radio.physical.slot.count";
     @UnsupportedAppUsage
     private static final Object mLock = new Object();
     @UnsupportedAppUsage
@@ -199,6 +201,8 @@ public class UiccController extends Handler {
         }
         int numPhysicalSlots = c.getResources().getInteger(
                 com.android.internal.R.integer.config_num_physical_slots);
+        numPhysicalSlots = SystemProperties.getInt(
+                PROPERTY_PHYSICAL_SIM_SLOT_COUNT, numPhysicalSlots);
         // Minimum number of physical slot count should be equals to or greater than phone count,
         // if it is less than phone count use phone count as physical slot count.
         if (numPhysicalSlots < mCis.length) {
