@@ -2429,7 +2429,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
             if (!isEmergencyCallInList) {
                 if (mIsEcmTimerCanceled) {
-                    handleEcmTimer(ImsPhone.RESTART_ECM_TIMER);
+                    handleEcmTimer(EcbmHandler.RESTART_ECM_TIMER);
                 }
                 mIsInEmergencyCall = false;
                 mPhone.sendEmergencyCallStateChange(false);
