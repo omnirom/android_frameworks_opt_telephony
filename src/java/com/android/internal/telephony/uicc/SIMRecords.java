@@ -1515,6 +1515,7 @@ public class SIMRecords extends IccRecords {
 
         mFh.loadEFTransparent(EF_ICCID, obtainMessage(EVENT_GET_ICCID_DONE));
         mRecordsToLoad++;
+        mEssentialRecordsToLoad++;
     }
 
     private void loadEfLiAndEfPl() {
@@ -1538,7 +1539,9 @@ public class SIMRecords extends IccRecords {
     }
 
     private void fetchEssentialSimRecords() {
-        if (DBG) log("fetchEssentialSimRecords " + mRecordsToLoad);
+        if (DBG) log("fetchEssentialSimRecords: mRecordsToLoad = " + mRecordsToLoad
+                + " mEssentialRecordsToLoad = " + mEssentialRecordsToLoad);
+        mEssentialRecordsListenerNotified = false;
 
         mCi.getIMSIForApp(mParentApp.getAid(), obtainMessage(EVENT_GET_IMSI_DONE));
         mRecordsToLoad++;
