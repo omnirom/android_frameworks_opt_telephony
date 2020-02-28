@@ -197,6 +197,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         if (mSubscriptionId != newSubscriptionId) {
             if (DBG) log("onSubIdChange " + mSubscriptionId + "->" + newSubscriptionId);
             mSubscriptionId = newSubscriptionId;
+            if (!mIsDefault && mIsActive) {
+                onActivePhoneSwitch();
+            }
             setCapabilityFilter(makeNetworkFilter(mSubscriptionId));
         }
     }
