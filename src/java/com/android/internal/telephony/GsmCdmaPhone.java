@@ -94,6 +94,7 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.IccException;
 import com.android.internal.telephony.uicc.IccRecords;
+import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.IccVmNotSupportedException;
 import com.android.internal.telephony.uicc.IsimRecords;
 import com.android.internal.telephony.uicc.IsimUiccRecords;
@@ -4154,6 +4155,7 @@ public class GsmCdmaPhone extends Phone {
         String iccId = slot.getIccId();
         if (iccId == null) return;
 
+        iccId = IccUtils.stripTrailingFs(iccId);
         SubscriptionInfo info = SubscriptionController.getInstance().getSubInfoForIccId(iccId);
 
         // If info is null, it could be a new subscription. By default we enable it.
