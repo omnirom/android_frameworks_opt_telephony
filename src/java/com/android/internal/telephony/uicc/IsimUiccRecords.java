@@ -154,16 +154,9 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         }
     }
 
-    private void fetchEssentialIsimRecords() {
-        //NOP: No essential ISim records identified.
-    }
-
     @UnsupportedAppUsage
     protected void fetchIsimRecords() {
         mRecordsRequested = true;
-        if (DBG) log("fetchIsimRecords " + mRecordsToLoad);
-
-        fetchEssentialIsimRecords();
 
         mFh.loadEFTransparent(EF_IMPI, obtainMessage(
                 IccRecords.EVENT_GET_ICC_RECORD_DONE, new EfIsimImpiLoaded()));
@@ -296,18 +289,13 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         mRecordsToLoad -= 1;
         if (DBG) log("onRecordLoaded " + mRecordsToLoad + " requested: " + mRecordsRequested);
 
-        if (getEssentialRecordsLoaded() && !mEssentialRecordsListenerNotified) {
-            onAllEssentialRecordsLoaded();
-        }
-
         if (getRecordsLoaded()) {
             onAllRecordsLoaded();
         } else if (getLockedRecordsLoaded() || getNetworkLockedRecordsLoaded()) {
             onLockedAllRecordsLoaded();
-        } else if (mRecordsToLoad < 0 || mEssentialRecordsToLoad < 0) {
+        } else if (mRecordsToLoad < 0) {
             loge("recordsToLoad <0, programmer error suspected");
             mRecordsToLoad = 0;
-            mEssentialRecordsToLoad = 0;
         }
     }
 
@@ -325,15 +313,8 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
     }
 
     @Override
-    protected void onAllEssentialRecordsLoaded() {
-        if (DBG) log("Essential record load complete");
-        mEssentialRecordsListenerNotified = true;
-        mEssentialRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
-    }
-
-    @Override
     protected void onAllRecordsLoaded() {
-        if (DBG) log("record load complete");
+       if (DBG) log("record load complete");
         mLoaded.set(true);
         mRecordsLoadedRegistrants.notifyRegistrants(new AsyncResult(null, null, null));
     }
