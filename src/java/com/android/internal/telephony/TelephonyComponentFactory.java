@@ -456,7 +456,7 @@ public class TelephonyComponentFactory {
     public PhoneSwitcher makePhoneSwitcher(int maxDataAttachModemCount, Context context,
             Looper looper) {
         Rlog.i(TAG, "makePhoneSwitcher");
-        return new PhoneSwitcher(maxDataAttachModemCount, context, looper);
+        return PhoneSwitcher.make(maxDataAttachModemCount, context, looper);
     }
 
     public RIL makeRIL(Context context, int preferredNetworkType,

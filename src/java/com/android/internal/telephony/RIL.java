@@ -113,7 +113,6 @@ import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
 import com.android.internal.telephony.uicc.IccUtils;
-import com.android.internal.telephony.util.TelephonyResourceUtils;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.telephony.Rlog;
 
@@ -5141,6 +5140,46 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void getBarringInfo(Message result) {
+        IRadio radioProxy = getRadioProxy(result);
+        if (radioProxy == null) {
+            Rlog.e(RIL.RILJ_LOG_TAG, "Radio Proxy object is null!");
+            if (result != null) {
+                AsyncResult.forMessage(result, null,
+                        CommandException.fromRilErrno(RADIO_NOT_AVAILABLE));
+                result.sendToTarget();
+            }
+        }
+
+        if (mRadioVersion.less(RADIO_HAL_VERSION_1_5)) {
+            if (result != null) {
+                AsyncResult.forMessage(result, null,
+                        CommandException.fromRilErrno(REQUEST_NOT_SUPPORTED));
+                result.sendToTarget();
+            }
+            return;
+        }
+
+        android.hardware.radio.V1_5.IRadio radioProxy15 =
+                (android.hardware.radio.V1_5.IRadio) radioProxy;
+        if (radioProxy15 != null) {
+            RILRequest rr = obtainRequest(RIL_REQUEST_GET_BARRING_INFO, result,
+                    mRILDefaultWorkSource);
+
+            if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+
+            try {
+                radioProxy15.getBarringInfo(rr.mSerial);
+            } catch (RemoteException | RuntimeException e) {
+                handleRadioProxyExceptionForRR(rr, "getBarringInfo", e);
+            }
+        }
+    }
+
     //***** Private Methods
 
     /**
@@ -5549,8 +5588,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
         // default to UNKNOWN so we fail fast.
         int raf = RadioAccessFamily.RAF_UNKNOWN;
 
-        String rafString = TelephonyResourceUtils.getTelephonyResources(mContext).getString(
-                com.android.telephony.resources.R.string.config_radio_access_family);
+        String rafString = mContext.getResources().getString(
+                com.android.internal.R.string.config_radio_access_family);
         if (!TextUtils.isEmpty(rafString)) {
             raf = RadioAccessFamily.rafTypeFromString(rafString);
         }
@@ -6038,6 +6077,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "RIL_REQUEST_SET_SYSTEM_SELECTION_CHANNELS";
             case RIL_REQUEST_CDMA_SEND_SMS_EXPECT_MORE:
                 return "RIL_REQUEST_CDMA_SEND_SMS_EXPECT_MORE";
+            case RIL_REQUEST_GET_BARRING_INFO:
+                return "RIL_REQUEST_GET_BARRING_INFO";
             default: return "<unknown request>";
         }
     }

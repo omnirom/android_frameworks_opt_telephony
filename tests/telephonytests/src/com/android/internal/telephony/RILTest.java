@@ -34,6 +34,7 @@ import static com.android.internal.telephony.RILConstants.RIL_REQUEST_ENTER_SIM_
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_ENTER_SIM_PUK2;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_EXIT_EMERGENCY_CALLBACK_MODE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_ACTIVITY_INFO;
+import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_BARRING_INFO;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_CELL_INFO_LIST;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_CURRENT_CALLS;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_HARDWARE_CONFIG;
@@ -115,6 +116,7 @@ import android.net.InetAddresses;
 import android.net.LinkAddress;
 import android.os.Handler;
 import android.os.IPowerManager;
+import android.os.IThermalService;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PowerManager;
@@ -265,11 +267,11 @@ public class RILTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(RILTest.class.getSimpleName());
-        Context context = new ContextFixture().getTestDouble();
         try {
-            TelephonyDevController.create(context);
+            TelephonyDevController.create();
         } catch (RuntimeException e) {
         }
+        Context context = new ContextFixture().getTestDouble();
         doReturn(true).when(mConnectionManager)
             .isNetworkSupported(ConnectivityManager.TYPE_MOBILE);
         doReturn(mConnectionManager).when(context)
@@ -278,7 +280,7 @@ public class RILTest extends TelephonyTest {
                 .getSystemService(Context.TELEPHONY_SERVICE);
         doReturn(true).when(mTelephonyManager).isDataCapable();
         PowerManager powerManager = new PowerManager(context, mock(IPowerManager.class),
-                new Handler(Looper.myLooper()));
+                mock(IThermalService.class), new Handler(Looper.myLooper()));
         doReturn(powerManager).when(context).getSystemService(Context.POWER_SERVICE);
         doReturn(new ApplicationInfo()).when(context).getApplicationInfo();
 
@@ -1076,6 +1078,23 @@ public class RILTest extends TelephonyTest {
 
         // The wake lock should be released after processed the time out event.
         assertFalse(mRILInstance.getWakeLock(RIL.FOR_WAKELOCK).isHeld());
+    }
+
+    @Test
+    public void testGetBarringInfo() throws Exception {
+        // Not supported on Radio 1.0.
+        mRILUnderTest.getBarringInfo(obtainMessage());
+        verify(mRadioProxy, never()).getBarringInfo(anyInt());
+
+        // Make radio version 1.5 to support the operation.
+        try {
+            replaceInstance(RIL.class, "mRadioVersion", mRILUnderTest, mRadioVersionV15);
+        } catch (Exception e) {
+        }
+        mRILUnderTest.getBarringInfo(obtainMessage());
+        verify(mRadioProxy).getBarringInfo(mSerialNumberCaptor.capture());
+        verifyRILResponse(
+                mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_GET_BARRING_INFO);
     }
 
     @Test
