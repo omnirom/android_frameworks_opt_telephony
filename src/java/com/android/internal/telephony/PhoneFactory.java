@@ -113,7 +113,7 @@ public class PhoneFactory {
             if (!sMadeDefaults) {
                 sContext = context;
                 // create the telephony device controller.
-                TelephonyDevController.create(context);
+                TelephonyDevController.create();
 
                 TelephonyMetrics metrics = TelephonyMetrics.getInstance();
                 metrics.setContext(context);
@@ -175,11 +175,9 @@ public class PhoneFactory {
                 sUiccController = UiccController.make(context);
 
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
-                telephonyComponentFactory.inject(SubscriptionController.class.
-                                getName()).initSubscriptionController(context);
-                telephonyComponentFactory.inject(MultiSimSettingController.class.
-                                getName()).initMultiSimSettingController(context,
-                                SubscriptionController.getInstance());
+                TelephonyComponentFactory.getInstance().inject(SubscriptionController.class.
+                        getName()).initSubscriptionController(context);
+                MultiSimSettingController.init(context, SubscriptionController.getInstance());
 
                 if (context.getPackageManager().hasSystemFeature(
                         PackageManager.FEATURE_TELEPHONY_EUICC)) {
@@ -256,7 +254,8 @@ public class PhoneFactory {
                 int maxActivePhones = sPhoneConfigurationManager
                         .getNumberOfModemsWithSimultaneousDataConnections();
 
-                sPhoneSwitcher = telephonyComponentFactory.inject(PhoneSwitcher.class.getName()).
+                sPhoneSwitcher = TelephonyComponentFactory.getInstance().inject(
+                        PhoneSwitcher.class.getName()).
                         makePhoneSwitcher(maxActivePhones, sContext, Looper.myLooper());
 
                 sProxyController = ProxyController.getInstance(context);
@@ -316,8 +315,10 @@ public class PhoneFactory {
 
         // We always use PHONE_TYPE_CDMA_LTE now.
         if (phoneType == PHONE_TYPE_CDMA) phoneType = PHONE_TYPE_CDMA_LTE;
+        TelephonyComponentFactory injectedComponentFactory =
+                TelephonyComponentFactory.getInstance().inject(GsmCdmaPhone.class.getName());
 
-        return new GsmCdmaPhone(context,
+        return injectedComponentFactory.makePhone(context,
                 sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId, phoneType,
                 TelephonyComponentFactory.getInstance());
     }
