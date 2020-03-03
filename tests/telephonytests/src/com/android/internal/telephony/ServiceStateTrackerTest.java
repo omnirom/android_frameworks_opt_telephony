@@ -150,7 +150,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     private static final int PHONE_ID = 0;
 
-    private static final String CARRIER_NAME_DISPLAY_NO_SERVICE = "no service";
+    private static final String CARRIER_NAME_DISPLAY_NO_SERVICE = "No service";
     private static final String CARRIER_NAME_DISPLAY_EMERGENCY_CALL = "emergency call";
     private static final String WIFI_CALLING_VOICE_FORMAT = "%s wifi calling";
     private static final String WIFI_CALLING_DATA_FORMAT = "%s wifi data";
@@ -2056,8 +2056,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthUpdatedOnDataRegState() throws Exception {
         // Cell ID change should trigger hasLocationChanged.
         CellIdentityLte cellIdentity5 =
-                new CellIdentityLte(1, 1, 5, 1, 5000, "001", "01", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 5, 1, Arrays.asList(1, 2), 5000, "001", "01", "test",
+                        "tst", Collections.emptyList(), null);
 
         sendPhyChanConfigChange(new int[] {10000});
         sendRegStateUpdateForLteCellId(cellIdentity5);
@@ -2068,8 +2068,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthNotUpdatedWhenInvalidInCellIdentity() throws Exception {
         // Cell ID change should trigger hasLocationChanged.
         CellIdentityLte cellIdentityInv =
-                new CellIdentityLte(1, 1, 5, 1, 12345, "001", "01", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 5, 1, Arrays.asList(1, 2), 12345, "001", "01", "test",
+                        "tst", Collections.emptyList(), null);
 
         sendPhyChanConfigChange(new int[] {10000});
         sendRegStateUpdateForLteCellId(cellIdentityInv);
@@ -2080,8 +2080,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthPrefersCarrierAggregationReport() throws Exception {
         // Cell ID change should trigger hasLocationChanged.
         CellIdentityLte cellIdentity10 =
-                new CellIdentityLte(1, 1, 5, 1, 10000, "001", "01", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 5, 1, Arrays.asList(1, 2), 10000, "001", "01", "test",
+                        "tst", Collections.emptyList(), null);
 
         sendPhyChanConfigChange(new int[] {10000, 5000});
         sendRegStateUpdateForLteCellId(cellIdentity10);
@@ -2092,8 +2092,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testPhyChanBandwidthRatchetedOnPhyChanBandwidth() throws Exception {
         // LTE Cell with bandwidth = 10000
         CellIdentityLte cellIdentity10 =
-                new CellIdentityLte(1, 1, 1, 1, 10000, "1", "1", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 1, 1, Arrays.asList(1, 2), 10000, "1", "1", "test",
+                        "tst", Collections.emptyList(), null);
 
         sendRegStateUpdateForLteCellId(cellIdentity10);
         assertTrue(Arrays.equals(new int[] {10000}, sst.mSS.getCellBandwidths()));
@@ -2140,8 +2140,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // Start state: Cell data only LTE + IWLAN
         CellIdentityLte cellIdentity =
-                new CellIdentityLte(1, 1, 5, 1, 5000, "001", "01", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 5, 1, Arrays.asList(1, 2), 5000, "001", "01", "test",
+                        "tst", Collections.emptyList(), null);
         changeRegStateWithIwlan(
                 // WWAN
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME, cellIdentity,
@@ -2296,8 +2296,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         sst.mSS = ss;
 
         CellIdentityLte cellId =
-                new CellIdentityLte(1, 1, 5, 1, 5000, "001", "01", "test", "tst",
-                        Collections.emptyList(), null);
+                new CellIdentityLte(1, 1, 5, 1, Arrays.asList(1, 2), 5000, "001", "01", "test",
+                        "tst", Collections.emptyList(), null);
         LteVopsSupportInfo lteVopsSupportInfo =
                 new LteVopsSupportInfo(LteVopsSupportInfo.LTE_STATUS_NOT_SUPPORTED,
                     LteVopsSupportInfo.LTE_STATUS_NOT_SUPPORTED);
@@ -2356,16 +2356,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         verify(mEriManager, times(1)).loadEriFile();
     }
 
-    private void enableCdnr() {
-        mBundle.putBoolean(
-                CarrierConfigManager.KEY_ENABLE_CARRIER_DISPLAY_NAME_RESOLVER_BOOL, true);
-        sendCarrierConfigUpdate();
-    }
-
     @Test
     public void testUpdateSpnDisplay_noService_displayEmergencyCallOnly() {
-        enableCdnr();
-
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
 
@@ -2388,8 +2380,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     @Test
     public void testUpdateSpnDisplay_noServiceAndEmergencyCallNotAvailable_displayOOS() {
-        enableCdnr();
-
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
 
@@ -2412,8 +2402,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     @Test
     public void testUpdateSpnDisplay_flightMode_displayOOS() {
-        enableCdnr();
-
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
 
@@ -2435,8 +2423,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     @Test
     public void testUpdateSpnDisplay_spnNotEmptyAndWifiCallingEnabled_showSpnOnly() {
-        enableCdnr();
-
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
 
@@ -2467,8 +2453,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testUpdateSpnDisplay_spnEmptyAndWifiCallingEnabled_showPlmnOnly() {
         // set empty service provider name
         mBundle.putString(CarrierConfigManager.KEY_CARRIER_NAME_STRING, "");
-
-        enableCdnr();
+        sendCarrierConfigUpdate();
 
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
@@ -2497,8 +2482,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     @Test
     public void testUpdateSpnDisplay_inServiceNoWifiCalling_showSpnAndPlmn() {
-        enableCdnr();
-
         // GSM phone
         doReturn(true).when(mPhone).isPhoneTypeGsm();
 
@@ -2543,6 +2526,34 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // mock the locale to Germany
         doReturn("de").when(mLocaleTracker).getCurrentCountry();
         assertTrue(sst.shouldForceDisplayNoService());
+    }
+
+    @Test
+    public void testUpdateSpnDisplayLegacy_WlanServiceNoWifiCalling_displayOOS() {
+        mBundle.putBoolean(
+                CarrierConfigManager.KEY_ENABLE_CARRIER_DISPLAY_NAME_RESOLVER_BOOL, false);
+        sendCarrierConfigUpdate();
+
+        // GSM phone
+        doReturn(true).when(mPhone).isPhoneTypeGsm();
+
+        // voice out of service but data in service (connected to IWLAN)
+        doReturn(ServiceState.STATE_OUT_OF_SERVICE).when(mServiceState).getState();
+        doReturn(ServiceState.STATE_IN_SERVICE).when(mServiceState).getDataRegistrationState();
+        doReturn(TelephonyManager.NETWORK_TYPE_IWLAN).when(mServiceState).getDataNetworkType();
+        sst.mSS = mServiceState;
+
+        // wifi-calling is disable
+        doReturn(false).when(mPhone).isWifiCallingEnabled();
+
+        // update the spn
+        sst.updateSpnDisplay();
+
+        // Plmn should be shown, and the string is "No service"
+        Bundle b = getExtrasFromLastSpnUpdateIntent();
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
+                .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
     }
 
     private Bundle getExtrasFromLastSpnUpdateIntent() {

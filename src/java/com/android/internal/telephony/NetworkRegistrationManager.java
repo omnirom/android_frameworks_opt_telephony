@@ -217,9 +217,6 @@ public class NetworkRegistrationManager extends Handler {
                     + AccessNetworkConstants.transportTypeToString(mTransportType)
                     + " is now disconnected.");
             mTargetBindingPackageName = null;
-            if (mINetworkService != null) {
-                mINetworkService.asBinder().unlinkToDeath(mDeathRecipient, 0);
-            }
         }
     }
 
