@@ -156,6 +156,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
 
     private void fetchEssentialIsimRecords() {
         //NOP: No essential ISim records identified.
+        mEssentialRecordsListenerNotified = false;
     }
 
     @UnsupportedAppUsage

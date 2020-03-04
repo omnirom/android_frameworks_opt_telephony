@@ -97,6 +97,7 @@ import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.LocaleTracker;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.PhoneInternalInterface;
 import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.SubscriptionController;
@@ -196,8 +197,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         ImsPhoneCallTracker.this,
                         (isUnknown ? mForegroundCall : mRingingCall), isUnknown);
 
-                // If there is an active call.
-                if (mForegroundCall.hasConnections()) {
+                boolean isPseudoDsdaCall = isPseudoDsdaCall();
+                conn.setActiveCallDisconnectedOnAnswer(isPseudoDsdaCall);
+                // If there is an active call and incoming call is not a Psuedo Dsda call.
+                if (mForegroundCall.hasConnections() && !isPseudoDsdaCall) {
                     ImsCall activeCall = mForegroundCall.getFirstConnection().getImsCall();
                     if (activeCall != null && imsCall != null) {
                         // activeCall could be null if the foreground call is in a disconnected
@@ -4133,6 +4136,21 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 isIncomingCallAudio + " isVowifiEnabled=" + isVoWifiEnabled);
 
         return isActiveCallVideo && isActiveCallOnWifi && isIncomingCallAudio && !isVoWifiEnabled;
+    }
+
+    /**
+     * Determines if an incoming call has ACTIVE (or HELD) call on the other SUB.
+     */
+    private boolean isPseudoDsdaCall() {
+        TelephonyManager telephony = TelephonyManager.from(mPhone.getContext());
+        if (telephony.getPhoneCount() > PhoneConstants.MAX_PHONE_COUNT_SINGLE_SIM) {
+            for (Phone phone: PhoneFactory.getPhones()) {
+                if (phone.getSubId() != mPhone.getSubId()) {
+                    return phone.getState() == PhoneConstants.State.OFFHOOK;
+                }
+            }
+        }
+        return false;
     }
 
     /**
