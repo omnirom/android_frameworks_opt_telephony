@@ -838,6 +838,8 @@ public class SIMRecords extends IccRecords {
 
                 case EVENT_GET_AD_DONE:
                     isRecordLoadResponse = true;
+                    mEssentialRecordsToLoad -= 1;
+
                     mMncLength = UNKNOWN;
                     try {
                         if (!mCarrierTestOverride.isInTestMode()) {
@@ -1561,6 +1563,10 @@ public class SIMRecords extends IccRecords {
         mRecordsToLoad++;
         mEssentialRecordsToLoad++;
 
+        mFh.loadEFTransparent(EF_AD, obtainMessage(EVENT_GET_AD_DONE));
+        mRecordsToLoad++;
+        mEssentialRecordsToLoad++;
+
         if (DBG) log("fetchEssentialSimRecords " + mRecordsToLoad +
                 " requested: " + mRecordsRequested);
     }
@@ -1575,9 +1581,6 @@ public class SIMRecords extends IccRecords {
 
         // Record number is subscriber profile
         mFh.loadEFLinearFixed(EF_MBI, 1, obtainMessage(EVENT_GET_MBI_DONE));
-        mRecordsToLoad++;
-
-        mFh.loadEFTransparent(EF_AD, obtainMessage(EVENT_GET_AD_DONE));
         mRecordsToLoad++;
 
         // Record number is subscriber profile
