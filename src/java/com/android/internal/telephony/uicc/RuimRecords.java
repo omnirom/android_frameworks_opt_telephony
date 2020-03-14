@@ -895,10 +895,13 @@ public class RuimRecords extends IccRecords {
 
         mFh.loadEFTransparent(EF_ICCID, obtainMessage(EVENT_GET_ICCID_DONE));
         mRecordsToLoad++;
+        mEssentialRecordsToLoad++;
     }
 
     private void fetchEssentialRuimRecords() {
-        if (DBG) log("fetchEssentialRuimRecords " + mRecordsToLoad);
+        if (DBG) log("fetchEssentialRuimRecords: mRecordsToLoad = " + mRecordsToLoad
+                + " mEssentialRecordsToLoad = " + mEssentialRecordsToLoad);
+        mEssentialRecordsListenerNotified = false;
 
         if (!TextUtils.isEmpty(mParentApp.getAid())
                 || mParentApp.getUiccProfile().getNumApplications() <= 1) {
