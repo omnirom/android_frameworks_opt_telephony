@@ -18,9 +18,6 @@ package com.android.internal.telephony.imsphone;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility.PRIVATE;
 import static com.android.internal.telephony.Phone.CS_FALLBACK;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
-import static com.android.internal.telephony.TelephonyIntents.EXTRAS_IS_CONFERENCE_URI;
 
 import android.annotation.NonNull;
 import android.app.usage.NetworkStatsManager;
@@ -63,7 +60,6 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.emergency.EmergencyNumber;
 import android.telephony.ims.ImsCallProfile;
-import android.telephony.ims.ImsCallSession;
 import android.telephony.ims.ImsMmTelManager;
 import android.telephony.ims.ImsReasonInfo;
 import android.telephony.ims.ImsStreamMediaProfile;
@@ -1268,7 +1264,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             mLastDialArgs = dialArgs;
             mPendingMO = new ImsPhoneConnection(mPhone,
                     checkForTestEmergencyNumber(dialString), this, mForegroundCall,
-                    isEmergencyNumber, dialArgs.intentExtras);
+                    isEmergencyNumber);
             if (isEmergencyNumber && dialArgs != null && dialArgs.intentExtras != null) {
                 Rlog.i(LOG_TAG, "dial ims emergency dialer: " + dialArgs.intentExtras.getBoolean(
                         TelecomManager.EXTRA_IS_USER_INTENT_EMERGENCY_CALL));
@@ -1320,25 +1316,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         }
 
         return mImsManager.isServiceReady();
-    }
-
-    public void addParticipant(String dialString) throws CallStateException {
-        if (mForegroundCall != null) {
-            ImsCall imsCall = mForegroundCall.getImsCall();
-            if (imsCall == null) {
-                loge("addParticipant : No foreground ims call");
-            } else {
-                ImsCallSession imsCallSession = imsCall.getCallSession();
-                if (imsCallSession != null) {
-                    String[] callees = new String[] { dialString };
-                    imsCallSession.inviteParticipants(callees);
-                } else {
-                    loge("addParticipant : ImsCallSession does not exist");
-                }
-            }
-        } else {
-            loge("addParticipant : Foreground call does not exist");
-        }
     }
 
     private boolean shouldNumberBePlacedOnIms(boolean isEmergency, String number) {
@@ -1524,19 +1501,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             return;
         }
 
-        boolean isConferenceUri = false;
-        boolean isSkipSchemaParsing = false;
-
-        if (intentExtras != null) {
-            isConferenceUri = intentExtras.getBoolean(
-                    EXTRA_DIAL_CONFERENCE_URI, false);
-            isSkipSchemaParsing = intentExtras.getBoolean(
-                    EXTRA_SKIP_SCHEMA_PARSING, false);
-        }
-
-
         if (!conn.isAdhocConference() &&
-                !isConferenceUri && !isSkipSchemaParsing &&
                 (conn.getAddress()== null || conn.getAddress().length() == 0
                 || conn.getAddress().indexOf(PhoneNumberUtils.WILD) >= 0)) {
             // Phone number is invalid
@@ -1565,8 +1530,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     retryCallFailCause);
             profile.setCallExtraInt(ImsCallProfile.EXTRA_RETRY_CALL_FAIL_NETWORKTYPE,
                     retryCallFailNetworkType);
-            profile.setCallExtraBoolean(EXTRAS_IS_CONFERENCE_URI,
-                    isConferenceUri);
 
             if (isEmergencyCall) {
                 // Set emergency call information in ImsCallProfile

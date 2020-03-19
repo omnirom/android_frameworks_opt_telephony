@@ -16,9 +16,6 @@
 
 package com.android.internal.telephony.imsphone;
 
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
-
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.net.Uri;
@@ -228,24 +225,9 @@ public class ImsPhoneConnection extends Connection implements
     /** This is an MO call, created when dialing */
     public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
             ImsPhoneCall parent, boolean isEmergency) {
-        this(phone, dialString, ct, parent, isEmergency, null);
-    }
-
-    /** This is an MO call, created when dialing */
-    public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
-            ImsPhoneCall parent, boolean isEmergency, Bundle extras) {
         super(PhoneConstants.PHONE_TYPE_IMS);
         createWakeLock(phone.getContext());
         acquireWakeLock();
-        boolean isConferenceUri = false;
-        boolean isSkipSchemaParsing = false;
-
-        if (extras != null) {
-            isConferenceUri = extras.getBoolean(
-                    EXTRA_DIAL_CONFERENCE_URI, false);
-            isSkipSchemaParsing = extras.getBoolean(
-                    EXTRA_SKIP_SCHEMA_PARSING, false);
-        }
 
         mOwner = ct;
         mHandler = new MyHandler(mOwner.getLooper());
@@ -253,13 +235,8 @@ public class ImsPhoneConnection extends Connection implements
 
         mDialString = dialString;
 
-        if (isConferenceUri || isSkipSchemaParsing) {
-            mAddress = dialString;
-            mPostDialString = "";
-        } else {
-            mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
-            mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
-        }
+        mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
+        mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
 
         //mIndex = -1;
 
