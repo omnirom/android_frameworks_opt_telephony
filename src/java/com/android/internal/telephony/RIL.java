@@ -2267,16 +2267,19 @@ public class RIL extends BaseCommands implements CommandsInterface {
             RadioAccessSpecifier ras) {
         android.hardware.radio.V1_1.RadioAccessSpecifier rasInHalFormat =
                 new android.hardware.radio.V1_1.RadioAccessSpecifier();
-        rasInHalFormat.radioAccessNetwork = ras.getRadioAccessNetwork();
         List<Integer> bands = null;
         switch (ras.getRadioAccessNetwork()) {
             case AccessNetworkType.GERAN:
+                rasInHalFormat.radioAccessNetwork = AccessNetworkType.GERAN;
                 bands = rasInHalFormat.geranBands;
                 break;
             case AccessNetworkType.UTRAN:
+                rasInHalFormat.radioAccessNetwork = AccessNetworkType.UTRAN;
                 bands = rasInHalFormat.utranBands;
                 break;
-            case AccessNetworkType.EUTRAN:
+            case AccessNetworkType.EUTRAN: // fallthrough
+            case AccessNetworkType.NGRAN:
+                rasInHalFormat.radioAccessNetwork = AccessNetworkType.EUTRAN;
                 bands = rasInHalFormat.eutranBands;
                 break;
             default:
