@@ -2048,18 +2048,16 @@ public class ServiceStateTracker extends Handler {
             }
         }
 
-        int newNrState = regInfo.getNrState();
+        int oldNrState = regInfo.getNrState();
+        int newNrState = oldNrState;
         if (hasNrSecondaryServingCell) {
-            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED) {
-                newNrState = NetworkRegistrationInfo.NR_STATE_CONNECTED;
-            }
+            newNrState = NetworkRegistrationInfo.NR_STATE_CONNECTED;
         } else {
-            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
-                newNrState = NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED;
-            }
+            regInfo.updateNrState();
+            newNrState = regInfo.getNrState();
         }
 
-        boolean hasChanged = newNrState != regInfo.getNrState();
+        boolean hasChanged = newNrState != oldNrState;
         regInfo.setNrState(newNrState);
         ss.addNetworkRegistrationInfo(regInfo);
         return hasChanged;
@@ -4165,7 +4163,7 @@ public class ServiceStateTracker extends Handler {
 
         SubscriptionInfo info = mSubscriptionController
                 .getActiveSubscriptionInfo(mPhone.getSubId(), context.getOpPackageName(),
-                        context.getFeatureId());
+                        context.getAttributionTag());
 
         //if subscription is part of a group and non-primary, suppress all notifications
         if (info == null || (info.isOpportunistic() && info.getGroupUuid() != null)) {
@@ -5013,7 +5011,7 @@ public class ServiceStateTracker extends Handler {
 
         List<SubscriptionInfo> subInfoList = SubscriptionController.getInstance()
                 .getActiveSubscriptionInfoList(mPhone.getContext().getOpPackageName(),
-                        mPhone.getContext().getFeatureId());
+                        mPhone.getContext().getAttributionTag());
         for (SubscriptionInfo info : subInfoList) {
             // If we have an active opportunistic subscription whose data is IN_SERVICE, we needs
             // to get signal strength to decide data switching threshold. In this case, we poll
