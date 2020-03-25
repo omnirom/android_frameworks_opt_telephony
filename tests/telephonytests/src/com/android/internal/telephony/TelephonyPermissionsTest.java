@@ -105,7 +105,7 @@ public class TelephonyPermissionsTest {
                 mMockSubscriptionManager);
         when(mMockContext.getSystemService(Context.DEVICE_POLICY_SERVICE)).thenReturn(
                 mMockDevicePolicyManager);
-        when(mMockSubscriptionManager.getActiveAndHiddenSubscriptionIdList()).thenReturn(
+        when(mMockSubscriptionManager.getCompleteActiveSubscriptionIdList()).thenReturn(
                 new int[]{SUB_ID});
 
         // By default, assume we have no permissions or app-ops bits.
@@ -219,7 +219,8 @@ public class TelephonyPermissionsTest {
     }
 
     @Test
-    public void testCheckReadPhoneNumber_noPermissions() {
+    public void testCheckReadPhoneNumber_noPermissions() throws Exception {
+        setupMocksForDeviceIdentifiersErrorPath();
         try {
             TelephonyPermissions.checkReadPhoneNumber(
                     mMockContext, SUB_ID, PID, UID, PACKAGE, FEATURE, MSG);
@@ -230,7 +231,8 @@ public class TelephonyPermissionsTest {
     }
 
     @Test
-    public void testCheckReadPhoneNumber_defaultSmsApp() {
+    public void testCheckReadPhoneNumber_defaultSmsApp() throws Exception {
+        setupMocksForDeviceIdentifiersErrorPath();
         when(mMockAppOps.noteOp(eq(AppOpsManager.OPSTR_WRITE_SMS), eq(UID), eq(PACKAGE),
                 eq(FEATURE), nullable(String.class))).thenReturn(AppOpsManager.MODE_ALLOWED);
         assertTrue(TelephonyPermissions.checkReadPhoneNumber(
@@ -238,7 +240,8 @@ public class TelephonyPermissionsTest {
     }
 
     @Test
-    public void testCheckReadPhoneNumber_hasPrivilegedPhoneStatePermission() {
+    public void testCheckReadPhoneNumber_hasPrivilegedPhoneStatePermission() throws Exception {
+        setupMocksForDeviceIdentifiersErrorPath();
         doNothing().when(mMockContext).enforcePermission(
                 android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE, PID, UID, MSG);
         assertTrue(TelephonyPermissions.checkReadPhoneNumber(
@@ -246,7 +249,8 @@ public class TelephonyPermissionsTest {
     }
 
     @Test
-    public void testCheckReadPhoneNumber_hasReadSms() {
+    public void testCheckReadPhoneNumber_hasReadSms() throws Exception {
+        setupMocksForDeviceIdentifiersErrorPath();
         doNothing().when(mMockContext).enforcePermission(
                 android.Manifest.permission.READ_SMS, PID, UID, MSG);
         when(mMockAppOps.noteOp(eq(AppOpsManager.OPSTR_READ_SMS), eq(UID), eq(PACKAGE), eq(FEATURE),
@@ -256,7 +260,8 @@ public class TelephonyPermissionsTest {
     }
 
     @Test
-    public void testCheckReadPhoneNumber_hasReadPhoneNumbers() {
+    public void testCheckReadPhoneNumber_hasReadPhoneNumbers() throws Exception {
+        setupMocksForDeviceIdentifiersErrorPath();
         doNothing().when(mMockContext).enforcePermission(
                 android.Manifest.permission.READ_PHONE_NUMBERS, PID, UID, MSG);
         when(mMockAppOps.noteOp(eq(AppOpsManager.OPSTR_READ_PHONE_NUMBERS), eq(UID), eq(PACKAGE),
@@ -350,7 +355,7 @@ public class TelephonyPermissionsTest {
     @Test
     public void testCheckReadDeviceIdentifiers_hasCarrierPrivilegesOnOtherSubscription()
             throws Exception {
-        when(mMockSubscriptionManager.getActiveAndHiddenSubscriptionIdList()).thenReturn(
+        when(mMockSubscriptionManager.getCompleteActiveSubscriptionIdList()).thenReturn(
                 new int[]{SUB_ID, SUB_ID_2});
         when(mTelephonyManagerMock.createForSubscriptionId(eq(SUB_ID_2))).thenReturn(
                 mTelephonyManagerMockForSub2);
@@ -367,7 +372,7 @@ public class TelephonyPermissionsTest {
         // SubscriptionManager returns an empty array for the active subscription IDs this check can
         // still proceed to check if the calling package has the appop and any subsequent checks
         // without a NullPointerException.
-        when(mMockSubscriptionManager.getActiveAndHiddenSubscriptionIdList())
+        when(mMockSubscriptionManager.getCompleteActiveSubscriptionIdList())
                 .thenReturn(new int[0]);
         when(mMockAppOps.noteOpNoThrow(eq(AppOpsManager.OPSTR_READ_DEVICE_IDENTIFIERS), eq(UID),
                 eq(PACKAGE), eq(FEATURE), nullable(String.class))).thenReturn(
@@ -436,7 +441,7 @@ public class TelephonyPermissionsTest {
         when(mMockContext.checkPermission(
                 eq(android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE),
                 anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_DENIED);
-        when(mMockSubscriptionManager.getActiveAndHiddenSubscriptionIdList()).thenReturn(
+        when(mMockSubscriptionManager.getCompleteActiveSubscriptionIdList()).thenReturn(
                 new int[]{SUB_ID, SUB_ID_2});
         when(mTelephonyManagerMock.createForSubscriptionId(eq(SUB_ID_2))).thenReturn(
                 mTelephonyManagerMockForSub2);
