@@ -438,7 +438,8 @@ public class SubscriptionController extends ISub.Stub {
      * @return null if there isn't a match, or subscription info if there is one.
      */
     public SubscriptionInfo getSubInfoForIccId(String iccId) {
-        List<SubscriptionInfo> info = getSubInfo(SubscriptionManager.ICC_ID + "=" + iccId, null);
+        List<SubscriptionInfo> info = getSubInfo(
+                SubscriptionManager.ICC_ID + "=\'" + iccId + "\'", null);
         if (info == null || info.size() == 0) return null;
         // Should be at most one subscription with the iccid.
         return info.get(0);
@@ -538,7 +539,7 @@ public class SubscriptionController extends ISub.Stub {
         List<SubscriptionInfo> subList;
         try {
             subList = getActiveSubscriptionInfoList(
-                    mContext.getOpPackageName(), mContext.getFeatureId());
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
@@ -601,7 +602,7 @@ public class SubscriptionController extends ISub.Stub {
         final long identity = Binder.clearCallingIdentity();
         try {
             List<SubscriptionInfo> subList = getActiveSubscriptionInfoList(
-                    mContext.getOpPackageName(), mContext.getFeatureId());
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
             if (subList != null) {
                 for (SubscriptionInfo si : subList) {
                     if (iccId.equals(si.getIccId())) {
@@ -651,7 +652,7 @@ public class SubscriptionController extends ISub.Stub {
         List<SubscriptionInfo> subList;
         try {
             subList = getActiveSubscriptionInfoList(
-                    mContext.getOpPackageName(), mContext.getFeatureId());
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
@@ -1419,7 +1420,7 @@ public class SubscriptionController extends ISub.Stub {
             int newDefault = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
             SubscriptionInfo info = null;
             final List<SubscriptionInfo> records = getActiveSubscriptionInfoList(
-                    mContext.getOpPackageName(), mContext.getFeatureId());
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
             if (!records.isEmpty()) {
                 // yes, we have more subscriptions. pick the first one.
                 // FIXME do we need a policy to figure out which one is to be next default
@@ -1473,7 +1474,7 @@ public class SubscriptionController extends ISub.Stub {
         ContentResolver resolver = mContext.getContentResolver();
         ContentValues value = new ContentValues();
         value.put(SubscriptionManager.ICC_ID, uniqueId);
-        int color = getUnusedColor(mContext.getOpPackageName(), mContext.getFeatureId());
+        int color = getUnusedColor(mContext.getOpPackageName(), mContext.getAttributionTag());
         // default SIM color differs between slots
         value.put(SubscriptionManager.COLOR, color);
         value.put(SubscriptionManager.SIM_SLOT_INDEX, slotIndex);
@@ -1871,7 +1872,7 @@ public class SubscriptionController extends ISub.Stub {
     // TODO: replace all updates with this helper method.
     private int updateDatabase(ContentValues value, int subId, boolean updateEntireGroup) {
         List<SubscriptionInfo> infoList = getSubscriptionsInGroup(getGroupUuid(subId),
-                mContext.getOpPackageName(), mContext.getFeatureId());
+                mContext.getOpPackageName(), mContext.getAttributionTag());
         if (!updateEntireGroup || infoList == null || infoList.size() == 0) {
             // Only update specified subscriptions.
             return mContext.getContentResolver().update(
@@ -2521,7 +2522,7 @@ public class SubscriptionController extends ISub.Stub {
      */
     public boolean isOpportunistic(int subId) {
         SubscriptionInfo info = getActiveSubscriptionInfo(subId, mContext.getOpPackageName(),
-                mContext.getFeatureId());
+                mContext.getAttributionTag());
         return (info != null) && info.isOpportunistic();
     }
 
@@ -2891,7 +2892,7 @@ public class SubscriptionController extends ISub.Stub {
             pw.println("++++++++++++++++++++++++++++++++");
 
             List<SubscriptionInfo> sirl = getActiveSubscriptionInfoList(
-                    mContext.getOpPackageName(), mContext.getFeatureId());
+                    mContext.getOpPackageName(), mContext.getAttributionTag());
             if (sirl != null) {
                 pw.println(" ActiveSubInfoList:");
                 for (SubscriptionInfo entry : sirl) {
@@ -2903,7 +2904,7 @@ public class SubscriptionController extends ISub.Stub {
             pw.flush();
             pw.println("++++++++++++++++++++++++++++++++");
 
-            sirl = getAllSubInfoList(mContext.getOpPackageName(), mContext.getFeatureId());
+            sirl = getAllSubInfoList(mContext.getOpPackageName(), mContext.getAttributionTag());
             if (sirl != null) {
                 pw.println(" AllSubInfoList:");
                 for (SubscriptionInfo entry : sirl) {
@@ -3461,7 +3462,8 @@ public class SubscriptionController extends ISub.Stub {
         List<SubscriptionInfo> subInfoList;
 
         try {
-            subInfoList = getAllSubInfoList(mContext.getOpPackageName(), mContext.getFeatureId());
+            subInfoList = getAllSubInfoList(mContext.getOpPackageName(),
+                    mContext.getAttributionTag());
             if (groupUuid == null || subInfoList == null || subInfoList.isEmpty()) {
                 return new ArrayList<>();
             }
@@ -3519,7 +3521,7 @@ public class SubscriptionController extends ISub.Stub {
             }
 
             SubscriptionInfo info = SubscriptionController.getInstance()
-                    .getAllSubInfoList(mContext.getOpPackageName(), mContext.getFeatureId())
+                    .getAllSubInfoList(mContext.getOpPackageName(), mContext.getAttributionTag())
                     .stream()
                     .filter(subInfo -> subInfo.getSubscriptionId() == subId)
                     .findFirst()

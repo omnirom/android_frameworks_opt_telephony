@@ -4164,8 +4164,8 @@ public class GsmCdmaPhone extends Phone {
         String iccId = slot.getIccId();
         if (iccId == null) return;
 
-        iccId = IccUtils.stripTrailingFs(iccId);
-        SubscriptionInfo info = SubscriptionController.getInstance().getSubInfoForIccId(iccId);
+        SubscriptionInfo info = SubscriptionController.getInstance().getSubInfoForIccId(
+                IccUtils.stripTrailingFs(iccId));
 
         // If info is null, it could be a new subscription. By default we enable it.
         boolean expectedValue = info == null ? true : info.areUiccApplicationsEnabled();
