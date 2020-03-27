@@ -1285,7 +1285,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
         if (!holdBeforeDial) {
             if ((!isPhoneInEcmMode) || (isPhoneInEcmMode && isEmergencyNumber)) {
-                dialInternal(mPendingMO, clirMode, videoState, dialArgs.intentExtras);
+                dialInternal(mPendingMO, clirMode, videoState, dialArgs.retryCallFailCause,
+                        dialArgs.retryCallFailNetworkType, dialArgs.intentExtras);
             } else {
                 try {
                     EcbmHandler.getInstance().exitEmergencyCallbackMode();
@@ -1512,6 +1513,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
 
     private void dialInternal(ImsPhoneConnection conn, int clirMode, int videoState,
             Bundle intentExtras) {
+        dialInternal(conn, clirMode, videoState, ImsReasonInfo.CODE_UNSPECIFIED,
+                TelephonyManager.NETWORK_TYPE_UNKNOWN, intentExtras);
+    }
+
+    private void dialInternal(ImsPhoneConnection conn, int clirMode, int videoState,
+            int retryCallFailCause, int retryCallFailNetworkType, Bundle intentExtras) {
 
         if (conn == null) {
             return;
@@ -1554,6 +1561,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 profile.setCallExtraBoolean(ImsCallProfile.EXTRA_CONFERENCE, true);
             }
             profile.setCallExtraInt(ImsCallProfile.EXTRA_OIR, clirMode);
+            profile.setCallExtraInt(ImsCallProfile.EXTRA_RETRY_CALL_FAIL_REASON,
+                    retryCallFailCause);
+            profile.setCallExtraInt(ImsCallProfile.EXTRA_RETRY_CALL_FAIL_NETWORKTYPE,
+                    retryCallFailNetworkType);
             profile.setCallExtraBoolean(EXTRAS_IS_CONFERENCE_URI,
                     isConferenceUri);
 
@@ -4195,7 +4206,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                             QtiImsUtils.EXTRA_RETRY_CALL_FAIL_RADIOTECH, callRadioTech);
 
                     mLastDialArgs = ImsPhone.ImsDialArgs.Builder.from(mLastDialArgs)
-                                            .setRttTextStream(null).build();
+                            .setRttTextStream(null)
+                            .setRetryCallFailCause(ImsReasonInfo.CODE_RETRY_ON_IMS_WITHOUT_RTT)
+                            .setRetryCallFailNetworkType(
+                                    ServiceState.rilRadioTechnologyToNetworkType(
+                                    oldConnection.getCallRadioTech()))
+                            .build();
                     Connection newConnection =
                             mPhone.getDefaultPhone().dial(mLastDialString, mLastDialArgs);
                     oldConnection.onOriginalConnectionReplaced(newConnection);
