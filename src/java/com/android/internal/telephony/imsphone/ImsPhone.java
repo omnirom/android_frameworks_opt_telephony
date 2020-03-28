@@ -42,8 +42,6 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_DAT
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
 
 import android.app.Activity;
 import android.app.Notification;
@@ -803,19 +801,9 @@ public class ImsPhone extends ImsPhoneBase {
 
         mLastDialString = dialString;
 
-        boolean isConferenceUri = false;
-        boolean isSkipSchemaParsing = false;
-        if (dialArgs.intentExtras != null) {
-            isConferenceUri = dialArgs.intentExtras.getBoolean(
-                    EXTRA_DIAL_CONFERENCE_URI, false);
-            isSkipSchemaParsing = dialArgs.intentExtras.getBoolean(
-                    EXTRA_SKIP_SCHEMA_PARSING, false);
-        }
         String newDialString = dialString;
         // Need to make sure dialString gets parsed properly.
-        if (!isConferenceUri && !isSkipSchemaParsing) {
-            newDialString = PhoneNumberUtils.stripSeparators(dialString);
-        }
+        newDialString = PhoneNumberUtils.stripSeparators(dialString);
 
         // handle in-call MMI first if applicable
         if (handleInCallMmiCommands(newDialString)) {
@@ -872,11 +860,6 @@ public class ImsPhone extends ImsPhoneBase {
 
             return null;
         }
-    }
-
-    @Override
-    public void addParticipant(String dialString) throws CallStateException {
-        mCT.addParticipant(dialString);
     }
 
     @Override

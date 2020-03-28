@@ -1583,27 +1583,6 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
-    public void addParticipant(String dialString) throws CallStateException {
-        Phone imsPhone = mImsPhone;
-        boolean imsUseEnabled = isImsUseEnabled()
-                 && imsPhone != null
-                 && (imsPhone.isVolteEnabled() || imsPhone.isWifiCallingEnabled() ||
-                 imsPhone.isVideoEnabled())
-                 && (imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE);
-
-        if (imsUseEnabled) {
-            try {
-                logd("addParticipant :: Trying to add participant in IMS call");
-                imsPhone.addParticipant(dialString);
-            } catch (CallStateException e) {
-                loge("addParticipant :: IMS PS call exception " + e);
-            }
-        } else {
-            loge("addParticipant :: IMS is disabled so unable to add participant with IMS call");
-        }
-    }
-
-    @Override
     public void setRadioPower(boolean power, boolean forEmergencyCall,
             boolean isSelectedPhoneForEmergencyCall, boolean forceApply) {
         mSST.setRadioPower(power, forEmergencyCall, isSelectedPhoneForEmergencyCall, forceApply);
