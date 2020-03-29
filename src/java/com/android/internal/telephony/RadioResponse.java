@@ -34,7 +34,7 @@ import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.SendSmsResult;
 import android.hardware.radio.V1_0.VoiceRegStateResult;
 import android.hardware.radio.V1_4.CarrierRestrictionsWithPriority;
-import android.hardware.radio.V1_4.IRadioResponse;
+import android.hardware.radio.V1_5.IRadioResponse;
 import android.hardware.radio.V1_4.SimLockMultiSimPolicy;
 import android.os.AsyncResult;
 import android.os.Message;
@@ -1212,6 +1212,16 @@ public class RadioResponse extends IRadioResponse.Stub {
     }
 
     /**
+     * @param responseInfo Response info struct containing response type, serial no. and error.
+     * @param cellInfo List of current cell information known to radio.
+     */
+    public void getCellInfoListResponse_1_5(
+            RadioResponseInfo responseInfo,
+            ArrayList<android.hardware.radio.V1_5.CellInfo> cellInfo) {
+        responseCellInfoList_1_5(responseInfo, cellInfo);
+    }
+
+    /**
      * @param responseInfo Response info struct containing response type, serial no. and error
      */
     public void setCellInfoListRateResponse(RadioResponseInfo responseInfo) {
@@ -1534,6 +1544,13 @@ public class RadioResponse extends IRadioResponse.Stub {
      * @param responseInfo Response info struct containing response type, serial no. and error
      */
     public void setIndicationFilterResponse(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
+
+     /**
+      * @param responseInfo Response info struct containing response type, serial no. and error
+      */
+    public void setIndicationFilterResponse_1_5(RadioResponseInfo responseInfo) {
         responseVoid(responseInfo);
     }
 
@@ -2343,6 +2360,19 @@ public class RadioResponse extends IRadioResponse.Stub {
         }
     }
 
+    private void responseCellInfoList_1_5(RadioResponseInfo responseInfo,
+            ArrayList<android.hardware.radio.V1_5.CellInfo> cellInfo) {
+        RILRequest rr = mRil.processResponse(responseInfo);
+
+        if (rr != null) {
+            ArrayList<CellInfo> ret = RIL.convertHalCellInfoList_1_5(cellInfo);
+            if (responseInfo.error == RadioError.NONE) {
+                sendMessageResponse(rr.mResult, ret);
+            }
+            mRil.processResponseDone(rr, responseInfo, ret);
+        }
+    }
+
     private void responseActivityData(RadioResponseInfo responseInfo,
                                       ActivityStatsInfo activityInfo) {
         RILRequest rr = mRil.processResponse(responseInfo);
@@ -2586,5 +2616,15 @@ public class RadioResponse extends IRadioResponse.Stub {
             }
             mRil.processResponseDone(rr, responseInfo, bi);
         }
+    }
+
+    public void supplySimDepersonalizationResponse(RadioResponseInfo responseInfo,
+        int persoType, int remainingRetries) {
+        responseVoid(responseInfo);
+    }
+
+    public void sendCdmaSmsExpectMoreResponse(RadioResponseInfo responseInfo,
+        android.hardware.radio.V1_0.SendSmsResult result) {
+        responseVoid(responseInfo);
     }
 }

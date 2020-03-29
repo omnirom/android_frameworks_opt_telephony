@@ -2921,13 +2921,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
             mPreferredNetworkType = networkType;
             mMetrics.writeSetPreferredNetworkType(mPhoneId, networkType);
 
-            if (mRadioVersion.lessOrEqual(RADIO_HAL_VERSION_1_3)) {
-                try {
-                    radioProxy.setPreferredNetworkType(rr.mSerial, networkType);
-                } catch (RemoteException | RuntimeException e) {
-                    handleRadioProxyExceptionForRR(rr, "setPreferredNetworkType", e);
-                }
-            } else if (mRadioVersion.equals(RADIO_HAL_VERSION_1_4)) {
+            if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
                 android.hardware.radio.V1_4.IRadio radioProxy14 =
                         (android.hardware.radio.V1_4.IRadio) radioProxy;
                 try {
@@ -2936,6 +2930,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
                                     RadioAccessFamily.getRafFromNetworkType(networkType)));
                 } catch (RemoteException | RuntimeException e) {
                     handleRadioProxyExceptionForRR(rr, "setPreferredNetworkTypeBitmap", e);
+                }
+            } else {
+                try {
+                    radioProxy.setPreferredNetworkType(rr.mSerial, networkType);
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "setPreferredNetworkType", e);
                 }
             }
         }
@@ -3089,19 +3089,19 @@ public class RIL extends BaseCommands implements CommandsInterface {
             RILRequest rr = obtainRequest(RIL_REQUEST_GET_PREFERRED_NETWORK_TYPE, result,
                     mRILDefaultWorkSource);
             if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
-            if (mRadioVersion.lessOrEqual(RADIO_HAL_VERSION_1_3)) {
-                try {
-                    radioProxy.getPreferredNetworkType(rr.mSerial);
-                } catch (RemoteException | RuntimeException e) {
-                    handleRadioProxyExceptionForRR(rr, "getPreferredNetworkType", e);
-                }
-            } else if (mRadioVersion.equals(RADIO_HAL_VERSION_1_4)) {
+            if (mRadioVersion.greaterOrEqual(RADIO_HAL_VERSION_1_4)) {
                 android.hardware.radio.V1_4.IRadio radioProxy14 =
                         (android.hardware.radio.V1_4.IRadio) radioProxy;
                 try {
                     radioProxy14.getPreferredNetworkTypeBitmap(rr.mSerial);
                 } catch (RemoteException | RuntimeException e) {
                     handleRadioProxyExceptionForRR(rr, "getPreferredNetworkTypeBitmap", e);
+                }
+            } else {
+                try {
+                    radioProxy.getPreferredNetworkType(rr.mSerial);
+                } catch (RemoteException | RuntimeException e) {
+                    handleRadioProxyExceptionForRR(rr, "getPreferredNetworkType", e);
                 }
             }
         }
@@ -6563,6 +6563,23 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         final long nanotime = SystemClock.elapsedRealtimeNanos();
         for (android.hardware.radio.V1_4.CellInfo record : records) {
+            response.add(CellInfo.create(record, nanotime));
+        }
+        return response;
+    }
+
+    /**
+     * Convert CellInfo defined in 1.5/types.hal to CellInfo type.
+     * @param records List of CellInfo defined in 1.5/types.hal.
+     * @return List of converted CellInfo object.
+     */
+    @VisibleForTesting
+    public static ArrayList<CellInfo> convertHalCellInfoList_1_5(
+            ArrayList<android.hardware.radio.V1_5.CellInfo> records) {
+        ArrayList<CellInfo> response = new ArrayList<>(records.size());
+
+        final long nanotime = SystemClock.elapsedRealtimeNanos();
+        for (android.hardware.radio.V1_5.CellInfo record : records) {
             response.add(CellInfo.create(record, nanotime));
         }
         return response;
