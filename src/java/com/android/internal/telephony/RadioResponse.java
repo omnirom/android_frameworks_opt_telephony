@@ -34,7 +34,7 @@ import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.SendSmsResult;
 import android.hardware.radio.V1_0.VoiceRegStateResult;
 import android.hardware.radio.V1_4.CarrierRestrictionsWithPriority;
-import android.hardware.radio.V1_4.IRadioResponse;
+import android.hardware.radio.V1_5.IRadioResponse;
 import android.hardware.radio.V1_4.SimLockMultiSimPolicy;
 import android.os.AsyncResult;
 import android.os.Message;
@@ -1547,6 +1547,13 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseVoid(responseInfo);
     }
 
+     /**
+      * @param responseInfo Response info struct containing response type, serial no. and error
+      */
+    public void setIndicationFilterResponse_1_5(RadioResponseInfo responseInfo) {
+        responseVoid(responseInfo);
+    }
+
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
      */
@@ -2609,5 +2616,15 @@ public class RadioResponse extends IRadioResponse.Stub {
             }
             mRil.processResponseDone(rr, responseInfo, bi);
         }
+    }
+
+    public void supplySimDepersonalizationResponse(RadioResponseInfo responseInfo,
+        int persoType, int remainingRetries) {
+        responseVoid(responseInfo);
+    }
+
+    public void sendCdmaSmsExpectMoreResponse(RadioResponseInfo responseInfo,
+        android.hardware.radio.V1_0.SendSmsResult result) {
+        responseVoid(responseInfo);
     }
 }
