@@ -842,6 +842,14 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
+    public void notifyMigrateUssd(String num, ResultReceiver wrappedCallback)
+            throws UnsupportedOperationException {
+        GsmMmiCode mmi = GsmMmiCode.newFromDialString(num, this,
+                mUiccApplication.get(), wrappedCallback);
+        mPendingMMIs.add(mmi);
+    }
+
+    @Override
     public void registerForSuppServiceNotification(
             Handler h, int what, Object obj) {
         mSsnRegistrants.addUnique(h, what, obj);

@@ -43,6 +43,7 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NON
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
 
+import android.annotation.NonNull;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -1366,6 +1367,23 @@ public class ImsPhone extends ImsPhoneBase {
                         this);
                 onNetworkInitiatedUssd(mmi);
         }
+    }
+
+    void onUssdComplete(ImsPhoneMmiCode mmi, @NonNull CommandException ex) {
+        //Check if USSD CS fallback scenario and has valid pending MMI session.
+        if (ex.getCommandError() == CommandException.Error.NO_NETWORK_FOUND &&
+                mPendingMMIs.contains(mmi)) {
+            logi("onUssdComplete: migrating USSD from IMS to CS");
+            try {
+                mDefaultPhone.migrateUssdFrom(this, mmi.getDialString(),
+                                              mmi.getUssdCallbackReceiver());
+                mPendingMMIs.remove(mmi);
+                return;
+            } catch (UnsupportedOperationException e) {
+                //no-op
+            }
+        }
+        onMMIDone(mmi);
     }
 
     /**
