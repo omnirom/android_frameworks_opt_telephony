@@ -697,8 +697,9 @@ public class PhoneSwitcher extends Handler {
     private void onRequestNetwork(NetworkRequest networkRequest) {
         final DcRequest dcRequest =
                 DcRequest.create(networkRequest, createApnRepository(networkRequest));
-        if (networkRequest.type != NetworkRequest.Type.REQUEST) {
-           log("Skip non REQUEST type request - " + networkRequest);
+        if (networkRequest.type != NetworkRequest.Type.REQUEST &&
+                networkRequest.type != NetworkRequest.Type.BACKGROUND_REQUEST) {
+           log("Skip non REQUEST/BACKGROUND_REQUEST type request: " + networkRequest);
            return;
         }
 
