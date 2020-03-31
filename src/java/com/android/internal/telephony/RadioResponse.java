@@ -192,6 +192,18 @@ public class RadioResponse extends IRadioResponse.Stub {
         responseInts(responseInfo, retriesRemaining);
     }
 
+
+    /**
+     * @param info Response info struct containing response type, serial no. and error
+     * @param persoType SIM Personalisation type
+     * @param remainingRetries postiive values indicates number of retries remaining,
+     * must be equal to -1 if number of retries is infinite.
+     */
+    public void supplySimDepersonalizationResponse(RadioResponseInfo info,
+            int persoType, int remainingRetries) {
+        responseVoid(info);
+    }
+
     /**
      * @param responseInfo Response info struct containing response type, serial no. and error
      * @param calls Current call list
@@ -2616,11 +2628,6 @@ public class RadioResponse extends IRadioResponse.Stub {
             }
             mRil.processResponseDone(rr, responseInfo, bi);
         }
-    }
-
-    public void supplySimDepersonalizationResponse(RadioResponseInfo responseInfo,
-        int persoType, int remainingRetries) {
-        responseVoid(responseInfo);
     }
 
     public void sendCdmaSmsExpectMoreResponse(RadioResponseInfo responseInfo,

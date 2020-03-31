@@ -2217,6 +2217,12 @@ public class SimulatedCommands extends BaseCommands
         super.registerForExitEmergencyCallbackMode(h, what, obj);
     }
 
+    @Override
+    public void registerForSrvccStateChanged(Handler h, int what, Object obj) {
+        SimulatedCommandsVerifier.getInstance().registerForSrvccStateChanged(h, what, obj);
+        super.registerForSrvccStateChanged(h, what, obj);
+    }
+
     public void notifyRadioOn() {
         mOnRegistrants.notifyRegistrants();
     }
