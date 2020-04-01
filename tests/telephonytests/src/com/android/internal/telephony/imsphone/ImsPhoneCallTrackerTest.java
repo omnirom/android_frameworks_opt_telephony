@@ -344,6 +344,8 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testImsMTCall() {
+        mImsCallProfile.setCallerNumberVerificationStatus(
+                ImsCallProfile.VERIFICATION_STATUS_PASSED);
         assertEquals(PhoneConstants.State.IDLE, mCTUT.getState());
         assertFalse(mCTUT.mRingingCall.isRinging());
         // mock a MT call
@@ -356,6 +358,8 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         ImsPhoneConnection connection =
                 (ImsPhoneConnection) mCTUT.mRingingCall.getConnections().get(0);
         connection.addListener(mImsPhoneConnectionListener);
+        assertEquals(android.telecom.Connection.VERIFICATION_STATUS_PASSED,
+                connection.getNumberVerificationStatus());
     }
 
     @Test

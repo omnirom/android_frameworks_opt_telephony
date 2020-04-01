@@ -108,7 +108,6 @@ public class GsmCdmaCallTracker extends CallTracker {
     private boolean mIsInEmergencyCall;
     private int mPendingCallClirMode;
     private UUSInfo mPendingCallUusInfo;
-    private boolean mIsEcmTimerCanceled;
     private int m3WayCallFlashDelay;
 
     /**
@@ -191,7 +190,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             mIsInEmergencyCall = false;
             mPendingCallClirMode = CommandsInterface.CLIR_DEFAULT;
             mPendingCallUusInfo = null;
-            mIsEcmTimerCanceled = false;
+            mPhone.setEcmCanceledForEmergency(false /*isCanceled*/);
             m3WayCallFlashDelay = 0;
             mCi.registerForCallWaitingInfo(this, EVENT_CALL_WAITING_INFO_CDMA, null);
         }
@@ -324,8 +323,8 @@ public class GsmCdmaCallTracker extends CallTracker {
             throw new CallStateException("cannot dial in current state");
         }
 
-        mPendingMO = new GsmCdmaConnection(mPhone, checkForTestEmergencyNumber(dialString),
-                this, mForegroundCall, isEmergencyCall);
+        mPendingMO = new GsmCdmaConnection(mPhone, dialString, this, mForegroundCall,
+                isEmergencyCall);
         if (intentExtras != null) {
             Rlog.d(LOG_TAG, "dialGsm - emergency dialer: " + intentExtras.getBoolean(
                     TelecomManager.EXTRA_IS_USER_INTENT_EMERGENCY_CALL));
@@ -386,12 +385,6 @@ public class GsmCdmaCallTracker extends CallTracker {
     @UnsupportedAppUsage
     private void handleEcmTimer(int action) {
         EcbmHandler.getInstance().handleTimerInEmergencyCallbackMode(action);
-        switch(action) {
-            case EcbmHandler.CANCEL_ECM_TIMER: mIsEcmTimerCanceled = true; break;
-            case EcbmHandler.RESTART_ECM_TIMER: mIsEcmTimerCanceled = false; break;
-            default:
-                Rlog.e(LOG_TAG, "handleEcmTimer, unsupported action " + action);
-        }
     }
 
     //CDMA
@@ -452,7 +445,7 @@ public class GsmCdmaCallTracker extends CallTracker {
 
         // Cancel Ecm timer if a second emergency call is originating in Ecm mode
         if (isPhoneInEcmMode && isEmergencyCall) {
-            handleEcmTimer(EcbmHandler.CANCEL_ECM_TIMER);
+            EcbmHandler.getInstance().handleTimerInEmergencyCallbackMode(EcbmHandler.CANCEL_ECM_TIMER);
         }
 
         // The new call must be assigned to the foreground call.
@@ -462,8 +455,8 @@ public class GsmCdmaCallTracker extends CallTracker {
             return dialThreeWay(dialString, intentExtras);
         }
 
-        mPendingMO = new GsmCdmaConnection(mPhone, checkForTestEmergencyNumber(dialString),
-                this, mForegroundCall, isEmergencyCall);
+        mPendingMO = new GsmCdmaConnection(mPhone, dialString, this, mForegroundCall,
+                isEmergencyCall);
         if (intentExtras != null) {
             Rlog.d(LOG_TAG, "dialGsm - emergency dialer: " + intentExtras.getBoolean(
                     TelecomManager.EXTRA_IS_USER_INTENT_EMERGENCY_CALL));
@@ -524,8 +517,7 @@ public class GsmCdmaCallTracker extends CallTracker {
             disableDataCallInEmergencyCall(dialString);
 
             // Attach the new connection to foregroundCall
-            mPendingMO = new GsmCdmaConnection(mPhone,
-                    checkForTestEmergencyNumber(dialString), this, mForegroundCall,
+            mPendingMO = new GsmCdmaConnection(mPhone, dialString, this, mForegroundCall,
                     mIsInEmergencyCall);
             if (intentExtras != null) {
                 Rlog.d(LOG_TAG, "dialThreeWay - emergency dialer " + intentExtras.getBoolean(
@@ -885,8 +877,9 @@ public class GsmCdmaCallTracker extends CallTracker {
                         mHangupPendingMO = false;
 
                         // Re-start Ecm timer when an uncompleted emergency call ends
-                        if (!isPhoneTypeGsm() && mIsEcmTimerCanceled) {
-                            handleEcmTimer(EcbmHandler.RESTART_ECM_TIMER);
+                        if (!isPhoneTypeGsm() && mPhone.isEcmCanceledForEmergency()) {
+                            EcbmHandler.getInstance().handleTimerInEmergencyCallbackMode(
+                                    EcbmHandler.RESTART_ECM_TIMER);
                         }
 
                         try {
@@ -976,8 +969,8 @@ public class GsmCdmaCallTracker extends CallTracker {
                     }
 
                     // Re-start Ecm timer when the connected emergency call ends
-                    if (mIsEcmTimerCanceled) {
-                        handleEcmTimer(EcbmHandler.RESTART_ECM_TIMER);
+                    if (mPhone.isEcmCanceledForEmergency()) {
+                        EcbmHandler.getInstance().handleTimerInEmergencyCallbackMode(EcbmHandler.RESTART_ECM_TIMER);
                     }
                     // If emergency call is not going through while dialing
                     checkAndEnableDataCallAfterEmergencyCallDropped();
@@ -1233,8 +1226,8 @@ public class GsmCdmaCallTracker extends CallTracker {
 
         if (conn == mPendingMO) {
             // Re-start Ecm timer when an uncompleted emergency call ends
-            if (mIsEcmTimerCanceled) {
-                handleEcmTimer(EcbmHandler.RESTART_ECM_TIMER);
+            if (mPhone.isEcmCanceledForEmergency()) {
+                EcbmHandler.getInstance().handleTimerInEmergencyCallbackMode(EcbmHandler.RESTART_ECM_TIMER);
             }
 
             // Allow HANGUP to RIL during pending MO is present
@@ -1845,7 +1838,6 @@ public class GsmCdmaCallTracker extends CallTracker {
             pw.println(" mPendingCallInEcm=" + mPendingCallInEcm);
             pw.println(" mIsInEmergencyCall=" + mIsInEmergencyCall);
             pw.println(" mPendingCallClirMode=" + mPendingCallClirMode);
-            pw.println(" mIsEcmTimerCanceled=" + mIsEcmTimerCanceled);
         }
 
     }
