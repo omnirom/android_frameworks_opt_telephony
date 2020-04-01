@@ -278,6 +278,8 @@ public abstract class TelephonyTest {
     protected IccCard mIccCard;
     @Mock
     protected NetworkStatsManager mStatsManager;
+    @Mock
+    protected CarrierPrivilegesTracker mCarrierPrivilegesTracker;
 
     protected ActivityManager mActivityManager;
     protected ImsCallProfile mImsCallProfile;
@@ -495,6 +497,7 @@ public abstract class TelephonyTest {
         doReturn(mTransportManager).when(mPhone).getTransportManager();
         doReturn(mDataEnabledSettings).when(mPhone).getDataEnabledSettings();
         doReturn(mDcTracker).when(mPhone).getDcTracker(anyInt());
+        doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
         mIccSmsInterfaceManager.mDispatchersController = mSmsDispatchersController;
 
         //mUiccController
@@ -786,6 +789,13 @@ public abstract class TelephonyTest {
                 : PackageManager.PERMISSION_DENIED).when(
                 mMockPermissionManager).checkDeviceIdentifierAccess(any(), any(), any(), anyInt(),
                 anyInt());
+    }
+
+    protected void setCarrierPrivileges(boolean hasCarrierPrivileges) {
+        doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
+        doReturn(hasCarrierPrivileges ? TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS
+                : TelephonyManager.CARRIER_PRIVILEGE_STATUS_NO_ACCESS).when(
+                mTelephonyManager).getCarrierPrivilegeStatus(anyInt());
     }
 
     protected final void waitForHandlerAction(Handler h, long timeoutMillis) {

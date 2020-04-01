@@ -88,6 +88,7 @@ import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
+import com.android.internal.telephony.imsphone.ImsPhoneMmiCode;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccCardStatus;
@@ -106,7 +107,6 @@ import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.UiccSlot;
 import com.android.internal.telephony.util.ArrayUtils;
 import com.android.telephony.Rlog;
-import com.android.internal.telephony.imsphone.ImsPhoneMmiCode;
 import com.android.internal.telephony.util.QtiImsUtils;
 
 import java.io.FileDescriptor;
@@ -2640,7 +2640,7 @@ public class GsmCdmaPhone extends Phone {
 
             case EVENT_RUIM_RECORDS_LOADED:
                 logd("Event EVENT_RUIM_RECORDS_LOADED Received");
-                updateDataConnectionTracker();
+                updateCurrentCarrierInProvider();
                 break;
 
             case EVENT_RADIO_ON:
@@ -3132,7 +3132,7 @@ public class GsmCdmaPhone extends Phone {
                                 simOperatorNumeric);
                     }
                 }
-                updateDataConnectionTracker();
+                updateCurrentCarrierInProvider();
             }
         }
 
@@ -3917,10 +3917,8 @@ public class GsmCdmaPhone extends Phone {
         return dialString;
     }
 
-    /**
-     * @return operator numeric.
-     */
     @Override
+    @NonNull
     public String getOperatorNumeric() {
         String operatorNumeric = null;
         if (isPhoneTypeGsm()) {
@@ -3963,7 +3961,7 @@ public class GsmCdmaPhone extends Phone {
                     + " operatorNumeric = " + operatorNumeric);
 
         }
-        return operatorNumeric;
+        return TextUtils.emptyIfNull(operatorNumeric);
     }
 
     /**
