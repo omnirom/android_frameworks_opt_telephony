@@ -207,6 +207,10 @@ public class GsmCdmaPhone extends Phone {
 
     private final SettingsObserver mSettingsObserver;
 
+    // omni addition
+    @UnsupportedAppUsage
+    public boolean mDtmfExisted;
+
     // Constructors
 
     public GsmCdmaPhone(Context context, CommandsInterface ci, PhoneNotifier notifier, int phoneId,
