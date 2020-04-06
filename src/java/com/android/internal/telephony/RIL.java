@@ -687,7 +687,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
     }
 
-    private RILRequest obtainRequest(int request, Message result, WorkSource workSource) {
+    protected RILRequest obtainRequest(int request, Message result, WorkSource workSource) {
         RILRequest rr = RILRequest.obtain(request, result, workSource);
         addRequest(rr);
         return rr;
@@ -699,7 +699,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         return rr.mSerial;
     }
 
-    private void handleRadioProxyExceptionForRR(RILRequest rr, String caller, Exception e) {
+    protected void handleRadioProxyExceptionForRR(RILRequest rr, String caller, Exception e) {
         riljLoge(caller + ": " + e);
         resetProxyAndRequestList();
     }
@@ -4849,7 +4849,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     /** Converts from AccessNetworkType in frameworks to RadioAccessNetworks in HAL. */
-    private static int convertAntToRan(int accessNetworkType) {
+    protected static int convertAntToRan(int accessNetworkType) {
         switch (accessNetworkType) {
             case AccessNetworkType.GERAN:
                 return RadioAccessNetworks.GERAN;
@@ -5839,7 +5839,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     @UnsupportedAppUsage
-    static String requestToString(int request) {
+    protected static String requestToString(int request) {
         switch(request) {
             case RIL_REQUEST_GET_SIM_STATUS:
                 return "GET_SIM_STATUS";
