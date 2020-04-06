@@ -169,6 +169,9 @@ public class SimulatedCommands extends BaseCommands
     private boolean mIsRadioPowerFailResponse = false;
     private String smscAddress;
 
+    public boolean mSetRadioPowerForEmergencyCall;
+    public boolean mSetRadioPowerAsSelectedPhoneForEmergencyCall;
+
     // mode for Icc Sim Authentication
     private int mAuthenticationMode;
     //***** Constructor
@@ -1273,11 +1276,15 @@ public class SimulatedCommands extends BaseCommands
     }
 
     @Override
-    public void setRadioPower(boolean on, Message result) {
+    public void setRadioPower(boolean on, boolean forEmergencyCall,
+            boolean preferredForEmergencyCall, Message result) {
         if (mIsRadioPowerFailResponse) {
             resultFail(result, null, new RuntimeException("setRadioPower failed!"));
             return;
         }
+
+        mSetRadioPowerForEmergencyCall = forEmergencyCall;
+        mSetRadioPowerAsSelectedPhoneForEmergencyCall = preferredForEmergencyCall;
 
         if(on) {
             setRadioState(TelephonyManager.RADIO_POWER_ON, false /* forceNotifyRegistrants */);
@@ -2370,5 +2377,11 @@ public class SimulatedCommands extends BaseCommands
 
     public Handler getHandler() {
         return mHandlerThread.getThreadHandler();
+    }
+
+    @Override
+    public void getBarringInfo(Message result) {
+        SimulatedCommandsVerifier.getInstance().getBarringInfo(result);
+        resultSuccess(result, null);
     }
 }

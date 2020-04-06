@@ -19,12 +19,12 @@ package com.android.internal.telephony.nitz;
 import static android.app.timezonedetector.TelephonyTimeZoneSuggestion.MATCH_TYPE_TEST_NETWORK_OFFSET_ONLY;
 import static android.app.timezonedetector.TelephonyTimeZoneSuggestion.QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET;
 
-import static com.android.internal.telephony.NitzStateMachineTestSupport.ARBITRARY_SYSTEM_CLOCK_TIME;
-import static com.android.internal.telephony.NitzStateMachineTestSupport.UNIQUE_US_ZONE_SCENARIO1;
-import static com.android.internal.telephony.NitzStateMachineTestSupport.UNITED_KINGDOM_SCENARIO;
-import static com.android.internal.telephony.NitzStateMachineTestSupport.createEmptyTimeSuggestion;
-import static com.android.internal.telephony.NitzStateMachineTestSupport.createEmptyTimeZoneSuggestion;
-import static com.android.internal.telephony.NitzStateMachineTestSupport.createTimeSuggestionFromNitzSignal;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.ARBITRARY_SYSTEM_CLOCK_TIME;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.UNIQUE_US_ZONE_SCENARIO1;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.UNITED_KINGDOM_SCENARIO;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.createEmptyTimeSuggestion;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.createEmptyTimeZoneSuggestion;
+import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.createTimeSuggestionFromNitzSignal;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -39,11 +39,10 @@ import android.os.TimestampedValue;
 
 import com.android.internal.telephony.IndentingPrintWriter;
 import com.android.internal.telephony.NitzData;
-import com.android.internal.telephony.NitzStateMachineTestSupport.FakeDeviceState;
-import com.android.internal.telephony.NitzStateMachineTestSupport.Scenario;
 import com.android.internal.telephony.TelephonyTest;
-import com.android.internal.telephony.TimeZoneLookupHelper;
-import com.android.internal.telephony.nitz.NewNitzStateMachineImpl.NitzSignalInputFilterPredicate;
+import com.android.internal.telephony.nitz.NitzStateMachineImpl.NitzSignalInputFilterPredicate;
+import com.android.internal.telephony.nitz.NitzStateMachineTestSupport.FakeDeviceState;
+import com.android.internal.telephony.nitz.NitzStateMachineTestSupport.Scenario;
 
 import org.junit.After;
 import org.junit.Before;
@@ -53,7 +52,7 @@ import java.io.PrintWriter;
 import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;
 
-public class NewNitzStateMachineImplTest extends TelephonyTest {
+public class NitzStateMachineImplTest extends TelephonyTest {
 
     private static final int SLOT_INDEX = 99999;
     private static final TelephonyTimeZoneSuggestion EMPTY_TIME_ZONE_SUGGESTION =
@@ -61,21 +60,21 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
     private static final TelephonyTimeSuggestion EMPTY_TIME_SUGGESTION =
             createEmptyTimeSuggestion(SLOT_INDEX);
 
-    private FakeNewTimeServiceHelper mFakeNewTimeServiceHelper;
+    private FakeTimeServiceHelper mFakeTimeServiceHelper;
     private FakeDeviceState mFakeDeviceState;
     private TimeZoneSuggesterImpl mRealTimeZoneSuggester;
 
-    private NewNitzStateMachineImpl mNitzStateMachineImpl;
+    private NitzStateMachineImpl mNitzStateMachineImpl;
 
 
     @Before
     public void setUp() throws Exception {
-        TelephonyTest.logd("NewNitzStateMachineImplTest +Setup!");
-        super.setUp("NewNitzStateMachineImplTest");
+        TelephonyTest.logd("NitzStateMachineImplTest +Setup!");
+        super.setUp("NitzStateMachineImplTest");
 
         // In tests we use a fake impls for NewTimeServiceHelper and DeviceState.
         mFakeDeviceState = new FakeDeviceState();
-        mFakeNewTimeServiceHelper = new FakeNewTimeServiceHelper(mFakeDeviceState);
+        mFakeTimeServiceHelper = new FakeTimeServiceHelper(mFakeDeviceState);
 
         // In tests we disable NITZ signal input filtering. The real NITZ signal filter is tested
         // independently. This makes constructing test data simpler: we can be sure the signals
@@ -90,9 +89,9 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         TimeZoneLookupHelper timeZoneLookupHelper = new TimeZoneLookupHelper();
         mRealTimeZoneSuggester = new TimeZoneSuggesterImpl(mFakeDeviceState, timeZoneLookupHelper);
 
-        mNitzStateMachineImpl = new NewNitzStateMachineImpl(
+        mNitzStateMachineImpl = new NitzStateMachineImpl(
                 SLOT_INDEX, mFakeNitzSignalInputFilter, mRealTimeZoneSuggester,
-                mFakeNewTimeServiceHelper);
+                mFakeTimeServiceHelper);
 
         TelephonyTest.logd("NewNitzStateMachineImplTest -Setup!");
     }
@@ -575,22 +574,22 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         }
 
         private void justVerifyTimeWasNotSuggested() {
-            mFakeNewTimeServiceHelper.suggestedTimes.assertHasNotBeenSet();
+            mFakeTimeServiceHelper.suggestedTimes.assertHasNotBeenSet();
         }
 
         private void justVerifyTimeZoneWasSuggested(
                 TelephonyTimeZoneSuggestion timeZoneSuggestion) {
-            mFakeNewTimeServiceHelper.suggestedTimeZones.assertHasBeenSet();
-            mFakeNewTimeServiceHelper.suggestedTimeZones.assertLatestEquals(timeZoneSuggestion);
+            mFakeTimeServiceHelper.suggestedTimeZones.assertHasBeenSet();
+            mFakeTimeServiceHelper.suggestedTimeZones.assertLatestEquals(timeZoneSuggestion);
         }
 
         private void justVerifyTimeWasSuggested(TelephonyTimeSuggestion timeSuggestion) {
-            mFakeNewTimeServiceHelper.suggestedTimes.assertChangeCount(1);
-            mFakeNewTimeServiceHelper.suggestedTimes.assertLatestEquals(timeSuggestion);
+            mFakeTimeServiceHelper.suggestedTimes.assertChangeCount(1);
+            mFakeTimeServiceHelper.suggestedTimes.assertLatestEquals(timeSuggestion);
         }
 
         private void commitStateChanges() {
-            mFakeNewTimeServiceHelper.commitState();
+            mFakeTimeServiceHelper.commitState();
         }
     }
 
@@ -644,10 +643,10 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
     }
 
     /**
-     * A fake implementation of {@link NewTimeServiceHelper} that enables tests to detect what
-     * {@link NewNitzStateMachineImpl} would do to a real device's state.
+     * A fake implementation of {@link TimeServiceHelper} that enables tests to detect what
+     * {@link NitzStateMachineImpl} would do to a real device's state.
      */
-    private static class FakeNewTimeServiceHelper implements NewTimeServiceHelper {
+    private static class FakeTimeServiceHelper implements TimeServiceHelper {
 
         private final FakeDeviceState mFakeDeviceState;
 
@@ -655,7 +654,7 @@ public class NewNitzStateMachineImplTest extends TelephonyTest {
         public final TestState<TelephonyTimeSuggestion> suggestedTimes = new TestState<>();
         public final TestState<TelephonyTimeZoneSuggestion> suggestedTimeZones = new TestState<>();
 
-        FakeNewTimeServiceHelper(FakeDeviceState fakeDeviceState) {
+        FakeTimeServiceHelper(FakeDeviceState fakeDeviceState) {
             mFakeDeviceState = fakeDeviceState;
         }
 

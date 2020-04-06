@@ -20,7 +20,6 @@ import static android.net.NetworkPolicyManager.SUBSCRIPTION_OVERRIDE_CONGESTED;
 import static android.net.NetworkPolicyManager.SUBSCRIPTION_OVERRIDE_UNMETERED;
 
 import android.annotation.IntDef;
-import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -35,7 +34,6 @@ import android.net.NetworkFactory;
 import android.net.NetworkInfo;
 import android.net.NetworkProvider;
 import android.net.NetworkRequest;
-import android.net.NetworkScore;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.SocketKeepalive;
@@ -101,7 +99,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -162,7 +159,7 @@ public class DataConnection extends StateMachine {
     private static final int OTHER_CONNECTION_SCORE = 45;
 
     // The score we report to connectivity service
-    private NetworkScore mScore;
+    private int mScore;
 
     // The subscription id associated with this data connection.
     private int mSubId;
@@ -198,12 +195,12 @@ public class DataConnection extends StateMachine {
         @RequestNetworkType
         final int mRequestType;
         final int mSubId;
-        final boolean mIsApnPreferred;
+        final boolean mIsPreferredApn;
 
         ConnectionParams(ApnContext apnContext, int profileId, int rilRadioTechnology,
                          Message onCompletedMsg, int connectionGeneration,
                          @RequestNetworkType int requestType, int subId,
-                         boolean isApnPreferred) {
+                         boolean isPreferredApn) {
             mApnContext = apnContext;
             mProfileId = profileId;
             mRilRat = rilRadioTechnology;
@@ -211,7 +208,7 @@ public class DataConnection extends StateMachine {
             mConnectionGeneration = connectionGeneration;
             mRequestType = requestType;
             mSubId = subId;
-            mIsApnPreferred = isApnPreferred;
+            mIsPreferredApn = isPreferredApn;
         }
 
         @Override
@@ -222,7 +219,7 @@ public class DataConnection extends StateMachine {
                     + " mOnCompletedMsg=" + msgToString(mOnCompletedMsg)
                     + " mRequestType=" + DcTracker.requestTypeToString(mRequestType)
                     + " mSubId=" + mSubId
-                    + " mIsApnPreferred=" + mIsApnPreferred
+                    + " mIsPreferredApn=" + mIsPreferredApn
                     + "}";
         }
     }
@@ -699,8 +696,8 @@ public class DataConnection extends StateMachine {
         Message msg = obtainMessage(EVENT_SETUP_DATA_CONNECTION_DONE, cp);
         msg.obj = cp;
 
-        DataProfile dp =
-                DcTracker.createDataProfile(mApnSetting, cp.mProfileId, cp.mIsApnPreferred);
+        DataProfile dp = DcTracker.createDataProfile(mApnSetting, cp.mProfileId,
+                cp.mIsPreferredApn);
 
         // We need to use the actual modem roaming state instead of the framework roaming state
         // here. This flag is only passed down to ril_service for picking the correct protocol (for
@@ -1693,37 +1690,6 @@ public class DataConnection extends StateMachine {
                                 + " drs=" + mDataRegState
                                 + " mRilRat=" + mRilRat);
                     }
-                    updateNetworkInfoSuspendState();
-                    if (mNetworkAgent != null) {
-                        mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities(),
-                                DataConnection.this);
-                        mNetworkAgent.sendNetworkInfo(mNetworkInfo, DataConnection.this);
-                        mNetworkAgent.sendLinkProperties(mLinkProperties, DataConnection.this);
-                    }
-                    break;
-                case EVENT_DATA_CONNECTION_METEREDNESS_CHANGED:
-                    boolean isUnmetered = (boolean) msg.obj;
-                    if (isUnmetered == mUnmeteredOverride) {
-                        break;
-                    }
-                    mUnmeteredOverride = isUnmetered;
-                    // fallthrough
-                case EVENT_NR_FREQUENCY_CHANGED:
-                case EVENT_DATA_CONNECTION_ROAM_ON:
-                case EVENT_DATA_CONNECTION_ROAM_OFF:
-                case EVENT_DATA_CONNECTION_OVERRIDE_CHANGED:
-                    if (mNetworkAgent != null) {
-                        mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities(),
-                                DataConnection.this);
-                        mNetworkAgent.sendNetworkInfo(mNetworkInfo, DataConnection.this);
-                    }
-                    break;
-                case EVENT_KEEPALIVE_START_REQUEST:
-                case EVENT_KEEPALIVE_STOP_REQUEST:
-                    if (mNetworkAgent != null) {
-                        mNetworkAgent.sendSocketKeepaliveEvent(
-                                msg.arg1, SocketKeepalive.ERROR_INVALID_NETWORK);
-                    }
                     break;
                 case EVENT_RETRY_CONNECTION:
                     if (DBG) {
@@ -2338,9 +2304,38 @@ public class DataConnection extends StateMachine {
                     retVal = HANDLED;
                     break;
                 }
+                case EVENT_DATA_CONNECTION_DRS_OR_RAT_CHANGED: {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    Pair<Integer, Integer> drsRatPair = (Pair<Integer, Integer>) ar.result;
+                    mDataRegState = drsRatPair.first;
+                    updateTcpBufferSizes(drsRatPair.second);
+                    mRilRat = drsRatPair.second;
+                    if (DBG) {
+                        log("DcActiveState: EVENT_DATA_CONNECTION_DRS_OR_RAT_CHANGED"
+                                + " drs=" + mDataRegState
+                                + " mRilRat=" + mRilRat);
+                    }
+                    updateNetworkInfoSuspendState();
+                    if (mNetworkAgent != null) {
+                        mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities(),
+                                DataConnection.this);
+                        mNetworkAgent.sendNetworkInfo(mNetworkInfo, DataConnection.this);
+                        mNetworkAgent.sendLinkProperties(mLinkProperties, DataConnection.this);
+                    }
+                    retVal = HANDLED;
+                    break;
+                }
+                case EVENT_DATA_CONNECTION_METEREDNESS_CHANGED:
+                    boolean isUnmetered = (boolean) msg.obj;
+                    if (isUnmetered == mUnmeteredOverride) {
+                        retVal = HANDLED;
+                        break;
+                    }
+                    mUnmeteredOverride = isUnmetered;
+                    // fallthrough
+                case EVENT_NR_FREQUENCY_CHANGED:
                 case EVENT_DATA_CONNECTION_ROAM_ON:
                 case EVENT_DATA_CONNECTION_ROAM_OFF:
-                case EVENT_DATA_CONNECTION_METEREDNESS_CHANGED:
                 case EVENT_DATA_CONNECTION_OVERRIDE_CHANGED: {
                     if (mNetworkAgent != null) {
                         mNetworkAgent.sendNetworkCapabilities(getNetworkCapabilities(),
@@ -2693,7 +2688,7 @@ public class DataConnection extends StateMachine {
      *                             ignored if obsolete.
      * @param requestType Data request type
      * @param subId the subscription id associated with this data connection.
-     * @param isApnPreferred determine if this Apn is preferred.
+     * @param isApnPreferred whether or not the apn is preferred.
      */
     public void bringUp(ApnContext apnContext, int profileId, int rilRadioTechnology,
                         Message onCompletedMsg, int connectionGeneration,
@@ -3029,27 +3024,21 @@ public class DataConnection extends StateMachine {
      *  Re-calculate score and update through network agent if it changes.
      */
     private void updateScore() {
-        // No need to update the score if there is no network associated.
-        if (mNetworkAgent == null) return;
-
-        final NetworkScore score =  calculateScore();
-        if (!Objects.equals(score, mScore)) {
-            log("Updating score from " + mScore + " to " + score);
-            mScore = score;
+        int oldScore = mScore;
+        mScore = calculateScore();
+        if (oldScore != mScore && mNetworkAgent != null) {
+            log("Updating score from " + oldScore + " to " + mScore);
             mNetworkAgent.sendNetworkScore(mScore, this);
         }
     }
 
-    @NonNull
-    private NetworkScore calculateScore() {
+    private int calculateScore() {
         int score = OTHER_CONNECTION_SCORE;
 
         // If it's serving a network request that asks NET_CAPABILITY_INTERNET and doesn't have
         // specify a subId, this dataConnection is considered to be default Internet data
         // connection. In this case we assign a slightly higher score of 50. The intention is
         // it will not be replaced by other data connections accidentally in DSDS usecase.
-        // TODO : this should be represented by the "default subscription" policy bit in
-        // NetworkScore.
         for (ApnContext apnContext : mApnContexts.keySet()) {
             for (NetworkRequest networkRequest : apnContext.getNetworkRequests()) {
                 if (networkRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -3060,9 +3049,7 @@ public class DataConnection extends StateMachine {
             }
         }
 
-        // STOPSHIP (b/148055573) : remove this copy of the constant (and the constant, this
-        // code should just use the NetworkScore regular members)
-        return new NetworkScore.Builder().setLegacyScore(score).build();
+        return score;
     }
 
     private String handoverStateToString(@HandoverState int state) {

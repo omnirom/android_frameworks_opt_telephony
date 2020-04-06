@@ -93,6 +93,7 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccCardStatus;
 import com.android.internal.telephony.uicc.IccException;
 import com.android.internal.telephony.uicc.IccRecords;
+import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.IccVmNotSupportedException;
 import com.android.internal.telephony.uicc.IsimRecords;
 import com.android.internal.telephony.uicc.IsimUiccRecords;
@@ -185,6 +186,9 @@ public class GsmCdmaPhone extends Phone {
     private IccPhoneBookInterfaceManager mIccPhoneBookIntManager;
 
     private int mPrecisePhoneType;
+
+    private final RegistrantList mVolteSilentRedialRegistrants = new RegistrantList();
+    private DialArgs mDialArgs = null;
 
     private String mImei;
     private String mImeiSv;
@@ -1257,6 +1261,7 @@ public class GsmCdmaPhone extends Phone {
 
         boolean isEmergency = isEmergencyNumber(dialString);
         Phone imsPhone = mImsPhone;
+        mDialArgs = dialArgs;
 
         CarrierConfigManager configManager =
                 (CarrierConfigManager) mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE);
@@ -1590,8 +1595,9 @@ public class GsmCdmaPhone extends Phone {
     }
 
     @Override
-    public void setRadioPower(boolean power) {
-        mSST.setRadioPower(power);
+    public void setRadioPower(boolean power, boolean forEmergencyCall,
+            boolean isSelectedPhoneForEmergencyCall, boolean forceApply) {
+        mSST.setRadioPower(power, forEmergencyCall, isSelectedPhoneForEmergencyCall, forceApply);
     }
 
     private void storeVoiceMailNumber(String number) {
@@ -2095,6 +2101,9 @@ public class GsmCdmaPhone extends Phone {
             }
         } else {
             loge("getCallForwardingOption: not possible in CDMA without IMS");
+            AsyncResult.forMessage(onComplete, null,
+                    CommandException.fromRilErrno(RILConstants.REQUEST_NOT_SUPPORTED));
+            onComplete.sendToTarget();
         }
     }
 
@@ -2146,6 +2155,9 @@ public class GsmCdmaPhone extends Phone {
             }
         } else {
             loge("setCallForwardingOption: not possible in CDMA without IMS");
+            AsyncResult.forMessage(onComplete, null,
+                    CommandException.fromRilErrno(RILConstants.REQUEST_NOT_SUPPORTED));
+            onComplete.sendToTarget();
         }
     }
 
@@ -2274,6 +2286,9 @@ public class GsmCdmaPhone extends Phone {
             mCi.setCallWaiting(enable, serviceClass, onComplete);
         } else {
             loge("method setCallWaiting is NOT supported in CDMA without IMS!");
+            AsyncResult.forMessage(onComplete, null,
+                    CommandException.fromRilErrno(RILConstants.REQUEST_NOT_SUPPORTED));
+            onComplete.sendToTarget();
         }
     }
 
@@ -3997,6 +4012,23 @@ public class GsmCdmaPhone extends Phone {
         mCT.dispatchCsCallRadioTech(getCsCallRadioTech(vrs, vrat));
     }
 
+    @Override
+    public void registerForVolteSilentRedial(Handler h, int what, Object obj) {
+        mVolteSilentRedialRegistrants.addUnique(h, what, obj);
+    }
+
+    @Override
+    public void unregisterForVolteSilentRedial(Handler h) {
+        mVolteSilentRedialRegistrants.remove(h);
+    }
+
+    public void notifyVolteSilentRedial(String dialString, int causeCode) {
+        logd("notifyVolteSilentRedial: dialString=" + dialString + " causeCode=" + causeCode);
+        AsyncResult ar = new AsyncResult(null,
+                new SilentRedialParam(dialString, causeCode, mDialArgs), null);
+        mVolteSilentRedialRegistrants.notifyRegistrants(ar);
+    }
+
     /**
      * Sets the SIM voice message waiting indicator records.
      * @param line GSM Subscriber Profile Number, one-based. Only '1' is supported
@@ -4132,6 +4164,7 @@ public class GsmCdmaPhone extends Phone {
         String iccId = slot.getIccId();
         if (iccId == null) return;
 
+        iccId = IccUtils.stripTrailingFs(iccId);
         SubscriptionInfo info = SubscriptionController.getInstance().getSubInfoForIccId(iccId);
 
         // If info is null, it could be a new subscription. By default we enable it.

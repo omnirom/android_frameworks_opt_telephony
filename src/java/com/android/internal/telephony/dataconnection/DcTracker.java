@@ -130,7 +130,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -270,13 +269,7 @@ public class DcTracker extends Handler {
 
     /** kept in sync with mApnContexts
      * Higher numbers are higher priority and sorted so highest priority is first */
-    private final PriorityQueue<ApnContext>mPrioritySortedApnContexts =
-            new PriorityQueue<ApnContext>(5,
-            new Comparator<ApnContext>() {
-                public int compare(ApnContext c1, ApnContext c2) {
-                    return c2.getPriority() - c1.getPriority();
-                }
-            } );
+    private final ArrayList<ApnContext> mPrioritySortedApnContexts = new ArrayList<>();
 
     /** all APN settings applicable to the current carrier */
     private ArrayList<ApnSetting> mAllApnSettings = new ArrayList<>();
@@ -1080,6 +1073,7 @@ public class DcTracker extends Handler {
             log("initApnContexts: apnContext=" + ApnSetting.getApnTypeString(
                     apnConfigType.getType()));
         }
+        mPrioritySortedApnContexts.sort((c1, c2) -> c2.getPriority() - c1.getPriority());
         if (VDBG) log("initApnContexts: X mApnContexts=" + mApnContexts);
     }
 
@@ -2087,10 +2081,23 @@ public class DcTracker extends Handler {
         Message msg = obtainMessage();
         msg.what = DctConstants.EVENT_DATA_SETUP_COMPLETE;
         msg.obj = new Pair<ApnContext, Integer>(apnContext, generation);
-        dataConnection.bringUp(apnContext, profileId, radioTech, msg, generation, requestType,
-                mPhone.getSubId(), apnSetting.equals(mPreferredApn));
 
-        if (DBG) log("setupData: initing!");
+        ApnSetting preferredApn = getPreferredApn();
+        boolean isPreferredApn = apnSetting.equals(preferredApn);
+        dataConnection.bringUp(apnContext, profileId, radioTech, msg, generation, requestType,
+                mPhone.getSubId(), isPreferredApn);
+
+        if (DBG) {
+            if (isPreferredApn) {
+                log("setupData: initing! isPreferredApn=" + isPreferredApn
+                        + ", apnSetting={" + apnSetting.toString() + "}");
+            } else {
+                String preferredApnStr = preferredApn == null ? "null" : preferredApn.toString();
+                log("setupData: initing! isPreferredApn=" + isPreferredApn
+                        + ", apnSetting={" + apnSetting + "}"
+                        + ", preferredApn={" + preferredApnStr + "}");
+            }
+        }
         return true;
     }
 
@@ -3498,7 +3505,9 @@ public class DcTracker extends Handler {
         }
     }
 
+    @Nullable
     ApnSetting getPreferredApn() {
+        //Only call this method from main thread
         if (mAllApnSettings == null || mAllApnSettings.isEmpty()) {
             log("getPreferredApn: mAllApnSettings is empty");
             return null;
