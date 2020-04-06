@@ -1086,6 +1086,9 @@ public class DataConnection extends StateMachine {
                 case ServiceState.RIL_RADIO_TECHNOLOGY_HSPAP:
                     sizes = TCP_BUFFER_SIZES_HSPAP;
                     break;
+                case ServiceState.RIL_RADIO_TECHNOLOGY_NR:
+                    sizes = TCP_BUFFER_SIZES_NR;
+                    break;
                 default:
                     // Leave empty - this will let ConnectivityService use the system default.
                     break;
