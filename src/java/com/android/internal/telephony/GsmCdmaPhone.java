@@ -1394,8 +1394,7 @@ public class GsmCdmaPhone extends Phone {
         // Try over IMS if possible.
         Phone imsPhone = mImsPhone;
         if ((imsPhone != null)
-                && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                || imsPhone.isUtEnabled())) {
+                && imsPhone.isUtEnabled()) {
             try {
                 logd("handleUssdRequest: attempting over IMS");
                 return imsPhone.handleUssdRequest(ussdRequest, wrappedCallback);
@@ -1943,8 +1942,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.getCallForwardingOption(commandInterfaceCFReason,
                             commandInterfaceServiceClass, onComplete);
                 return;
@@ -1989,8 +1987,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.setCallForwardingOption(commandInterfaceCFAction,
                         commandInterfaceCFReason, dialingNumber,
                         commandInterfaceServiceClass, timerSeconds, onComplete);
@@ -2074,8 +2071,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.getOutgoingCallerIdDisplay(onComplete);
                 return;
             }
@@ -2090,8 +2086,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.setOutgoingCallerIdDisplay(commandInterfaceCLIRMode, onComplete);
                 return;
             }
@@ -2110,8 +2105,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.getCallWaiting(onComplete);
                 return;
             }
@@ -2129,8 +2123,7 @@ public class GsmCdmaPhone extends Phone {
         if (isPhoneTypeGsm() || isImsUtEnabledOverCdma()) {
             Phone imsPhone = mImsPhone;
             if ((imsPhone != null)
-                    && ((imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE)
-                    || imsPhone.isUtEnabled())) {
+                    && imsPhone.isUtEnabled()) {
                 imsPhone.setCallWaiting(enable, onComplete);
                 return;
             }
