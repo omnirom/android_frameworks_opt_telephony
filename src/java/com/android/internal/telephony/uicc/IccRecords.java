@@ -227,6 +227,8 @@ public abstract class IccRecords extends Handler implements IccConstants {
     private static final int EVENT_AKA_AUTHENTICATE_DONE          = 90;
     protected static final int EVENT_GET_SMS_RECORD_SIZE_DONE = 28;
 
+    protected static final int EVENT_APP_DETECTED = 101;
+
     public static final int CALL_FORWARDING_STATUS_DISABLED = 0;
     public static final int CALL_FORWARDING_STATUS_ENABLED = 1;
     public static final int CALL_FORWARDING_STATUS_UNKNOWN = -1;
@@ -294,6 +296,8 @@ public abstract class IccRecords extends Handler implements IccConstants {
 
         mCarrierTestOverride = new CarrierTestOverride();
         mCi.registerForIccRefresh(this, EVENT_REFRESH, null);
+
+        mParentApp.registerForDetected(this, EVENT_APP_DETECTED, null);
     }
 
     // Override IccRecords for testing
@@ -317,6 +321,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
         synchronized (mLock) {
             mLock.notifyAll();
         }
+        mParentApp.unregisterForDetected(this);
 
         mCi.unregisterForIccRefresh(this);
         mParentApp = null;
@@ -330,6 +335,11 @@ public abstract class IccRecords extends Handler implements IccConstants {
     }
 
     public abstract void onReady();
+
+    protected void onDetected() {
+        mRecordsRequested = false;
+        mLoaded.set(false);
+    }
 
     //***** Public Methods
     public AdnRecordCache getAdnCache() {
@@ -828,6 +838,12 @@ public abstract class IccRecords extends Handler implements IccConstants {
         AsyncResult ar;
 
         switch (msg.what) {
+            case EVENT_APP_DETECTED:
+                if (DBG) log("App detected");
+                mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
+                onDetected();
+                break;
+
             case EVENT_GET_ICC_RECORD_DONE:
                 try {
                     ar = (AsyncResult) msg.obj;

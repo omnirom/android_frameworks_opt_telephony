@@ -891,6 +891,9 @@ public class RuimRecords extends IccRecords {
 
     private void onLocked(int msg) {
         if (DBG) log("only fetch EF_ICCID in locked state");
+        mRecordsRequested = false;
+        mLoaded.set(false);
+
         mLockedRecordsReqReason = msg == EVENT_APP_LOCKED ? LOCKED_RECORDS_REQ_REASON_LOCKED :
                 LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED;
 
