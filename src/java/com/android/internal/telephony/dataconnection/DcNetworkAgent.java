@@ -26,10 +26,10 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkProvider;
 import android.net.SocketKeepalive;
+import android.net.Uri;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.TransportType;
-import android.telephony.Annotation.NetworkType;
 import android.telephony.AnomalyReporter;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
@@ -46,6 +46,7 @@ import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -94,9 +95,6 @@ public class DcNetworkAgent extends NetworkAgent {
         mTransportType = transportType;
         mDataConnection = dc;
         mNetworkInfo = new NetworkInfo(ni);
-        setLegacyExtraInfo(dc.getApnSetting().getApnName());
-        int subType = getNetworkType();
-        setLegacySubtype(subType, TelephonyManager.getNetworkTypeName(subType));
         // TODO: Remove after b/151487565 is fixed.
         sNetworkAgents.add(this);
         checkRedundantIms();
@@ -193,17 +191,17 @@ public class DcNetworkAgent extends NetworkAgent {
     }
 
     @Override
-    public synchronized void onValidationStatus(int status, String redirectUrl) {
+    public synchronized void onValidationStatus(int status, Uri redirectUri) {
         if (mDataConnection == null) {
             loge("onValidationStatus called on no-owner DcNetworkAgent!");
             return;
         }
 
-        logd("validation status: " + status + " with redirection URL: " + redirectUrl);
+        logd("validation status: " + status + " with redirection URL: " + redirectUri);
         DcTracker dct = mPhone.getDcTracker(mTransportType);
         if (dct != null) {
             Message msg = dct.obtainMessage(DctConstants.EVENT_NETWORK_STATUS_CHANGED,
-                    status, mDataConnection.getCid(), redirectUrl);
+                    status, mDataConnection.getCid(), redirectUri.toString());
             msg.sendToTarget();
         }
     }
@@ -291,7 +289,14 @@ public class DcNetworkAgent extends NetworkAgent {
             setLegacyExtraInfo(extraInfo);
         }
 
-        int subType = getNetworkType();
+        final ServiceState serviceState = mPhone.getServiceState();
+        NetworkRegistrationInfo nri = serviceState.getNetworkRegistrationInfo(
+                NetworkRegistrationInfo.DOMAIN_PS, mTransportType);
+        int subType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
+        if (nri != null) {
+            subType = nri.getAccessNetworkTechnology();
+        }
+
         if (mNetworkInfo.getSubtype() != subType) {
             setLegacySubtype(subType, TelephonyManager.getNetworkTypeName(subType));
         }
@@ -314,7 +319,7 @@ public class DcNetworkAgent extends NetworkAgent {
     }
 
     @Override
-    public synchronized void onStartSocketKeepalive(int slot, int intervalSeconds,
+    public synchronized void onStartSocketKeepalive(int slot, @NonNull Duration interval,
             @NonNull KeepalivePacketData packet) {
         if (mDataConnection == null) {
             loge("onStartSocketKeepalive called on no-owner DcNetworkAgent!");
@@ -323,7 +328,7 @@ public class DcNetworkAgent extends NetworkAgent {
 
         if (packet instanceof NattKeepalivePacketData) {
             mDataConnection.obtainMessage(DataConnection.EVENT_KEEPALIVE_START_REQUEST,
-                    slot, intervalSeconds, packet).sendToTarget();
+                    slot, (int) interval.getSeconds(), packet).sendToTarget();
         } else {
             sendSocketKeepaliveEvent(slot, SocketKeepalive.ERROR_UNSUPPORTED);
         }
@@ -382,17 +387,6 @@ public class DcNetworkAgent extends NetworkAgent {
      */
     private void loge(String s) {
         Rlog.e(mTag, s);
-    }
-
-    private @NetworkType int getNetworkType() {
-        final ServiceState serviceState = mPhone.getServiceState();
-        NetworkRegistrationInfo nri = serviceState.getNetworkRegistrationInfo(
-                NetworkRegistrationInfo.DOMAIN_PS, mTransportType);
-        int subType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
-        if (nri != null) {
-            subType = nri.getAccessNetworkTechnology();
-        }
-        return subType;
     }
 
     class DcKeepaliveTracker {

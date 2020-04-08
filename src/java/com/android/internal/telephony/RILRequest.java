@@ -189,7 +189,7 @@ public class RILRequest {
     }
 
     @UnsupportedAppUsage
-    String serialString() {
+    public String serialString() {
         //Cheesy way to do %04d
         StringBuilder sb = new StringBuilder(8);
         String sn;
