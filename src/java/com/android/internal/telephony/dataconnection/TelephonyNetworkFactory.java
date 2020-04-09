@@ -292,8 +292,9 @@ public class TelephonyNetworkFactory extends NetworkFactory {
 
     private void onNeedNetworkFor(Message msg) {
         NetworkRequest networkRequest = (NetworkRequest) msg.obj;
-        if (networkRequest.type != NetworkRequest.Type.REQUEST) {
-           logl("Skip non REQUEST type request: " + networkRequest);
+        if (networkRequest.type != NetworkRequest.Type.REQUEST &&
+                 networkRequest.type != NetworkRequest.Type.BACKGROUND_REQUEST) {
+           logl("Skip non REQUEST/BACKGROUND_REQUEST type request: " + networkRequest);
            return;
         }
         boolean shouldApply = mPhoneSwitcher.shouldApplyNetworkRequest(
