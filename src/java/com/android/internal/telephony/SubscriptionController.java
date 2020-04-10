@@ -3429,7 +3429,7 @@ public class SubscriptionController extends ISub.Stub {
      * Helper function to create selection argument of a list of subId.
      * The result should be: "in (subId1, subId2, ...)".
      */
-    private String getSelectionForSubIdList(int[] subId) {
+    public static String getSelectionForSubIdList(int[] subId) {
         StringBuilder selection = new StringBuilder();
         selection.append(SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID);
         selection.append(" IN (");
@@ -3498,7 +3498,7 @@ public class SubscriptionController extends ISub.Stub {
                     callingPackage, callingFeatureId, "getSubscriptionsInGroup")
                     || info.canManageSubscription(mContext, callingPackage);
         }).map(subscriptionInfo -> conditionallyRemoveIdentifiers(subscriptionInfo,
-                callingPackage, callingFeatureId, "getSubscriptionInfoList"))
+                callingPackage, callingFeatureId, "getSubscriptionsInGroup"))
         .collect(Collectors.toList());
 
     }
@@ -3764,30 +3764,7 @@ public class SubscriptionController extends ISub.Stub {
     // They are doing similar things except operating on different cache.
     private List<SubscriptionInfo> getSubscriptionInfoListFromCacheHelper(
             String callingPackage, String callingFeatureId, List<SubscriptionInfo> cacheSubList) {
-        boolean canReadAllPhoneState;
-        try {
-            canReadAllPhoneState = TelephonyPermissions.checkReadPhoneState(mContext,
-                    SubscriptionManager.INVALID_SUBSCRIPTION_ID, Binder.getCallingPid(),
-                    Binder.getCallingUid(), callingPackage, callingFeatureId,
-                    "getSubscriptionInfoList");
-            // If the calling package has the READ_PHONE_STATE permission then check if the caller
-            // also has access to subscriber identifiers to ensure that the ICC ID and any other
-            // unique identifiers are removed if the caller should not have access.
-            if (canReadAllPhoneState) {
-                canReadAllPhoneState = hasSubscriberIdentifierAccess(
-                        SubscriptionManager.INVALID_SUBSCRIPTION_ID, callingPackage,
-                        callingFeatureId, "getSubscriptionInfoList");
-            }
-        } catch (SecurityException e) {
-            canReadAllPhoneState = false;
-        }
-
         synchronized (mSubInfoListLock) {
-            // If the caller can read all phone state, just return the full list.
-            if (canReadAllPhoneState) {
-                return new ArrayList<>(cacheSubList);
-            }
-
             // Filter the list to only include subscriptions which the caller can manage.
             return cacheSubList.stream()
                     .filter(subscriptionInfo -> {
