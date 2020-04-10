@@ -44,7 +44,6 @@ import android.service.euicc.EuiccProfileInfo;
 import android.service.euicc.EuiccService;
 import android.service.euicc.GetEuiccProfileInfoListResult;
 import android.telephony.CarrierConfigManager;
-import android.telephony.RadioAccessFamily;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -543,18 +542,6 @@ public class SubscriptionInfoUpdater extends Handler {
                     }
 
                     // Set the modem network mode
-                    long allowedNetworkTypes = -1;
-                    try {
-                        allowedNetworkTypes = Long.parseLong(
-                                SubscriptionController.getInstance().getSubscriptionProperty(subId,
-                                        SubscriptionManager.ALLOWED_NETWORK_TYPES));
-                    } catch (NumberFormatException err) {
-                        logd("NumberFormat exception");
-                    }
-
-                    long networkTypeBitMask = RadioAccessFamily.getRafFromNetworkType(networkType);
-                    networkType = RadioAccessFamily.getNetworkTypeFromRaf(
-                            (int) (networkTypeBitMask & allowedNetworkTypes));
                     PhoneFactory.getPhone(phoneId).setPreferredNetworkType(networkType, null);
 
                     // Only support automatic selection mode on SIM change.
@@ -620,6 +607,15 @@ public class SubscriptionInfoUpdater extends Handler {
             logd("SIM" + (phoneId + 1) + " hot plug out, absentAndInactive=" + absentAndInactive);
         }
         sIccId[phoneId] = ICCID_STRING_FOR_NO_SIM;
+        int[] subIds = SubscriptionController.getInstance().getSubId(phoneId);
+        if (subIds != null && subIds.length > 0) {
+            // When a SIM is unplugged, mark uicc applications enabled. This is to make sure when
+            // user unplugs and re-inserts the SIM card, we re-enable it.
+            ContentValues value = new ContentValues(1);
+            value.put(SubscriptionManager.UICC_APPLICATIONS_ENABLED, true);
+            sContext.getContentResolver().update(SubscriptionManager.CONTENT_URI, value,
+                    SubscriptionController.getSelectionForSubIdList(subIds), null);
+        }
         updateSubscriptionInfoByIccId(phoneId, true /* updateEmbeddedSubs */);
         // Do not broadcast if the SIM is absent and inactive, because the logical phoneId here is
         // no longer correct
