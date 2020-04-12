@@ -1061,6 +1061,7 @@ public class GsmCdmaCallTracker extends CallTracker {
         }
 
         if (newRinging != null) {
+            newRinging.setActiveCallDisconnectedOnAnswer(isPseudoDsdaCall());
             mPhone.notifyNewRingingConnection(newRinging);
         }
 
