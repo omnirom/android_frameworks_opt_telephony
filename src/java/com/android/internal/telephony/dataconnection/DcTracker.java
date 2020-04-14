@@ -265,7 +265,7 @@ public class DcTracker extends Handler {
 
     /** kept in sync with mApnContexts
      * Higher numbers are higher priority and sorted so highest priority is first */
-    private final ArrayList<ApnContext> mPrioritySortedApnContexts = new ArrayList<>();
+    private ArrayList<ApnContext> mPrioritySortedApnContexts = new ArrayList<>();
 
     /** all APN settings applicable to the current carrier */
     private ArrayList<ApnSetting> mAllApnSettings = new ArrayList<>();
@@ -325,9 +325,12 @@ public class DcTracker extends Handler {
     private long mWatchdogTimeMs = 1000 * 60 * 60;
 
     /* Default for whether 5G frequencies are considered unmetered */
-    private boolean mAllUnmetered = false;
-    private boolean mMmwaveUnmetered = false;
-    private boolean mSub6Unmetered = false;
+    private boolean mNrNsaAllUnmetered = false;
+    private boolean mNrNsaMmwaveUnmetered = false;
+    private boolean mNrNsaSub6Unmetered = false;
+    private boolean mNrSaAllUnmetered = false;
+    private boolean mNrSaMmwaveUnmetered = false;
+    private boolean mNrSaSub6Unmetered = false;
 
     /* Used to check whether 5G timers are currently active and waiting to go off */
     private boolean mHysteresis = false;
@@ -616,10 +619,10 @@ public class DcTracker extends Handler {
     private HashMap<String, Integer> mApnToDataConnectionId = new HashMap<String, Integer>();
 
     /** Phone.APN_TYPE_* ===> ApnContext */
-    private final ConcurrentHashMap<String, ApnContext> mApnContexts =
+    private ConcurrentHashMap<String, ApnContext> mApnContexts =
             new ConcurrentHashMap<String, ApnContext>();
 
-    private final SparseArray<ApnContext> mApnContextsByType = new SparseArray<ApnContext>();
+    private SparseArray<ApnContext> mApnContextsByType = new SparseArray<ApnContext>();
 
     private int mDisconnectPendingCount = 0;
 
@@ -992,6 +995,19 @@ public class DcTracker extends Handler {
     }
 
     private void initApnContexts() {
+        PersistableBundle carrierConfig;
+        CarrierConfigManager configManager = (CarrierConfigManager) mPhone.getContext()
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        if (configManager != null) {
+            carrierConfig = configManager.getConfigForSubId(mPhone.getSubId());
+        } else {
+            carrierConfig = null;
+        }
+        initApnContexts(carrierConfig);
+    }
+
+    //Blows away any existing apncontexts that may exist, only use in ctor.
+    private void initApnContexts(PersistableBundle carrierConfig) {
         if (!mTelephonyManager.isDataCapable()) {
             log("initApnContexts: isDataCapable == false.  No Apn Contexts loaded");
             return;
@@ -999,23 +1015,56 @@ public class DcTracker extends Handler {
 
         log("initApnContexts: E");
         // Load device network attributes from resources
-        final Collection<ApnConfigType> types = ApnConfigTypeRepository.getDefault().getTypes();
+        final Collection<ApnConfigType> types =
+                new ApnConfigTypeRepository(carrierConfig).getTypes();
+
         for (ApnConfigType apnConfigType : types) {
-            addApnContext(apnConfigType);
+            ApnContext apnContext = new ApnContext(mPhone, apnConfigType.getType(), mLogTag, this,
+                    apnConfigType.getPriority());
+            mPrioritySortedApnContexts.add(apnContext);
+            mApnContexts.put(apnContext.getApnType(), apnContext);
+            mApnContextsByType.put(ApnSetting.getApnTypesBitmaskFromString(apnContext.getApnType()),
+                    apnContext);
+
             log("initApnContexts: apnContext=" + ApnSetting.getApnTypeString(
                     apnConfigType.getType()));
         }
         mPrioritySortedApnContexts.sort((c1, c2) -> c2.getPriority() - c1.getPriority());
-        if (VDBG) log("initApnContexts: X mApnContexts=" + mApnContexts);
+        logSortedApnContexts();
     }
 
-    private void addApnContext(ApnConfigType apnContextType) {
-        ApnContext apnContext = new ApnContext(mPhone, apnContextType.getType(), mLogTag, this,
-                apnContextType.getPriority());
-        mApnContexts.put(apnContext.getApnType(), apnContext);
-        mApnContextsByType.put(ApnSetting.getApnTypesBitmaskFromString(apnContext.getApnType()),
-                apnContext);
-        mPrioritySortedApnContexts.add(apnContext);
+    private void sortApnContextByPriority() {
+        if (!mTelephonyManager.isDataCapable()) {
+            log("sortApnContextByPriority: isDataCapable == false.  No Apn Contexts loaded");
+            return;
+        }
+
+        PersistableBundle carrierConfig;
+        CarrierConfigManager configManager = (CarrierConfigManager) mPhone.getContext()
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        if (configManager != null) {
+            carrierConfig = configManager.getConfigForSubId(mPhone.getSubId());
+        } else {
+            carrierConfig = null;
+        }
+
+        log("sortApnContextByPriority: E");
+        // Load device network attributes from resources
+        final Collection<ApnConfigType> types =
+                new ApnConfigTypeRepository(carrierConfig).getTypes();
+        for (ApnConfigType apnConfigType : types) {
+            if (mApnContextsByType.contains(apnConfigType.getType())) {
+                ApnContext apnContext = mApnContextsByType.get(apnConfigType.getType());
+                apnContext.setPriority(apnConfigType.getPriority());
+            }
+        }
+
+        //Doing sorted in a different list to keep thread safety
+        ArrayList<ApnContext> prioritySortedApnContexts =
+                new ArrayList<>(mPrioritySortedApnContexts);
+        prioritySortedApnContexts.sort((c1, c2) -> c2.getPriority() - c1.getPriority());
+        mPrioritySortedApnContexts = prioritySortedApnContexts;
+        logSortedApnContexts();
     }
 
     public LinkProperties getLinkProperties(String apnType) {
@@ -1062,7 +1111,7 @@ public class DcTracker extends Handler {
 
     @VisibleForTesting
     public Collection<ApnContext> getApnContexts() {
-        return mApnContexts.values();
+        return mPrioritySortedApnContexts;
     }
 
     /** Return active ApnSetting of a specific apnType */
@@ -2313,6 +2362,7 @@ public class DcTracker extends Handler {
             createAllApnList();
             setDataProfilesAsNeeded();
             setInitialAttachApn();
+            sortApnContextByPriority();
             setupDataOnAllConnectableApns(Phone.REASON_CARRIER_CHANGE, RetryFailures.ALWAYS);
         } else {
             log("onCarrierConfigChanged: SIM is not loaded yet.");
@@ -4104,10 +4154,15 @@ public class DcTracker extends Handler {
 
     private boolean reevaluateUnmeteredConnections() {
         log("reevaluateUnmeteredConnections");
-        if (isNetworkTypeUnmetered(NETWORK_TYPE_NR) || isFrequencyRangeUnmetered()) {
-            if (DBG) log("NR NSA is unmetered");
-            if (mPhone.getServiceState().getNrState()
-                    == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
+        int networkType = ServiceState.rilRadioTechnologyToNetworkType(getDataRat());
+        boolean nrUnmetered = isNetworkTypeUnmetered(NETWORK_TYPE_NR);
+        boolean nrNsaUnmetered = isNrNsaFrequencyRangeUnmetered();
+        boolean nrSaUnmetered = isNrSaFrequencyRangeUnmetered();
+        if (nrUnmetered || nrNsaUnmetered || nrSaUnmetered) {
+            if (DBG) log("NR is unmetered");
+            if ((nrUnmetered || nrNsaUnmetered) && mPhone.getServiceState().getNrState()
+                    == NetworkRegistrationInfo.NR_STATE_CONNECTED
+                    || (nrUnmetered || nrSaUnmetered) && networkType == NETWORK_TYPE_NR) {
                 if (!m5GWasConnected) { // 4G -> 5G
                     stopHysteresisAlarm();
                     setDataConnectionUnmetered(true);
@@ -4121,15 +4176,13 @@ public class DcTracker extends Handler {
                     if (!mHysteresis && !startHysteresisAlarm()) {
                         // hysteresis is not active but carrier does not support hysteresis
                         stopWatchdogAlarm();
-                        setDataConnectionUnmetered(isNetworkTypeUnmetered(
-                                mTelephonyManager.getNetworkType(mPhone.getSubId())));
+                        setDataConnectionUnmetered(isNetworkTypeUnmetered(networkType));
                     }
                     m5GWasConnected = false;
                 } else { // 4G -> 4G
                     if (!hasMessages(DctConstants.EVENT_5G_TIMER_HYSTERESIS)) {
                         stopWatchdogAlarm();
-                        setDataConnectionUnmetered(isNetworkTypeUnmetered(
-                                mTelephonyManager.getNetworkType(mPhone.getSubId())));
+                        setDataConnectionUnmetered(isNetworkTypeUnmetered(networkType));
                     }
                     // do nothing if waiting for hysteresis alarm to go off
                 }
@@ -4137,8 +4190,7 @@ public class DcTracker extends Handler {
         } else {
             stopWatchdogAlarm();
             stopHysteresisAlarm();
-            setDataConnectionUnmetered(isNetworkTypeUnmetered(
-                    mTelephonyManager.getNetworkType(mPhone.getSubId())));
+            setDataConnectionUnmetered(isNetworkTypeUnmetered(networkType));
             m5GWasConnected = false;
         }
         return updateDisplayInfo();
@@ -4187,17 +4239,27 @@ public class DcTracker extends Handler {
                 || plan.getDataLimitBehavior() == SubscriptionPlan.LIMIT_BEHAVIOR_THROTTLED);
     }
 
-    private boolean isFrequencyRangeUnmetered() {
-        boolean nrConnected = mPhone.getServiceState().getNrState()
-                == NetworkRegistrationInfo.NR_STATE_CONNECTED;
-        if (mMmwaveUnmetered || mSub6Unmetered) {
+    private boolean isNrNsaFrequencyRangeUnmetered() {
+        if (mNrNsaMmwaveUnmetered || mNrNsaSub6Unmetered) {
             int frequencyRange = mPhone.getServiceState().getNrFrequencyRange();
             boolean mmwave = frequencyRange == ServiceState.FREQUENCY_RANGE_MMWAVE;
             // frequency range LOW, MID, or HIGH
             boolean sub6 = frequencyRange != ServiceState.FREQUENCY_RANGE_UNKNOWN && !mmwave;
-            return (mMmwaveUnmetered && mmwave || mSub6Unmetered && sub6) && nrConnected;
+            return mNrNsaMmwaveUnmetered && mmwave || mNrNsaSub6Unmetered && sub6;
         } else {
-            return mAllUnmetered && nrConnected;
+            return mNrNsaAllUnmetered;
+        }
+    }
+
+    private boolean isNrSaFrequencyRangeUnmetered() {
+        if (mNrSaMmwaveUnmetered || mNrSaSub6Unmetered) {
+            int frequencyRange = mPhone.getServiceState().getNrFrequencyRange();
+            boolean mmwave = frequencyRange == ServiceState.FREQUENCY_RANGE_MMWAVE;
+            // frequency range LOW, MID, or HIGH
+            boolean sub6 = frequencyRange != ServiceState.FREQUENCY_RANGE_UNKNOWN && !mmwave;
+            return mNrSaMmwaveUnmetered && mmwave || mNrSaSub6Unmetered && sub6;
+        } else {
+            return mNrSaAllUnmetered;
         }
     }
 
@@ -4295,6 +4357,23 @@ public class DcTracker extends Handler {
 
     private void loge(String s) {
         Rlog.e(mLogTag, s);
+    }
+
+    private void logSortedApnContexts() {
+        if (VDBG) {
+            log("initApnContexts: X mApnContexts=" + mApnContexts);
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("sorted apncontexts -> [");
+            for (ApnContext apnContext : mPrioritySortedApnContexts) {
+                sb.append(apnContext);
+                sb.append(", ");
+
+                log("sorted list");
+            }
+            sb.append("]");
+            log(sb.toString());
+        }
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
@@ -5274,12 +5353,18 @@ public class DcTracker extends Handler {
                         CarrierConfigManager.KEY_5G_ICON_DISPLAY_GRACE_PERIOD_SEC_INT);
                 mWatchdogTimeMs = b.getLong(
                         CarrierConfigManager.KEY_5G_WATCHDOG_TIME_MS_LONG);
-                mAllUnmetered = b.getBoolean(
+                mNrNsaAllUnmetered = b.getBoolean(
                         CarrierConfigManager.KEY_UNMETERED_NR_NSA_BOOL);
-                mMmwaveUnmetered = b.getBoolean(
+                mNrNsaMmwaveUnmetered = b.getBoolean(
                         CarrierConfigManager.KEY_UNMETERED_NR_NSA_MMWAVE_BOOL);
-                mSub6Unmetered = b.getBoolean(
+                mNrNsaSub6Unmetered = b.getBoolean(
                         CarrierConfigManager.KEY_UNMETERED_NR_NSA_SUB6_BOOL);
+                mNrSaAllUnmetered = b.getBoolean(
+                        CarrierConfigManager.KEY_UNMETERED_NR_SA_BOOL);
+                mNrSaMmwaveUnmetered = b.getBoolean(
+                        CarrierConfigManager.KEY_UNMETERED_NR_SA_MMWAVE_BOOL);
+                mNrSaSub6Unmetered = b.getBoolean(
+                        CarrierConfigManager.KEY_UNMETERED_NR_SA_SUB6_BOOL);
             }
         }
 
