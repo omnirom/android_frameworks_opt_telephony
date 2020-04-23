@@ -103,7 +103,6 @@ import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.LocaleTracker;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
-import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.dataconnection.DataEnabledSettings;
@@ -4652,21 +4651,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 isIncomingCallAudio + " isVowifiEnabled=" + isVoWifiEnabled);
 
         return isActiveCallVideo && isActiveCallOnWifi && isIncomingCallAudio && !isVoWifiEnabled;
-    }
-
-    /**
-     * Determines if an incoming call has ACTIVE (or HELD) call on the other SUB.
-     */
-    private boolean isPseudoDsdaCall() {
-        TelephonyManager telephony = TelephonyManager.from(mPhone.getContext());
-        if (telephony.getActiveModemCount() > PhoneConstants.MAX_PHONE_COUNT_SINGLE_SIM) {
-            for (Phone phone: PhoneFactory.getPhones()) {
-                if (phone.getSubId() != mPhone.getSubId()) {
-                    return phone.getState() == PhoneConstants.State.OFFHOOK;
-                }
-            }
-        }
-        return false;
     }
 
     public void registerPhoneStateListener(PhoneStateListener listener) {
