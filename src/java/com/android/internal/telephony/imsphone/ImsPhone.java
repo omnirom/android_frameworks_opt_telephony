@@ -111,6 +111,7 @@ import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
+import com.android.internal.telephony.metrics.VoiceCallSessionStats;
 import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.util.NotificationChannelController;
@@ -2300,6 +2301,11 @@ public class ImsPhone extends ImsPhoneBase {
             return imsDialArgsBuilder.build();
         }
         return new DialArgs.Builder<>().build();
+    }
+
+    @Override
+    public VoiceCallSessionStats getVoiceCallSessionStats() {
+        return mDefaultPhone.getVoiceCallSessionStats();
     }
 
     public boolean hasAliveCall() {
