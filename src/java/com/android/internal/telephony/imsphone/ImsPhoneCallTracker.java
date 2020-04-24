@@ -391,7 +391,6 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private static final int EVENT_ANSWER_WAITING_CALL = 30;
     private static final int EVENT_RESUME_NOW_FOREGROUND_CALL = 31;
     private static final int EVENT_REDIAL_WITHOUT_RTT = 32;
-    private static final int EVENT_RADIO_ON = 41;
 
     private static final int TIMEOUT_HANGUP_PENDINGMO = 500;
 
@@ -4102,16 +4101,9 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 }
                 break;
             }
-            case EVENT_RADIO_ON: {
-                Pair<ImsCall, ImsReasonInfo> callInfo =
-                        (Pair<ImsCall, ImsReasonInfo>) ((AsyncResult) msg.obj).userObj;
-                mPhone.getDefaultPhone().mCi.unregisterForOn(this);
-                sendMessage(obtainMessage(EVENT_REDIAL_WIFI_E911_CALL, callInfo));
-                break;
-            }
             case EVENT_REDIAL_WIFI_E911_CALL: {
                 Pair<ImsCall, ImsReasonInfo> callInfo =
-                        (Pair<ImsCall, ImsReasonInfo>) msg.obj;
+                        (Pair<ImsCall, ImsReasonInfo>) ((AsyncResult) msg.obj).userObj;
                 removeMessages(EVENT_REDIAL_WIFI_E911_TIMEOUT);
                 mPhone.getDefaultPhone().mCi.unregisterForOn(this);
                 ImsPhoneConnection oldConnection = findConnection(callInfo.first);
