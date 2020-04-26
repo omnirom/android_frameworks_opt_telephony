@@ -1025,6 +1025,7 @@ public class ImsPhoneConnection extends Connection implements
                         startRttTextProcessing();
                         onRttInitiated();
                         changed = true;
+                        mOwner.getPhone().getVoiceCallSessionStats().onRttStarted(this);
                     } else if (!mIsRttEnabledForCall && mRttTextHandler != null) {
                         Rlog.d(LOG_TAG, "updateMediaCapabilities -- turning RTT off, profile="
                                 + negotiatedCallProfile);
@@ -1084,6 +1085,7 @@ public class ImsPhoneConnection extends Connection implements
                     && localCallProfile.mMediaProfile.mAudioQuality != mAudioCodec) {
                 mAudioCodec = localCallProfile.mMediaProfile.mAudioQuality;
                 mMetrics.writeAudioCodecIms(mOwner.mPhone.getPhoneId(), imsCall.getCallSession());
+                mOwner.getPhone().getVoiceCallSessionStats().onAudioCodecChanged(this, mAudioCodec);
             }
 
             int newAudioQuality =
