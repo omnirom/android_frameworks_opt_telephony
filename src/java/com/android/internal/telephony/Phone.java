@@ -80,6 +80,7 @@ import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
+import com.android.internal.telephony.metrics.VoiceCallSessionStats;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccFileHandler;
@@ -422,6 +423,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private boolean mUnitTestMode;
 
     private final CarrierPrivilegesTracker mCarrierPrivilegesTracker;
+
+    protected VoiceCallSessionStats mVoiceCallSessionStats;
 
     public IccRecords getIccRecords() {
         return mIccRecords.get();
@@ -4289,6 +4292,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     @NonNull
     public String getOperatorNumeric() {
         return "";
+    }
+
+    /** Returns the {@link VoiceCallSessionStats} for this phone ID. */
+    public VoiceCallSessionStats getVoiceCallSessionStats() {
+        return mVoiceCallSessionStats;
+    }
+
+    /** Sets the {@link VoiceCallSessionStats} mock for this phone ID during unit testing. */
+    @VisibleForTesting
+    public void setVoiceCallSessionStats(VoiceCallSessionStats voiceCallSessionStats) {
+        mVoiceCallSessionStats = voiceCallSessionStats;
     }
 
     /** @hide */
