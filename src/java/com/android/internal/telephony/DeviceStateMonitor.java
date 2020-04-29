@@ -308,68 +308,70 @@ public class DeviceStateMonitor extends Handler {
     }
 
     /**
-     * @return True if signal strength update should be turned off.
+     * @return True if signal strength update should be enabled. See details in
+     *         android.hardware.radio@1.2::IndicationFilter::SIGNAL_STRENGTH.
      */
-    private boolean shouldTurnOffSignalStrength() {
-        // We should not turn off signal strength update if one of the following condition is true.
+    private boolean shouldEnableSignalStrengthReports() {
+        // We should enable signal strength update if one of the following condition is true.
         // 1. The device is charging.
         // 2. When the screen is on.
         // 3. Any of system services is registrating to always listen to signal strength changes
-        if (mIsAlwaysSignalStrengthReportingEnabled || mIsCharging || mIsScreenOn) {
-            return false;
-        }
-
-        // In all other cases, we turn off signal strength update.
-        return true;
+        return mIsAlwaysSignalStrengthReportingEnabled || mIsCharging || mIsScreenOn;
     }
 
     /**
-     * @return True if full network update should be turned off. Only significant changes will
-     * trigger the network update unsolicited response.
+     * @return True if full network state update should be enabled. When off, only significant
+     *         changes will trigger the network update unsolicited response. See details in
+     *         android.hardware.radio@1.2::IndicationFilter::FULL_NETWORK_STATE.
      */
-    private boolean shouldTurnOffFullNetworkUpdate() {
-        return shouldTurnOffHighPowerConsumptionIndications();
+    private boolean shouldEnableFullNetworkStateReports() {
+        return shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
-     * @return True if data dormancy status update should be turned off.
+     * @return True if data call dormancy changed update should be enabled. See details in
+     *         android.hardware.radio@1.2::IndicationFilter::DATA_CALL_DORMANCY_CHANGED.
      */
-    private boolean shouldTurnOffDormancyUpdate() {
-        return shouldTurnOffHighPowerConsumptionIndications();
+    private boolean shouldEnableDataCallDormancyChangedReports() {
+        return shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
-     * @return True if link capacity estimate update should be turned off.
+     * @return True if link capacity estimate update should be enabled. See details in
+     *         android.hardware.radio@1.2::IndicationFilter::LINK_CAPACITY_ESTIMATE.
      */
-    private boolean shouldTurnOffLinkCapacityEstimate() {
-        return shouldTurnOffHighPowerConsumptionIndications();
+    private boolean shouldEnableLinkCapacityEstimateReports() {
+        return shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
-     * @return True if physical channel config update should be turned off.
+     * @return True if physical channel config update should be enabled. See details in
+     *         android.hardware.radio@1.2::IndicationFilter::PHYSICAL_CHANNEL_CONFIG.
      */
-    private boolean shouldTurnOffPhysicalChannelConfig() {
-        return shouldTurnOffHighPowerConsumptionIndications();
+    private boolean shouldEnablePhysicalChannelConfigReports() {
+        return shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
-     * @return True if BarryingInfo update should be turned off.
+     * @return True if barring info update should be enabled. See details in
+     *         android.hardware.radio@1.5::IndicationFilter::BARRING_INFO.
      */
-    private boolean shouldTurnOffBarringInfo() {
-        return shouldTurnOffHighPowerConsumptionIndications();
+    private boolean shouldEnableBarringInfoReports() {
+        return shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
-     * A common policy to determine if we should turn off unnecessary indications for power saving.
+     * A common policy to determine if we should enable the necessary indications update,
+     * for power consumption's sake.
      *
-     * @return True if the response filter update should be turned off.
+     * @return True if the response update should be enabled.
      */
-    private boolean shouldTurnOffHighPowerConsumptionIndications() {
-        // We should not turn off update if one of the following condition is true.
+    private boolean shouldEnableHighPowerConsumptionIndications() {
+        // We should enable indications reports if one of the following condition is true.
         // 1. The device is charging.
         // 2. When the screen is on.
         // 3. When the tethering is on.
-        return !(mIsCharging || mIsScreenOn || mIsTetheringOn);
+        return mIsCharging || mIsScreenOn || mIsTetheringOn;
     }
 
     /**
@@ -418,22 +420,19 @@ public class DeviceStateMonitor extends Handler {
      * @param state True if enabled/on, otherwise disabled/off.
      */
     private void onUpdateDeviceState(int eventType, boolean state) {
-        boolean shouldPollBarringInfo = false;
+        final boolean shouldEnableBarringInfoReportsOld = shouldEnableBarringInfoReports();
         switch (eventType) {
             case EVENT_SCREEN_STATE_CHANGED:
                 if (mIsScreenOn == state) return;
-                shouldPollBarringInfo = shouldTurnOffBarringInfo();
                 mIsScreenOn = state;
                 break;
             case EVENT_CHARGING_STATE_CHANGED:
                 if (mIsCharging == state) return;
-                shouldPollBarringInfo = shouldTurnOffBarringInfo();
                 mIsCharging = state;
                 sendDeviceState(CHARGING_STATE, mIsCharging);
                 break;
             case EVENT_TETHERING_STATE_CHANGED:
                 if (mIsTetheringOn == state) return;
-                shouldPollBarringInfo = shouldTurnOffBarringInfo();
                 mIsTetheringOn = state;
                 break;
             case EVENT_POWER_SAVE_MODE_CHANGED:
@@ -466,33 +465,35 @@ public class DeviceStateMonitor extends Handler {
         }
 
         int newFilter = 0;
-        if (!shouldTurnOffSignalStrength()) {
+        if (shouldEnableSignalStrengthReports()) {
             newFilter |= IndicationFilter.SIGNAL_STRENGTH;
         }
 
-        if (!shouldTurnOffFullNetworkUpdate()) {
+        if (shouldEnableFullNetworkStateReports()) {
             newFilter |= IndicationFilter.FULL_NETWORK_STATE;
         }
 
-        if (!shouldTurnOffDormancyUpdate()) {
+        if (shouldEnableDataCallDormancyChangedReports()) {
             newFilter |= IndicationFilter.DATA_CALL_DORMANCY_CHANGED;
         }
 
-        if (!shouldTurnOffLinkCapacityEstimate()) {
+        if (shouldEnableLinkCapacityEstimateReports()) {
             newFilter |= IndicationFilter.LINK_CAPACITY_ESTIMATE;
         }
 
-        if (!shouldTurnOffPhysicalChannelConfig()) {
+        if (shouldEnablePhysicalChannelConfigReports()) {
             newFilter |= IndicationFilter.PHYSICAL_CHANNEL_CONFIG;
         }
 
-        if (!shouldTurnOffBarringInfo()) {
+        final boolean shouldEnableBarringInfoReports = shouldEnableBarringInfoReports();
+        if (shouldEnableBarringInfoReports) {
             newFilter |= IndicationFilter.BARRING_INFO;
         }
 
         setUnsolResponseFilter(newFilter, false);
 
-        if (shouldPollBarringInfo) {
+        // Pull barring info AFTER setting filter, the order matters
+        if (shouldEnableBarringInfoReports && !shouldEnableBarringInfoReportsOld) {
             if (DBG) log("Manually pull barring info...", true);
             // use a null message since we don't care of receiving response
             mPhone.mCi.getBarringInfo(null);

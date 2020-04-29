@@ -58,6 +58,7 @@ import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.SubscriptionController;
 import com.android.internal.telephony.cat.CatService;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
+import com.android.internal.telephony.uicc.IccCardApplicationStatus.PersoSubState;
 import com.android.internal.telephony.uicc.IccCardStatus.CardState;
 import com.android.internal.telephony.uicc.IccCardStatus.PinState;
 import com.android.internal.telephony.uicc.euicc.EuiccCard;
@@ -128,6 +129,7 @@ public class UiccProfile extends IccCard {
     private static final int EVENT_SIM_IO_DONE = 12;
     private static final int EVENT_CARRIER_PRIVILEGES_LOADED = 13;
     private static final int EVENT_CARRIER_CONFIG_CHANGED = 14;
+    // NOTE: any new EVENT_* values must be added to eventToString.
 
     private TelephonyManager mTelephonyManager;
 
@@ -181,6 +183,7 @@ public class UiccProfile extends IccCard {
     public final Handler mHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
+            String eventName = eventToString(msg.what);
             // We still need to handle the following response messages even the UiccProfile has been
             // disposed because whoever sent the request may be still waiting for the response.
             if (mDisposed && msg.what != EVENT_OPEN_LOGICAL_CHANNEL_DONE
@@ -188,22 +191,22 @@ public class UiccProfile extends IccCard {
                     && msg.what != EVENT_TRANSMIT_APDU_LOGICAL_CHANNEL_DONE
                     && msg.what != EVENT_TRANSMIT_APDU_BASIC_CHANNEL_DONE
                     && msg.what != EVENT_SIM_IO_DONE) {
-                loge("handleMessage: Received " + msg.what
+                loge("handleMessage: Received " + eventName
                         + " after dispose(); ignoring the message");
                 return;
             }
-            loglocal("handleMessage: Received " + msg.what + " for phoneId " + mPhoneId);
+            logWithLocalLog("handleMessage: Received " + eventName + " for phoneId " + mPhoneId);
             switch (msg.what) {
                 case EVENT_NETWORK_LOCKED:
-                    mNetworkLockedRegistrants.notifyRegistrants(
-                            new AsyncResult(null, mUiccApplication.getPersoSubState().ordinal(), null));
+                    mNetworkLockedRegistrants.notifyRegistrants(new AsyncResult(
+                            null, mUiccApplication.getPersoSubState().ordinal(), null));
                     // intentional fall through
                 case EVENT_RADIO_OFF_OR_UNAVAILABLE:
                 case EVENT_ICC_LOCKED:
                 case EVENT_APP_READY:
                 case EVENT_RECORDS_LOADED:
                 case EVENT_EID_READY:
-                    if (VDBG) log("handleMessage: Received " + msg.what);
+                    if (VDBG) log("handleMessage: Received " + eventName);
                     updateExternalState();
                     break;
 
@@ -236,8 +239,8 @@ public class UiccProfile extends IccCard {
                 case EVENT_SIM_IO_DONE:
                     AsyncResult ar = (AsyncResult) msg.obj;
                     if (ar.exception != null) {
-                        loglocal("handleMessage: Exception " + ar.exception);
-                        log("handleMessage: Error in SIM access with exception" + ar.exception);
+                        logWithLocalLog("handleMessage: Error in SIM access with exception "
+                                + ar.exception);
                     }
                     AsyncResult.forMessage((Message) ar.userObj, ar.result, ar.exception);
                     ((Message) ar.userObj).sendToTarget();
@@ -401,7 +404,7 @@ public class UiccProfile extends IccCard {
                     nameSource = SubscriptionManager.NAME_SOURCE_SIM_PNN;
                 } else {
                     newCarrierName = phone.getCarrierName();    // Get the name from carrier id.
-                    nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT;
+                    nameSource = SubscriptionManager.NAME_SOURCE_CARRIER_ID;
                 }
             }
         }
@@ -453,7 +456,7 @@ public class UiccProfile extends IccCard {
             int nameSource) {
         /* update display name with carrier override */
         SubscriptionInfo subInfo = subCon.getActiveSubscriptionInfo(
-                subId, mContext.getOpPackageName(), mContext.getFeatureId());
+                subId, mContext.getOpPackageName(), mContext.getAttributionTag());
 
         if (subInfo == null) {
             return;
@@ -553,7 +556,7 @@ public class UiccProfile extends IccCard {
                 cardLocked = true;
                 lockedState = IccCardConstants.State.PUK_REQUIRED;
             } else if (appState == IccCardApplicationStatus.AppState.APPSTATE_SUBSCRIPTION_PERSO) {
-                if (mUiccApplication.isPersoLocked()) {
+                if (PersoSubState.isPersoLocked(mUiccApplication.getPersoSubState())) {
                     if (VDBG) log("updateExternalState: PERSOSUBSTATE_SIM_NETWORK");
                     cardLocked = true;
                     lockedState = IccCardConstants.State.NETWORK_LOCKED;
@@ -764,8 +767,8 @@ public class UiccProfile extends IccCard {
             mNetworkLockedRegistrants.add(r);
 
             if (getState() == IccCardConstants.State.NETWORK_LOCKED) {
-                r.notifyRegistrant(new AsyncResult(null, mUiccApplication.getPersoSubState()
-                        .ordinal(), null));
+                r.notifyRegistrant(
+                        new AsyncResult(null, mUiccApplication.getPersoSubState().ordinal(), null));
             }
         }
     }
@@ -838,6 +841,20 @@ public class UiccProfile extends IccCard {
         synchronized (mLock) {
             if (mUiccApplication != null) {
                 mUiccApplication.supplyNetworkDepersonalization(pin, onComplete);
+            } else if (onComplete != null) {
+                Exception e = new RuntimeException("CommandsInterface is not set.");
+                AsyncResult.forMessage(onComplete).exception = e;
+                onComplete.sendToTarget();
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void supplySimDepersonalization(PersoSubState persoType, String pin, Message onComplete) {
+        synchronized (mLock) {
+            if (mUiccApplication != null) {
+                mUiccApplication.supplySimDepersonalization(persoType, pin, onComplete);
             } else if (onComplete != null) {
                 Exception e = new RuntimeException("CommandsInterface is not set.");
                 AsyncResult.forMessage(onComplete).exception = e;
@@ -1458,8 +1475,8 @@ public class UiccProfile extends IccCard {
      * Exposes {@link CommandsInterface#iccOpenLogicalChannel}
      */
     public void iccOpenLogicalChannel(String aid, int p2, Message response) {
-        loglocal("iccOpenLogicalChannel: " + aid + " , " + p2 + " by pid:" + Binder.getCallingPid()
-                + " uid:" + Binder.getCallingUid());
+        logWithLocalLog("iccOpenLogicalChannel: " + aid + " , " + p2 + " by pid:"
+                + Binder.getCallingPid() + " uid:" + Binder.getCallingUid());
         mCi.iccOpenLogicalChannel(aid, p2,
                 mHandler.obtainMessage(EVENT_OPEN_LOGICAL_CHANNEL_DONE, response));
     }
@@ -1468,7 +1485,7 @@ public class UiccProfile extends IccCard {
      * Exposes {@link CommandsInterface#iccCloseLogicalChannel}
      */
     public void iccCloseLogicalChannel(int channel, Message response) {
-        loglocal("iccCloseLogicalChannel: " + channel);
+        logWithLocalLog("iccCloseLogicalChannel: " + channel);
         mCi.iccCloseLogicalChannel(channel,
                 mHandler.obtainMessage(EVENT_CLOSE_LOGICAL_CHANNEL_DONE, response));
     }
@@ -1681,6 +1698,26 @@ public class UiccProfile extends IccCard {
         return null;
     }
 
+    private static String eventToString(int event) {
+        switch (event) {
+            case EVENT_RADIO_OFF_OR_UNAVAILABLE: return "RADIO_OFF_OR_UNAVAILABLE";
+            case EVENT_ICC_LOCKED: return "ICC_LOCKED";
+            case EVENT_APP_READY: return "APP_READY";
+            case EVENT_RECORDS_LOADED: return "RECORDS_LOADED";
+            case EVENT_NETWORK_LOCKED: return "NETWORK_LOCKED";
+            case EVENT_EID_READY: return "EID_READY";
+            case EVENT_ICC_RECORD_EVENTS: return "ICC_RECORD_EVENTS";
+            case EVENT_OPEN_LOGICAL_CHANNEL_DONE: return "OPEN_LOGICAL_CHANNEL_DONE";
+            case EVENT_CLOSE_LOGICAL_CHANNEL_DONE: return "CLOSE_LOGICAL_CHANNEL_DONE";
+            case EVENT_TRANSMIT_APDU_LOGICAL_CHANNEL_DONE: return "TRANSMIT_APDU_LOGICAL_CHANNEL_DONE";
+            case EVENT_TRANSMIT_APDU_BASIC_CHANNEL_DONE: return "TRANSMIT_APDU_BASIC_CHANNEL_DONE";
+            case EVENT_SIM_IO_DONE: return "SIM_IO_DONE";
+            case EVENT_CARRIER_PRIVILEGES_LOADED: return "CARRIER_PRIVILEGES_LOADED";
+            case EVENT_CARRIER_CONFIG_CHANGED: return "CARRIER_CONFIG_CHANGED";
+            default: return "UNKNOWN(" + event + ")";
+        }
+    }
+
     private static void log(String msg) {
         Rlog.d(LOG_TAG, msg);
     }
@@ -1689,8 +1726,9 @@ public class UiccProfile extends IccCard {
         Rlog.e(LOG_TAG, msg);
     }
 
-    private void loglocal(String msg) {
-        if (DBG) UiccController.sLocalLog.log("UiccProfile[" + mPhoneId + "]: " + msg);
+    private void logWithLocalLog(String msg) {
+        Rlog.d(LOG_TAG, msg);
+        if (DBG) UiccController.addLocalLog("UiccProfile[" + mPhoneId + "]: " + msg);
     }
 
     /**

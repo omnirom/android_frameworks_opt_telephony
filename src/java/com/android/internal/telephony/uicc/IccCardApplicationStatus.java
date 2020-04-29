@@ -85,7 +85,7 @@ public class IccCardApplicationStatus {
 
     @UnsupportedAppUsage(implicitMember =
             "values()[Lcom/android/internal/telephony/uicc/IccCardApplicationStatus$PersoSubState;")
-    public enum PersoSubState{
+    public enum PersoSubState {
         @UnsupportedAppUsage
         PERSOSUBSTATE_UNKNOWN,
         PERSOSUBSTATE_IN_PROGRESS,
@@ -117,16 +117,16 @@ public class IccCardApplicationStatus {
         PERSOSUBSTATE_RUIM_CORPORATE_PUK,
         PERSOSUBSTATE_RUIM_SERVICE_PROVIDER_PUK,
         PERSOSUBSTATE_RUIM_RUIM_PUK,
-        PERSOSUBSTATE_SIM_SPN(100),
-        PERSOSUBSTATE_SIM_SPN_PUK(101),
-        PERSOSUBSTATE_SIM_SP_EHPLMN(102),
-        PERSOSUBSTATE_SIM_SP_EHPLMN_PUK(103),
-        PERSOSUBSTATE_SIM_ICCID(104),
-        PERSOSUBSTATE_SIM_ICCID_PUK(105),
-        PERSOSUBSTATE_SIM_IMPI(106),
-        PERSOSUBSTATE_SIM_IMPI_PUK(107),
-        PERSOSUBSTATE_SIM_NS_SP(108),
-        PERSOSUBSTATE_SIM_NS_SP_PUK(109);
+        PERSOSUBSTATE_SIM_SPN,
+        PERSOSUBSTATE_SIM_SPN_PUK,
+        PERSOSUBSTATE_SIM_SP_EHPLMN,
+        PERSOSUBSTATE_SIM_SP_EHPLMN_PUK,
+        PERSOSUBSTATE_SIM_ICCID,
+        PERSOSUBSTATE_SIM_ICCID_PUK,
+        PERSOSUBSTATE_SIM_IMPI,
+        PERSOSUBSTATE_SIM_IMPI_PUK,
+        PERSOSUBSTATE_SIM_NS_SP,
+        PERSOSUBSTATE_SIM_NS_SP_PUK;
 
         private int State;
 
@@ -144,6 +144,17 @@ public class IccCardApplicationStatus {
 
         boolean isPersoSubStateUnknown() {
             return this == PERSOSUBSTATE_UNKNOWN;
+        }
+
+        public static boolean isPersoLocked(PersoSubState mState) {
+            switch (mState) {
+                case PERSOSUBSTATE_UNKNOWN:
+                case PERSOSUBSTATE_IN_PROGRESS:
+                case PERSOSUBSTATE_READY:
+                    return false;
+                default:
+                    return true;
+            }
         }
     }
 
@@ -229,17 +240,17 @@ public class IccCardApplicationStatus {
             case 22: newSubState = PersoSubState.PERSOSUBSTATE_RUIM_CORPORATE_PUK; break;
             case 23: newSubState = PersoSubState.PERSOSUBSTATE_RUIM_SERVICE_PROVIDER_PUK; break;
             case 24: newSubState = PersoSubState.PERSOSUBSTATE_RUIM_RUIM_PUK; break;
+            case 25: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SPN; break;
+            case 26: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SPN_PUK; break;
+            case 27: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SP_EHPLMN; break;
+            case 28: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SP_EHPLMN_PUK; break;
+            case 29: newSubState = PersoSubState.PERSOSUBSTATE_SIM_ICCID; break;
+            case 30: newSubState = PersoSubState.PERSOSUBSTATE_SIM_ICCID_PUK; break;
+            case 31: newSubState = PersoSubState.PERSOSUBSTATE_SIM_IMPI; break;
+            case 32: newSubState = PersoSubState.PERSOSUBSTATE_SIM_IMPI_PUK; break;
+            case 33: newSubState = PersoSubState.PERSOSUBSTATE_SIM_NS_SP; break;
+            case 34: newSubState = PersoSubState.PERSOSUBSTATE_SIM_NS_SP_PUK; break;
 
-            case 100: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SPN; break;
-            case 101: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SPN_PUK; break;
-            case 102: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SP_EHPLMN; break;
-            case 103: newSubState = PersoSubState.PERSOSUBSTATE_SIM_SP_EHPLMN_PUK; break;
-            case 104: newSubState = PersoSubState.PERSOSUBSTATE_SIM_ICCID; break;
-            case 105: newSubState = PersoSubState.PERSOSUBSTATE_SIM_ICCID_PUK; break;
-            case 106: newSubState = PersoSubState.PERSOSUBSTATE_SIM_IMPI; break;
-            case 107: newSubState = PersoSubState.PERSOSUBSTATE_SIM_IMPI_PUK; break;
-            case 108: newSubState = PersoSubState.PERSOSUBSTATE_SIM_NS_SP; break;
-            case 109: newSubState = PersoSubState.PERSOSUBSTATE_SIM_NS_SP_PUK; break;
             default:
                 newSubState = PersoSubState.PERSOSUBSTATE_UNKNOWN;
                 loge("PersoSubstateFromRILInt: bad substate: " + substate

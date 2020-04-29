@@ -44,10 +44,10 @@ import android.service.euicc.EuiccProfileInfo;
 import android.service.euicc.EuiccService;
 import android.service.euicc.GetEuiccProfileInfoListResult;
 import android.telephony.CarrierConfigManager;
-import android.telephony.RadioAccessFamily;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.TelephonyManager.SimState;
 import android.telephony.UiccAccessRule;
 import android.telephony.euicc.EuiccManager;
 import android.text.TextUtils;
@@ -440,7 +440,7 @@ public class SubscriptionInfoUpdater extends Handler {
         UiccSlot slot = UiccController.getInstance().getUiccSlotForPhone(phoneId);
         if (slot == null || slot.getIccId() == null) return false;
         SubscriptionInfo info = SubscriptionController.getInstance()
-                .getSubInfoForIccId(slot.getIccId());
+                .getSubInfoForIccId(IccUtils.stripTrailingFs(slot.getIccId()));
         return info != null && !info.areUiccApplicationsEnabled();
     }
 
@@ -543,18 +543,6 @@ public class SubscriptionInfoUpdater extends Handler {
                     }
 
                     // Set the modem network mode
-                    long allowedNetworkTypes = -1;
-                    try {
-                        allowedNetworkTypes = Long.parseLong(
-                                SubscriptionController.getInstance().getSubscriptionProperty(subId,
-                                        SubscriptionManager.ALLOWED_NETWORK_TYPES));
-                    } catch (NumberFormatException err) {
-                        logd("NumberFormat exception");
-                    }
-
-                    long networkTypeBitMask = RadioAccessFamily.getRafFromNetworkType(networkType);
-                    networkType = RadioAccessFamily.getNetworkTypeFromRaf(
-                            (int) (networkTypeBitMask & allowedNetworkTypes));
                     PhoneFactory.getPhone(phoneId).setPreferredNetworkType(networkType, null);
 
                     // Only support automatic selection mode on SIM change.
@@ -620,6 +608,15 @@ public class SubscriptionInfoUpdater extends Handler {
             logd("SIM" + (phoneId + 1) + " hot plug out, absentAndInactive=" + absentAndInactive);
         }
         sIccId[phoneId] = ICCID_STRING_FOR_NO_SIM;
+        int[] subIds = SubscriptionController.getInstance().getSubId(phoneId);
+        if (subIds != null && subIds.length > 0) {
+            // When a SIM is unplugged, mark uicc applications enabled. This is to make sure when
+            // user unplugs and re-inserts the SIM card, we re-enable it.
+            ContentValues value = new ContentValues(1);
+            value.put(SubscriptionManager.UICC_APPLICATIONS_ENABLED, true);
+            sContext.getContentResolver().update(SubscriptionManager.CONTENT_URI, value,
+                    SubscriptionController.getSelectionForSubIdList(subIds), null);
+        }
         updateSubscriptionInfoByIccId(phoneId, true /* updateEmbeddedSubs */);
         // Do not broadcast if the SIM is absent and inactive, because the logical phoneId here is
         // no longer correct
@@ -849,7 +846,7 @@ public class SubscriptionInfoUpdater extends Handler {
             int index =
                     findSubscriptionInfoForIccid(existingSubscriptions, embeddedProfile.getIccid());
             int prevCarrierId = TelephonyManager.UNKNOWN_CARRIER_ID;
-            int nameSource = SubscriptionManager.NAME_SOURCE_DEFAULT;
+            int nameSource = SubscriptionManager.NAME_SOURCE_CARRIER_ID;
             if (index < 0) {
                 // No existing entry for this ICCID; create an empty one.
                 SubscriptionController.getInstance().insertEmptySubInfoRecord(
@@ -904,10 +901,10 @@ public class SubscriptionInfoUpdater extends Handler {
             // If cardId = unsupported or unitialized, we have no reason to update DB.
             // Additionally, if the device does not support cardId for default eUICC, the CARD_ID
             // field should not contain the EID
-            if (cardId >= 0 && UiccController.getInstance().getCardIdForDefaultEuicc()
+            UiccController uiccController = UiccController.getInstance();
+            if (cardId >= 0 && uiccController.getCardIdForDefaultEuicc()
                     != TelephonyManager.UNSUPPORTED_CARD_ID) {
-                values.put(SubscriptionManager.CARD_ID,
-                        mEuiccManager.createForCardId(cardId).getEid());
+                values.put(SubscriptionManager.CARD_ID, uiccController.convertToCardString(cardId));
             }
             hasChanges = true;
             contentResolver.update(SubscriptionManager.CONTENT_URI, values,
@@ -1158,7 +1155,13 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    private static String simStateString(int state) {
+    /**
+     * Convert SIM state into string
+     *
+     * @param state SIM state
+     * @return SIM state in string format
+     */
+    public static String simStateString(@SimState int state) {
         switch (state) {
             case TelephonyManager.SIM_STATE_UNKNOWN:
                 return "UNKNOWN";

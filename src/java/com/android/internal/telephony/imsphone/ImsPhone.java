@@ -42,8 +42,6 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_DAT
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NONE;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
 
 import android.app.Activity;
 import android.app.Notification;
@@ -150,6 +148,8 @@ public class ImsPhone extends ImsPhoneBase {
         public static class Builder extends DialArgs.Builder<ImsDialArgs.Builder> {
             private android.telecom.Connection.RttTextStream mRttTextStream;
             private int mClirMode = CommandsInterface.CLIR_DEFAULT;
+            private int mRetryCallFailCause = ImsReasonInfo.CODE_UNSPECIFIED;
+            private int mRetryCallFailNetworkType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
 
             public static ImsDialArgs.Builder from(DialArgs dialArgs) {
                 return new ImsDialArgs.Builder()
@@ -164,7 +164,9 @@ public class ImsPhone extends ImsPhoneBase {
                         .setVideoState(dialArgs.videoState)
                         .setIntentExtras(dialArgs.intentExtras)
                         .setRttTextStream(dialArgs.rttTextStream)
-                        .setClirMode(dialArgs.clirMode);
+                        .setClirMode(dialArgs.clirMode)
+                        .setRetryCallFailCause(dialArgs.retryCallFailCause)
+                        .setRetryCallFailNetworkType(dialArgs.retryCallFailNetworkType);
             }
 
             public ImsDialArgs.Builder setRttTextStream(
@@ -175,6 +177,16 @@ public class ImsPhone extends ImsPhoneBase {
 
             public ImsDialArgs.Builder setClirMode(int clirMode) {
                 this.mClirMode = clirMode;
+                return this;
+            }
+
+            public ImsDialArgs.Builder setRetryCallFailCause(int retryCallFailCause) {
+                this.mRetryCallFailCause = retryCallFailCause;
+                return this;
+            }
+
+            public ImsDialArgs.Builder setRetryCallFailNetworkType(int retryCallFailNetworkType) {
+                this.mRetryCallFailNetworkType = retryCallFailNetworkType;
                 return this;
             }
 
@@ -191,11 +203,15 @@ public class ImsPhone extends ImsPhoneBase {
 
         /** The CLIR mode to use */
         public final int clirMode;
+        public final int retryCallFailCause;
+        public final int retryCallFailNetworkType;
 
         private ImsDialArgs(ImsDialArgs.Builder b) {
             super(b);
             this.rttTextStream = b.mRttTextStream;
             this.clirMode = b.mClirMode;
+            this.retryCallFailCause = b.mRetryCallFailCause;
+            this.retryCallFailNetworkType = b.mRetryCallFailNetworkType;
         }
     }
 
@@ -785,19 +801,9 @@ public class ImsPhone extends ImsPhoneBase {
 
         mLastDialString = dialString;
 
-        boolean isConferenceUri = false;
-        boolean isSkipSchemaParsing = false;
-        if (dialArgs.intentExtras != null) {
-            isConferenceUri = dialArgs.intentExtras.getBoolean(
-                    EXTRA_DIAL_CONFERENCE_URI, false);
-            isSkipSchemaParsing = dialArgs.intentExtras.getBoolean(
-                    EXTRA_SKIP_SCHEMA_PARSING, false);
-        }
         String newDialString = dialString;
         // Need to make sure dialString gets parsed properly.
-        if (!isConferenceUri && !isSkipSchemaParsing) {
-            newDialString = PhoneNumberUtils.stripSeparators(dialString);
-        }
+        newDialString = PhoneNumberUtils.stripSeparators(dialString);
 
         // handle in-call MMI first if applicable
         if (handleInCallMmiCommands(newDialString)) {
@@ -854,11 +860,6 @@ public class ImsPhone extends ImsPhoneBase {
 
             return null;
         }
-    }
-
-    @Override
-    public void addParticipant(String dialString) throws CallStateException {
-        mCT.addParticipant(dialString);
     }
 
     @Override
@@ -1703,7 +1704,7 @@ public class ImsPhone extends ImsPhoneBase {
     }
 
     @Override
-    public boolean isImsCapabilityAvailable(int capability, int regTech) {
+    public boolean isImsCapabilityAvailable(int capability, int regTech) throws ImsException {
         return mCT.isImsCapabilityAvailable(capability, regTech);
     }
 
@@ -1987,8 +1988,15 @@ public class ImsPhone extends ImsPhoneBase {
         if (mCT.getState() == PhoneConstants.State.IDLE) {
             if (DBG) logd("updateRoamingState now: " + newRoamingState);
             mRoaming = newRoamingState;
-            ImsManager imsManager = ImsManager.getInstance(mContext, mPhoneId);
-            imsManager.setWfcMode(imsManager.getWfcMode(newRoamingState), newRoamingState);
+            CarrierConfigManager configManager = (CarrierConfigManager)
+                    getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+            // Don't set wfc mode if carrierconfig has not loaded. It will be set by GsmCdmaPhone
+            // when receives ACTION_CARRIER_CONFIG_CHANGED broadcast.
+            if (configManager != null && CarrierConfigManager.isConfigForIdentifiedCarrier(
+                    configManager.getConfigForSubId(getSubId()))) {
+                ImsManager imsManager = ImsManager.getInstance(mContext, mPhoneId);
+                imsManager.setWfcMode(imsManager.getWfcMode(newRoamingState), newRoamingState);
+            }
         } else {
             if (DBG) logd("updateRoamingState postponed: " + newRoamingState);
             mCT.registerForVoiceCallEnded(this, EVENT_VOICE_CALL_ENDED, null);

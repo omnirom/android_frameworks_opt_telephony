@@ -156,13 +156,13 @@ public class UiccCardApplicationTest extends TelephonyTest {
                 .PERSOSUBSTATE_SIM_NETWORK;
         mUiccCardApplication.update(mUiccCardAppStatus, mContext, mSimulatedCommands);
         processAllMessages();
-        assertTrue(mUiccCardApplication.isPersoLocked());
+        assertTrue(IccCardApplicationStatus.PersoSubState.isPersoLocked(mUiccCardApplication.getPersoSubState()));
 
         mUiccCardAppStatus.perso_substate = IccCardApplicationStatus.PersoSubState
                 .PERSOSUBSTATE_READY;
         mUiccCardApplication.update(mUiccCardAppStatus, mContext, mSimulatedCommands);
         processAllMessages();
-        assertFalse(mUiccCardApplication.isPersoLocked());
+        assertFalse(IccCardApplicationStatus.PersoSubState.isPersoLocked(mUiccCardApplication.getPersoSubState()));
     }
 
     @Test

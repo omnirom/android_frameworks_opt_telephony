@@ -50,6 +50,7 @@ import android.os.Message;
 import android.os.MessageQueue;
 import android.os.RegistrantList;
 import android.os.ServiceManager;
+import android.permission.PermissionManager;
 import android.provider.BlockedNumberContract;
 import android.provider.DeviceConfig;
 import android.provider.Settings;
@@ -277,6 +278,8 @@ public abstract class TelephonyTest {
     protected IccCard mIccCard;
     @Mock
     protected NetworkStatsManager mStatsManager;
+    @Mock
+    protected CarrierPrivilegesTracker mCarrierPrivilegesTracker;
 
     protected ActivityManager mActivityManager;
     protected ImsCallProfile mImsCallProfile;
@@ -399,6 +402,8 @@ public abstract class TelephonyTest {
 
         mPhones = new Phone[] {mPhone};
         mImsCallProfile = new ImsCallProfile();
+        mImsCallProfile.setCallerNumberVerificationStatus(
+                ImsCallProfile.VERIFICATION_STATUS_PASSED);
         mSimulatedCommands = new SimulatedCommands();
         mContextFixture = new ContextFixture();
         mContext = mContextFixture.getTestDouble();
@@ -492,6 +497,7 @@ public abstract class TelephonyTest {
         doReturn(mTransportManager).when(mPhone).getTransportManager();
         doReturn(mDataEnabledSettings).when(mPhone).getDataEnabledSettings();
         doReturn(mDcTracker).when(mPhone).getDcTracker(anyInt());
+        doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
         mIccSmsInterfaceManager.mDispatchersController = mSmsDispatchersController;
 
         //mUiccController
@@ -733,20 +739,27 @@ public abstract class TelephonyTest {
     }
 
     protected void setupMocksForTelephonyPermissions() throws Exception {
+        setupMocksForTelephonyPermissions(TAG, Build.VERSION_CODES.Q);
+    }
+
+    protected void setupMocksForTelephonyPermissions(String packageName, int targetSdkVersion)
+            throws Exception {
         // If the calling package does not meet the new requirements for device identifier access
         // TelephonyPermissions will query the PackageManager for the ApplicationInfo of the package
         // to determine the target SDK. For apps targeting Q a SecurityException is thrown
         // regardless of if the package satisfies the previous requirements for device ID access.
-        mApplicationInfo.targetSdkVersion = Build.VERSION_CODES.Q;
-        doReturn(mApplicationInfo).when(mPackageManager).getApplicationInfoAsUser(eq(TAG), anyInt(),
-                any());
+        mApplicationInfo.targetSdkVersion = targetSdkVersion;
+        doReturn(mApplicationInfo).when(mPackageManager).getApplicationInfoAsUser(eq(packageName),
+                anyInt(), any());
 
-        // TelephonyPermissions also checks to see if the calling package has been granted
-        // identifier access via an appop; ensure this query does not allow identifier access for
-        // any packages.
-        doReturn(AppOpsManager.MODE_DEFAULT).when(mAppOpsManager).noteOpNoThrow(
-                eq(AppOpsManager.OPSTR_READ_DEVICE_IDENTIFIERS), anyInt(), anyString(),
-                nullable(String.class), nullable(String.class));
+        // TelephonyPermissions uses a SystemAPI to check if the calling package meets any of the
+        // generic requirements for device identifier access (currently READ_PRIVILEGED_PHONE_STATE,
+        // appop, and device / profile owner checks. This sets up the PermissionManager to return
+        // that access requirements are met.
+        setIdentifierAccess(true);
+        PermissionManager permissionManager = new PermissionManager(mContext, null,
+                mMockPermissionManager);
+        doReturn(permissionManager).when(mContext).getSystemService(eq(Context.PERMISSION_SERVICE));
 
         // TelephonyPermissions queries DeviceConfig to determine if the identifier access
         // restrictions should be enabled; this results in a NPE when DeviceConfig uses
@@ -769,6 +782,20 @@ public abstract class TelephonyTest {
 
         replaceInstance(Class.forName("android.provider.Settings$ContentProviderHolder"),
                 "mContentProvider", providerHolder, iContentProvider);
+    }
+
+    protected void setIdentifierAccess(boolean hasAccess) {
+        doReturn(hasAccess ? PackageManager.PERMISSION_GRANTED
+                : PackageManager.PERMISSION_DENIED).when(
+                mMockPermissionManager).checkDeviceIdentifierAccess(any(), any(), any(), anyInt(),
+                anyInt());
+    }
+
+    protected void setCarrierPrivileges(boolean hasCarrierPrivileges) {
+        doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
+        doReturn(hasCarrierPrivileges ? TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS
+                : TelephonyManager.CARRIER_PRIVILEGE_STATUS_NO_ACCESS).when(
+                mTelephonyManager).getCarrierPrivilegeStatus(anyInt());
     }
 
     protected final void waitForHandlerAction(Handler h, long timeoutMillis) {

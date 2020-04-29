@@ -84,7 +84,7 @@ import android.hardware.radio.V1_0.SsInfoData;
 import android.hardware.radio.V1_0.StkCcUnsolSsResult;
 import android.hardware.radio.V1_0.SuppSvcNotification;
 import android.hardware.radio.V1_2.CellConnectionStatus;
-import android.hardware.radio.V1_4.IRadioIndication;
+import android.hardware.radio.V1_5.IRadioIndication;
 import android.os.AsyncResult;
 import android.sysprop.TelephonyProperties;
 import android.telephony.Annotation.RadioPowerState;
@@ -328,6 +328,10 @@ public class RadioIndication extends IRadioIndication.Stub {
 
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_EMERGENCY_NUMBER_LIST, response);
 
+        // Cache emergency number list from last indication.
+        mRil.cacheEmergencyNumberListIndication(response);
+
+        // Notify emergency number list from radio to registrants
         mRil.mEmergencyNumberListRegistrants.notifyRegistrants(
                 new AsyncResult(null, response, null));
     }
@@ -335,25 +339,20 @@ public class RadioIndication extends IRadioIndication.Stub {
     /** Indicates current data call list. */
     public void dataCallListChanged(int indicationType,
             ArrayList<android.hardware.radio.V1_0.SetupDataCallResult> dcList) {
-        mRil.processIndication(indicationType);
-
-        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_DATA_CALL_LIST_CHANGED, dcList);
-
-        ArrayList<DataCallResponse> response = RIL.convertDataCallResultList(dcList);
-        mRil.mDataCallListChangedRegistrants.notifyRegistrants(
-                new AsyncResult(null, response, null));
+        responseDataCallListChanged(indicationType, dcList);
     }
 
     /** Indicates current data call list with radio HAL 1.4. */
     public void dataCallListChanged_1_4(int indicationType,
             ArrayList<android.hardware.radio.V1_4.SetupDataCallResult> dcList) {
-        mRil.processIndication(indicationType);
+        responseDataCallListChanged(indicationType, dcList);
 
-        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_DATA_CALL_LIST_CHANGED, dcList);
+    }
 
-        ArrayList<DataCallResponse> response = RIL.convertDataCallResultList(dcList);
-        mRil.mDataCallListChangedRegistrants.notifyRegistrants(
-                new AsyncResult(null, response, null));
+    /** Indicates current data call list with radio HAL 1.5. */
+    public void dataCallListChanged_1_5(int indicationType,
+            ArrayList<android.hardware.radio.V1_5.SetupDataCallResult> dcList) {
+        responseDataCallListChanged(indicationType, dcList);
     }
 
     public void suppSvcNotify(int indicationType, SuppSvcNotification suppSvcNotification) {
@@ -763,6 +762,18 @@ public class RadioIndication extends IRadioIndication.Stub {
         mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
     }
 
+    /** Get unsolicited message for cellInfoList using HAL V1_5 */
+    public void cellInfoList_1_5(int indicationType,
+            ArrayList<android.hardware.radio.V1_5.CellInfo> records) {
+        mRil.processIndication(indicationType);
+
+        ArrayList<CellInfo> response = RIL.convertHalCellInfoList_1_5(records);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_CELL_INFO_LIST, response);
+
+        mRil.mRilCellInfoListRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
+    }
+
     /** Get unsolicited message for uicc applications enablement changes. */
     public void uiccApplicationsEnablementChanged(int indicationType, boolean enabled) {
         mRil.processIndication(indicationType);
@@ -790,6 +801,12 @@ public class RadioIndication extends IRadioIndication.Stub {
     public void networkScanResult_1_4(int indicationType,
                                       android.hardware.radio.V1_4.NetworkScanResult result) {
         responseNetworkScan_1_4(indicationType, result);
+    }
+
+    /** Incremental network scan results with HAL V1_5 */
+    public void networkScanResult_1_5(int indicationType,
+            android.hardware.radio.V1_5.NetworkScanResult result) {
+        responseNetworkScan_1_5(indicationType, result);
     }
 
     public void imsNetworkStateChanged(int indicationType) {
@@ -1009,7 +1026,7 @@ public class RadioIndication extends IRadioIndication.Stub {
      */
     public void barringInfoChanged(int indicationType,
             android.hardware.radio.V1_5.CellIdentity cellIdentity,
-            List<android.hardware.radio.V1_5.BarringInfo> barringInfos) {
+            ArrayList<android.hardware.radio.V1_5.BarringInfo> barringInfos) {
         mRil.processIndication(indicationType);
 
         CellIdentity ci = CellIdentity.create(cellIdentity);
@@ -1143,5 +1160,25 @@ public class RadioIndication extends IRadioIndication.Stub {
         NetworkScanResult nsr = new NetworkScanResult(result.status, result.error, cellInfos);
         if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_NETWORK_SCAN_RESULT, nsr);
         mRil.mRilNetworkScanResultRegistrants.notifyRegistrants(new AsyncResult(null, nsr, null));
+    }
+
+    private void responseNetworkScan_1_5(int indicationType,
+            android.hardware.radio.V1_5.NetworkScanResult result) {
+        mRil.processIndication(indicationType);
+
+        ArrayList<CellInfo> cellInfos = RIL.convertHalCellInfoList_1_5(result.networkInfos);
+        NetworkScanResult nsr = new NetworkScanResult(result.status, result.error, cellInfos);
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_NETWORK_SCAN_RESULT, nsr);
+        mRil.mRilNetworkScanResultRegistrants.notifyRegistrants(new AsyncResult(null, nsr, null));
+    }
+
+    private void responseDataCallListChanged(int indicationType, List<?> dcList) {
+        mRil.processIndication(indicationType);
+
+        if (RIL.RILJ_LOGD) mRil.unsljLogRet(RIL_UNSOL_DATA_CALL_LIST_CHANGED, dcList);
+
+        ArrayList<DataCallResponse> response = RIL.convertDataCallResultList(dcList);
+        mRil.mDataCallListChangedRegistrants.notifyRegistrants(
+                new AsyncResult(null, response, null));
     }
 }

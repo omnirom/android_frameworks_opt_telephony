@@ -41,10 +41,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.app.Activity;
-import android.app.IApplicationThread;
 import android.content.BroadcastReceiver;
-import android.content.IIntentReceiver;
 import android.content.Intent;
+import android.content.res.Resources;
 import android.os.AsyncResult;
 import android.os.Bundle;
 import android.os.Handler;
@@ -116,11 +115,14 @@ public class ImsPhoneTest extends TelephonyTest {
     };
 
     private ImsPhone mImsPhoneUT;
+    private PersistableBundle mBundle;
     private boolean mDoesRilSendMultipleCallRing;
     private static final int EVENT_SUPP_SERVICE_NOTIFICATION = 1;
     private static final int EVENT_SUPP_SERVICE_FAILED = 2;
     private static final int EVENT_INCOMING_RING = 3;
     private static final int EVENT_EMERGENCY_CALLBACK_MODE_EXIT = 4;
+
+    private boolean mIsPhoneUtInEcm = false;
 
     @Before
     public void setUp() throws Exception {
@@ -149,6 +151,15 @@ public class ImsPhoneTest extends TelephonyTest {
         mImsPhoneUT.registerForIncomingRing(mTestHandler,
                 EVENT_INCOMING_RING, null);
         doReturn(mImsUtInterface).when(mImsCT).getUtInterface();
+        // When the mock GsmCdmaPhone gets setIsInEcbm called, ensure isInEcm matches.
+        doAnswer(invocation -> {
+            mIsPhoneUtInEcm = (Boolean) invocation.getArguments()[0];
+            return null;
+        }).when(EcbmHandler.getInstance()).setIsInEcm(anyBoolean());
+        doAnswer(invocation -> mIsPhoneUtInEcm).when(mPhone).isInEcm();
+
+        mBundle = mContextFixture.getCarrierConfigBundle();
+        mBundle.putBoolean(CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL, true);
         processAllMessages();
     }
 
@@ -552,83 +563,53 @@ public class ImsPhoneTest extends TelephonyTest {
         assertEquals(msg, messageArgumentCaptor.getValue().obj);
     }
 
-    @FlakyTest
     @Test
-    @Ignore
     public void testEcbm() throws Exception {
-        ImsEcbmStateListener imsEcbmStateListener =
-                EcbmHandler.getInstance().getImsEcbmStateListener(mPhone.getPhoneId());
-
-        // verify handling of emergency callback mode
-        imsEcbmStateListener.onECBMEntered();
-
-        // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
-        ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
-        verify(mIActivityManager, atLeast(1)).broadcastIntent(eq((IApplicationThread)null),
-                intentArgumentCaptor.capture(),
-                eq((String)null),
-                eq((IIntentReceiver)null),
-                eq(Activity.RESULT_OK),
-                eq((String)null),
-                eq((Bundle)null),
-                eq((String[])null),
-                anyInt(),
-                eq((Bundle)null),
-                eq(false),
-                eq(true),
-                anyInt());
-
-        Intent intent = intentArgumentCaptor.getValue();
-        assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
-        assertEquals(true, intent.getBooleanExtra(
-                TelephonyManager.EXTRA_PHONE_IN_ECM_STATE, false));
-
-        // verify that wakeLock is acquired in ECM
-        assertEquals(true, mImsPhoneUT.getWakeLock().isHeld());
-
         EcbmHandler.getInstance().setOnEcbModeExitResponse(mTestHandler,
                 EVENT_EMERGENCY_CALLBACK_MODE_EXIT, null);
 
-        // verify handling of emergency callback mode exit
+        ImsEcbmStateListener imsEcbmStateListener =
+                EcbmHandler.getInstance().getImsEcbmStateListener(mPhone.getPhoneId());
+        imsEcbmStateListener.onECBMEntered();
+        verify(EcbmHandler.getInstance()).setIsInEcm(true);
+
+        verifyEcbmIntentWasSent(1 /*times*/, true /*inEcm*/);
+        // verify that wakeLock is acquired in ECM
+        assertTrue(mImsPhoneUT.getWakeLock().isHeld());
+
         imsEcbmStateListener.onECBMExited();
+        verify(EcbmHandler.getInstance()).setIsInEcm(false);
 
-        // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
-        verify(mIActivityManager, atLeast(2)).broadcastIntent(eq((IApplicationThread)null),
-                intentArgumentCaptor.capture(),
-                eq((String)null),
-                eq((IIntentReceiver)null),
-                eq(Activity.RESULT_OK),
-                eq((String)null),
-                eq((Bundle)null),
-                eq((String[])null),
-                anyInt(),
-                eq((Bundle)null),
-                eq(false),
-                eq(true),
-                anyInt());
-
-        intent = intentArgumentCaptor.getValue();
-        assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
-        assertEquals(false, intent.getBooleanExtra(
-                TelephonyManager.EXTRA_PHONE_IN_ECM_STATE, true));
+        verifyEcbmIntentWasSent(2/*times*/, false /*inEcm*/);
 
         ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
-
         // verify EcmExitRespRegistrant is notified
         verify(mTestHandler).sendMessageAtTime(messageArgumentCaptor.capture(),
                 anyLong());
         assertEquals(EVENT_EMERGENCY_CALLBACK_MODE_EXIT, messageArgumentCaptor.getValue().what);
 
         // verify wakeLock released
-        assertEquals(false, mImsPhoneUT.getWakeLock().isHeld());
+        assertFalse(mImsPhoneUT.getWakeLock().isHeld());
+    }
+
+    private void verifyEcbmIntentWasSent(int times, boolean isInEcm) throws Exception {
+        // verify ACTION_EMERGENCY_CALLBACK_MODE_CHANGED
+        ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
+        verify(mContext, atLeast(times)).sendStickyBroadcastAsUser(intentArgumentCaptor.capture(),
+                any());
+
+        Intent intent = intentArgumentCaptor.getValue();
+        assertNotNull(intent);
+        assertEquals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED, intent.getAction());
+        assertEquals(isInEcm, intent.getBooleanExtra(
+                TelephonyManager.EXTRA_PHONE_IN_ECM_STATE, false));
     }
 
     @Test
     @SmallTest
     public void testProcessDisconnectReason() throws Exception {
         // set up CarrierConfig
-        PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
-        bundle.putStringArray(CarrierConfigManager.KEY_WFC_OPERATOR_ERROR_CODES_STRING_ARRAY,
+        mBundle.putStringArray(CarrierConfigManager.KEY_WFC_OPERATOR_ERROR_CODES_STRING_ARRAY,
                 new String[]{"REG09|0"});
         doReturn(true).when(mImsManager).isWfcEnabledByUser();
 
@@ -845,6 +826,54 @@ public class ImsPhoneTest extends TelephonyTest {
     public void testNonNullTrackersInImsPhone() throws Exception {
         assertNotNull(mImsPhoneUT.getEmergencyNumberTracker());
         assertNotNull(mImsPhoneUT.getServiceStateTracker());
+    }
+
+    @Test
+    @SmallTest
+    public void testSendUssdAllowUssdOverImsInOutOfService() throws Exception {
+        Resources resources = mContext.getResources();
+
+        doReturn(true).when(resources).getBoolean(
+                com.android.internal.R.bool.config_allow_ussd_over_ims);
+        doReturn(ServiceState.STATE_OUT_OF_SERVICE).when(mSST.mSS).getState();
+
+        mImsPhoneUT.dial("*135#", new ImsPhone.ImsDialArgs.Builder().build());
+        verify(mImsCT).sendUSSD(eq("*135#"), any());
+    }
+
+    @Test
+    @SmallTest
+    public void testSendUssdAllowUssdOverImsInService() throws Exception {
+        String errorCode = "";
+        Resources resources = mContext.getResources();
+
+        doReturn(true).when(resources).getBoolean(
+                com.android.internal.R.bool.config_allow_ussd_over_ims);
+        doReturn(ServiceState.STATE_IN_SERVICE).when(mSST.mSS).getState();
+
+        try {
+            mImsPhoneUT.dial("*135#", new ImsPhone.ImsDialArgs.Builder().build());
+        } catch (CallStateException e) {
+            errorCode = e.getMessage();
+        }
+        assertEquals(Phone.CS_FALLBACK, errorCode);
+    }
+
+    @Test
+    @SmallTest
+    public void testSendUssdNotAllowUssdOverIms() throws Exception {
+        String errorCode = "";
+        Resources resources = mContext.getResources();
+
+        doReturn(false).when(resources).getBoolean(
+                com.android.internal.R.bool.config_allow_ussd_over_ims);
+
+        try {
+            mImsPhoneUT.dial("*135#", new ImsPhone.ImsDialArgs.Builder().build());
+        } catch (CallStateException e) {
+            errorCode = e.getMessage();
+        }
+        assertEquals(Phone.CS_FALLBACK, errorCode);
     }
 
     private ServiceState getServiceStateDataAndVoice(int rat, int regState, boolean isRoaming) {

@@ -16,9 +16,6 @@
 
 package com.android.internal.telephony.imsphone;
 
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_DIAL_CONFERENCE_URI;
-import static com.android.internal.telephony.TelephonyIntents.EXTRA_SKIP_SCHEMA_PARSING;
-
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.net.Uri;
@@ -198,6 +195,8 @@ public class ImsPhoneConnection extends Connection implements
                     imsCall.getCallProfile().getCallExtraInt(ImsCallProfile.EXTRA_OIR));
             mCnapNamePresentation = ImsCallProfile.OIRToPresentation(
                     imsCall.getCallProfile().getCallExtraInt(ImsCallProfile.EXTRA_CNAP));
+            setNumberVerificationStatus(toTelecomVerificationStatus(
+                    imsCall.getCallProfile().getCallerNumberVerificationStatus()));
             updateMediaCapabilities(imsCall);
         } else {
             mNumberPresentation = PhoneConstants.PRESENTATION_UNKNOWN;
@@ -228,24 +227,9 @@ public class ImsPhoneConnection extends Connection implements
     /** This is an MO call, created when dialing */
     public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
             ImsPhoneCall parent, boolean isEmergency) {
-        this(phone, dialString, ct, parent, isEmergency, null);
-    }
-
-    /** This is an MO call, created when dialing */
-    public ImsPhoneConnection(Phone phone, String dialString, ImsPhoneCallTracker ct,
-            ImsPhoneCall parent, boolean isEmergency, Bundle extras) {
         super(PhoneConstants.PHONE_TYPE_IMS);
         createWakeLock(phone.getContext());
         acquireWakeLock();
-        boolean isConferenceUri = false;
-        boolean isSkipSchemaParsing = false;
-
-        if (extras != null) {
-            isConferenceUri = extras.getBoolean(
-                    EXTRA_DIAL_CONFERENCE_URI, false);
-            isSkipSchemaParsing = extras.getBoolean(
-                    EXTRA_SKIP_SCHEMA_PARSING, false);
-        }
 
         mOwner = ct;
         mHandler = new MyHandler(mOwner.getLooper());
@@ -253,13 +237,8 @@ public class ImsPhoneConnection extends Connection implements
 
         mDialString = dialString;
 
-        if (isConferenceUri || isSkipSchemaParsing) {
-            mAddress = dialString;
-            mPostDialString = "";
-        } else {
-            mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
-            mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
-        }
+        mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
+        mPostDialString = PhoneNumberUtils.extractPostDialPortion(dialString);
 
         //mIndex = -1;
 
@@ -1527,5 +1506,25 @@ public class ImsPhoneConnection extends Connection implements
         Rlog.i(LOG_TAG, "setLocalVideoCapable: mIsLocalVideoCapable = " + mIsLocalVideoCapable
                 + "; updating local video availability.");
         updateMediaCapabilities(getImsCall());
+    }
+
+    /**
+     * Converts an {@link ImsCallProfile} verification status to a
+     * {@link android.telecom.Connection} verification status.
+     * @param verificationStatus The {@link ImsCallProfile} verification status.
+     * @return The telecom verification status.
+     */
+    public static @android.telecom.Connection.VerificationStatus int toTelecomVerificationStatus(
+            @ImsCallProfile.VerificationStatus int verificationStatus) {
+        switch (verificationStatus) {
+            case ImsCallProfile.VERIFICATION_STATUS_PASSED:
+                return android.telecom.Connection.VERIFICATION_STATUS_PASSED;
+            case ImsCallProfile.VERIFICATION_STATUS_FAILED:
+                return android.telecom.Connection.VERIFICATION_STATUS_FAILED;
+            case ImsCallProfile.VERIFICATION_STATUS_NOT_VERIFIED:
+                // fall through on purpose
+            default:
+                return android.telecom.Connection.VERIFICATION_STATUS_NOT_VERIFIED;
+        }
     }
 }

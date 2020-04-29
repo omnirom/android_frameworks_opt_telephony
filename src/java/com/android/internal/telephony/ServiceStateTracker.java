@@ -122,7 +122,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -861,27 +860,39 @@ public class ServiceStateTracker extends Handler {
     }
 
     /**
-     * Notify all mDataConnectionRatChangeRegistrants using an
-     * AsyncResult in msg.obj where AsyncResult#result contains the
-     * new RAT as an Integer Object.
+     * Get registration info
+     *
+     * @param transport The transport type
+     * @return Pair of registration info including {@link ServiceState.RegState} and
+     * {@link RilRadioTechnology}.
+     *
      */
-    protected void notifyDataRegStateRilRadioTechnologyChanged(int transport) {
+    @Nullable
+    private Pair<Integer, Integer> getRegistrationInfo(@TransportType int transport) {
         NetworkRegistrationInfo nrs = mSS.getNetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, transport);
         if (nrs != null) {
             int rat = ServiceState.networkTypeToRilRadioTechnology(
                     nrs.getAccessNetworkTechnology());
             int drs = regCodeToServiceState(nrs.getRegistrationState());
-            if (DBG) {
-                log("notifyDataRegStateRilRadioTechnologyChanged: drs=" + drs + " rat=" + rat);
-            }
+            return new Pair<>(drs, rat);
+        }
+        return null;
+    }
 
-            RegistrantList registrantList = mDataRegStateOrRatChangedRegistrants.get(transport);
-            if (registrantList != null) {
-                registrantList.notifyResult(new Pair<>(drs, rat));
+    /**
+     * Notify all mDataConnectionRatChangeRegistrants using an
+     * AsyncResult in msg.obj where AsyncResult#result contains the
+     * new RAT as an Integer Object.
+     */
+    protected void notifyDataRegStateRilRadioTechnologyChanged(@TransportType int transport) {
+        RegistrantList registrantList = mDataRegStateOrRatChangedRegistrants.get(transport);
+        if (registrantList != null) {
+            Pair<Integer, Integer> registrationInfo = getRegistrationInfo(transport);
+            if (registrationInfo != null) {
+                registrantList.notifyResult(registrationInfo);
             }
         }
-        setDataNetworkTypeForPhone(mSS.getRilDataRadioTechnology());
     }
 
     /**
@@ -2048,18 +2059,16 @@ public class ServiceStateTracker extends Handler {
             }
         }
 
-        int newNrState = regInfo.getNrState();
+        int oldNrState = regInfo.getNrState();
+        int newNrState = oldNrState;
         if (hasNrSecondaryServingCell) {
-            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED) {
-                newNrState = NetworkRegistrationInfo.NR_STATE_CONNECTED;
-            }
+            newNrState = NetworkRegistrationInfo.NR_STATE_CONNECTED;
         } else {
-            if (regInfo.getNrState() == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
-                newNrState = NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED;
-            }
+            regInfo.updateNrState();
+            newNrState = regInfo.getNrState();
         }
 
-        boolean hasChanged = newNrState != regInfo.getNrState();
+        boolean hasChanged = newNrState != oldNrState;
         regInfo.setNrState(newNrState);
         ss.addNetworkRegistrationInfo(regInfo);
         return hasChanged;
@@ -3240,11 +3249,8 @@ public class ServiceStateTracker extends Handler {
                 mNewSS.getNetworkRegistrationInfo(
                         NetworkRegistrationInfo.DOMAIN_PS, AccessNetworkType.EUTRAN));
 
-        // TODO: loosen this restriction to exempt fields that are provided through system
-        // information; otherwise, we will get false positives when things like the operator
-        // alphas are provided later - that's better than missing location changes, but
-        // still not ideal.
-        boolean hasLocationChanged = !Objects.equals(mNewCellIdentity, mCellIdentity);
+        boolean hasLocationChanged = (mCellIdentity == null ? mNewCellIdentity != null
+                : !mCellIdentity.isSameCell(mNewCellIdentity));
 
         // ratchet the new tech up through its rat family but don't drop back down
         // until cell change or device is OOS
@@ -3504,6 +3510,7 @@ public class ServiceStateTracker extends Handler {
                     // Update all transports if preference changed so that consumers can be notified
                     // that ServiceState#getRilDataRadioTechnology has changed.
                     || hasDataTransportPreferenceChanged) {
+                setDataNetworkTypeForPhone(mSS.getRilDataRadioTechnology());
                 notifyDataRegStateRilRadioTechnologyChanged(transport);
                 mPhone.notifyAllActiveDataConnections();
             }
@@ -4165,7 +4172,7 @@ public class ServiceStateTracker extends Handler {
 
         SubscriptionInfo info = mSubscriptionController
                 .getActiveSubscriptionInfo(mPhone.getSubId(), context.getOpPackageName(),
-                        context.getFeatureId());
+                        context.getAttributionTag());
 
         //if subscription is part of a group and non-primary, suppress all notifications
         if (info == null || (info.isOpportunistic() && info.getGroupUuid() != null)) {
@@ -4499,7 +4506,10 @@ public class ServiceStateTracker extends Handler {
             mDataRegStateOrRatChangedRegistrants.put(transport, new RegistrantList());
         }
         mDataRegStateOrRatChangedRegistrants.get(transport).add(r);
-        notifyDataRegStateRilRadioTechnologyChanged(transport);
+        Pair<Integer, Integer> registrationInfo = getRegistrationInfo(transport);
+        if (registrationInfo != null) {
+            r.notifyResult(registrationInfo);
+        }
     }
 
     /**
@@ -5013,7 +5023,7 @@ public class ServiceStateTracker extends Handler {
 
         List<SubscriptionInfo> subInfoList = SubscriptionController.getInstance()
                 .getActiveSubscriptionInfoList(mPhone.getContext().getOpPackageName(),
-                        mPhone.getContext().getFeatureId());
+                        mPhone.getContext().getAttributionTag());
         for (SubscriptionInfo info : subInfoList) {
             // If we have an active opportunistic subscription whose data is IN_SERVICE, we needs
             // to get signal strength to decide data switching threshold. In this case, we poll

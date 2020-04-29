@@ -299,12 +299,16 @@ public class EcbmHandler extends Handler {
             case CANCEL_ECM_TIMER:
                 removeCallbacks(mExitEcmRunnable);
                 mEcmTimerResetRegistrants.notifyResult(Boolean.TRUE);
+                // TODO(b/152630901): mPhone not available in handleTimerInEmergencyCallbackMode
+                //setEcmCanceledForEmergency(true /*isCanceled*/);
                 break;
             case RESTART_ECM_TIMER:
                 long delayInMillis = TelephonyProperties.ecm_exit_timer()
                         .orElse(DEFAULT_ECM_EXIT_TIMER_VALUE);
                 postDelayed(mExitEcmRunnable, delayInMillis);
                 mEcmTimerResetRegistrants.notifyResult(Boolean.FALSE);
+                // TODO(b/152630901): mPhone not available in handleTimerInEmergencyCallbackMode
+                //setEcmCanceledForEmergency(false /*isCanceled*/);
                 break;
             default:
                 Rlog.e(LOG_TAG, "handleTimerInEmergencyCallbackMode, unsupported action " + action);

@@ -26,12 +26,11 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkProvider;
 import android.net.SocketKeepalive;
+import android.net.Uri;
 import android.os.Message;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.AccessNetworkConstants.TransportType;
-import android.telephony.Annotation.NetworkType;
-import android.telephony.NetworkRegistrationInfo;
-import android.telephony.ServiceState;
+import android.telephony.AnomalyReporter;
 import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 import android.util.SparseArray;
@@ -45,6 +44,10 @@ import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * This class represents a network agent which is communication channel between
@@ -73,6 +76,11 @@ public class DcNetworkAgent extends NetworkAgent {
 
     private NetworkInfo mNetworkInfo;
 
+    // For debugging IMS redundant network agent issue.
+    private static List<DcNetworkAgent> sNetworkAgents = new ArrayList<>();
+
+    private static int sRedundantTimes = 0;
+
     DcNetworkAgent(DataConnection dc, Phone phone, NetworkInfo ni, int score,
             NetworkAgentConfig config, NetworkProvider networkProvider, int transportType) {
         super(phone.getContext(), dc.getHandler().getLooper(), "DcNetworkAgent",
@@ -85,10 +93,30 @@ public class DcNetworkAgent extends NetworkAgent {
         mTransportType = transportType;
         mDataConnection = dc;
         mNetworkInfo = new NetworkInfo(ni);
-        setLegacyExtraInfo(dc.getApnSetting().getApnName());
-        int subType = getNetworkType();
-        setLegacySubtype(subType, TelephonyManager.getNetworkTypeName(subType));
+        setLegacyExtraInfo(ni.getExtraInfo());
+        // TODO: Remove after b/151487565 is fixed.
+        sNetworkAgents.add(this);
+        checkRedundantIms();
         logd(mTag + " created for data connection " + dc.getName());
+    }
+
+    // This is a temp code to catch the multiple IMS network agents issue.
+    // TODO: Remove after b/151487565 is fixed.
+    private void checkRedundantIms() {
+        if (sNetworkAgents.stream()
+                .filter(n -> n.mNetworkCapabilities.hasCapability(
+                        NetworkCapabilities.NET_CAPABILITY_IMS))
+                .count() > 1) {
+            sRedundantTimes++;
+            if (sRedundantTimes == 5) { // When it occurs 5 times.
+                String message = "Multiple IMS network agents detected.";
+                log(message);
+                // Using fixed UUID to avoid duplicate bugreport notification
+                AnomalyReporter.reportAnomaly(
+                        UUID.fromString("a5cf4881-75ae-4129-a25d-71bc4293f493"),
+                        message);
+            }
+        }
     }
 
     /**
@@ -162,17 +190,17 @@ public class DcNetworkAgent extends NetworkAgent {
     }
 
     @Override
-    public synchronized void onValidationStatus(int status, String redirectUrl) {
+    public synchronized void onValidationStatus(int status, Uri redirectUri) {
         if (mDataConnection == null) {
             loge("onValidationStatus called on no-owner DcNetworkAgent!");
             return;
         }
 
-        logd("validation status: " + status + " with redirection URL: " + redirectUrl);
+        logd("validation status: " + status + " with redirection URL: " + redirectUri);
         DcTracker dct = mPhone.getDcTracker(mTransportType);
         if (dct != null) {
             Message msg = dct.obtainMessage(DctConstants.EVENT_NETWORK_STATUS_CHANGED,
-                    status, mDataConnection.getCid(), redirectUrl);
+                    status, mDataConnection.getCid(), redirectUri.toString());
             msg.sendToTarget();
         }
     }
@@ -255,18 +283,17 @@ public class DcNetworkAgent extends NetworkAgent {
         if (!isOwned(dc, "sendNetworkInfo")) return;
         final NetworkInfo.State oldState = mNetworkInfo.getState();
         final NetworkInfo.State state = networkInfo.getState();
-        String extraInfo = dc.getApnSetting().getApnName();
-        if (mNetworkInfo.getExtraInfo() != extraInfo) {
-            setLegacyExtraInfo(extraInfo);
+        if (mNetworkInfo.getExtraInfo() != networkInfo.getExtraInfo()) {
+            setLegacyExtraInfo(networkInfo.getExtraInfo());
         }
-
-        int subType = getNetworkType();
+        int subType = networkInfo.getSubtype();
         if (mNetworkInfo.getSubtype() != subType) {
             setLegacySubtype(subType, TelephonyManager.getNetworkTypeName(subType));
         }
         if ((oldState == NetworkInfo.State.SUSPENDED || oldState == NetworkInfo.State.CONNECTED)
                 && state == NetworkInfo.State.DISCONNECTED) {
             logd("Unregister from connectivity service");
+            sNetworkAgents.remove(this);
             unregister();
         }
         mNetworkInfo = new NetworkInfo(networkInfo);
@@ -282,7 +309,7 @@ public class DcNetworkAgent extends NetworkAgent {
     }
 
     @Override
-    public synchronized void onStartSocketKeepalive(int slot, int intervalSeconds,
+    public synchronized void onStartSocketKeepalive(int slot, @NonNull Duration interval,
             @NonNull KeepalivePacketData packet) {
         if (mDataConnection == null) {
             loge("onStartSocketKeepalive called on no-owner DcNetworkAgent!");
@@ -291,7 +318,7 @@ public class DcNetworkAgent extends NetworkAgent {
 
         if (packet instanceof NattKeepalivePacketData) {
             mDataConnection.obtainMessage(DataConnection.EVENT_KEEPALIVE_START_REQUEST,
-                    slot, intervalSeconds, packet).sendToTarget();
+                    slot, (int) interval.getSeconds(), packet).sendToTarget();
         } else {
             sendSocketKeepaliveEvent(slot, SocketKeepalive.ERROR_UNSUPPORTED);
         }
@@ -350,17 +377,6 @@ public class DcNetworkAgent extends NetworkAgent {
      */
     private void loge(String s) {
         Rlog.e(mTag, s);
-    }
-
-    private @NetworkType int getNetworkType() {
-        final ServiceState serviceState = mPhone.getServiceState();
-        NetworkRegistrationInfo nri = serviceState.getNetworkRegistrationInfo(
-                NetworkRegistrationInfo.DOMAIN_PS, mTransportType);
-        int subType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
-        if (nri != null) {
-            subType = nri.getAccessNetworkTechnology();
-        }
-        return subType;
     }
 
     class DcKeepaliveTracker {
