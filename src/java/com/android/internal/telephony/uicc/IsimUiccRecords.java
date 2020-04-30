@@ -208,6 +208,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             return "EF_ISIM_IMPI";
         }
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             mIsimImpi = isimTlvToString(data);
             if (DUMP_RECORDS) log("EF_IMPI=" + mIsimImpi);
@@ -219,6 +223,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             return "EF_ISIM_IMPU";
         }
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             ArrayList<byte[]> impuList = (ArrayList<byte[]>) ar.result;
             if (DBG) log("EF_IMPU record count: " + impuList.size());
             mIsimImpu = new String[impuList.size()];
@@ -236,6 +244,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             return "EF_ISIM_DOMAIN";
         }
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             mIsimDomain = isimTlvToString(data);
             if (DUMP_RECORDS) log("EF_DOMAIN=" + mIsimDomain);
@@ -247,6 +259,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             return "EF_ISIM_IST";
         }
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             mIsimIst = IccUtils.bytesToHexString(data);
             if (DUMP_RECORDS) log("EF_IST=" + mIsimIst);
@@ -257,6 +273,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             return "EF_ISIM_PCSCF";
         }
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             ArrayList<byte[]> pcscflist = (ArrayList<byte[]>) ar.result;
             if (DBG) log("EF_PCSCF record count: " + pcscflist.size());
             mIsimPcscf = new String[pcscflist.size()];

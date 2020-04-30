@@ -849,13 +849,8 @@ public abstract class IccRecords extends Handler implements IccConstants {
                     ar = (AsyncResult) msg.obj;
                     IccRecordLoaded recordLoaded = (IccRecordLoaded) ar.userObj;
                     if (DBG) log(recordLoaded.getEfName() + " LOADED");
-
-                    if (ar.exception != null) {
-                        loge("Record Load Exception: " + ar.exception);
-                    } else {
-                        recordLoaded.onRecordLoaded(ar);
-                    }
-                }catch (RuntimeException exc) {
+                    recordLoaded.onRecordLoaded(ar);
+                } catch (RuntimeException exc) {
                     // I don't want these exceptions to be fatal
                     loge("Exception parsing SIM record: " + exc);
                 } finally {
