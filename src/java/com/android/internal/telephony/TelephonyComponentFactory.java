@@ -455,6 +455,13 @@ public class TelephonyComponentFactory {
         return PhoneSwitcher.make(maxDataAttachModemCount, context, looper);
     }
 
+    /**
+     * Create a new DisplayInfoController.
+     */
+    public DisplayInfoController makeDisplayInfoController(Phone phone) {
+        return new DisplayInfoController(phone);
+    }
+
     public RIL makeRIL(Context context, int preferredNetworkType,
             int cdmaSubscription, Integer instanceId) {
         Rlog.d(LOG_TAG, "makeRIL");
