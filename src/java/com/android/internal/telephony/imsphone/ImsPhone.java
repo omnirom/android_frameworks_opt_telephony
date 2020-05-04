@@ -2018,7 +2018,11 @@ public class ImsPhone extends ImsPhoneBase {
         Rlog.d(LOG_TAG, "RTT: checkIfModifyRequestOrResponse data =  " + data);
         switch (data) {
             case QtiImsUtils.RTT_UPGRADE_INITIATE:
-                if (!QtiImsUtils.isRttUpgradeSupported(mPhoneId, mContext)) {
+                ImsCall currentCall = getForegroundCall().getImsCall();
+                boolean rttUpgradeSupported = QtiImsUtils.isRttUpgradeSupported(mPhoneId, mContext);
+                boolean rttVtSupported = QtiImsUtils.isRttSupportedOnVtCalls(mPhoneId, mContext);
+                boolean isVideoCall = (currentCall != null) ? currentCall.isVideoCall() : false;
+                if (!rttUpgradeSupported || (isVideoCall && !rttVtSupported)) {
                     Rlog.d(LOG_TAG, "RTT: upgrade not supported");
                     return;
                 }
