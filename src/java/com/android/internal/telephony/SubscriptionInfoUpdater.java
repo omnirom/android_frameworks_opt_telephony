@@ -405,7 +405,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    private void handleSimNotReady(int slotId) {
+    protected void handleSimNotReady(int slotId) {
         logd("handleSimNotReady: slotId: " + slotId);
 
         IccCard iccCard = mPhone[slotId].getIccCard();
