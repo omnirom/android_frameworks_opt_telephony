@@ -253,7 +253,7 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                 requestNetworkInternal(networkRequest, DcTracker.REQUEST_TYPE_NORMAL,
                         getTransportTypeFromNetworkRequest(networkRequest), null);
             } else if (action == ACTION_RELEASE) {
-                releaseNetworkInternal(networkRequest, DcTracker.RELEASE_TYPE_DETACH,
+                releaseNetworkInternal(networkRequest, DcTracker.RELEASE_TYPE_NORMAL,
                         getTransportTypeFromNetworkRequest(networkRequest));
             }
 
@@ -344,6 +344,7 @@ public class TelephonyNetworkFactory extends NetworkFactory {
         if (mTransportManager.getCurrentTransport(apnType) == targetTransport) {
             log("APN type " + ApnSetting.getApnTypeString(apnType) + " is already on "
                     + AccessNetworkConstants.transportTypeToString(targetTransport));
+            handoverParams.callback.onCompleted(true, false);
             return;
         }
 
