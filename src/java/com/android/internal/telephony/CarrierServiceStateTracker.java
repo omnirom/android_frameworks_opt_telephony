@@ -475,16 +475,10 @@ public class CarrierServiceStateTracker extends Handler {
         private final int mTypeId;
         private Context mContext;
         private int mDelay = UNINITIALIZED_DELAY_VALUE;
-        private CharSequence mEmergencyTitle;
-        private CharSequence mEmergencySummary;
 
         EmergencyNetworkNotification(int typeId, Context context) {
             mTypeId = typeId;
             mContext = context;
-            mEmergencyTitle = mContext.getText(
-                    com.android.internal.R.string.EmergencyCallWarningTitle);
-            mEmergencySummary = mContext.getText(
-                    com.android.internal.R.string.EmergencyCallWarningSummary);
         }
 
         /** sets the interval by which the message is delayed.
@@ -502,7 +496,6 @@ public class CarrierServiceStateTracker extends Handler {
                 unregisterWfcSettingObserver();
                 return;
             }
-            setEmergencyNotificationText(bundle);
         }
 
         public int getDelay() {
@@ -511,15 +504,6 @@ public class CarrierServiceStateTracker extends Handler {
 
         public int getTypeId() {
             return mTypeId;
-        }
-
-        private void setEmergencyNotificationText(PersistableBundle bundle) {
-            mEmergencyTitle = bundle.getString(CarrierConfigManager.
-                    KEY_EMERGENCY_NOTIFICATION_TITLE_STRING);
-            mEmergencySummary = bundle.getString(CarrierConfigManager.
-                    KEY_EMERGENCY_NOTIFICATION_SUMMARY_STRING);
-            Rlog.d(LOG_TAG, "Emergency title and summary:" + mEmergencyTitle + " "
-                    + mEmergencySummary);
         }
 
         /**
@@ -550,13 +534,17 @@ public class CarrierServiceStateTracker extends Handler {
             // Create the PendingIntent
             PendingIntent emergencyIntent = PendingIntent.getActivity(
                     mContext, 0, notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+            CharSequence title = mContext.getText(
+                    com.android.internal.R.string.EmergencyCallWarningTitle);
+            CharSequence details = mContext.getText(
+                    com.android.internal.R.string.EmergencyCallWarningSummary);
             boolean isCancellable = (mDelay == UNINITIALIZED_DELAY_VALUE) ? true : false;
             return new Notification.Builder(mContext)
                     .setAutoCancel(isCancellable)
                     .setOngoing(true)
-                    .setContentTitle(mEmergencyTitle)
-                    .setStyle(new Notification.BigTextStyle().bigText(mEmergencySummary))
-                    .setContentText(mEmergencySummary)
+                    .setContentTitle(title)
+                    .setStyle(new Notification.BigTextStyle().bigText(details))
+                    .setContentText(details)
                     .setChannel(NotificationChannelController.CHANNEL_ID_WFC)
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
                     .setContentIntent(emergencyIntent);
