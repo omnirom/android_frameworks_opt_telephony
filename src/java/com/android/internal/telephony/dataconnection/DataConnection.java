@@ -1054,8 +1054,7 @@ public class DataConnection extends StateMachine {
     private void updateTcpBufferSizes(int rilRat) {
         String sizes = null;
         ServiceState ss = mPhone.getServiceState();
-        if (rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE &&
-                ss.isUsingCarrierAggregation()) {
+        if (rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE && ss.isUsingCarrierAggregation()) {
             rilRat = ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA;
         }
         String ratName = ServiceState.rilRadioTechnologyToString(rilRat).toLowerCase(Locale.ROOT);
@@ -1070,8 +1069,8 @@ public class DataConnection extends StateMachine {
         // NR 5G Non-Standalone use LTE cell as the primary cell, the ril technology is LTE in this
         // case. We use NR 5G TCP buffer size when connected to NR 5G Non-Standalone network.
         if (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN
-                && (rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE
-                    || rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA) && isNRConnected()
+                && ((rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE
+                || rilRat == ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA) && isNRConnected())
                 && mPhone.getServiceStateTracker().getNrContextIds().contains(mCid)) {
             ratName = RAT_NAME_5G;
         }
@@ -1131,7 +1130,7 @@ public class DataConnection extends StateMachine {
                     break;
                 case ServiceState.RIL_RADIO_TECHNOLOGY_LTE_CA:
                     // Use NR 5G TCP buffer size when connected to NR 5G Non-Standalone network.
-                    if (isNRConnected()) {
+                    if (RAT_NAME_5G.equals(ratName)) {
                         sizes = TCP_BUFFER_SIZES_NR;
                     } else {
                         sizes = TCP_BUFFER_SIZES_LTE_CA;
