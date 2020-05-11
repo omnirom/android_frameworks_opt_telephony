@@ -182,7 +182,7 @@ public class PhoneFactory {
                 Rlog.i(LOG_TAG, "Creating SubscriptionController");
                 TelephonyComponentFactory.getInstance().inject(SubscriptionController.class.
                         getName()).initSubscriptionController(context);
-                telephonyComponentFactory.inject(MultiSimSettingController.class.
+                TelephonyComponentFactory.getInstance().inject(MultiSimSettingController.class.
                         getName()).initMultiSimSettingController(context,
                         SubscriptionController.getInstance());
 
@@ -236,7 +236,7 @@ public class PhoneFactory {
                 Rlog.i(LOG_TAG, "Creating SubInfoRecordUpdater ");
                 HandlerThread pfhandlerThread = new HandlerThread("PhoneFactoryHandlerThread");
                 pfhandlerThread.start();
-                sSubInfoRecordUpdater = telephonyComponentFactory.inject(
+                sSubInfoRecordUpdater = TelephonyComponentFactory.getInstance().inject(
                         SubscriptionInfoUpdater.class.getName()).
                         makeSubscriptionInfoUpdater(pfhandlerThread.
                         getLooper(), context, sCommandsInterfaces);

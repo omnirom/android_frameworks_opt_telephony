@@ -574,7 +574,7 @@ public class DcTracker extends Handler {
     // True if data stall detection is enabled
     private volatile boolean mDataStallNoRxEnabled = true;
 
-    private volatile boolean mFailFast = false;
+    protected volatile boolean mFailFast = false;
 
     // True when in voice call
     protected boolean mInVoiceCall = false;
@@ -602,7 +602,7 @@ public class DcTracker extends Handler {
     private HashMap<String, Integer> mApnToDataConnectionId = new HashMap<String, Integer>();
 
     /** Phone.APN_TYPE_* ===> ApnContext */
-    private ConcurrentHashMap<String, ApnContext> mApnContexts =
+    protected ConcurrentHashMap<String, ApnContext> mApnContexts =
             new ConcurrentHashMap<String, ApnContext>();
 
     private SparseArray<ApnContext> mApnContextsByType = new SparseArray<ApnContext>();
@@ -1506,7 +1506,7 @@ public class DcTracker extends Handler {
         }
     }
 
-    private void setupDataOnConnectableApn(ApnContext apnContext, String reason,
+    protected void setupDataOnConnectableApn(ApnContext apnContext, String reason,
             RetryFailures retryFailures) {
         if (VDBG) log("setupDataOnAllConnectableApns: apnContext " + apnContext);
 
@@ -1675,7 +1675,8 @@ public class DcTracker extends Handler {
                 continue;
             }
 
-            if (shouldCleanUpConnection(apnContext, disableMeteredOnly)) {
+            if (shouldCleanUpConnection(apnContext, disableMeteredOnly,
+                    reason.equals(Phone.REASON_SINGLE_PDN_ARBITRATION))) {
                 // TODO - only do cleanup if not disconnected
                 if (apnContext.isDisconnected() == false) didDisconnect = true;
                 apnContext.setReason(reason);
@@ -1701,14 +1702,18 @@ public class DcTracker extends Handler {
         return didDisconnect;
     }
 
-    boolean shouldCleanUpConnection(ApnContext apnContext, boolean disableMeteredOnly) {
+    boolean shouldCleanUpConnection(ApnContext apnContext, boolean disableMeteredOnly,
+            boolean singlePdn) {
         if (apnContext == null) return false;
+
+        // If APN setting is not null and the reason is single PDN arbitration, clean up connection.
+        ApnSetting apnSetting = apnContext.getApnSetting();
+        if (apnSetting != null && singlePdn) return true;
 
         // If meteredOnly is false, clean up all connections.
         if (!disableMeteredOnly) return true;
 
         // If meteredOnly is true, and apnSetting is null or it's un-metered, no need to clean up.
-        ApnSetting apnSetting = apnContext.getApnSetting();
         if (apnSetting == null || !ApnSettingUtils.isMetered(apnSetting, mPhone)) return false;
 
         boolean isRoaming = mPhone.getServiceState().getDataRoaming();
@@ -2267,7 +2272,7 @@ public class DcTracker extends Handler {
         return retry;
     }
 
-    private void startReconnect(long delay, ApnContext apnContext) {
+    protected void startReconnect(long delay, ApnContext apnContext) {
         Message msg = obtainMessage(DctConstants.EVENT_DATA_RECONNECT,
                        mPhone.getSubId(), mTransportType, apnContext);
         cancelReconnect(apnContext);
@@ -2285,7 +2290,7 @@ public class DcTracker extends Handler {
      *
      * @param apnContext on which the alarm should be stopped.
      */
-    private void cancelReconnect(ApnContext apnContext) {
+    protected void cancelReconnect(ApnContext apnContext) {
         if (apnContext == null) return;
 
         if (DBG) {
@@ -2827,7 +2832,7 @@ public class DcTracker extends Handler {
      * A SETUP (aka bringUp) has completed, possibly with an error. If
      * there is an error this method will call {@link #onDataSetupCompleteError}.
      */
-    private void onDataSetupComplete(ApnContext apnContext, boolean success, int cause,
+    protected void onDataSetupComplete(ApnContext apnContext, boolean success, int cause,
                                      @RequestNetworkType int requestType) {
         int apnType = ApnSetting.getApnTypesBitmaskFromString(apnContext.getApnType());
         List<Message> messageList = mRequestNetworkCompletionMsgs.get(apnType);
@@ -3009,7 +3014,7 @@ public class DcTracker extends Handler {
      * beginning if the list is empty. Between each SETUP request there will
      * be a delay defined by {@link #getApnDelay()}.
      */
-    private void onDataSetupCompleteError(ApnContext apnContext,
+    protected void onDataSetupCompleteError(ApnContext apnContext,
                                           @RequestNetworkType int requestType) {
         long delay = apnContext.getDelayForNextApn(mFailFast);
 
@@ -4567,7 +4572,7 @@ public class DcTracker extends Handler {
                 }
                 setupDataOnConnectableApn(apnContext, Phone.REASON_DATA_ENABLED_OVERRIDE,
                         RetryFailures.ALWAYS);
-            } else if (shouldCleanUpConnection(apnContext, true)) {
+            } else if (shouldCleanUpConnection(apnContext, true, false)) {
                 apnContext.setReason(Phone.REASON_DATA_ENABLED_OVERRIDE);
                 cleanUpConnectionInternal(true, RELEASE_TYPE_DETACH, apnContext);
             }
@@ -5134,7 +5139,7 @@ public class DcTracker extends Handler {
     }
 
     @RilRadioTechnology
-    private int getDataRat() {
+    protected int getDataRat() {
         ServiceState ss = mPhone.getServiceState();
         NetworkRegistrationInfo nrs = ss.getNetworkRegistrationInfo(
                 NetworkRegistrationInfo.DOMAIN_PS, mTransportType);

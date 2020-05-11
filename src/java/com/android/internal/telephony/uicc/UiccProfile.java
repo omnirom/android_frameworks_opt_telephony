@@ -348,9 +348,8 @@ public class UiccProfile extends IccCard {
                 mCurrentAppType = UiccController.APP_FAM_3GPP;
             } else {
                 //if CSIM application is not present, set current app to default app i.e 3GPP
-                UiccCardApplication newApp = null;
-                newApp = getApplication(UiccController.APP_FAM_3GPP2);
-                if (newApp != null) {
+                UiccCardApplication newApp = getApplication(UiccController.APP_FAM_3GPP2);
+                if(newApp != null) {
                     mCurrentAppType = UiccController.APP_FAM_3GPP2;
                 } else {
                     mCurrentAppType = UiccController.APP_FAM_3GPP;

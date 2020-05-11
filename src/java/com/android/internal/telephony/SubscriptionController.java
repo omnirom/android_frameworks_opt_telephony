@@ -164,6 +164,7 @@ public class SubscriptionController extends ISub.Stub {
         public void clear() {
             mSlotIndexToSubIds.clear();
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public Set<Entry<Integer, ArrayList<Integer>>> entrySet() {
@@ -183,11 +184,13 @@ public class SubscriptionController extends ISub.Stub {
         public void put(int slotIndex, ArrayList<Integer> value) {
             mSlotIndexToSubIds.put(slotIndex, value);
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public void remove(int slotIndex) {
             mSlotIndexToSubIds.remove(slotIndex);
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public int size() {
@@ -210,6 +213,7 @@ public class SubscriptionController extends ISub.Stub {
                         mSlotIndexToSubIds.remove(slotIndex);
                     }
                     invalidateDefaultSubIdCaches();
+                    invalidateSlotIndexCaches();
                     return SUB_ID_FOUND;
                 } else {
                     return SUB_ID_NOT_IN_SLOT;
@@ -227,6 +231,7 @@ public class SubscriptionController extends ISub.Stub {
                 subIdList.add(value);
             }
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public void clearSubIdList(int slotIndex) {
@@ -234,11 +239,12 @@ public class SubscriptionController extends ISub.Stub {
             if (subIdList != null) {
                 subIdList.clear();
                 invalidateDefaultSubIdCaches();
+                invalidateSlotIndexCaches();
             }
         }
     }
 
-    protected static class WatchedInt {
+    public static class WatchedInt {
         private int mValue;
 
         public WatchedInt(int initialValue) {
@@ -251,13 +257,20 @@ public class SubscriptionController extends ISub.Stub {
 
         public void set(int newValue) {
             mValue = newValue;
-            invalidateDefaultSubIdCaches();
         }
     }
 
     private static WatchedSlotIndexToSubIds sSlotIndexToSubIds = new WatchedSlotIndexToSubIds();
+
     protected static WatchedInt sDefaultFallbackSubId =
-            new WatchedInt(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            new WatchedInt(SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+        @Override
+        public void set(int newValue) {
+            super.set(newValue);
+            invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
+        }
+    };
 
     @UnsupportedAppUsage
     protected static int mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
@@ -336,6 +349,9 @@ public class SubscriptionController extends ISub.Stub {
         // Initial invalidate activates caching.
         invalidateDefaultSubIdCaches();
         invalidateDefaultDataSubIdCaches();
+        invalidateDefaultSmsSubIdCaches();
+        invalidateActiveDataSubIdCaches();
+        invalidateSlotIndexCaches();
 
         if (DBG) logdl("[SubscriptionController] init by Context");
     }
@@ -725,6 +741,19 @@ public class SubscriptionController extends ISub.Stub {
      * @hide
      */
     public SubscriptionInfo getSubscriptionInfo(int subId) {
+        // check cache for active subscriptions first, before querying db
+        for (SubscriptionInfo subInfo : mCacheActiveSubInfoList) {
+            if (subInfo.getSubscriptionId() == subId) {
+                return subInfo;
+            }
+        }
+        // check cache for opportunistic subscriptions too, before querying db
+        for (SubscriptionInfo subInfo : mCacheOpportunisticSubInfoList) {
+            if (subInfo.getSubscriptionId() == subId) {
+                return subInfo;
+            }
+        }
+
         List<SubscriptionInfo> subInfoList = getSubInfo(
                 SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "=" + subId, null);
         if (subInfoList == null || subInfoList.isEmpty()) return null;
@@ -4139,9 +4168,14 @@ public class SubscriptionController extends ISub.Stub {
         Settings.Global.putInt(mContext.getContentResolver(), name, value);
         if (name == Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION) {
             invalidateDefaultDataSubIdCaches();
+            invalidateActiveDataSubIdCaches();
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         } else if (name == Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION) {
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
+        } else if (name == Settings.Global.MULTI_SIM_SMS_SUBSCRIPTION) {
+            invalidateDefaultSmsSubIdCaches();
         }
     }
 
@@ -4166,6 +4200,33 @@ public class SubscriptionController extends ISub.Stub {
     /**
      * @hide
      */
+    private static void invalidateDefaultSmsSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateDefaultSmsSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    protected static void invalidateActiveDataSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateActiveDataSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    protected static void invalidateSlotIndexCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateSlotIndexCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
     @VisibleForTesting
     public static void disableCaching() {
         sCachingEnabled = false;
@@ -4174,9 +4235,8 @@ public class SubscriptionController extends ISub.Stub {
     /**
      * @hide
      */
+    @VisibleForTesting
     public static void enableCaching() {
         sCachingEnabled = true;
     }
-
-
 }

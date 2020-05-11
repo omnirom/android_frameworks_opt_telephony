@@ -3236,7 +3236,7 @@ public class DataConnection extends StateMachine {
 
     protected boolean isPdpRejectConfigEnabled() {
         return mPhone.getContext().getResources().getBoolean(
-                com.android.internal.R.bool.config_pdp_retry_for_29_33_55_enabled);
+                com.android.internal.R.bool.config_pdp_reject_enable_retry);
     }
 
     protected boolean isDataCallConnectAllowed() {
