@@ -111,6 +111,7 @@ import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
+import com.android.internal.telephony.metrics.VoiceCallSessionStats;
 import com.android.internal.telephony.nano.TelephonyProto.ImsConnectionState;
 import com.android.internal.telephony.uicc.IccRecords;
 import com.android.internal.telephony.util.NotificationChannelController;
@@ -1399,11 +1400,11 @@ public class ImsPhone extends ImsPhoneBase {
     public ArrayList<Connection> getHandoverConnection() {
         ArrayList<Connection> connList = new ArrayList<Connection>();
         // Add all foreground call connections
-        connList.addAll(getForegroundCall().mConnections);
+        connList.addAll(getForegroundCall().getConnections());
         // Add all background call connections
-        connList.addAll(getBackgroundCall().mConnections);
+        connList.addAll(getBackgroundCall().getConnections());
         // Add all background call connections
-        connList.addAll(getRingingCall().mConnections);
+        connList.addAll(getRingingCall().getConnections());
         if (connList.size() > 0) {
             return connList;
         } else {
@@ -2135,7 +2136,11 @@ public class ImsPhone extends ImsPhoneBase {
         Rlog.d(LOG_TAG, "RTT: checkIfModifyRequestOrResponse data =  " + data);
         switch (data) {
             case QtiImsUtils.RTT_UPGRADE_INITIATE:
-                if (!QtiImsUtils.isRttUpgradeSupported(mPhoneId, mContext)) {
+                ImsCall currentCall = getForegroundCall().getImsCall();
+                boolean rttUpgradeSupported = QtiImsUtils.isRttUpgradeSupported(mPhoneId, mContext);
+                boolean rttVtSupported = QtiImsUtils.isRttSupportedOnVtCalls(mPhoneId, mContext);
+                boolean isVideoCall = (currentCall != null) ? currentCall.isVideoCall() : false;
+                if (!rttUpgradeSupported || (isVideoCall && !rttVtSupported)) {
                     Rlog.d(LOG_TAG, "RTT: upgrade not supported");
                     return;
                 }
@@ -2296,6 +2301,11 @@ public class ImsPhone extends ImsPhoneBase {
             return imsDialArgsBuilder.build();
         }
         return new DialArgs.Builder<>().build();
+    }
+
+    @Override
+    public VoiceCallSessionStats getVoiceCallSessionStats() {
+        return mDefaultPhone.getVoiceCallSessionStats();
     }
 
     public boolean hasAliveCall() {

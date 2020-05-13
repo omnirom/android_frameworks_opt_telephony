@@ -58,6 +58,7 @@ import android.telephony.data.ApnSetting;
 import android.util.LocalLog;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.dataconnection.ApnConfigTypeRepository;
 import com.android.internal.telephony.dataconnection.DcRequest;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
@@ -152,7 +153,7 @@ public class PhoneSwitcher extends Handler {
         }
     }
 
-    protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<DcRequest>();
+    protected final List<DcRequest> mPrioritizedDcRequests = new ArrayList<>();
     protected final RegistrantList mActivePhoneRegistrants;
     protected final SubscriptionController mSubscriptionController;
     protected final Context mContext;
@@ -684,7 +685,8 @@ public class PhoneSwitcher extends Handler {
     }
 
     private void onRequestNetwork(NetworkRequest networkRequest) {
-        final DcRequest dcRequest = DcRequest.create(networkRequest);
+        final DcRequest dcRequest =
+                DcRequest.create(networkRequest, createApnRepository(networkRequest));
         if (networkRequest.type != NetworkRequest.Type.REQUEST) {
            log("Skip non REQUEST type request - " + networkRequest);
            return;
@@ -702,7 +704,8 @@ public class PhoneSwitcher extends Handler {
     }
 
     private void onReleaseNetwork(NetworkRequest networkRequest) {
-        final DcRequest dcRequest = DcRequest.create(networkRequest);
+        final DcRequest dcRequest =
+                DcRequest.create(networkRequest, createApnRepository(networkRequest));
         if (dcRequest != null) {
             if (mPrioritizedDcRequests.contains(dcRequest) &&
                     mPrioritizedDcRequests.remove(dcRequest)) {
@@ -711,6 +714,21 @@ public class PhoneSwitcher extends Handler {
                 log("Removed DcRequest, size: " + mPrioritizedDcRequests.size());
             }
         }
+    }
+
+    private ApnConfigTypeRepository createApnRepository(NetworkRequest networkRequest) {
+        int phoneIdForRequest = phoneIdForRequest(networkRequest);
+        int subId = mSubscriptionController.getSubIdUsingPhoneId(phoneIdForRequest);
+        CarrierConfigManager configManager = (CarrierConfigManager) mContext
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+
+        PersistableBundle carrierConfig;
+        if (configManager != null) {
+            carrierConfig = configManager.getConfigForSubId(subId);
+        } else {
+            carrierConfig = null;
+        }
+        return new ApnConfigTypeRepository(carrierConfig);
     }
 
     private void removeDefaultNetworkChangeCallback() {

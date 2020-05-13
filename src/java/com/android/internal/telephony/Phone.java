@@ -80,6 +80,7 @@ import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.EcbmHandler;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
+import com.android.internal.telephony.metrics.VoiceCallSessionStats;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType;
 import com.android.internal.telephony.uicc.IccFileHandler;
@@ -206,12 +207,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     protected static final int EVENT_DEVICE_PROVISIONING_DATA_SETTING_CHANGE = 50;
     protected static final int EVENT_GET_AVAILABLE_NETWORKS_DONE    = 51;
 
-    private static final int EVENT_ALL_DATA_DISCONNECTED            = 52;
-    protected static final int EVENT_UICC_APPS_ENABLEMENT_CHANGED   = 53;
-    protected static final int EVENT_GET_UICC_APPS_ENABLEMENT_DONE  = 54;
-    protected static final int EVENT_REAPPLY_UICC_APPS_ENABLEMENT_DONE = 55;
-    protected static final int EVENT_REGISTRATION_FAILED = 56;
-    protected static final int EVENT_BARRING_INFO_CHANGED = 57;
+    private static final int EVENT_ALL_DATA_DISCONNECTED                  = 52;
+    protected static final int EVENT_UICC_APPS_ENABLEMENT_STATUS_CHANGED  = 53;
+    protected static final int EVENT_UICC_APPS_ENABLEMENT_SETTING_CHANGED = 54;
+    protected static final int EVENT_GET_UICC_APPS_ENABLEMENT_DONE        = 55;
+    protected static final int EVENT_REAPPLY_UICC_APPS_ENABLEMENT_DONE    = 56;
+    protected static final int EVENT_REGISTRATION_FAILED = 57;
+    protected static final int EVENT_BARRING_INFO_CHANGED = 58;
 
     protected static final int EVENT_LAST = EVENT_BARRING_INFO_CHANGED;
 
@@ -317,6 +319,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private final String mActionDetached;
     private final String mActionAttached;
     protected DeviceStateMonitor mDeviceStateMonitor;
+    protected DisplayInfoController mDisplayInfoController;
     protected TransportManager mTransportManager;
     protected DataEnabledSettings mDataEnabledSettings;
     // Used for identify the carrier of current subscription
@@ -422,6 +425,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private boolean mUnitTestMode;
 
     private final CarrierPrivilegesTracker mCarrierPrivilegesTracker;
+
+    protected VoiceCallSessionStats mVoiceCallSessionStats;
 
     public IccRecords getIccRecords() {
         return mIccRecords.get();
@@ -1815,6 +1820,20 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @return The instance of transport manager
      */
     public TransportManager getTransportManager() {
+        return null;
+    }
+
+    /**
+     * Retrieves the DeviceStateMonitor of the phone instance.
+     */
+    public DeviceStateMonitor getDeviceStateMonitor() {
+        return null;
+    }
+
+    /**
+     * Retrieves the DisplayInfoController of the phone instance.
+     */
+    public DisplayInfoController getDisplayInfoController() {
         return null;
     }
 
@@ -4291,6 +4310,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         return "";
     }
 
+    /** Returns the {@link VoiceCallSessionStats} for this phone ID. */
+    public VoiceCallSessionStats getVoiceCallSessionStats() {
+        return mVoiceCallSessionStats;
+    }
+
+    /** Sets the {@link VoiceCallSessionStats} mock for this phone ID during unit testing. */
+    @VisibleForTesting
+    public void setVoiceCallSessionStats(VoiceCallSessionStats voiceCallSessionStats) {
+        mVoiceCallSessionStats = voiceCallSessionStats;
+    }
+
     /** @hide */
     public CarrierPrivilegesTracker getCarrierPrivilegesTracker() {
         return mCarrierPrivilegesTracker;
@@ -4333,8 +4363,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         pw.println(" isInEmergencySmsMode=" + isInEmergencySmsMode());
         pw.println(" isEcmCanceledForEmergency=" + isEcmCanceledForEmergency());
         pw.println(" service state=" + getServiceState());
-        String privilegedUids = Arrays.toString(mCarrierPrivilegesTracker.mPrivilegedUids);
-        pw.println(" administratorUids=" + privilegedUids);
         pw.flush();
         pw.println("++++++++++++++++++++++++++++++++");
 
@@ -4373,6 +4401,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         if (getEmergencyNumberTracker() != null) {
             try {
                 getEmergencyNumberTracker().dump(fd, pw, args);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (getDisplayInfoController() != null) {
+            try {
+                getDisplayInfoController().dump(fd, pw, args);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -4454,6 +4493,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             }
 
             pw.flush();
+            pw.println("++++++++++++++++++++++++++++++++");
+        }
+
+        if (getCarrierPrivilegesTracker() != null) {
+            pw.println("CarrierPrivilegesTracker:");
+            getCarrierPrivilegesTracker().dump(fd, pw, args);
             pw.println("++++++++++++++++++++++++++++++++");
         }
 

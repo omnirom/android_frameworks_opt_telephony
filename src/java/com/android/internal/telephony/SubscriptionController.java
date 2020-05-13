@@ -35,7 +35,9 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.ParcelUuid;
+import android.os.RegistrantList;
 import android.os.RemoteException;
 import android.os.TelephonyServiceManager.ServiceRegisterer;
 import android.os.UserHandle;
@@ -112,6 +114,9 @@ public class SubscriptionController extends ISub.Stub {
     private static final ParcelUuid INVALID_GROUP_UUID =
             ParcelUuid.fromString(CarrierConfigManager.REMOVE_GROUP_UUID_STRING);
     private final LocalLog mLocalLog = new LocalLog(200);
+    private static final int SUB_ID_FOUND = 1;
+    private static final int NO_ENTRY_FOR_SLOT_INDEX = -1;
+    private static final int SUB_ID_NOT_IN_SLOT = -2;
 
     // Lock that both mCacheActiveSubInfoList and mCacheOpportunisticSubInfoList use.
     private Object mSubInfoListLock = new Object();
@@ -146,15 +151,121 @@ public class SubscriptionController extends ISub.Stub {
 
     private AppOpsManager mAppOps;
 
+    // Allows test mocks to avoid SELinux failures on invalidate calls.
+    private static boolean sCachingEnabled = true;
+
     // Each slot can have multiple subs.
-    private static Map<Integer, ArrayList<Integer>> sSlotIndexToSubIds = new ConcurrentHashMap<>();
-    protected static int mDefaultFallbackSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    private static class WatchedSlotIndexToSubIds {
+        private Map<Integer, ArrayList<Integer>> mSlotIndexToSubIds = new ConcurrentHashMap<>();
+
+        WatchedSlotIndexToSubIds() {
+        }
+
+        public void clear() {
+            mSlotIndexToSubIds.clear();
+            invalidateDefaultSubIdCaches();
+        }
+
+        public Set<Entry<Integer, ArrayList<Integer>>> entrySet() {
+            return mSlotIndexToSubIds.entrySet();
+        }
+
+        // Force all updates to data structure through wrapper.
+        public ArrayList<Integer> getCopy(int slotIndex) {
+            ArrayList<Integer> subIdList = mSlotIndexToSubIds.get(slotIndex);
+            if (subIdList == null) {
+                return null;
+            }
+
+            return new ArrayList<Integer>(subIdList);
+        }
+
+        public void put(int slotIndex, ArrayList<Integer> value) {
+            mSlotIndexToSubIds.put(slotIndex, value);
+            invalidateDefaultSubIdCaches();
+        }
+
+        public void remove(int slotIndex) {
+            mSlotIndexToSubIds.remove(slotIndex);
+            invalidateDefaultSubIdCaches();
+        }
+
+        public int size() {
+            return mSlotIndexToSubIds.size();
+        }
+
+        @VisibleForTesting
+        public Map<Integer, ArrayList<Integer>> getMap() {
+            return mSlotIndexToSubIds;
+        }
+
+        public int removeFromSubIdList(int slotIndex, int subId) {
+            ArrayList<Integer> subIdList = mSlotIndexToSubIds.get(slotIndex);
+            if (subIdList == null) {
+                return NO_ENTRY_FOR_SLOT_INDEX;
+            } else {
+                if (subIdList.contains(subId)) {
+                    subIdList.remove(new Integer(subId));
+                    if (subIdList.isEmpty()) {
+                        mSlotIndexToSubIds.remove(slotIndex);
+                    }
+                    invalidateDefaultSubIdCaches();
+                    return SUB_ID_FOUND;
+                } else {
+                    return SUB_ID_NOT_IN_SLOT;
+                }
+            }
+        }
+
+        public void addToSubIdList(int slotIndex, Integer value) {
+            ArrayList<Integer> subIdList = mSlotIndexToSubIds.get(slotIndex);
+            if (subIdList == null) {
+                subIdList = new ArrayList<Integer>();
+                subIdList.add(value);
+                mSlotIndexToSubIds.put(slotIndex, subIdList);
+            } else {
+                subIdList.add(value);
+            }
+            invalidateDefaultSubIdCaches();
+        }
+
+        public void clearSubIdList(int slotIndex) {
+            ArrayList<Integer> subIdList = mSlotIndexToSubIds.get(slotIndex);
+            if (subIdList != null) {
+                subIdList.clear();
+                invalidateDefaultSubIdCaches();
+            }
+        }
+    }
+
+    protected static class WatchedInt {
+        private int mValue;
+
+        public WatchedInt(int initialValue) {
+            mValue = initialValue;
+        }
+
+        public int get() {
+            return mValue;
+        }
+
+        public void set(int newValue) {
+            mValue = newValue;
+            invalidateDefaultSubIdCaches();
+        }
+    }
+
+    private static WatchedSlotIndexToSubIds sSlotIndexToSubIds = new WatchedSlotIndexToSubIds();
+    protected static WatchedInt sDefaultFallbackSubId =
+            new WatchedInt(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+
     @UnsupportedAppUsage
     protected static int mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
 
     @UnsupportedAppUsage
     private int[] colorArr;
     private long mLastISubServiceRegTime;
+    private RegistrantList mUiccAppsEnableChangeRegList = new RegistrantList();
 
     // The properties that should be shared and synced across grouped subscriptions.
     private static final Set<String> GROUP_SHARING_PROPERTIES = new HashSet<>(Arrays.asList(
@@ -221,6 +332,10 @@ public class SubscriptionController extends ISub.Stub {
 
         // Cache Setting values
         cacheSettingValues();
+
+        // Initial invalidate activates caching.
+        invalidateDefaultSubIdCaches();
+        invalidateDefaultDataSubIdCaches();
 
         if (DBG) logdl("[SubscriptionController] init by Context");
     }
@@ -356,6 +471,9 @@ public class SubscriptionController extends ISub.Stub {
             notifyOpportunisticSubscriptionInfoChanged();
         }
         metrics.updateActiveSubscriptionInfoList(subInfos);
+        for (Phone phone : PhoneFactory.getPhones()) {
+            phone.getVoiceCallSessionStats().onActiveSubscriptionInfoChanged(subInfos);
+        }
     }
 
     /**
@@ -1349,7 +1467,7 @@ public class SubscriptionController extends ISub.Stub {
         if (!isActiveSubscriptionId(getDefaultSubId())) {
             // current default is not valid anylonger. set a new default
             if (DBG) {
-                logdl("[updateDefaultSubIdsIfNeeded] set mDefaultFallbackSubId=" + newDefault);
+                logdl("[updateDefaultSubIdsIfNeeded] set sDefaultFallbackSubId=" + newDefault);
             }
             setDefaultFallbackSubId(newDefault, subscriptionType);
         }
@@ -1433,22 +1551,13 @@ public class SubscriptionController extends ISub.Stub {
                 return -1;
             }
             refreshCachedActiveSubscriptionInfoList();
-
-            // update sSlotIndexToSubIds struct
-            ArrayList<Integer> subIdsList = sSlotIndexToSubIds.get(slotIndex);
-            if (subIdsList == null) {
+            result = sSlotIndexToSubIds.removeFromSubIdList(slotIndex, subId);
+            if (result == NO_ENTRY_FOR_SLOT_INDEX) {
                 loge("sSlotIndexToSubIds has no entry for slotIndex = " + slotIndex);
-            } else {
-                if (subIdsList.contains(subId)) {
-                    subIdsList.remove(new Integer(subId));
-                    if (subIdsList.isEmpty()) {
-                        sSlotIndexToSubIds.remove(slotIndex);
-                    }
-                } else {
-                    loge("sSlotIndexToSubIds has no subid: " + subId
-                            + ", in index: " + slotIndex);
-                }
+            } else if (result == SUB_ID_NOT_IN_SLOT) {
+                loge("sSlotIndexToSubIds has no subid: " + subId + ", in index: " + slotIndex);
             }
+
             // Since a subscription is removed, if this one is set as default for any setting,
             // set some other subid as the default.
             int newDefault = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -1515,9 +1624,10 @@ public class SubscriptionController extends ISub.Stub {
         value.put(SubscriptionManager.CARRIER_NAME, "");
         value.put(SubscriptionManager.CARD_ID, uniqueId);
         value.put(SubscriptionManager.SUBSCRIPTION_TYPE, subscriptionType);
-        if (isSubscriptionForRemoteSim(subscriptionType)) {
+        if (!TextUtils.isEmpty(displayName)) {
             value.put(SubscriptionManager.DISPLAY_NAME, displayName);
-        } else {
+        }
+        if (!isSubscriptionForRemoteSim(subscriptionType)) {
             UiccCard card = mUiccController.getUiccCardForPhone(slotIndex);
             if (card != null) {
                 String cardId = card.getCardId();
@@ -2019,23 +2129,49 @@ public class SubscriptionController extends ISub.Stub {
     public int setUiccApplicationsEnabled(boolean enabled, int subId) {
         if (DBG) logd("[setUiccApplicationsEnabled]+ enabled:" + enabled + " subId:" + subId);
 
-        ContentValues value = new ContentValues(1);
-        value.put(SubscriptionManager.UICC_APPLICATIONS_ENABLED, enabled);
+        enforceModifyPhoneState("setUiccApplicationsEnabled");
 
-        int result = mContext.getContentResolver().update(
-                SubscriptionManager.getUriForSubscriptionId(subId), value, null, null);
+        long identity = Binder.clearCallingIdentity();
+        try {
+            ContentValues value = new ContentValues(1);
+            value.put(SubscriptionManager.UICC_APPLICATIONS_ENABLED, enabled);
 
-        // Refresh the Cache of Active Subscription Info List
-        refreshCachedActiveSubscriptionInfoList();
+            int result = mContext.getContentResolver().update(
+                    SubscriptionManager.getUriForSubscriptionId(subId), value, null, null);
 
-        notifySubscriptionInfoChanged();
+            // Refresh the Cache of Active Subscription Info List
+            refreshCachedActiveSubscriptionInfoList();
 
-        if (isActiveSubId(subId)) {
-            Phone phone = PhoneFactory.getPhone(getPhoneId(subId));
-            phone.enableUiccApplications(enabled, null);
+            notifyUiccAppsEnableChanged();
+            notifySubscriptionInfoChanged();
+
+            return result;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
         }
+    }
 
-        return result;
+    /**
+     * Register to change of uicc applications enablement changes.
+     * @param notifyNow whether to notify target upon registration.
+     */
+    public void registerForUiccAppsEnabled(Handler handler, int what, Object object,
+            boolean notifyNow) {
+        mUiccAppsEnableChangeRegList.addUnique(handler, what, object);
+        if (notifyNow) {
+            handler.obtainMessage(what, object).sendToTarget();
+        }
+    }
+
+    /**
+     * Unregister to change of uicc applications enablement changes.
+     */
+    public void unregisterForUiccAppsEnabled(Handler handler) {
+        mUiccAppsEnableChangeRegList.remove(handler);
+    }
+
+    private void notifyUiccAppsEnableChanged() {
+        mUiccAppsEnableChangeRegList.notifyRegistrants();
     }
 
     /**
@@ -2160,7 +2296,7 @@ public class SubscriptionController extends ISub.Stub {
         }
 
         // Convert ArrayList to array
-        ArrayList<Integer> subIds = sSlotIndexToSubIds.get(slotIndex);
+        ArrayList<Integer> subIds = sSlotIndexToSubIds.getCopy(slotIndex);
         if (subIds != null && subIds.size() > 0) {
             int[] subIdArr = new int[subIds.size()];
             for (int i = 0; i < subIds.size(); i++) {
@@ -2287,7 +2423,7 @@ public class SubscriptionController extends ISub.Stub {
             if (VDBG) logdl("[getDefaultSubId] NOT VoiceCapable subId=" + subId);
         }
         if (!isActiveSubId(subId)) {
-            subId = mDefaultFallbackSubId;
+            subId = sDefaultFallbackSubId.get();
             if (VDBG) logdl("[getDefaultSubId] NOT active use fall back subId=" + subId);
         }
         if (VDBG) logv("[getDefaultSubId]- value = " + subId);
@@ -2303,8 +2439,7 @@ public class SubscriptionController extends ISub.Stub {
             throw new RuntimeException("setDefaultSmsSubId called with DEFAULT_SUB_ID");
         }
         if (DBG) logdl("[setDefaultSmsSubId] subId=" + subId);
-        Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.MULTI_SIM_SMS_SUBSCRIPTION, subId);
+        setGlobalSetting(Settings.Global.MULTI_SIM_SMS_SUBSCRIPTION, subId);
         broadcastDefaultSmsSubIdChanged(subId);
     }
 
@@ -2339,8 +2474,7 @@ public class SubscriptionController extends ISub.Stub {
 
         int previousDefaultSub = getDefaultSubId();
 
-        Settings.Global.putInt(mContext.getContentResolver(),
-                Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION, subId);
+        setGlobalSetting(Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION, subId);
         broadcastDefaultVoiceSubIdChanged(subId);
 
         PhoneAccountHandle newHandle =
@@ -2440,8 +2574,7 @@ public class SubscriptionController extends ISub.Stub {
             }
 
             int previousDefaultSub = getDefaultSubId();
-            Settings.Global.putInt(mContext.getContentResolver(),
-                    Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION, subId);
+            setGlobalSetting(Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION, subId);
             MultiSimSettingController.getInstance().notifyDefaultDataSubChanged();
             broadcastDefaultDataSubIdChanged(subId);
             if (previousDefaultSub != getDefaultSubId()) {
@@ -2477,15 +2610,15 @@ public class SubscriptionController extends ISub.Stub {
         }
         int previousDefaultSub = getDefaultSubId();
         if (isSubscriptionForRemoteSim(subscriptionType)) {
-            mDefaultFallbackSubId = subId;
+            sDefaultFallbackSubId.set(subId);
             return;
         }
         if (SubscriptionManager.isValidSubscriptionId(subId)) {
             int phoneId = getPhoneId(subId);
             if (phoneId >= 0 && (phoneId < mTelephonyManager.getPhoneCount()
                     || mTelephonyManager.getSimCount() == 1)) {
-                if (DBG) logdl("[setDefaultFallbackSubId] set mDefaultFallbackSubId=" + subId);
-                mDefaultFallbackSubId = subId;
+                if (DBG) logdl("[setDefaultFallbackSubId] set sDefaultFallbackSubId=" + subId);
+                sDefaultFallbackSubId.set(subId);
                 // Update MCC MNC device configuration information
                 String defaultMccMnc = mTelephonyManager.getSimOperatorNumericForPhone(phoneId);
                 MccTable.updateMccMncConfiguration(mContext, defaultMccMnc);
@@ -3812,7 +3945,7 @@ public class SubscriptionController extends ISub.Stub {
     }
 
     private synchronized boolean addToSubIdList(int slotIndex, int subId, int subscriptionType) {
-        ArrayList<Integer> subIdsList = sSlotIndexToSubIds.get(slotIndex);
+        ArrayList<Integer> subIdsList = sSlotIndexToSubIds.getCopy(slotIndex);
         if (subIdsList == null) {
             subIdsList = new ArrayList<>();
             sSlotIndexToSubIds.put(slotIndex, subIdsList);
@@ -3825,11 +3958,11 @@ public class SubscriptionController extends ISub.Stub {
         }
         if (isSubscriptionForRemoteSim(subscriptionType)) {
             // For Remote SIM subscriptions, a slot can have multiple subscriptions.
-            subIdsList.add(subId);
+            sSlotIndexToSubIds.addToSubIdList(slotIndex, subId);
         } else {
             // for all other types of subscriptions, a slot can have only one subscription at a time
-            subIdsList.clear();
-            subIdsList.add(subId);
+            sSlotIndexToSubIds.clearSubIdList(slotIndex);
+            sSlotIndexToSubIds.addToSubIdList(slotIndex, subId);
         }
         if (DBG) logdl("slotIndex, subId combo is added to the map.");
         return true;
@@ -3845,7 +3978,7 @@ public class SubscriptionController extends ISub.Stub {
      */
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     public Map<Integer, ArrayList<Integer>> getSlotIndexToSubIdsMap() {
-        return sSlotIndexToSubIds;
+        return sSlotIndexToSubIds.getMap();
     }
 
     /**
@@ -3854,7 +3987,7 @@ public class SubscriptionController extends ISub.Stub {
      */
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     public void resetStaticMembers() {
-        mDefaultFallbackSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+        sDefaultFallbackSubId.set(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
         mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
     }
 
@@ -3998,4 +4131,52 @@ public class SubscriptionController extends ISub.Stub {
             Binder.restoreCallingIdentity(identity);
         }
     }
+
+    /**
+     * @hide
+     */
+    private void setGlobalSetting(String name, int value) {
+        Settings.Global.putInt(mContext.getContentResolver(), name, value);
+        if (name == Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION) {
+            invalidateDefaultDataSubIdCaches();
+            invalidateDefaultSubIdCaches();
+        } else if (name == Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION) {
+            invalidateDefaultSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    private static void invalidateDefaultSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateDefaultSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    private static void invalidateDefaultDataSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateDefaultDataSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    @VisibleForTesting
+    public static void disableCaching() {
+        sCachingEnabled = false;
+    }
+
+    /**
+     * @hide
+     */
+    public static void enableCaching() {
+        sCachingEnabled = true;
+    }
+
+
 }

@@ -111,6 +111,8 @@ public class TransportManager extends Handler {
                 AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
         ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.CDMA2000,
                 AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.NGRAN,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
         ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.IWLAN,
                 AccessNetworkConstants.TRANSPORT_TYPE_WLAN);
     }
@@ -319,14 +321,15 @@ public class TransportManager extends Handler {
      */
     private synchronized void setCurrentTransport(@ApnType int apnType, int transport) {
         mCurrentTransports.put(apnType, transport);
+        logl("setCurrentTransport: apnType=" + ApnSetting.getApnTypeString(apnType)
+                + ", transport=" + AccessNetworkConstants.transportTypeToString(transport));
         final SharedPreferences sp
                 = PreferenceManager.getDefaultSharedPreferences(mPhone.getContext());
         final SharedPreferences.Editor editor = sp.edit();
         final String key = String.format(APN_TRANSPORT, apnType, mPhone.getPhoneId());
         editor.putInt(key, transport);
-        editor.apply();
-        logl("setCurrentTransport: apnType=" + ApnSetting.getApnTypeString(apnType)
-                + ", transport=" + AccessNetworkConstants.transportTypeToString(transport));
+        boolean result = editor.commit();
+        logl("setCurrentTransport: key=" + key + ", result=" + result);
     }
 
     private boolean isHandoverPending() {

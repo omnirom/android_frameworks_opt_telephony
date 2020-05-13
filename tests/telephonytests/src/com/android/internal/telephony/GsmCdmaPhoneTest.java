@@ -20,7 +20,7 @@ import static com.android.internal.telephony.CommandsInterface.CF_ACTION_ENABLE;
 import static com.android.internal.telephony.CommandsInterface.CF_REASON_UNCONDITIONAL;
 import static com.android.internal.telephony.Phone.EVENT_ICC_CHANGED;
 import static com.android.internal.telephony.Phone.EVENT_SRVCC_STATE_CHANGED;
-import static com.android.internal.telephony.Phone.EVENT_UICC_APPS_ENABLEMENT_CHANGED;
+import static com.android.internal.telephony.Phone.EVENT_UICC_APPS_ENABLEMENT_STATUS_CHANGED;
 import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
 
 import static org.junit.Assert.assertEquals;
@@ -129,6 +129,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
         mPhoneUT = new GsmCdmaPhone(mContext, mSimulatedCommands, mNotifier, true, 0,
             PhoneConstants.PHONE_TYPE_GSM, mTelephonyComponentFactory);
+        mPhoneUT.setVoiceCallSessionStats(mVoiceCallSessionStats);
         ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
         verify(mUiccController).registerForIccChanged(eq(mPhoneUT), integerArgumentCaptor.capture(),
                 nullable(Object.class));
@@ -1225,7 +1226,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         processAllMessages();
         doReturn(IccCardStatus.CardState.CARDSTATE_PRESENT).when(mUiccSlot).getCardState();
         Message.obtain(mPhoneUT, EVENT_ICC_CHANGED, null).sendToTarget();
-        Message.obtain(mPhoneUT, EVENT_UICC_APPS_ENABLEMENT_CHANGED,
+        Message.obtain(mPhoneUT, EVENT_UICC_APPS_ENABLEMENT_STATUS_CHANGED,
                 new AsyncResult(null, true, null)).sendToTarget();
         processAllMessages();
         verify(mSubscriptionController, never()).getSubInfoForIccId(any());
@@ -1249,7 +1250,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         doReturn(IccCardStatus.CardState.CARDSTATE_PRESENT).when(mUiccSlot).getCardState();
         String iccId = "Fake iccId";
         doReturn(iccId).when(mUiccSlot).getIccId();
-        Message.obtain(mPhoneUT, EVENT_UICC_APPS_ENABLEMENT_CHANGED,
+        Message.obtain(mPhoneUT, EVENT_UICC_APPS_ENABLEMENT_STATUS_CHANGED,
                 new AsyncResult(null, false, null)).sendToTarget();
         processAllMessages();
 
