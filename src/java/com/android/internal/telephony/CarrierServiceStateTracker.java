@@ -324,7 +324,6 @@ public class CarrierServiceStateTracker extends Handler {
         Notification.Builder builder = getNotificationBuilder(notificationType);
         // set some common attributes
         builder.setWhen(System.currentTimeMillis())
-                .setAutoCancel(true)
                 .setSmallIcon(com.android.internal.R.drawable.stat_sys_warning)
                 .setColor(context.getResources().getColor(
                        com.android.internal.R.color.system_notification_accent_color));
@@ -458,6 +457,7 @@ public class CarrierServiceStateTracker extends Handler {
             CharSequence details = context.getText(
                     com.android.internal.R.string.NetworkPreferenceSwitchSummary);
             return new Notification.Builder(context)
+                    .setAutoCancel(true)
                     .setContentTitle(title)
                     .setStyle(new Notification.BigTextStyle().bigText(details))
                     .setContentText(details)
@@ -550,7 +550,9 @@ public class CarrierServiceStateTracker extends Handler {
             // Create the PendingIntent
             PendingIntent emergencyIntent = PendingIntent.getActivity(
                     mContext, 0, notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+            boolean isCancellable = (mDelay == UNINITIALIZED_DELAY_VALUE) ? true : false;
             return new Notification.Builder(mContext)
+                    .setAutoCancel(isCancellable)
                     .setOngoing(true)
                     .setContentTitle(mEmergencyTitle)
                     .setStyle(new Notification.BigTextStyle().bigText(mEmergencySummary))

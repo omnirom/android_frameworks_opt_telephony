@@ -285,6 +285,7 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            mEssentialRecordsToLoad -= 1;
             byte[] data = (byte[]) ar.result;
             if (DBG) log("CSIM_SPN=" +
                          IccUtils.bytesToHexString(data));
@@ -890,6 +891,9 @@ public class RuimRecords extends IccRecords {
 
     private void onLocked(int msg) {
         if (DBG) log("only fetch EF_ICCID in locked state");
+        mRecordsRequested = false;
+        mLoaded.set(false);
+
         mLockedRecordsReqReason = msg == EVENT_APP_LOCKED ? LOCKED_RECORDS_REQ_REASON_LOCKED :
                 LOCKED_RECORDS_REQ_REASON_NETWORK_LOCKED;
 
@@ -920,6 +924,12 @@ public class RuimRecords extends IccRecords {
         mRecordsToLoad++;
         mEssentialRecordsToLoad++;
 
+        mFh.loadEFTransparent(EF_CSIM_SPN,
+                obtainMessage(EVENT_GET_ICC_RECORD_DONE, new EfCsimSpnLoaded()));
+        mRecordsToLoad++;
+        mEssentialRecordsToLoad++;
+
+
         if (DBG) log("fetchEssentialRuimRecords " + mRecordsToLoad +
                 " requested: " + mRecordsRequested);
     }
@@ -938,10 +948,6 @@ public class RuimRecords extends IccRecords {
 
         mFh.loadEFTransparent(EF_CSIM_LI,
                 obtainMessage(EVENT_GET_ICC_RECORD_DONE, new EfCsimLiLoaded()));
-        mRecordsToLoad++;
-
-        mFh.loadEFTransparent(EF_CSIM_SPN,
-                obtainMessage(EVENT_GET_ICC_RECORD_DONE, new EfCsimSpnLoaded()));
         mRecordsToLoad++;
 
         mFh.loadEFLinearFixed(EF_CSIM_MDN, 1,
