@@ -193,11 +193,12 @@ public class IccPhoneBookInterfaceManager {
             if (mAdnCache != null) {
                 mAdnCache.updateAdnBySearch(efid, oldAdn, newAdn, pin2, response);
                 waitForResult(updateRequest);
+                return (boolean) updateRequest.mResult;
             } else {
                 loge("Failure while trying to update by search due to uninitialised adncache");
+                return false;
             }
         }
-        return (boolean) updateRequest.mResult;
     }
 
     /**
@@ -303,11 +304,12 @@ public class IccPhoneBookInterfaceManager {
             if (mAdnCache != null) {
                 mAdnCache.updateAdnByIndex(efid, newAdn, index, pin2, response);
                 waitForResult(updateRequest);
+                return (boolean) updateRequest.mResult;
             } else {
                 loge("Failure while trying to update by index due to uninitialised adncache");
+                return false;
             }
         }
-        return (boolean) updateRequest.mResult;
     }
 
     /**
@@ -365,11 +367,12 @@ public class IccPhoneBookInterfaceManager {
             if (mAdnCache != null) {
                 mAdnCache.requestLoadAllAdnLike(efid, mAdnCache.extensionEfForEf(efid), response);
                 waitForResult(loadRequest);
+                return (List<AdnRecord>) loadRequest.mResult;
             } else {
                 loge("Failure while trying to load from SIM due to uninitialised adncache");
+                return null;
             }
         }
-        return (List<AdnRecord>) loadRequest.mResult;
     }
 
     @UnsupportedAppUsage

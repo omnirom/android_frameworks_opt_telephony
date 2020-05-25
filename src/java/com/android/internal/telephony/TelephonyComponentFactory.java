@@ -443,12 +443,6 @@ public class TelephonyComponentFactory {
         return SubscriptionController.init(c);
     }
 
-    public SubscriptionInfoUpdater makeSubscriptionInfoUpdater(Looper looper, Context context,
-            CommandsInterface[] ci) {
-        Rlog.i(TAG, "makeSubscriptionInfoUpdater");
-        return new SubscriptionInfoUpdater(looper, context, ci);
-    }
-
     public PhoneSwitcher makePhoneSwitcher(int maxDataAttachModemCount, Context context,
             Looper looper) {
         Rlog.i(TAG, "makePhoneSwitcher");
@@ -462,16 +456,22 @@ public class TelephonyComponentFactory {
         return new DisplayInfoController(phone);
     }
 
-    public RIL makeRIL(Context context, int preferredNetworkType,
-            int cdmaSubscription, Integer instanceId) {
-        Rlog.d(LOG_TAG, "makeRIL");
-        return new RIL(context, preferredNetworkType, cdmaSubscription, instanceId);
-    }
-
     public MultiSimSettingController initMultiSimSettingController(Context c,
             SubscriptionController sc) {
         Rlog.i(TAG, " initMultiSimSettingController ");
         return MultiSimSettingController.init(c, sc);
+    }
+
+    public SubscriptionInfoUpdater makeSubscriptionInfoUpdater(Looper looper, Context context,
+            CommandsInterface[] ci) {
+        Rlog.i(TAG, "makeSubscriptionInfoUpdater");
+        return new SubscriptionInfoUpdater(looper, context, ci);
+    }
+
+    public RIL makeRIL(Context context, int preferredNetworkType,
+            int cdmaSubscription, Integer instanceId) {
+        Rlog.d(LOG_TAG, "makeRIL");
+        return new RIL(context, preferredNetworkType, cdmaSubscription, instanceId);
     }
 
     public void makeExtTelephonyClasses(Context context,

@@ -17,6 +17,7 @@
 package com.android.internal.telephony;
 
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
+import static android.telephony.TelephonyManager.MULTISIM_ALLOWED;
 import static android.telephony.TelephonyManager.SET_OPPORTUNISTIC_SUB_REMOTE_SERVICE_EXCEPTION;
 import static android.telephony.UiccSlotInfo.CARD_STATE_INFO_PRESENT;
 
@@ -164,6 +165,7 @@ public class SubscriptionController extends ISub.Stub {
         public void clear() {
             mSlotIndexToSubIds.clear();
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public Set<Entry<Integer, ArrayList<Integer>>> entrySet() {
@@ -183,11 +185,13 @@ public class SubscriptionController extends ISub.Stub {
         public void put(int slotIndex, ArrayList<Integer> value) {
             mSlotIndexToSubIds.put(slotIndex, value);
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public void remove(int slotIndex) {
             mSlotIndexToSubIds.remove(slotIndex);
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public int size() {
@@ -210,6 +214,7 @@ public class SubscriptionController extends ISub.Stub {
                         mSlotIndexToSubIds.remove(slotIndex);
                     }
                     invalidateDefaultSubIdCaches();
+                    invalidateSlotIndexCaches();
                     return SUB_ID_FOUND;
                 } else {
                     return SUB_ID_NOT_IN_SLOT;
@@ -227,6 +232,7 @@ public class SubscriptionController extends ISub.Stub {
                 subIdList.add(value);
             }
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         }
 
         public void clearSubIdList(int slotIndex) {
@@ -234,11 +240,12 @@ public class SubscriptionController extends ISub.Stub {
             if (subIdList != null) {
                 subIdList.clear();
                 invalidateDefaultSubIdCaches();
+                invalidateSlotIndexCaches();
             }
         }
     }
 
-    protected static class WatchedInt {
+    public static class WatchedInt {
         private int mValue;
 
         public WatchedInt(int initialValue) {
@@ -251,13 +258,20 @@ public class SubscriptionController extends ISub.Stub {
 
         public void set(int newValue) {
             mValue = newValue;
-            invalidateDefaultSubIdCaches();
         }
     }
 
     private static WatchedSlotIndexToSubIds sSlotIndexToSubIds = new WatchedSlotIndexToSubIds();
+
     protected static WatchedInt sDefaultFallbackSubId =
-            new WatchedInt(SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            new WatchedInt(SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+        @Override
+        public void set(int newValue) {
+            super.set(newValue);
+            invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
+        }
+    };
 
     @UnsupportedAppUsage
     protected static int mDefaultPhoneId = SubscriptionManager.DEFAULT_PHONE_INDEX;
@@ -336,6 +350,9 @@ public class SubscriptionController extends ISub.Stub {
         // Initial invalidate activates caching.
         invalidateDefaultSubIdCaches();
         invalidateDefaultDataSubIdCaches();
+        invalidateDefaultSmsSubIdCaches();
+        invalidateActiveDataSubIdCaches();
+        invalidateSlotIndexCaches();
 
         if (DBG) logdl("[SubscriptionController] init by Context");
     }
@@ -725,6 +742,19 @@ public class SubscriptionController extends ISub.Stub {
      * @hide
      */
     public SubscriptionInfo getSubscriptionInfo(int subId) {
+        // check cache for active subscriptions first, before querying db
+        for (SubscriptionInfo subInfo : mCacheActiveSubInfoList) {
+            if (subInfo.getSubscriptionId() == subId) {
+                return subInfo;
+            }
+        }
+        // check cache for opportunistic subscriptions too, before querying db
+        for (SubscriptionInfo subInfo : mCacheOpportunisticSubInfoList) {
+            if (subInfo.getSubscriptionId() == subId) {
+                return subInfo;
+            }
+        }
+
         List<SubscriptionInfo> subInfoList = getSubInfo(
                 SubscriptionManager.UNIQUE_KEY_SUBSCRIPTION_ID + "=" + subId, null);
         if (subInfoList == null || subInfoList.isEmpty()) return null;
@@ -3746,7 +3776,22 @@ public class SubscriptionController extends ISub.Stub {
             // We need to send intents to Euicc if we are turning on an inactive slot.
             // Euicc will decide whether to ask user to switch to DSDS, or change SIM
             // slot mapping.
-            enableSubscriptionOverEuiccManager(subId, enable, physicalSlotIndex);
+            EuiccManager euiccManager =
+                    (EuiccManager) mContext.getSystemService(Context.EUICC_SERVICE);
+            if (euiccManager != null && euiccManager.isEnabled()) {
+                enableSubscriptionOverEuiccManager(subId, enable, physicalSlotIndex);
+            } else {
+                // Enable / disable uicc applications.
+                if (!info.areUiccApplicationsEnabled()) setUiccApplicationsEnabled(enable, subId);
+                // If euiccManager is not enabled, we try to switch to DSDS if possible,
+                // or switch slot if not.
+                if (mTelephonyManager.isMultiSimSupported() == MULTISIM_ALLOWED) {
+                    PhoneConfigurationManager.getInstance().switchMultiSimConfig(
+                            mTelephonyManager.getSupportedModemCount());
+                } else {
+                    UiccController.getInstance().switchSlots(new int[]{physicalSlotIndex}, null);
+                }
+            }
             return true;
         } else {
             // Enable / disable uicc applications.
@@ -3964,6 +4009,17 @@ public class SubscriptionController extends ISub.Stub {
             sSlotIndexToSubIds.clearSubIdList(slotIndex);
             sSlotIndexToSubIds.addToSubIdList(slotIndex, subId);
         }
+
+
+        // Remove the slot from sSlotIndexToSubIds if it has the same sub id with the added slot
+        for (Entry<Integer, ArrayList<Integer>> entry : sSlotIndexToSubIds.entrySet()) {
+            if (entry.getKey() != slotIndex && entry.getValue() != null
+                    && entry.getValue().contains(subId)) {
+                logdl("addToSubIdList - remove " + entry.getKey());
+                sSlotIndexToSubIds.remove(entry.getKey());
+            }
+        }
+
         if (DBG) logdl("slotIndex, subId combo is added to the map.");
         return true;
     }
@@ -4139,9 +4195,14 @@ public class SubscriptionController extends ISub.Stub {
         Settings.Global.putInt(mContext.getContentResolver(), name, value);
         if (name == Settings.Global.MULTI_SIM_DATA_CALL_SUBSCRIPTION) {
             invalidateDefaultDataSubIdCaches();
+            invalidateActiveDataSubIdCaches();
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
         } else if (name == Settings.Global.MULTI_SIM_VOICE_CALL_SUBSCRIPTION) {
             invalidateDefaultSubIdCaches();
+            invalidateSlotIndexCaches();
+        } else if (name == Settings.Global.MULTI_SIM_SMS_SUBSCRIPTION) {
+            invalidateDefaultSmsSubIdCaches();
         }
     }
 
@@ -4166,6 +4227,33 @@ public class SubscriptionController extends ISub.Stub {
     /**
      * @hide
      */
+    private static void invalidateDefaultSmsSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateDefaultSmsSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    protected static void invalidateActiveDataSubIdCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateActiveDataSubIdCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    protected static void invalidateSlotIndexCaches() {
+        if (sCachingEnabled) {
+            SubscriptionManager.invalidateSlotIndexCaches();
+        }
+    }
+
+    /**
+     * @hide
+     */
     @VisibleForTesting
     public static void disableCaching() {
         sCachingEnabled = false;
@@ -4174,9 +4262,8 @@ public class SubscriptionController extends ISub.Stub {
     /**
      * @hide
      */
+    @VisibleForTesting
     public static void enableCaching() {
         sCachingEnabled = true;
     }
-
-
 }
