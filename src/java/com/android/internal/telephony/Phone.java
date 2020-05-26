@@ -33,6 +33,7 @@ import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.Registrant;
 import android.os.RegistrantList;
+import android.os.ResultReceiver;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.WorkSource;
@@ -997,6 +998,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mLocalLog.log("isInEmergencySmsMode: queried while eSMS mode is active.");
         }
         return isInEmergencySmsMode;
+    }
+
+    public void migrateUssdFrom(Phone from, String num, ResultReceiver wrappedCallback)
+            throws UnsupportedOperationException {
+        try {
+            notifyMigrateUssd(num, wrappedCallback);
+            migrate(mMmiRegistrants, from.mMmiRegistrants);
+        } catch (UnsupportedOperationException e) {
+            Rlog.e(LOG_TAG, "Error: " + e);
+            throw e;
+        }
     }
 
     protected void migrateFrom(Phone from) {
@@ -2517,6 +2529,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCellInfoRegistrants.notifyRegistrants(ar);
 
         mNotifier.notifyCellInfo(this, cellInfo);
+    }
+
+    protected void notifyMigrateUssd(String num, ResultReceiver wrappedCallback)
+            throws UnsupportedOperationException {
+        // notifyMigrateUssd shall be overriden by GsmCdmaPhone
+        throw new UnsupportedOperationException("notifyMigrateUssd: not supported");
     }
 
     /**

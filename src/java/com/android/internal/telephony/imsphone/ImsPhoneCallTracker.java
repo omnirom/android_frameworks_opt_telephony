@@ -3784,8 +3784,12 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             if (imsCall == mUssdSession) {
                 mUssdSession = null;
                 if (mPendingUssd != null) {
-                    CommandException ex =
-                            new CommandException(CommandException.Error.GENERIC_FAILURE);
+                    //TODO: Update with USSD CSFB related ImsReasonInfo.
+                    CommandException.Error err =
+                            reasonInfo.getCode() == ImsReasonInfo.CODE_UT_NOT_SUPPORTED ?
+                                    CommandException.Error.NO_NETWORK_FOUND :
+                                    CommandException.Error.GENERIC_FAILURE;
+                    CommandException ex = new CommandException(err);
                     AsyncResult.forMessage(mPendingUssd, null, ex);
                     mPendingUssd.sendToTarget();
                     mPendingUssd = null;
@@ -3809,6 +3813,13 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                 case ImsCall.USSD_MODE_NOTIFY:
                     ussdMode = CommandsInterface.USSD_MODE_NOTIFY;
                     break;
+            }
+
+            if (ussdMode != CommandsInterface.USSD_MODE_REQUEST ||
+                TextUtils.isEmpty(ussdMessage)) {
+                //close mUssdSession
+                mUssdSession.close();
+                mUssdSession = null;
             }
 
             mPhone.onIncomingUSSD(ussdMode, ussdMessage);
