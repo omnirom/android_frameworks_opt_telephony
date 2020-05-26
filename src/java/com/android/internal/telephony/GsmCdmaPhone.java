@@ -161,6 +161,9 @@ public class GsmCdmaPhone extends Phone {
     // string to define how the carrier specifies its own ota sp number
     private String mCarrierOtaSpNumSchema;
     private Boolean mUiccApplicationsEnabled = null;
+    // keeps track of when we have triggered an emergency call due to the ril.test.emergencynumber
+    // param being set and we should generate a simulated exit from the modem upon exit of ECbM.
+    private boolean mIsTestingEmergencyCallbackMode = false;
 
     public static final String PROPERTY_CDMA_HOME_OPERATOR_NUMERIC =
             "ro.cdma.home.operator.numeric";
@@ -1417,6 +1420,7 @@ public class GsmCdmaPhone extends Phone {
         if (isDialedNumberSwapped && isEmergency) {
             // Triggers ECM when CS call ends only for test emergency calls using
             // ril.test.emergencynumber.
+            mIsTestingEmergencyCallbackMode = true;
             mCi.testingEmergencyCall();
         }
         if (isPhoneTypeGsm()) {
