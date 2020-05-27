@@ -1209,7 +1209,7 @@ public final class ImsPhoneMmiCode extends Handler implements MmiCode {
                     mState = State.FAILED;
                     mMessage = getErrorMessage(ar);
 
-                    mPhone.onMMIDone(this);
+                    mPhone.onUssdComplete(this, (CommandException) ar.exception);
                 }
 
                 // Note that unlike most everything else, the USSD complete
