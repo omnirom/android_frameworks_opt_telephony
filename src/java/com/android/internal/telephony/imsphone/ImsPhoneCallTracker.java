@@ -3077,7 +3077,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             ImsPhoneConnection conn = findConnection(imsCall);
             if (conn != null) {
                 ImsPhoneCall imsPhoneCall = conn.getCall();
-                if (imsPhoneCall != null) {
+                if (imsPhoneCall != null && !isHandoverToWifi && !isHandoverFromWifi) {
                     // We might be playing ringback on the handover connection; we should stop
                     // playing it at this point (otherwise it could play indefinitely).
                     imsPhoneCall.maybeStopRingback();
