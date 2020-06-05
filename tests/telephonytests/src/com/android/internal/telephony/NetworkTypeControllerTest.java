@@ -88,6 +88,8 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         broadcastCarrierConfigs();
 
         replaceInstance(Handler.class, "mLooper", mDisplayInfoController, Looper.myLooper());
+        doReturn((int) TelephonyManager.NETWORK_TYPE_BITMASK_NR).when(mPhone)
+                .getCachedPreferredNetworkType();
         mNetworkTypeController = new NetworkTypeController(mPhone, mDisplayInfoController);
     }
 
@@ -251,13 +253,42 @@ public class NetworkTypeControllerTest extends TelephonyTest {
     }
 
     @Test
-    public void testEventNrFrequencyRangeChanged() throws Exception {
+    public void testEventNrFrequencyRangeChangedFromNrConnectedMmwaveToNrConnected()
+            throws Exception {
         testTransitionToCurrentStateNrConnectedMmwave();
         doReturn(ServiceState.FREQUENCY_RANGE_LOW).when(mServiceState).getNrFrequencyRange();
 
         mNetworkTypeController.sendMessage(EVENT_NR_FREQUENCY_CHANGED);
         processAllMessages();
+
         assertEquals("connected", getCurrentState().getName());
+    }
+
+    @Test
+    public void testEventNrFrequencyRangeChangedFromNrConnectedToNrConnectedMmwave()
+            throws Exception {
+        testTransitionToCurrentStateNrConnected();
+        doReturn(ServiceState.FREQUENCY_RANGE_MMWAVE).when(mServiceState).getNrFrequencyRange();
+
+        mNetworkTypeController.sendMessage(EVENT_NR_FREQUENCY_CHANGED);
+        processAllMessages();
+
+        assertEquals("connected_mmwave", getCurrentState().getName());
+    }
+
+    @Test
+    public void testNrPhysicalChannelChangeFromNrConnectedMmwaveToLteConnected() throws Exception {
+        testTransitionToCurrentStateNrConnectedMmwave();
+        doReturn(TelephonyManager.NETWORK_TYPE_LTE).when(mServiceState).getDataNetworkType();
+        doReturn(NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED).when(mServiceState).getNrState();
+        doReturn(PhoneInternalInterface.DataActivityState.DATAINANDOUT)
+                .when(mPhone).getDataActivityState();
+
+        mNetworkTypeController.sendMessage(EVENT_NR_FREQUENCY_CHANGED);
+        mNetworkTypeController.sendMessage(EVENT_NR_STATE_CHANGED);
+        processAllMessages();
+
+        assertEquals("not_restricted_rrc_con", getCurrentState().getName());
     }
 
     @Test
