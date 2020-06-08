@@ -498,7 +498,6 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
             log("isPhoneInVoiceCall: dataDuringCallsEnabled=" + dataDuringCallsEnabled);
             return false;
         }
-
         int phoneId = phone.getPhoneId();
         return (mFgCsCalls[phoneId].getState().isAlive() ||
                 mBgCsCalls[phoneId].getState().isAlive() ||
