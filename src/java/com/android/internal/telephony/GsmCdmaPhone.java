@@ -444,6 +444,7 @@ public class GsmCdmaPhone extends Phone {
                 SubscriptionController.getInstance().setMccMnc(operatorNumeric, getSubId());
                 // Sets iso country property by retrieving from build-time system property
                 setIsoCountryProperty(operatorNumeric);
+
                 // Updates MCC MNC device configuration information
                 logd("update mccmnc=" + operatorNumeric);
                 MccTable.updateMccMncConfiguration(mContext, operatorNumeric);
