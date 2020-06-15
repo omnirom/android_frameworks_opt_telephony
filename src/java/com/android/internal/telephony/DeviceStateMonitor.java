@@ -20,10 +20,12 @@ import static android.hardware.radio.V1_0.DeviceStateType.CHARGING_STATE;
 import static android.hardware.radio.V1_0.DeviceStateType.LOW_DATA_EXPECTED;
 import static android.hardware.radio.V1_0.DeviceStateType.POWER_SAVE_MODE;
 
+import android.app.UiModeManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.hardware.display.DisplayManager;
 import android.hardware.radio.V1_5.IndicationFilter;
 import android.net.ConnectivityManager;
@@ -37,8 +39,10 @@ import android.os.Message;
 import android.os.PowerManager;
 import android.os.Registrant;
 import android.os.RegistrantList;
+import android.provider.Settings;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
 import android.telephony.CarrierConfigManager;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.SignalThresholdInfo;
 import android.util.LocalLog;
 import android.view.Display;
@@ -67,6 +71,7 @@ public class DeviceStateMonitor extends Handler {
     protected static final String TAG = DeviceStateMonitor.class.getSimpleName();
 
     static final int EVENT_RIL_CONNECTED                = 0;
+    static final int EVENT_CAR_MODE_CHANGED             = 1;
     @VisibleForTesting
     static final int EVENT_SCREEN_STATE_CHANGED         = 2;
     static final int EVENT_POWER_SAVE_MODE_CHANGED      = 3;
@@ -80,6 +85,10 @@ public class DeviceStateMonitor extends Handler {
 
     private static final int WIFI_UNAVAILABLE = 0;
     private static final int WIFI_AVAILABLE = 1;
+
+    private static final int NR_NSA_TRACKING_INDICATIONS_OFF = 0;
+    private static final int NR_NSA_TRACKING_INDICATIONS_EXTENDED = 1;
+    private static final int NR_NSA_TRACKING_INDICATIONS_ALWAYS_ON = 2;
 
     private final Phone mPhone;
 
@@ -164,6 +173,13 @@ public class DeviceStateMonitor extends Handler {
     private boolean mIsWifiConnected;
 
     /**
+     * Car mode is on. True means the device is currently connected to Android Auto. This should be
+     * handled by mIsScreenOn, but the Android Auto display is private and not accessible by
+     * DeviceStateMonitor from DisplayMonitor.
+     */
+    private boolean mIsCarModeOn;
+
+    /**
      * True indicates we should always enable the signal strength reporting from radio.
      */
     private boolean mIsAlwaysSignalStrengthReportingEnabled;
@@ -232,6 +248,14 @@ public class DeviceStateMonitor extends Handler {
                     msg = obtainMessage(EVENT_TETHERING_STATE_CHANGED);
                     msg.arg1 = isTetheringOn ? 1 : 0;
                     break;
+                case UiModeManager.ACTION_ENTER_CAR_MODE_PRIORITIZED:
+                    msg = obtainMessage(EVENT_CAR_MODE_CHANGED);
+                    msg.arg1 = 1; // car mode on
+                    break;
+                case UiModeManager.ACTION_EXIT_CAR_MODE_PRIORITIZED:
+                    msg = obtainMessage(EVENT_CAR_MODE_CHANGED);
+                    msg.arg1 = 0; // car mode off
+                    break;
                 default:
                     log("Unexpected broadcast intent: " + intent, false);
                     return;
@@ -255,6 +279,7 @@ public class DeviceStateMonitor extends Handler {
         mIsPowerSaveOn = isPowerSaveModeOn();
         mIsCharging = isDeviceCharging();
         mIsScreenOn = isScreenOn();
+        mIsCarModeOn = isCarModeOn();
         // Assuming tethering is always off after boot up.
         mIsTetheringOn = false;
         mIsLowDataExpected = false;
@@ -264,6 +289,7 @@ public class DeviceStateMonitor extends Handler {
                 + ", mIsCharging=" + mIsCharging
                 + ", mIsPowerSaveOn=" + mIsPowerSaveOn
                 + ", mIsLowDataExpected=" + mIsLowDataExpected
+                + ", mIsCarModeOn=" + mIsCarModeOn
                 + ", mIsWifiConnected=" + mIsWifiConnected
                 + ", mIsAlwaysSignalStrengthReportingEnabled="
                 + mIsAlwaysSignalStrengthReportingEnabled, false);
@@ -273,6 +299,8 @@ public class DeviceStateMonitor extends Handler {
         filter.addAction(BatteryManager.ACTION_CHARGING);
         filter.addAction(BatteryManager.ACTION_DISCHARGING);
         filter.addAction(ConnectivityManager.ACTION_TETHER_STATE_CHANGED);
+        filter.addAction(UiModeManager.ACTION_ENTER_CAR_MODE_PRIORITIZED);
+        filter.addAction(UiModeManager.ACTION_EXIT_CAR_MODE_PRIORITIZED);
         mPhone.getContext().registerReceiver(mBroadcastReceiver, filter, null, mPhone);
 
         mPhone.mCi.registerForRilConnected(this, EVENT_RIL_CONNECTED, null);
@@ -329,7 +357,7 @@ public class DeviceStateMonitor extends Handler {
      *         android.hardware.radio@1.2::IndicationFilter::FULL_NETWORK_STATE.
      */
     private boolean shouldEnableFullNetworkStateReports() {
-        return shouldEnableHighPowerConsumptionIndications();
+        return shouldEnableNrTrackingIndications();
     }
 
     /**
@@ -337,7 +365,7 @@ public class DeviceStateMonitor extends Handler {
      *         android.hardware.radio@1.2::IndicationFilter::DATA_CALL_DORMANCY_CHANGED.
      */
     private boolean shouldEnableDataCallDormancyChangedReports() {
-        return shouldEnableHighPowerConsumptionIndications();
+        return shouldEnableNrTrackingIndications();
     }
 
     /**
@@ -353,7 +381,7 @@ public class DeviceStateMonitor extends Handler {
      *         android.hardware.radio@1.2::IndicationFilter::PHYSICAL_CHANNEL_CONFIG.
      */
     private boolean shouldEnablePhysicalChannelConfigReports() {
-        return shouldEnableHighPowerConsumptionIndications();
+        return shouldEnableNrTrackingIndications();
     }
 
     /**
@@ -375,7 +403,32 @@ public class DeviceStateMonitor extends Handler {
         // 1. The device is charging.
         // 2. When the screen is on.
         // 3. When the tethering is on.
-        return mIsCharging || mIsScreenOn || mIsTetheringOn;
+        // 4. When car mode (Android Auto) is on.
+        return mIsCharging || mIsScreenOn || mIsTetheringOn || mIsCarModeOn;
+    }
+
+    /**
+     * For 5G NSA devices, a policy to determine if we should enable NR tracking indications.
+     *
+     * @return True if the response update should be enabled.
+     */
+    private boolean shouldEnableNrTrackingIndications() {
+        int trackingMode = Settings.Global.getInt(mPhone.getContext().getContentResolver(),
+                Settings.Global.NR_NSA_TRACKING_SCREEN_OFF_MODE, NR_NSA_TRACKING_INDICATIONS_OFF);
+        switch (trackingMode) {
+            case NR_NSA_TRACKING_INDICATIONS_ALWAYS_ON:
+                return true;
+            case NR_NSA_TRACKING_INDICATIONS_EXTENDED:
+                if (mPhone.getServiceState().getNrState()
+                        == NetworkRegistrationInfo.NR_STATE_CONNECTED) {
+                    return true;
+                }
+                // fallthrough
+            case NR_NSA_TRACKING_INDICATIONS_OFF:
+                return shouldEnableHighPowerConsumptionIndications();
+            default:
+                return shouldEnableHighPowerConsumptionIndications();
+        }
     }
 
     /**
@@ -404,13 +457,12 @@ public class DeviceStateMonitor extends Handler {
             case EVENT_POWER_SAVE_MODE_CHANGED:
             case EVENT_CHARGING_STATE_CHANGED:
             case EVENT_TETHERING_STATE_CHANGED:
+            case EVENT_UPDATE_ALWAYS_REPORT_SIGNAL_STRENGTH:
+            case EVENT_CAR_MODE_CHANGED:
                 onUpdateDeviceState(msg.what, msg.arg1 != 0);
                 break;
             case EVENT_WIFI_CONNECTION_CHANGED:
                 onUpdateDeviceState(msg.what, msg.arg1 != WIFI_UNAVAILABLE);
-                break;
-            case EVENT_UPDATE_ALWAYS_REPORT_SIGNAL_STRENGTH:
-                onUpdateDeviceState(msg.what, msg.arg1 != 0);
                 break;
             default:
                 throw new IllegalStateException("Unexpected message arrives. msg = " + msg.what);
@@ -451,6 +503,10 @@ public class DeviceStateMonitor extends Handler {
             case EVENT_UPDATE_ALWAYS_REPORT_SIGNAL_STRENGTH:
                 if (mIsAlwaysSignalStrengthReportingEnabled == state) return;
                 mIsAlwaysSignalStrengthReportingEnabled = state;
+                break;
+            case EVENT_CAR_MODE_CHANGED:
+                if (mIsCarModeOn == state) return;
+                mIsCarModeOn = state;
                 break;
             default:
                 return;
@@ -622,7 +678,9 @@ public class DeviceStateMonitor extends Handler {
     private boolean isPowerSaveModeOn() {
         final PowerManager pm = (PowerManager) mPhone.getContext().getSystemService(
                 Context.POWER_SERVICE);
-        return pm.isPowerSaveMode();
+        boolean retval = pm.isPowerSaveMode();
+        log("isPowerSaveModeOn=" + retval, true);
+        return retval;
     }
 
     /**
@@ -634,12 +692,14 @@ public class DeviceStateMonitor extends Handler {
     private boolean isDeviceCharging() {
         final BatteryManager bm = (BatteryManager) mPhone.getContext().getSystemService(
                 Context.BATTERY_SERVICE);
-        return bm.isCharging();
+        boolean retval = bm.isCharging();
+        log("isDeviceCharging=" + retval, true);
+        return retval;
     }
 
     /**
-     * @return True if one the device's screen (e.g. main screen, wifi display, HDMI display, or
-     *         Android auto, etc...) is on.
+     * @return True if one the device's screen (e.g. main screen, wifi display, HDMI display etc...)
+     * is on.
      */
     private boolean isScreenOn() {
         // Note that we don't listen to Intent.SCREEN_ON and Intent.SCREEN_OFF because they are no
@@ -664,6 +724,18 @@ public class DeviceStateMonitor extends Handler {
 
         log("No displays found", true);
         return false;
+    }
+
+    /**
+     * @return True if car mode (Android Auto) is on.
+     */
+    private boolean isCarModeOn() {
+        final UiModeManager umm = (UiModeManager) mPhone.getContext().getSystemService(
+                Context.UI_MODE_SERVICE);
+        if (umm == null) return false;
+        boolean retval = umm.getCurrentModeType() == Configuration.UI_MODE_TYPE_CAR;
+        log("isCarModeOn=" + retval, true);
+        return retval;
     }
 
     /**
@@ -714,6 +786,7 @@ public class DeviceStateMonitor extends Handler {
         ipw.println("mIsCharging=" + mIsCharging);
         ipw.println("mIsPowerSaveOn=" + mIsPowerSaveOn);
         ipw.println("mIsLowDataExpected=" + mIsLowDataExpected);
+        ipw.println("mIsCarModeOn=" + mIsCarModeOn);
         ipw.println("mUnsolicitedResponseFilter=" + mUnsolicitedResponseFilter);
         ipw.println("mIsWifiConnected=" + mIsWifiConnected);
         ipw.println("mIsAlwaysSignalStrengthReportingEnabled="

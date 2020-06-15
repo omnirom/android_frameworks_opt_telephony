@@ -33,6 +33,7 @@ import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.Registrant;
 import android.os.RegistrantList;
+import android.os.ResultReceiver;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.WorkSource;
@@ -130,6 +131,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public static final String NETWORK_SELECTION_NAME_KEY = "network_selection_name_key";
     // Key used to read and write the saved network selection operator short name
     public static final String NETWORK_SELECTION_SHORT_KEY = "network_selection_short_key";
+    public static final String KEY_DO_NOT_SHOW_LIMITED_SERVICE_ALERT
+            = "key_do_not_show_limited_service_alert";
 
 
     // Key used to read/write "disable data connection on boot" pref (used for testing)
@@ -997,6 +1000,17 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mLocalLog.log("isInEmergencySmsMode: queried while eSMS mode is active.");
         }
         return isInEmergencySmsMode;
+    }
+
+    public void migrateUssdFrom(Phone from, String num, ResultReceiver wrappedCallback)
+            throws UnsupportedOperationException {
+        try {
+            notifyMigrateUssd(num, wrappedCallback);
+            migrate(mMmiRegistrants, from.mMmiRegistrants);
+        } catch (UnsupportedOperationException e) {
+            Rlog.e(LOG_TAG, "Error: " + e);
+            throw e;
+        }
     }
 
     protected void migrateFrom(Phone from) {
@@ -2231,12 +2245,23 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     *  Query the preferred network type setting
+     * Query the preferred network type setting
      *
      * @param response is callback message to report one of  NT_*_TYPE
      */
     public void getPreferredNetworkType(Message response) {
         mCi.getPreferredNetworkType(response);
+    }
+
+    /**
+     * Get the cached value of the preferred network type setting
+     */
+    public int getCachedPreferredNetworkType() {
+        if (mCi != null && mCi instanceof BaseCommands) {
+            return ((BaseCommands) mCi).mPreferredNetworkType;
+        } else {
+            return RILConstants.PREFERRED_NETWORK_MODE;
+        }
     }
 
     /**
@@ -2517,6 +2542,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCellInfoRegistrants.notifyRegistrants(ar);
 
         mNotifier.notifyCellInfo(this, cellInfo);
+    }
+
+    protected void notifyMigrateUssd(String num, ResultReceiver wrappedCallback)
+            throws UnsupportedOperationException {
+        // notifyMigrateUssd shall be overriden by GsmCdmaPhone
+        throw new UnsupportedOperationException("notifyMigrateUssd: not supported");
     }
 
     /**

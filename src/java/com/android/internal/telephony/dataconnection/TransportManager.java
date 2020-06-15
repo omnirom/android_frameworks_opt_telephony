@@ -115,6 +115,8 @@ public class TransportManager extends Handler {
                 AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
         ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.IWLAN,
                 AccessNetworkConstants.TRANSPORT_TYPE_WLAN);
+        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.NGRAN,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
     }
 
     private static final int EVENT_QUALIFIED_NETWORKS_CHANGED = 1;

@@ -43,6 +43,7 @@ import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_NON
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_PACKET;
 import static com.android.internal.telephony.CommandsInterface.SERVICE_CLASS_VOICE;
 
+import android.annotation.NonNull;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -1368,6 +1369,23 @@ public class ImsPhone extends ImsPhoneBase {
         }
     }
 
+    void onUssdComplete(ImsPhoneMmiCode mmi, @NonNull CommandException ex) {
+        //Check if USSD CS fallback scenario and has valid pending MMI session.
+        if (ex.getCommandError() == CommandException.Error.NO_NETWORK_FOUND &&
+                mPendingMMIs.contains(mmi)) {
+            logi("onUssdComplete: migrating USSD from IMS to CS");
+            try {
+                mDefaultPhone.migrateUssdFrom(this, mmi.getDialString(),
+                                              mmi.getUssdCallbackReceiver());
+                mPendingMMIs.remove(mmi);
+                return;
+            } catch (UnsupportedOperationException e) {
+                //no-op
+            }
+        }
+        onMMIDone(mmi);
+    }
+
     /**
      * Removes the given MMI from the pending list and notifies
      * registrants that it is complete.
@@ -1474,6 +1492,11 @@ public class ImsPhone extends ImsPhoneBase {
             cfInfo.serviceClass = SERVICE_CLASS_VOICE;
         }
         return cfInfo;
+    }
+
+    @Override
+    public String getLine1Number() {
+        return mDefaultPhone.getLine1Number();
     }
 
     /**
@@ -1784,6 +1807,9 @@ public class ImsPhone extends ImsPhoneBase {
                         intent.getCharSequenceExtra(EXTRA_KEY_NOTIFICATION_MESSAGE);
 
                 Intent resultIntent = new Intent(Intent.ACTION_MAIN);
+                // Note: If the classname below is ever removed, the call to
+                // PendingIntent.getActivity should also specify FLAG_IMMUTABLE to ensure the
+                // pending intent cannot be tampered with.
                 resultIntent.setClassName("com.android.settings",
                         "com.android.settings.Settings$WifiCallingSettingsActivity");
                 resultIntent.putExtra(EXTRA_KEY_ALERT_SHOW, true);
@@ -1794,6 +1820,8 @@ public class ImsPhone extends ImsPhoneBase {
                                 mContext,
                                 0,
                                 resultIntent,
+                                // Note: Since resultIntent above specifies an explicit class name
+                                // we do not need to specify PendingIntent.FLAG_IMMUTABLE here.
                                 PendingIntent.FLAG_UPDATE_CURRENT
                         );
 

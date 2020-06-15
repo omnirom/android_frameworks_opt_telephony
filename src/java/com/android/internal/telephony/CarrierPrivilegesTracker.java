@@ -77,6 +77,8 @@ import java.util.StringJoiner;
 public class CarrierPrivilegesTracker extends Handler {
     private static final String TAG = CarrierPrivilegesTracker.class.getSimpleName();
 
+    private static final boolean VDBG = false;
+
     private static final String SHA_1 = "SHA-1";
     private static final String SHA_256 = "SHA-256";
 
@@ -215,14 +217,21 @@ public class CarrierPrivilegesTracker extends Handler {
         mPhone = phone;
         mLocalLog = new LocalLog(100);
 
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
-        filter.addAction(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
-        filter.addAction(TelephonyManager.ACTION_SIM_APPLICATION_STATE_CHANGED);
-        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
-        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
-        filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        mContext.registerReceiver(mIntentReceiver, filter);
+        IntentFilter certFilter = new IntentFilter();
+        certFilter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        certFilter.addAction(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
+        certFilter.addAction(TelephonyManager.ACTION_SIM_APPLICATION_STATE_CHANGED);
+        mContext.registerReceiver(mIntentReceiver, certFilter);
+
+        IntentFilter packageFilter = new IntentFilter();
+        packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        packageFilter.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        packageFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+
+        // For package-related broadcasts, specify the data scheme for "package" to receive the
+        // package name along with the broadcast
+        packageFilter.addDataScheme("package");
+        mContext.registerReceiver(mIntentReceiver, packageFilter);
 
         mRegistrantList = new RegistrantList();
         mCarrierConfigCerts = new ArraySet<>();
@@ -421,10 +430,13 @@ public class CarrierPrivilegesTracker extends Handler {
         // Okay because no registrants exist yet
         maybeUpdatePrivilegedUidsAndNotifyRegistrants();
 
-        mLocalLog.log("Initializing state:"
+        String msg = "Initializing state:"
                 + " CarrierConfig certs=" + mCarrierConfigCerts
-                + " SIM-loaded certs=" + mUiccCerts
-                + " installed pkgs=" + getObfuscatedPackages());
+                + " SIM-loaded certs=" + mUiccCerts;
+        if (VDBG) {
+            msg += " installed pkgs=" + getObfuscatedPackages();
+        }
+        mLocalLog.log(msg);
     }
 
     private String getObfuscatedPackages() {
@@ -512,6 +524,12 @@ public class CarrierPrivilegesTracker extends Handler {
         pw.println("CarrierPrivilegesTracker - Log End ----");
         pw.println("CarrierPrivilegesTracker - Privileged UIDs: "
                 + Arrays.toString(mPrivilegedUids));
+        pw.println("CarrierPrivilegesTracker - SIM-loaded Certs: " + mUiccCerts);
+        pw.println("CarrierPrivilegesTracker - CarrierPrivileged Certs: " + mCarrierConfigCerts);
+        if (VDBG) {
+            pw.println("CarrierPrivilegesTracker - Obfuscated Pkgs + Certs: "
+                    + getObfuscatedPackages());
+        }
     }
 
     /**

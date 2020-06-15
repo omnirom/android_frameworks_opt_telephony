@@ -233,6 +233,10 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             mEFpl = (byte[]) ar.result;
             if (DBG) log("EF_PL=" + IccUtils.bytesToHexString(mEFpl));
         }
@@ -247,6 +251,10 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             mEFli = (byte[]) ar.result;
             // convert csim efli data to iso 639 format
             for (int i = 0; i < mEFli.length; i+=2) {
@@ -276,6 +284,10 @@ public class RuimRecords extends IccRecords {
         @Override
         public void onRecordLoaded(AsyncResult ar) {
             mEssentialRecordsToLoad -= 1;
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             if (DBG) log("CSIM_SPN=" +
                          IccUtils.bytesToHexString(data));
@@ -365,6 +377,10 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             if (DBG) log("CSIM_MDN=" + IccUtils.bytesToHexString(data));
             // Refer to C.S0065 5.2.35
@@ -384,6 +400,10 @@ public class RuimRecords extends IccRecords {
         @Override
         public void onRecordLoaded(AsyncResult ar) {
             mEssentialRecordsToLoad -= 1;
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             byte[] data = (byte[]) ar.result;
             if (data == null || data.length < 10) {
                 if (DBG) log("Invalid IMSI from EF_CSIM_IMSIM");
@@ -464,6 +484,10 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             // Per C.S0065 section 5.2.8
             ArrayList<byte[]> dataList = (ArrayList<byte[]>) ar.result;
             if (DBG) log("CSIM_CDMAHOME data size=" + dataList.size());
@@ -497,6 +521,10 @@ public class RuimRecords extends IccRecords {
         }
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             onGetCSimEprlDone(ar);
         }
     }
@@ -534,6 +562,10 @@ public class RuimRecords extends IccRecords {
 
         @Override
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             // 3GPP2 C.S0065 section 5.2.24
             byte[] data = (byte[]) ar.result;
 
@@ -792,7 +824,8 @@ public class RuimRecords extends IccRecords {
         // One record loaded successfully or failed, In either case
         // we need to update the recordsToLoad count
         mRecordsToLoad -= 1;
-        if (DBG) log("onRecordLoaded " + mRecordsToLoad + " requested: " + mRecordsRequested);
+        if (DBG) log("onRecordLoaded " + mRecordsToLoad + " mEssentialRecordsToLoad: " +
+                mEssentialRecordsToLoad + " requested: " + mRecordsRequested);
 
         if (getEssentialRecordsLoaded() && !mEssentialRecordsListenerNotified) {
             onAllEssentialRecordsLoaded();

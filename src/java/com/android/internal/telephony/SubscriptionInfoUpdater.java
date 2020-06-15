@@ -107,9 +107,9 @@ public class SubscriptionInfoUpdater extends Handler {
     @UnsupportedAppUsage
 
     protected static String[] sIccId = new String[SUPPORTED_MODEM_COUNT];
+    private static String[] sInactiveIccIds = new String[SUPPORTED_MODEM_COUNT];
     private static int[] sSimCardState = new int[SUPPORTED_MODEM_COUNT];
     private static int[] sSimApplicationState = new int[SUPPORTED_MODEM_COUNT];
-    private boolean[] mIsRecordLoaded = new boolean[SUPPORTED_MODEM_COUNT];
     private static boolean sIsSubInfoInitialized = false;
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
@@ -146,10 +146,6 @@ public class SubscriptionInfoUpdater extends Handler {
 
         mCarrierServiceBindHelper = new CarrierServiceBindHelper(sContext);
         initializeCarrierApps();
-
-        for (int index = 0; index < SUPPORTED_MODEM_COUNT; index++) {
-            mIsRecordLoaded[index] = false;
-        }
 
         PhoneConfigurationManager.registerForMultiSimConfigChange(
                 this, EVENT_MULTI_SIM_CONFIG_CHANGED, null);
@@ -432,7 +428,12 @@ public class SubscriptionInfoUpdater extends Handler {
         boolean isFinalState = false;
 
         IccCard iccCard = PhoneFactory.getPhone(phoneId).getIccCard();
-        if (iccCard.isEmptyProfile() || areUiccAppsDisabledOnCard(phoneId)) {
+        boolean uiccAppsDisabled = areUiccAppsDisabledOnCard(phoneId);
+        if (iccCard.isEmptyProfile() || uiccAppsDisabled) {
+            if (uiccAppsDisabled) {
+                UiccSlot slot = UiccController.getInstance().getUiccSlotForPhone(phoneId);
+                sInactiveIccIds[phoneId] = IccUtils.stripTrailingFs(slot.getIccId());
+            }
             isFinalState = true;
             // ICC_NOT_READY is a terminal state for
             // 1) It's an empty profile as there's no uicc applications. Or
@@ -484,7 +485,6 @@ public class SubscriptionInfoUpdater extends Handler {
             return;
         }
         sIccId[phoneId] = IccUtils.stripTrailingFs(records.getFullIccId());
-        mIsRecordLoaded[phoneId] = true;
 
         updateSubscriptionInfoByIccId(phoneId, true /* updateEmbeddedSubs */);
         List<SubscriptionInfo> subscriptionInfos = SubscriptionController.getInstance()
@@ -574,19 +574,6 @@ public class SubscriptionInfoUpdater extends Handler {
                     editor.putInt(CURR_SUBID + phoneId, subId);
                     editor.apply();
                 }
-
-                // Update set of enabled carrier apps now that the privilege rules may have changed.
-                CarrierAppUtils.disableCarrierAppsUntilPrivileged(sContext.getOpPackageName(),
-                        TelephonyManager.getDefault(), mCurrentlyActiveUserId, sContext);
-
-                if (mIsRecordLoaded[phoneId] == true) {
-                    broadcastSimStateChanged(phoneId, IccCardConstants.
-                            INTENT_VALUE_ICC_LOADED, null);
-                    broadcastSimCardStateChanged(phoneId, TelephonyManager.SIM_STATE_PRESENT);
-                    broadcastSimApplicationStateChanged(phoneId, TelephonyManager.SIM_STATE_LOADED);
-                    updateCarrierServices(phoneId, IccCardConstants.INTENT_VALUE_ICC_LOADED);
-                    mIsRecordLoaded[phoneId] = false;
-                }
             }
         }
 
@@ -627,9 +614,9 @@ public class SubscriptionInfoUpdater extends Handler {
      * It could be INVALID if it was already inactive.
      */
     private void handleInactiveSlotIccStateChange(int phoneId, String iccId) {
-        // If phoneId is valid, it means the physical slot was active in that phoneId. In this case,
-        // we clear (mark inactive) the subscription in db on that phone.
         if (SubscriptionManager.isValidPhoneId(phoneId)) {
+            // If phoneId is valid, it means the physical slot was previously active in that
+            // phoneId. In this case, found the subId and set its phoneId to invalid.
             if (sIccId[phoneId] != null && !sIccId[phoneId].equals(ICCID_STRING_FOR_NO_SIM)) {
                 logd("Slot of SIM" + (phoneId + 1) + " becomes inactive");
             }
@@ -648,14 +635,16 @@ public class SubscriptionInfoUpdater extends Handler {
 
     private void cleanSubscriptionInPhone(int phoneId) {
         sIccId[phoneId] = ICCID_STRING_FOR_NO_SIM;
-        int[] subIds = SubscriptionController.getInstance().getSubId(phoneId);
-        if (subIds != null && subIds.length > 0) {
+        if (sInactiveIccIds[phoneId] != null) {
             // When a SIM is unplugged, mark uicc applications enabled. This is to make sure when
             // user unplugs and re-inserts the SIM card, we re-enable it.
+            logd("cleanSubscriptionInPhone " + phoneId + " inactive iccid "
+                    + sInactiveIccIds[phoneId]);
             ContentValues value = new ContentValues(1);
             value.put(SubscriptionManager.UICC_APPLICATIONS_ENABLED, true);
             sContext.getContentResolver().update(SubscriptionManager.CONTENT_URI, value,
-                    SubscriptionController.getSelectionForSubIdList(subIds), null);
+                    SubscriptionManager.ICC_ID + "=\'" + sInactiveIccIds[phoneId] + "\'", null);
+            sInactiveIccIds[phoneId] = null;
         }
         updateSubscriptionInfoByIccId(phoneId, true /* updateEmbeddedSubs */);
     }

@@ -806,6 +806,9 @@ public class TelephonyMetrics {
             activeSubscriptionInfo.slotIndex = phoneId;
             activeSubscriptionInfo.isOpportunistic = info.isOpportunistic() ? 1 : 0;
             activeSubscriptionInfo.carrierId = info.getCarrierId();
+            if (info.getMccString() != null && info.getMncString() != null) {
+                activeSubscriptionInfo.simMccmnc = info.getMccString() + info.getMncString();
+            }
             if (!MessageNano.messageNanoEquals(
                     mLastActiveSubscriptionInfos.get(phoneId), activeSubscriptionInfo)) {
                 addTelephonyEvent(new TelephonyEventBuilder(phoneId)
@@ -2614,7 +2617,7 @@ public class TelephonyMetrics {
             NetworkCapabilities networkCapabilities) {
         final NetworkCapabilitiesInfo caps = new NetworkCapabilitiesInfo();
         caps.isNetworkUnmetered = networkCapabilities.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+                NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED);
 
         TelephonyEvent event = new TelephonyEventBuilder(phoneId)
                 .setNetworkCapabilities(caps).build();

@@ -1301,6 +1301,10 @@ public class SIMRecords extends IccRecords {
         }
 
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             mEfPl = (byte[]) ar.result;
             if (DBG) log("EF_PL=" + IccUtils.bytesToHexString(mEfPl));
         }
@@ -1312,6 +1316,10 @@ public class SIMRecords extends IccRecords {
         }
 
         public void onRecordLoaded(AsyncResult ar) {
+            if (ar.exception != null) {
+                loge("Record Load Exception: " + ar.exception);
+                return;
+            }
             mEfLi = (byte[]) ar.result;
             if (DBG) log("EF_LI=" + IccUtils.bytesToHexString(mEfLi));
         }
@@ -1343,6 +1351,7 @@ public class SIMRecords extends IccRecords {
                 break;
             case EF_MSISDN:
                 mRecordsToLoad++;
+                mEssentialRecordsToLoad++;
                 log("SIM Refresh called for EF_MSISDN");
                 new AdnRecordLoader(mFh).loadFromEF(EF_MSISDN, getExtFromEf(EF_MSISDN), 1,
                         obtainMessage(EVENT_GET_MSISDN_DONE));

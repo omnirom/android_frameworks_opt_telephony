@@ -1236,9 +1236,10 @@ public class ImsPhoneConnection extends Connection implements
      * @param extras The ImsCallProfile extras.
      */
     private void updateImsCallRatFromExtras(Bundle extras) {
-        if (extras.containsKey(ImsCallProfile.EXTRA_CALL_NETWORK_TYPE)
+        if (extras != null &&
+            (extras.containsKey(ImsCallProfile.EXTRA_CALL_NETWORK_TYPE)
                 || extras.containsKey(ImsCallProfile.EXTRA_CALL_RAT_TYPE)
-                || extras.containsKey(ImsCallProfile.EXTRA_CALL_RAT_TYPE_ALT)) {
+                || extras.containsKey(ImsCallProfile.EXTRA_CALL_RAT_TYPE_ALT))) {
 
             ImsCall call = getImsCall();
             int networkType = TelephonyManager.NETWORK_TYPE_UNKNOWN;
@@ -1252,7 +1253,7 @@ public class ImsPhoneConnection extends Connection implements
     }
 
     private void updateEmergencyCallFromExtras(Bundle extras) {
-        if (extras.getBoolean(ImsCallProfile.EXTRA_EMERGENCY_CALL)) {
+        if (extras != null && extras.getBoolean(ImsCallProfile.EXTRA_EMERGENCY_CALL)) {
             setIsNetworkIdentifiedEmergencyCall(true);
         }
     }

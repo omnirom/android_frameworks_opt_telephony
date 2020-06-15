@@ -209,6 +209,7 @@ public class DcTracker extends Handler {
             "extra_handover_failure_fallback";
 
     private final String mLogTag;
+    private final String mLogTagSuffix;
 
     public AtomicBoolean isCleanupRequired = new AtomicBoolean(false);
 
@@ -660,6 +661,7 @@ public class DcTracker extends Handler {
     private final int mTransportType;
 
     private DataStallRecoveryHandler mDsRecoveryHandler;
+    private HandlerThread mHandlerThread;
 
     /**
      * Request network completion message map. Key is the APN type, value is the list of completion
@@ -677,13 +679,12 @@ public class DcTracker extends Handler {
                 .createForSubscriptionId(phone.getSubId());
         // The 'C' in tag indicates cellular, and 'I' indicates IWLAN. This is to distinguish
         // between two DcTrackers, one for each.
-        String tagSuffix = "-" + ((transportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
-                ? "C" : "I");
-        tagSuffix += "-" + mPhone.getPhoneId();
-        mLogTag = "DCT" + tagSuffix;
+        mLogTagSuffix = "-" + ((transportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                ? "C" : "I") + "-" + mPhone.getPhoneId();
+        mLogTag = "DCT" + mLogTagSuffix;
 
         mTransportType = transportType;
-        mDataServiceManager = new DataServiceManager(phone, transportType, tagSuffix);
+        mDataServiceManager = new DataServiceManager(phone, transportType, mLogTagSuffix);
 
         mResolver = mPhone.getContext().getContentResolver();
         mAlarmManager =
@@ -716,10 +717,10 @@ public class DcTracker extends Handler {
                 .getSystemService(Context.NETWORK_POLICY_SERVICE);
         mNetworkPolicyManager.registerSubscriptionCallback(mSubscriptionCallback);
 
-        HandlerThread dcHandlerThread = new HandlerThread("DcHandlerThread");
-        dcHandlerThread.start();
-        Handler dcHandler = new Handler(dcHandlerThread.getLooper());
-        mDcc = DcController.makeDcc(mPhone, this, mDataServiceManager, dcHandler, tagSuffix);
+        mHandlerThread = new HandlerThread("DcHandlerThread");
+        mHandlerThread.start();
+        Handler dcHandler = new Handler(mHandlerThread.getLooper());
+        mDcc = DcController.makeDcc(mPhone, this, mDataServiceManager, dcHandler, mLogTagSuffix);
         mDcTesterFailBringUpAll = new DcTesterFailBringUpAll(mPhone, dcHandler);
 
         mDataConnectionTracker = this;
@@ -742,6 +743,7 @@ public class DcTracker extends Handler {
     @VisibleForTesting
     public DcTracker() {
         mLogTag = "DCT";
+        mLogTagSuffix = null;
         mTelephonyManager = null;
         mAlarmManager = null;
         mPhone = null;
@@ -833,6 +835,16 @@ public class DcTracker extends Handler {
         unregisterForAllEvents();
 
         destroyDataConnections();
+    }
+
+    /**
+     * Stop the internal handler thread
+     *
+     * TESTING ONLY
+     */
+    @VisibleForTesting
+    public void stopHandlerThread() {
+        mHandlerThread.quit();
     }
 
     private void unregisterForAllEvents() {
@@ -4974,7 +4986,7 @@ public class DcTracker extends Handler {
             intent.putExtra(INTENT_DATA_STALL_ALARM_EXTRA_TRANSPORT_TYPE, mTransportType);
             SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
             mDataStallAlarmIntent = PendingIntent.getBroadcast(mPhone.getContext(), 0, intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT);
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             mAlarmManager.set(AlarmManager.ELAPSED_REALTIME,
                     SystemClock.elapsedRealtime() + delayInMs, mDataStallAlarmIntent);
         } else {
@@ -5042,7 +5054,7 @@ public class DcTracker extends Handler {
         Intent intent = new Intent(INTENT_PROVISIONING_APN_ALARM);
         intent.putExtra(PROVISIONING_APN_ALARM_TAG_EXTRA, mProvisioningApnAlarmTag);
         mProvisioningApnAlarmIntent = PendingIntent.getBroadcast(mPhone.getContext(), 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         mAlarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + delayInMs, mProvisioningApnAlarmIntent);
     }
@@ -5114,9 +5126,16 @@ public class DcTracker extends Handler {
 
     private void onDataServiceBindingChanged(boolean bound) {
         if (bound) {
+            if (mDcc == null) {
+                mDcc = DcController.makeDcc(mPhone, this, mDataServiceManager,
+                        new Handler(mHandlerThread.getLooper()), mLogTagSuffix);
+            }
             mDcc.start();
         } else {
             mDcc.dispose();
+            // dispose sets the associated Handler object (StateMachine#mSmHandler) to null, so mDcc
+            // needs to be created again (simply calling start() on it after dispose will not work)
+            mDcc = null;
         }
         mDataServiceBound = bound;
     }

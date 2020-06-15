@@ -93,13 +93,7 @@ public class AdnRecord implements Parcelable {
             recordNumber = source.readInt();
             alphaTag = source.readString();
             number = source.readString();
-            final int len = source.readInt();
-            if (len > 0) {
-                emails = new String[len];
-                source.readStringArray(emails);
-            } else {
-                emails = null;
-            }
+            emails = source.createStringArray();
             additionalNumbers = source.readStringArray();
 
             return new AdnRecord(efid, recordNumber, alphaTag, number, emails, additionalNumbers);

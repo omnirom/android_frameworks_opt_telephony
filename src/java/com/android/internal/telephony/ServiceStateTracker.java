@@ -1621,12 +1621,12 @@ public class ServiceStateTracker extends Handler {
                     mPhone.notifyPhysicalChannelConfiguration(list);
                     mLastPhysicalChannelConfigList = list;
                     boolean hasChanged = false;
-                    if (updateNrFrequencyRangeFromPhysicalChannelConfigs(list, mSS)) {
-                        mNrFrequencyChangedRegistrants.notifyRegistrants();
-                        hasChanged = true;
-                    }
                     if (updateNrStateFromPhysicalChannelConfigs(list, mSS)) {
                         mNrStateChangedRegistrants.notifyRegistrants();
+                        hasChanged = true;
+                    }
+                    if (updateNrFrequencyRangeFromPhysicalChannelConfigs(list, mSS)) {
+                        mNrFrequencyChangedRegistrants.notifyRegistrants();
                         hasChanged = true;
                     }
                     hasChanged |= RatRatcheter
@@ -2902,7 +2902,8 @@ public class ServiceStateTracker extends Handler {
                     AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
 
                     Intent intent = new Intent(ACTION_RADIO_OFF);
-                    mRadioOffIntent = PendingIntent.getBroadcast(context, 0, intent, 0);
+                    mRadioOffIntent = PendingIntent.getBroadcast(
+                            context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
 
                     mAlarmSwitch = true;
                     if (DBG) log("Alarm setting");
@@ -3210,6 +3211,10 @@ public class ServiceStateTracker extends Handler {
                 mTransportManager.getAvailableTransports().length);
         boolean anyDataRegChanged = false;
         boolean anyDataRatChanged = false;
+        boolean hasAlphaRawChanged =
+                mSS.getOperatorAlphaLongRaw() != mNewSS.getOperatorAlphaLongRaw()
+                        || mSS.getOperatorAlphaShortRaw() != mNewSS.getOperatorAlphaShortRaw();
+
         for (int transport : mTransportManager.getAvailableTransports()) {
             NetworkRegistrationInfo oldNrs = mSS.getNetworkRegistrationInfo(
                     NetworkRegistrationInfo.DOMAIN_PS, transport);
@@ -3239,7 +3244,10 @@ public class ServiceStateTracker extends Handler {
             boolean isNewCA = newNrs != null ? (newNrs.getDataSpecificInfo() != null
                     ? newNrs.getDataSpecificInfo().isUsingCarrierAggregation() : false) : false;
 
-            hasRilDataRadioTechnologyChanged.put(transport, oldRAT != newRAT || isOldCA != isNewCA);
+            // If the carrier enable KEY_SHOW_CARRIER_DATA_ICON_PATTERN_STRING and the operator name
+            // match this pattern, the data rat display LteAdvanced indicator.
+            hasRilDataRadioTechnologyChanged.put(transport,
+                    oldRAT != newRAT || isOldCA != isNewCA || hasAlphaRawChanged);
             if (oldRAT != newRAT) {
                 anyDataRatChanged = true;
             }
@@ -5654,6 +5662,7 @@ public class ServiceStateTracker extends Handler {
             if (networkRegistrationInfos.get(i) != null) {
                 updateOperatorNameForCellIdentity(
                         networkRegistrationInfos.get(i).getCellIdentity());
+                servicestate.addNetworkRegistrationInfo(networkRegistrationInfos.get(i));
             }
         }
     }

@@ -1865,6 +1865,9 @@ public class SubscriptionController extends ISub.Stub {
                 EuiccManager euiccManager = ((EuiccManager)
                         mContext.getSystemService(Context.EUICC_SERVICE)).createForCardId(cardId);
                 euiccManager.updateSubscriptionNickname(subId, displayName,
+                        // This PendingIntent simply fulfills the requirement to pass in a callback;
+                        // we don't care about the result (hence 0 requestCode and no action
+                        // specified on the intent).
                         PendingIntent.getService(
                             mContext, 0 /* requestCode */, new Intent(), 0 /* flags */));
             }
@@ -3761,11 +3764,13 @@ public class SubscriptionController extends ISub.Stub {
         if (slotsInfo == null) return false;
         for (int i = 0; i < slotsInfo.length; i++) {
             UiccSlotInfo curSlotInfo = slotsInfo[i];
-            if (curSlotInfo.getCardStateInfo() == CARD_STATE_INFO_PRESENT
-                    && TextUtils.equals(curSlotInfo.getCardId(), info.getCardString())) {
-                slotInfo = curSlotInfo;
-                physicalSlotIndex = i;
-                break;
+            if (curSlotInfo.getCardStateInfo() == CARD_STATE_INFO_PRESENT) {
+                if (TextUtils.equals(IccUtils.stripTrailingFs(curSlotInfo.getCardId()),
+                        IccUtils.stripTrailingFs(info.getCardString()))) {
+                    slotInfo = curSlotInfo;
+                    physicalSlotIndex = i;
+                    break;
+                }
             }
         }
 
