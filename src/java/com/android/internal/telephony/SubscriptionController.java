@@ -1070,7 +1070,12 @@ public class SubscriptionController extends ISub.Stub {
                 selection += " OR " + SubscriptionManager.IS_EMBEDDED + "=1";
             }
 
-            List<String> iccIds = getIccIdsOfInsertedSims();
+            // Available eSIM profiles are reported by EuiccManager. However for physical SIMs if
+            // they are in inactive slot or programmatically disabled, they are still considered
+            // available. In this case we get their iccid from slot info and include their
+            // subscriptionInfos.
+            List<String> iccIds = getIccIdsOfInsertedPhysicalSims();
+
             if (!iccIds.isEmpty()) {
                 selection += " OR ("  + getSelectionForIccIdList(iccIds.toArray(new String[0]))
                         + ")";
@@ -1092,7 +1097,7 @@ public class SubscriptionController extends ISub.Stub {
         }
     }
 
-    private List<String> getIccIdsOfInsertedSims() {
+    private List<String> getIccIdsOfInsertedPhysicalSims() {
         List<String> ret = new ArrayList<>();
         UiccSlot[] uiccSlots = UiccController.getInstance().getUiccSlots();
         if (uiccSlots == null) return ret;
@@ -1100,8 +1105,9 @@ public class SubscriptionController extends ISub.Stub {
         for (UiccSlot uiccSlot : uiccSlots) {
             if (uiccSlot != null && uiccSlot.getCardState() != null
                     && uiccSlot.getCardState().isCardPresent()
+                    && !uiccSlot.isEuicc()
                     && !TextUtils.isEmpty(uiccSlot.getIccId())) {
-                ret.add(uiccSlot.getIccId());
+                ret.add(IccUtils.stripTrailingFs(uiccSlot.getIccId()));
             }
         }
 
