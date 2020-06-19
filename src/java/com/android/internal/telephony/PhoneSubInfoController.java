@@ -222,6 +222,9 @@ public class PhoneSubInfoController extends IPhoneSubInfo.Stub {
         if (!SubscriptionManager.isValidPhoneId(phoneId)) {
             phoneId = 0;
         }
+        if (mPhone.length == 0) {
+            return null;
+        }
         return mPhone[phoneId];
     }
 
