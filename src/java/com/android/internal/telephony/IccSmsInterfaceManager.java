@@ -24,11 +24,8 @@ import android.Manifest;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.compat.annotation.UnsupportedAppUsage;
-import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
@@ -40,11 +37,9 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.UserManager;
 import android.provider.Telephony;
-import android.telephony.CarrierConfigManager;
 import android.telephony.SmsCbMessage;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
-import android.telephony.SubscriptionManager;
 import android.telephony.emergency.EmergencyNumber;
 import android.util.LocalLog;
 import android.util.Log;
@@ -191,24 +186,6 @@ public class IccSmsInterfaceManager {
         mAppOps = appOps;
         mDispatchersController = dispatchersController;
         mSmsPermissions = new SmsPermissions(phone, context, appOps);
-
-        mContext.registerReceiver(
-                new BroadcastReceiver() {
-                    @Override
-                    public void onReceive(Context context, Intent intent) {
-                        if (CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED
-                                .equals(intent.getAction())) {
-                            if (mPhone.getPhoneId() == intent.getIntExtra(
-                                    CarrierConfigManager.EXTRA_SLOT_INDEX,
-                                    SubscriptionManager.INVALID_SIM_SLOT_INDEX)) {
-                                new Thread(() -> {
-                                    log("Carrier config changed. Update ranges.");
-                                    mCellBroadcastRangeManager.updateRanges();
-                                }).start();
-                            }
-                        }
-                    }
-                }, new IntentFilter(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED));
     }
 
     private void enforceNotOnHandlerThread(String methodName) {
@@ -958,7 +935,7 @@ public class IccSmsInterfaceManager {
     }
 
     public boolean enableCellBroadcastRange(int startMessageId, int endMessageId, int ranType) {
-        mContext.enforceCallingPermission("android.permission.RECEIVE_EMERGENCY_BROADCAST",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "enabling cell broadcast range [" + startMessageId + "-" + endMessageId + "]. "
                         + "ranType=" + ranType);
         if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP) {
@@ -971,7 +948,7 @@ public class IccSmsInterfaceManager {
     }
 
     public boolean disableCellBroadcastRange(int startMessageId, int endMessageId, int ranType) {
-        mContext.enforceCallingPermission("android.permission.RECEIVE_EMERGENCY_BROADCAST",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "disabling cell broadcast range [" + startMessageId + "-" + endMessageId
                         + "]. ranType=" + ranType);
         if (ranType == SmsCbMessage.MESSAGE_FORMAT_3GPP) {
@@ -986,8 +963,7 @@ public class IccSmsInterfaceManager {
     @UnsupportedAppUsage
     synchronized public boolean enableGsmBroadcastRange(int startMessageId, int endMessageId) {
 
-        mContext.enforceCallingPermission(
-                "android.permission.RECEIVE_SMS",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "Enabling cell broadcast SMS");
 
         String client = mContext.getPackageManager().getNameForUid(
@@ -1017,8 +993,7 @@ public class IccSmsInterfaceManager {
     @UnsupportedAppUsage
     synchronized public boolean disableGsmBroadcastRange(int startMessageId, int endMessageId) {
 
-        mContext.enforceCallingPermission(
-                "android.permission.RECEIVE_SMS",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "Disabling cell broadcast SMS");
 
         String client = mContext.getPackageManager().getNameForUid(
@@ -1048,8 +1023,7 @@ public class IccSmsInterfaceManager {
     @UnsupportedAppUsage
     synchronized public boolean enableCdmaBroadcastRange(int startMessageId, int endMessageId) {
 
-        mContext.enforceCallingPermission(
-                "android.permission.RECEIVE_SMS",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "Enabling cdma broadcast SMS");
 
         String client = mContext.getPackageManager().getNameForUid(
@@ -1078,8 +1052,7 @@ public class IccSmsInterfaceManager {
     @UnsupportedAppUsage
     synchronized public boolean disableCdmaBroadcastRange(int startMessageId, int endMessageId) {
 
-        mContext.enforceCallingPermission(
-                "android.permission.RECEIVE_SMS",
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "Disabling cell broadcast SMS");
 
         String client = mContext.getPackageManager().getNameForUid(
@@ -1103,6 +1076,17 @@ public class IccSmsInterfaceManager {
         setCdmaBroadcastActivation(!mCdmaBroadcastRangeManager.isEmpty());
 
         return true;
+    }
+
+    /**
+     * Reset all cell broadcast ranges. Previously enabled ranges will become invalid after this.
+     */
+    public void resetAllCellBroadcastRanges() {
+        mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
+                "resetAllCellBroadcastRanges");
+        mCdmaBroadcastRangeManager.clearRanges();
+        mCellBroadcastRangeManager.clearRanges();
+        log("Cell broadcast ranges reset.");
     }
 
     class CellBroadcastRangeManager extends IntRangeManager {
