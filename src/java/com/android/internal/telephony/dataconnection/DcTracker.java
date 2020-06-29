@@ -1761,7 +1761,7 @@ public class DcTracker extends Handler {
      * @param releaseType Data release type.
      * @param apnContext The APN context to be detached.
      */
-    private void cleanUpConnectionInternal(boolean detach, @ReleaseNetworkType int releaseType,
+    protected void cleanUpConnectionInternal(boolean detach, @ReleaseNetworkType int releaseType,
                                            ApnContext apnContext) {
         if (apnContext == null) {
             if (DBG) log("cleanUpConnectionInternal: apn context is null");
@@ -2273,7 +2273,7 @@ public class DcTracker extends Handler {
      * @param apnContext APN context
      * @return true if try setup data connection is need for this reason
      */
-    private boolean retryAfterDisconnected(ApnContext apnContext) {
+    protected boolean retryAfterDisconnected(ApnContext apnContext) {
         boolean retry = true;
         String reason = apnContext.getReason();
 
