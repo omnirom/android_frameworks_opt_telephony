@@ -558,10 +558,17 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
                         PROPERTY_TEMP_DDSSWITCH, false);
                 int ddsPhoneId = mSubscriptionController.getPhoneId(
                         mSubscriptionController.getDefaultDataSubId());
+                boolean dataDuringCallsEnabled = false;
+                Phone phone = PhoneFactory.getPhone(phoneId);
+                DataEnabledSettings dataEnabledSettings = phone.getDataEnabledSettings();
+                if (dataEnabledSettings != null) {
+                    dataDuringCallsEnabled = dataEnabledSettings.isDataAllowedInVoiceCall();
+                }
                 log("onDdsSwitchResponse: isTempSwitchPropEnabled=" + isTempSwitchPropEnabled +
-                        ", ddsPhoneId=" + ddsPhoneId + ", mPreferredDataPhoneId=" +
-                        mPreferredDataPhoneId);
-                if (isTempSwitchPropEnabled && (phoneId != ddsPhoneId) &&
+                        "dataDuringCallsEnabled=" + dataDuringCallsEnabled + ", ddsPhoneId=" +
+                        ddsPhoneId + ", mPreferredDataPhoneId=" + mPreferredDataPhoneId);
+                if ((isTempSwitchPropEnabled || dataDuringCallsEnabled) &&
+                        (phoneId != ddsPhoneId) &&
                         getConnectFailureCount(phoneId) < MAX_CONNECT_FAILURE_COUNT) {
                     log("Retry Temporary DDS switch on phoneId:" + phoneId);
                     sendRilCommands(phoneId);
