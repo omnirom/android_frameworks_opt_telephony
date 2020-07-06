@@ -201,7 +201,7 @@ public class VendorSubscriptionController extends SubscriptionController {
         return true;
     }
 
-    protected boolean isShuttingDown() {
+    boolean isShuttingDown() {
         for (int i = 0; i < sNumPhones; i++) {
             if (PhoneFactory.getPhone(i) != null &&
                     PhoneFactory.getPhone(i).isShuttingDown()) return true;
