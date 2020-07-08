@@ -633,7 +633,7 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
-    private void cleanSubscriptionInPhone(int phoneId) {
+    protected void cleanSubscriptionInPhone(int phoneId) {
         sIccId[phoneId] = ICCID_STRING_FOR_NO_SIM;
         if (sInactiveIccIds[phoneId] != null) {
             // When a SIM is unplugged, mark uicc applications enabled. This is to make sure when
