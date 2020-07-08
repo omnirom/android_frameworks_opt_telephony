@@ -75,14 +75,15 @@ public class RuimRecordsTest extends TelephonyTest {
          RuimRecords.EfCsimImsimLoaded mImsiLoaded = mRuimRecords.new EfCsimImsimLoaded();
          AsyncResult ar = new AsyncResult(null, null, null);
          mImsiLoaded.onRecordLoaded(ar);
-         String mccmnc = mRuimRecords.getOperatorNumeric();
+         String mccmnc = mRuimRecords.getRUIMOperatorNumeric();
          assertNull(mccmnc);
 
          byte[] byteArray = new byte[]{0,19,3,75,68,88,99,(byte)128,(byte)209,0};
          AsyncResult ar2 = new AsyncResult(null, byteArray, null);
          mImsiLoaded.onRecordLoaded(ar2);
-         mccmnc = mRuimRecords.getOperatorNumeric();
+         mccmnc = mRuimRecords.getRUIMOperatorNumeric();
          assertNotNull(mccmnc);
-         assertEquals("31000", mccmnc);
+         // mcc = 310 mnc_length = 3
+         assertEquals("310008", mccmnc);
     }
 }
