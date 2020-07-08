@@ -23,6 +23,7 @@ import android.content.IntentFilter;
 import android.os.AsyncResult;
 import android.os.Message;
 import android.os.PersistableBundle;
+import android.provider.Settings;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.Annotation;
 import android.telephony.CarrierConfigManager;
@@ -87,13 +88,14 @@ public class NetworkTypeController extends StateMachine {
     private static final int EVENT_SECONDARY_TIMER_EXPIRED = 9;
     private static final int EVENT_RADIO_OFF_OR_UNAVAILABLE = 10;
     private static final int EVENT_DATA_CONNECTION_STATE_CHANGED = 11;
+    private static final int EVENT_PREFERRED_NETWORK_MODE_CHANGED = 12;
+    // events that don't reset the timer
     private static final int[] ALL_EVENTS = { EVENT_DATA_RAT_CHANGED, EVENT_NR_STATE_CHANGED,
             EVENT_NR_FREQUENCY_CHANGED, EVENT_DATA_ACTIVITY_CHANGED,
-            EVENT_PHYSICAL_CHANNEL_CONFIG_NOTIF_CHANGED, EVENT_CARRIER_CONFIG_CHANGED,
-            EVENT_PRIMARY_TIMER_EXPIRED, EVENT_SECONDARY_TIMER_EXPIRED,
-            EVENT_DATA_CONNECTION_STATE_CHANGED};
+            EVENT_PHYSICAL_CHANNEL_CONFIG_NOTIF_CHANGED, EVENT_PRIMARY_TIMER_EXPIRED,
+            EVENT_SECONDARY_TIMER_EXPIRED, EVENT_DATA_CONNECTION_STATE_CHANGED };
 
-    private static final String[] sEvents = new String[EVENT_DATA_CONNECTION_STATE_CHANGED + 1];
+    private static final String[] sEvents = new String[EVENT_PREFERRED_NETWORK_MODE_CHANGED + 1];
     static {
         sEvents[EVENT_UPDATE] = "EVENT_UPDATE";
         sEvents[EVENT_QUIT] = "EVENT_QUIT";
@@ -108,11 +110,13 @@ public class NetworkTypeController extends StateMachine {
         sEvents[EVENT_SECONDARY_TIMER_EXPIRED] = "EVENT_SECONDARY_TIMER_EXPIRED";
         sEvents[EVENT_RADIO_OFF_OR_UNAVAILABLE] = "EVENT_RADIO_OFF_OR_UNAVAILABLE";
         sEvents[EVENT_DATA_CONNECTION_STATE_CHANGED] = "EVENT_DATA_CONNECTION_STATE_CHANGED";
+        sEvents[EVENT_PREFERRED_NETWORK_MODE_CHANGED] = "EVENT_PREFERRED_NETWORK_MODE_CHANGED";
     }
 
     private final Phone mPhone;
     private final DisplayInfoController mDisplayInfoController;
     private final TelephonyManager mTelephonyManager;
+    private final SettingsObserver mSettingsObserver;
     private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -158,6 +162,7 @@ public class NetworkTypeController extends StateMachine {
         mDisplayInfoController = displayInfoController;
         mTelephonyManager = TelephonyManager.from(phone.getContext())
                 .createForSubscriptionId(phone.getSubId());
+        mSettingsObserver = new SettingsObserver(mPhone.getContext(), getHandler());
         mOverrideNetworkType = TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE;
         mIsPhysicalChannelConfigOn = true;
         addState(mDefaultState);
@@ -198,6 +203,8 @@ public class NetworkTypeController extends StateMachine {
             mTelephonyManager.listen(mPhoneStateListener, PhoneStateListener.LISTEN_DATA_ACTIVITY
                     | PhoneStateListener.LISTEN_DATA_CONNECTION_STATE);
         }
+        mSettingsObserver.observe(Settings.Global.getUriFor(Settings.Global.PREFERRED_NETWORK_MODE),
+                EVENT_PREFERRED_NETWORK_MODE_CHANGED);
     }
 
     private void unRegisterForAllEvents() {
@@ -211,6 +218,7 @@ public class NetworkTypeController extends StateMachine {
         if (mTelephonyManager != null) {
             mTelephonyManager.listen(mPhoneStateListener, 0);
         }
+        mSettingsObserver.unobserve();
     }
 
     private void parseCarrierConfigs() {
@@ -497,6 +505,10 @@ public class NetworkTypeController extends StateMachine {
                         transitionToCurrentState();
                     }
                     break;
+                case EVENT_PREFERRED_NETWORK_MODE_CHANGED:
+                    resetAllTimers();
+                    transitionToCurrentState();
+                    break;
                 default:
                     throw new RuntimeException("Received invalid event: " + msg.what);
             }
@@ -516,12 +528,15 @@ public class NetworkTypeController extends StateMachine {
      * This is the initial state.
      */
     private final class LegacyState extends State {
+        private Boolean mIsNrRestricted = false;
+
         @Override
         public void enter() {
             if (DBG) log("Entering LegacyState");
             updateTimers();
             updateOverrideNetworkType();
             if (!mIsPrimaryTimerActive && !mIsSecondaryTimerActive) {
+                mIsNrRestricted = isNrRestricted();
                 mPreviousState = getName();
             }
         }
@@ -540,6 +555,7 @@ public class NetworkTypeController extends StateMachine {
                     } else {
                         updateOverrideNetworkType();
                     }
+                    mIsNrRestricted = isNrRestricted();
                     break;
                 case EVENT_NR_STATE_CHANGED:
                     if (isNrConnected()) {
@@ -549,6 +565,7 @@ public class NetworkTypeController extends StateMachine {
                     } else if (isLte(rat) && isNrRestricted()) {
                         updateOverrideNetworkType();
                     }
+                    mIsNrRestricted = isNrRestricted();
                     break;
                 case EVENT_NR_FREQUENCY_CHANGED:
                 case EVENT_DATA_ACTIVITY_CHANGED:
@@ -565,7 +582,7 @@ public class NetworkTypeController extends StateMachine {
 
         @Override
         public String getName() {
-            return isNrRestricted() ? STATE_RESTRICTED : STATE_LEGACY;
+            return mIsNrRestricted  ? STATE_RESTRICTED : STATE_LEGACY;
         }
     }
 
@@ -705,12 +722,15 @@ public class NetworkTypeController extends StateMachine {
      * Device is connected to 5G NR as the secondary cell.
      */
     private final class NrConnectedState extends State {
+        private Boolean mIsNrMmwave = false;
+
         @Override
         public void enter() {
             if (DBG) log("Entering NrConnectedState");
             updateTimers();
             updateOverrideNetworkType();
             if (!mIsPrimaryTimerActive && !mIsSecondaryTimerActive) {
+                mIsNrMmwave = isNrMmwave();
                 mPreviousState = getName();
             }
         }
@@ -750,6 +770,7 @@ public class NetworkTypeController extends StateMachine {
                         // STATE_CONNECTED -> STATE_CONNECTED_MMWAVE
                         transitionTo(mNrConnectedState);
                     }
+                    mIsNrMmwave = isNrMmwave();
                     break;
                 case EVENT_DATA_ACTIVITY_CHANGED:
                     if (!isNrConnected()) {
@@ -768,7 +789,7 @@ public class NetworkTypeController extends StateMachine {
 
         @Override
         public String getName() {
-            return isNrMmwave() ? STATE_CONNECTED_MMWAVE : STATE_CONNECTED;
+            return mIsNrMmwave ? STATE_CONNECTED_MMWAVE : STATE_CONNECTED;
         }
     }
 
@@ -789,19 +810,18 @@ public class NetworkTypeController extends StateMachine {
     }
 
     private void transitionWithSecondaryTimerTo(IState destState) {
-        String destName = destState.getName();
+        String currentName = getCurrentState().getName();
         OverrideTimerRule rule = mOverrideTimerRules.get(mPrimaryTimerState);
-        if (rule != null && rule.getSecondaryTimer(destName) > 0) {
-            String currentName = getCurrentState().getName();
+        if (rule != null && rule.getSecondaryTimer(currentName) > 0) {
             if (DBG) log("Secondary timer started for state: " + currentName);
             mSecondaryTimerState = currentName;
             mPreviousState = currentName;
             mIsSecondaryTimerActive = true;
             sendMessageDelayed(EVENT_SECONDARY_TIMER_EXPIRED, destState,
-                    rule.getSecondaryTimer(destName) * 1000);
+                    rule.getSecondaryTimer(currentName) * 1000);
         }
         mIsPrimaryTimerActive = false;
-        transitionTo(destState);
+        transitionTo(getCurrentState());
     }
 
     private void transitionToCurrentState() {

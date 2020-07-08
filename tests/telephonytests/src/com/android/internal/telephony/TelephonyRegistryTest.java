@@ -19,6 +19,8 @@ import static android.telephony.PhoneStateListener.LISTEN_ACTIVE_DATA_SUBSCRIPTI
 import static android.telephony.PhoneStateListener.LISTEN_PHONE_CAPABILITY_CHANGE;
 import static android.telephony.PhoneStateListener.LISTEN_RADIO_POWER_STATE_CHANGED;
 import static android.telephony.PhoneStateListener.LISTEN_SRVCC_STATE_CHANGED;
+import static android.telephony.SubscriptionManager.ACTION_DEFAULT_SUBSCRIPTION_CHANGED;
+import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 import static android.telephony.TelephonyManager.ACTION_MULTI_SIM_CONFIG_CHANGED;
 import static android.telephony.TelephonyManager.RADIO_POWER_OFF;
 import static android.telephony.TelephonyManager.RADIO_POWER_ON;
@@ -39,6 +41,8 @@ import android.telephony.PhoneCapability;
 import android.telephony.PhoneStateListener;
 import android.telephony.PreciseDataConnectionState;
 import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyDisplayInfo;
 import android.telephony.TelephonyManager;
 import android.telephony.data.ApnSetting;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -49,6 +53,7 @@ import com.android.server.TelephonyRegistry;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
@@ -65,6 +70,7 @@ public class TelephonyRegistryTest extends TelephonyTest {
     private TelephonyRegistry mTelephonyRegistry;
     private PhoneCapability mPhoneCapability;
     private int mActiveSubId;
+    private TelephonyDisplayInfo mTelephonyDisplayInfo;
     private int mSrvccState = -1;
     private int mRadioPowerState = RADIO_POWER_UNAVAILABLE;
     // All events contribute to TelephonyRegistry.ENFORCE_PHONE_STATE_PERMISSION_MASK
@@ -141,6 +147,10 @@ public class TelephonyRegistryTest extends TelephonyTest {
         @Override
         public void onPreciseDataConnectionStateChanged(PreciseDataConnectionState preciseState) {
             invocationCount.incrementAndGet();
+        }
+        @Override
+        public void onDisplayInfoChanged(TelephonyDisplayInfo displayInfo) {
+            mTelephonyDisplayInfo = displayInfo;
         }
     }
 
@@ -364,6 +374,10 @@ public class TelephonyRegistryTest extends TelephonyTest {
     /**
      * Test listen to events that require READ_PRECISE_PHONE_STATE permission.
      */
+    // FIXME(b/159082270) - Simply not granting location permission doesn't fix the test because
+    // Location is soft-denied to apps that aren't in the foreground, and soft-denial currently
+    // short-circuits the test.
+    @Ignore("Skip due to b/159082270")
     @Test
     public void testReadPrecisePhoneStatePermission() {
         // Clear all permission grants for test.
@@ -416,6 +430,28 @@ public class TelephonyRegistryTest extends TelephonyTest {
         for (Map.Entry<Integer, String> entry : READ_ACTIVE_EMERGENCY_SESSION_EVENTS.entrySet()) {
             assertSecurityExceptionNotThrown(entry.getKey(), entry.getValue());
         }
+    }
+
+    @Test
+    public void testNotifyDisplayInfoChanged() {
+        mContext.sendBroadcast(new Intent(ACTION_DEFAULT_SUBSCRIPTION_CHANGED)
+                .putExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX, 12)
+                .putExtra(SubscriptionManager.EXTRA_SLOT_INDEX, 0));
+        processAllMessages();
+        mTelephonyRegistry.listenForSubscriber(2, mContext.getOpPackageName(),
+                mContext.getAttributionTag(), mPhoneStateListener.callback,
+                PhoneStateListener.LISTEN_DISPLAY_INFO_CHANGED, false);
+
+        // Notify with invalid subId on default phone. Should NOT trigger callback.
+        TelephonyDisplayInfo displayInfo = new TelephonyDisplayInfo(0, 0);
+        mTelephonyRegistry.notifyDisplayInfoChanged(0, INVALID_SUBSCRIPTION_ID, displayInfo);
+        processAllMessages();
+        assertEquals(null, mTelephonyDisplayInfo);
+
+        // Notify with the matching subId on default phone. Should trigger callback.
+        mTelephonyRegistry.notifyDisplayInfoChanged(0, 2, displayInfo);
+        processAllMessages();
+        assertEquals(displayInfo, mTelephonyDisplayInfo);
     }
 
     private void assertSecurityExceptionThrown(int event, String eventDesc) {
