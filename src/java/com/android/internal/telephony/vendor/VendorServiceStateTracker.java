@@ -33,7 +33,7 @@ public class VendorServiceStateTracker extends ServiceStateTracker {
     private static final boolean DBG = true;
     private static final boolean VDBG = false;  // STOPSHIP if true
     private static final String ACTION_MANAGED_ROAMING_IND =
-            "android.intent.action.ACTION_MANAGED_ROAMING_IND";
+            "com.android.internal.telephony.ACTION_MANAGED_ROAMING_IND";
 
     public VendorServiceStateTracker(GsmCdmaPhone phone, CommandsInterface ci) {
         super(phone,ci);
