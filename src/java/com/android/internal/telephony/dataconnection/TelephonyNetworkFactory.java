@@ -435,7 +435,13 @@ public class TelephonyNetworkFactory extends NetworkFactory {
                     // connection can be re-established on the other transport.
                     : DcTracker.RELEASE_TYPE_DETACH;
             releaseNetworkInternal(networkRequest, releaseType, originTransport);
-            mNetworkRequests.put(networkRequest, targetTransport);
+            if (mNetworkRequests.containsKey(networkRequest)) {
+                mNetworkRequests.put(networkRequest, targetTransport);
+            } else {
+                // This network is released already, so tear down data call immediately.
+                releaseNetworkInternal(networkRequest,
+                        DcTracker.RELEASE_TYPE_DETACH, targetTransport);
+            }
         }
 
         handoverParams.callback.onCompleted(success, fallback);
