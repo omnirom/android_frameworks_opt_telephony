@@ -269,7 +269,7 @@ public class TransportManager extends Handler {
 
         if (ArrayUtils.isEmpty(currentNetworkList)
                 && ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(newNetworkList[0])
-                == AccessNetworkConstants.TRANSPORT_TYPE_WLAN) {
+                != getCurrentTransport(apnType)) {
             // This is a special case that when first time boot up in airplane mode with wifi on,
             // qualified network service reports IWLAN as the preferred network. Although there
             // is no live data connection on cellular, there might be network requests which were

@@ -100,6 +100,7 @@ import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.UiccSlot;
 import com.android.internal.telephony.util.QtiImsUtils;
 import com.android.internal.util.ArrayUtils;
+import com.android.internal.telephony.imsphone.ImsPhoneMmiCode;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -1196,16 +1197,19 @@ public class GsmCdmaPhone extends Phone {
 
         String dialPart = PhoneNumberUtils.extractNetworkPortionAlt(PhoneNumberUtils.
                 stripSeparators(dialString));
-        boolean isUt = (dialPart.startsWith("*") || dialPart.startsWith("#"))
+        boolean isMmiCode = (dialPart.startsWith("*") || dialPart.startsWith("#"))
                 && dialPart.endsWith("#");
-
+        boolean isSuppServiceCode = ImsPhoneMmiCode.isSuppServiceCodes(dialPart, this);
+        boolean isPotentialUssdCode = isMmiCode && !isSuppServiceCode;
         boolean useImsForUt = imsPhone != null && imsPhone.isUtEnabled();
 
         if (DBG) {
             logd("useImsForCall=" + useImsForCall
                     + ", useImsForEmergency=" + useImsForEmergency
                     + ", useImsForUt=" + useImsForUt
-                    + ", isUt=" + isUt
+                    + ", isUt=" + isMmiCode
+                    + ", isSuppServiceCode=" + isSuppServiceCode
+                    + ", isPotentialUssdCode=" + isPotentialUssdCode
                     + ", isWpsCall=" + isWpsCall
                     + ", allowWpsOverIms=" + allowWpsOverIms
                     + ", imsPhone=" + imsPhone
@@ -1221,7 +1225,9 @@ public class GsmCdmaPhone extends Phone {
 
         Phone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mPhoneId, mContext);
 
-        if ((useImsForCall && !isUt) || (isUt && useImsForUt) || useImsForEmergency) {
+        if ((useImsForCall && (!isMmiCode || isPotentialUssdCode))
+                || (isMmiCode && useImsForUt)
+                || useImsForEmergency) {
             try {
                 if (DBG) logd("Trying IMS PS call");
                 return imsPhone.dial(dialString, dialArgs);
@@ -1249,7 +1255,9 @@ public class GsmCdmaPhone extends Phone {
         if (mSST != null && mSST.mSS.getState() == ServiceState.STATE_POWER_OFF /* CS POWER_OFF */
                 && !VideoProfile.isVideo(dialArgs.videoState) /* voice call */
                 && !isEmergency /* non-emergency call */
-                && !(isUt && useImsForUt) /* not UT */) {
+                && !(isMmiCode && useImsForUt) /* not UT */
+                /* If config_allow_ussd_over_ims is false, USSD is sent over the CS pipe instead */
+                && !isPotentialUssdCode) {
             throw new CallStateException(
                 CallStateException.ERROR_POWER_OFF,
                 "cannot dial voice call in airplane mode");
@@ -1261,7 +1269,9 @@ public class GsmCdmaPhone extends Phone {
                 && !(mSST.mSS.getDataRegState() == ServiceState.STATE_IN_SERVICE
                 && ServiceState.isPsTech(mSST.mSS.getRilDataRadioTechnology())) /* PS not in LTE/NR */
                 && !VideoProfile.isVideo(dialArgs.videoState) /* voice call */
-                && !isEmergency /* non-emergency call */) {
+                && !isEmergency /* non-emergency call */
+                /* If config_allow_ussd_over_ims is false, USSD is sent over the CS pipe instead */
+                && !isPotentialUssdCode) {
             throw new CallStateException(
                 CallStateException.ERROR_OUT_OF_SERVICE,
                 "cannot dial voice call in out of service");
@@ -1691,7 +1701,10 @@ public class GsmCdmaPhone extends Phone {
 
     @Override
     public ImsiEncryptionInfo getCarrierInfoForImsiEncryption(int keyType) {
-        return CarrierInfoManager.getCarrierInfoForImsiEncryption(keyType, mContext);
+        String operatorNumeric = TelephonyManager.from(mContext)
+                .getSimOperatorNumericForPhone(mPhoneId);
+        return CarrierInfoManager.getCarrierInfoForImsiEncryption(keyType,
+                mContext, operatorNumeric);
     }
 
     @Override
@@ -3375,6 +3388,11 @@ public class GsmCdmaPhone extends Phone {
             if (DBG) Rlog.d(LOG_TAG, "isOtaSpNumber " + isOtaSpNum);
             return isOtaSpNum;
         }
+    }
+
+    @Override
+    public int getOtasp() {
+        return mSST.getOtasp();
     }
 
     @Override
