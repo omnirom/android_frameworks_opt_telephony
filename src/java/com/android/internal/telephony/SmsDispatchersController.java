@@ -26,6 +26,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.hardware.radio.V1_0.RadioTechnologyFamily;
 import android.net.Uri;
 import android.os.AsyncResult;
 import android.os.Handler;
@@ -335,10 +336,10 @@ public class SmsDispatchersController extends Handler {
 
     private void setImsSmsFormat(int format) {
         switch (format) {
-            case PhoneConstants.PHONE_TYPE_GSM:
+            case RadioTechnologyFamily.THREE_GPP:
                 mImsSmsFormat = SmsConstants.FORMAT_3GPP;
                 break;
-            case PhoneConstants.PHONE_TYPE_CDMA:
+            case RadioTechnologyFamily.THREE_GPP2:
                 mImsSmsFormat = SmsConstants.FORMAT_3GPP2;
                 break;
             default:
