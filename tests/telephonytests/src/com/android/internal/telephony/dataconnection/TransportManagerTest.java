@@ -236,8 +236,10 @@ public class TransportManagerTest extends TelephonyTest {
                 anyLong());
 
         LinkedList<List<QualifiedNetworks>> listQueue = getAvailableNetworksList();
-        // Verify the list has been queued.
-        assertEquals(1, listQueue.size());
+        // Verify the list has been not been queued
+        // TODO: Goodle didn't take this fix.
+        // Bug id: 143317856
+        assertEquals(0, listQueue.size());
 
         // Notify handover succeeded.
         params.callback.onCompleted(true, false);
@@ -249,8 +251,10 @@ public class TransportManagerTest extends TelephonyTest {
         // Verify the queue is empty.
         assertEquals(0, listQueue.size());
 
-        // Verify handover 2nd needed event was sent
-        verify(mTestHandler, times(2)).sendMessageAtTime(messageArgumentCaptor.capture(),
+        // Verify handover event was sent(for previous change)
+        // TODO: Goodle didn't take this fix.
+        // Bug id: 143317856
+        verify(mTestHandler, times(1)).sendMessageAtTime(messageArgumentCaptor.capture(),
                 anyLong());
     }
 }
