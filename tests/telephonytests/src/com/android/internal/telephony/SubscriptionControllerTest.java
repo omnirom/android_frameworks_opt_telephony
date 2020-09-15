@@ -721,6 +721,9 @@ public class SubscriptionControllerTest extends TelephonyTest {
         // Adding a second profile and mark as embedded.
         // TODO b/123300875 slot index 1 is not expected to be valid
         replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        // TODO Need to clean up on Android S
+        doReturn(mVoiceCallSessionStats).when(mSecondPhone).getVoiceCallSessionStats();
+
         when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
         ContentValues values = new ContentValues();
@@ -783,6 +786,11 @@ public class SubscriptionControllerTest extends TelephonyTest {
         testInsertSim();
         // Adding a second profile and mark as embedded.
         // TODO b/123300875 slot index 1 is not expected to be valid
+        // TODO Need to clean up on Android S
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        doReturn(mVoiceCallSessionStats).when(mSecondPhone).getVoiceCallSessionStats();
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
+
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
         ContentValues values = new ContentValues();
         values.put(SubscriptionManager.IS_EMBEDDED, 1);
@@ -833,6 +841,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     public void testUpdateSubscriptionGroupWithCarrierPrivilegePermission() throws Exception {
         testInsertSim();
         replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        // TODO Need to clean up on Android S
+        doReturn(mVoiceCallSessionStats).when(mSecondPhone).getVoiceCallSessionStats();
         when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         // Adding a second profile and mark as embedded.
         // TODO b/123300875 slot index 1 is not expected to be valid
@@ -956,6 +966,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     public void testSetSubscriptionGroup() throws Exception {
         testInsertSim();
         replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        // TODO Need to clean up on Android S
+        doReturn(mVoiceCallSessionStats).when(mSecondPhone).getVoiceCallSessionStats();
         when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         // Adding a second profile and mark as embedded.
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
@@ -1303,6 +1315,10 @@ public class SubscriptionControllerTest extends TelephonyTest {
         // the ICC ID and phone number.
         testInsertSim();
         doReturn(2).when(mTelephonyManager).getPhoneCount();
+        // TODO Need to clean up on Android S
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
+        doReturn(mVoiceCallSessionStats).when(mSecondPhone).getVoiceCallSessionStats();
         mSubscriptionControllerUT.addSubInfoRecord("test2", 1);
         int firstSubId = getFirstSubId();
         int secondSubId = getSubIdAtIndex(1);
@@ -1570,6 +1586,10 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testGetAvailableSubscriptionList() throws Exception {
         // TODO b/123300875 slot index 1 is not expected to be valid
+        // Need to clean up on Android S
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
+        when(UiccController.getInstance().getUiccCardForPhone(0)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("123", 1);   // sub 1
         mSubscriptionControllerUT.addSubInfoRecord("456", 0);   // sub 2
 
@@ -1605,7 +1625,11 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @SmallTest
     public void testGetAvailableSubscriptionList_withTrailingF() throws Exception {
         // TODO b/123300875 slot index 1 is not expected to be valid
+        // TODO Need to clean up on Android S
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mSecondPhone});
+        when(UiccController.getInstance().getUiccCardForPhone(1)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("123", 1);   // sub 1
+        when(UiccController.getInstance().getUiccCardForPhone(0)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord("456", 0);   // sub 2
 
         // Remove "123" from active sim list but have it inserted.
@@ -1652,6 +1676,8 @@ public class SubscriptionControllerTest extends TelephonyTest {
     @Test
     public void testSetSubscriptionEnabled_disableActivePsim_cardIdWithTrailingF() {
         String iccId = "123F";
+        // TODO Need to clean up on Android S
+        when(UiccController.getInstance().getUiccCardForPhone(0)).thenReturn(mUiccCard);
         mSubscriptionControllerUT.addSubInfoRecord(iccId, 0);
         mSubscriptionControllerUT.registerForUiccAppsEnabled(mHandler, 0, null, false);
         UiccSlotInfo slot = getFakeUiccSlotInfo(true, 0, iccId + "FF");

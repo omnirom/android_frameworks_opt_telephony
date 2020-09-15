@@ -106,6 +106,8 @@ public class ImsPhoneTest extends TelephonyTest {
     Connection mConnection;
     @Mock
     ImsUtInterface mImsUtInterface;
+    @Mock
+    EcbmHandler mEcbmHandler;
 
     private Executor mExecutor = new Executor() {
         @Override
@@ -153,10 +155,11 @@ public class ImsPhoneTest extends TelephonyTest {
         mImsPhoneUT.setVoiceCallSessionStats(mVoiceCallSessionStats);
         doReturn(mImsUtInterface).when(mImsCT).getUtInterface();
         // When the mock GsmCdmaPhone gets setIsInEcbm called, ensure isInEcm matches.
+        // TODO: Move this to a separate test class for EcbmHandler
         doAnswer(invocation -> {
             mIsPhoneUtInEcm = (Boolean) invocation.getArguments()[0];
             return null;
-        }).when(EcbmHandler.getInstance()).setIsInEcm(anyBoolean());
+        }).when(mEcbmHandler).setIsInEcm(anyBoolean());
         doAnswer(invocation -> mIsPhoneUtInEcm).when(mPhone).isInEcm();
 
         mBundle = mContextFixture.getCarrierConfigBundle();
