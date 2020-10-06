@@ -54,8 +54,6 @@ import java.util.List;
  */
 public class VendorSubscriptionController extends SubscriptionController {
     static final String LOG_TAG = "VendorSubscriptionController";
-    private static final boolean DBG = true;
-    private static final boolean VDBG = Rlog.isLoggable(LOG_TAG, Log.VERBOSE);
 
     private static int sNumPhones;
 

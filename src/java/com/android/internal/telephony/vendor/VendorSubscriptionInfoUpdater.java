@@ -137,13 +137,13 @@ public class VendorSubscriptionInfoUpdater extends SubscriptionInfoUpdater {
     }
 
     @Override
-    protected void cleanSubscriptionInPhone(int phoneId) {
+    protected void cleanSubscriptionInPhone(int phoneId, boolean isSimAbsent) {
         if (VendorSubscriptionController.getInstance().isShuttingDown()) {
             Rlog.d(LOG_TAG, "cleanSubscriptionInPhone, shutting down " + phoneId);
             sIccId[phoneId] = ICCID_STRING_FOR_NO_SIM;
             updateSubscriptionInfoByIccId(phoneId, true /* updateEmbeddedSubs */);
         } else {
-            super.cleanSubscriptionInPhone(phoneId);
+            super.cleanSubscriptionInPhone(phoneId, isSimAbsent);
         }
     }
 }
