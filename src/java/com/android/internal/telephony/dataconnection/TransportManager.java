@@ -300,7 +300,8 @@ public class TransportManager extends Handler {
         // because it's the most preferred. In the future we should also consider the rest in the
         // list, for example, the first one violates carrier/user policy.
         return !ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(newNetworkList[0])
-                .equals(getCurrentTransport(newNetworks.apnType));
+                .equals(getCurrentTransport(newNetworks.apnType))
+                || mPendingHandoverApns.indexOfKey(newNetworks.apnType) > 0;
     }
 
     private static boolean areNetworksValid(QualifiedNetworks networks) {
