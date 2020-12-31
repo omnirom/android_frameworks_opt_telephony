@@ -93,7 +93,7 @@ public class TelephonyComponentFactory {
         /**
          * @return paths correctly configured to inject.
          * 1) PackageName and JarPath mustn't be empty.
-         * 2) JarPath is restricted under /system or /product only.
+         * 2) JarPath is restricted under /system or /product or /system_ext only.
          * 3) JarPath is on a READ-ONLY partition.
          */
         private @Nullable String getValidatedPaths() {
