@@ -68,6 +68,7 @@ import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.WorkSource;
 import android.provider.Settings;
 import android.service.carrier.CarrierIdentifier;
@@ -657,7 +658,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         TelephonyManager tm = (TelephonyManager) context.getSystemService(
                 Context.TELEPHONY_SERVICE);
-        mIsCellularSupported = tm.isVoiceCapable() || tm.isSmsCapable() || tm.isDataCapable();
+        boolean noRil = SystemProperties.getBoolean("ro.radio.noril", false);
+        mIsCellularSupported = !noRil &&
+                (tm.isVoiceCapable() || tm.isSmsCapable() || tm.isDataCapable());
 
         mRadioResponse = new RadioResponse(this);
         mRadioIndication = new RadioIndication(this);
