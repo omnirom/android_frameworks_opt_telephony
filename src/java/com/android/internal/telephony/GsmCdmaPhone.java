@@ -159,7 +159,7 @@ public class GsmCdmaPhone extends Phone {
     @UnsupportedAppUsage
     private Registrant mEcmExitRespRegistrant;
     private String mEsn;
-    private String mMeid;
+    protected String mMeid;
     // string to define how the carrier specifies its own ota sp number
     private String mCarrierOtaSpNumSchema;
 
