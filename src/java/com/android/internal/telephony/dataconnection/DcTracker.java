@@ -139,7 +139,7 @@ import java.util.stream.Collectors;
  */
 public class DcTracker extends Handler {
     protected static final boolean DBG = true;
-    private static final boolean VDBG = false; // STOPSHIP if true
+    protected static final boolean VDBG = false; // STOPSHIP if true
     private static final boolean VDBG_STALL = false; // STOPSHIP if true
     private static final boolean RADIO_TESTS = false;
 
@@ -267,7 +267,7 @@ public class DcTracker extends Handler {
     private ArrayList<ApnContext> mPrioritySortedApnContexts = new ArrayList<>();
 
     /** all APN settings applicable to the current carrier */
-    private ArrayList<ApnSetting> mAllApnSettings = new ArrayList<>();
+    protected ArrayList<ApnSetting> mAllApnSettings = new ArrayList<>();
 
     /** preferred apn */
     private ApnSetting mPreferredApn = null;
@@ -662,7 +662,6 @@ public class DcTracker extends Handler {
 
     private DataStallRecoveryHandler mDsRecoveryHandler;
     private HandlerThread mHandlerThread;
-
     /**
      * Request network completion message map. Key is the APN type, value is the list of completion
      * messages to be sent. Using a list because there might be multiple network requests for
@@ -3276,6 +3275,8 @@ public class DcTracker extends Handler {
 
         dedupeApnSettings();
 
+        filterApnSettings();
+
         if (mAllApnSettings.isEmpty()) {
             log("createAllApnList: No APN found for carrier, operator: " + operator);
             mApnSettingsInitializationLog.log("no APN found for carrier, operator: "
@@ -3292,6 +3293,34 @@ public class DcTracker extends Handler {
             if (DBG) log("createAllApnList: mPreferredApn=" + mPreferredApn);
         }
         if (DBG) log("createAllApnList: X mAllApnSettings=" + mAllApnSettings);
+    }
+
+    private void filterApnSettings() {
+        PersistableBundle carrierConfig;
+        CarrierConfigManager configManager = (CarrierConfigManager) mPhone.getContext()
+                .getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        if (configManager == null) {
+            loge("CarrierConfigManager is null");
+            return;
+        }
+
+        carrierConfig = configManager.getConfigForSubId(mPhone.getSubId());
+        if(carrierConfig == null) {
+            loge("Carrier Config info is null");
+            return;
+        }
+
+        if(carrierConfig.getBoolean(CarrierConfigManager.
+                KEY_REQUIRE_APN_FILTERING_WITH_RADIO_CAPABILITY)) {
+            filterApnSettingsWithRadioCapability();
+        }
+    }
+
+    /**
+     * Filters out multipe apns based on radio capability if the APN's GID value is listed in
+     * CarrierConfigManager#KEY_MULTI_APN_ARRAY_FOR_SAME_GID as per the operator requirement.
+     */
+    protected void filterApnSettingsWithRadioCapability() {
     }
 
     private void dedupeApnSettings() {
@@ -4229,7 +4258,7 @@ public class DcTracker extends Handler {
         Rlog.d(mLogTag, s);
     }
 
-    private void loge(String s) {
+    protected void loge(String s) {
         Rlog.e(mLogTag, s);
     }
 

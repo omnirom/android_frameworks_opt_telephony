@@ -6326,6 +6326,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 return "RIL_REQUEST_GET_BARRING_INFO";
             case RIL_REQUEST_ENTER_SIM_DEPERSONALIZATION:
                 return "RIL_REQUEST_ENTER_SIM_DEPERSONALIZATION";
+            case RIL_REQUEST_GET_ENHANCED_RADIO_CAPABILITY:
+                return "RIL_REQUEST_GET_ENHANCED_RADIO_CAPABILITY";
 
             default: return "<unknown request>";
         }
