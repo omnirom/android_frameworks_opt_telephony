@@ -247,6 +247,10 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
 
     @Override
     protected boolean onEvaluate(boolean requestsChanged, String reason) {
+        if (!com.android.internal.telephony.SubscriptionInfoUpdater.isSubInfoInitialized()) {
+            log("subscription info isn't initialized yet");
+            return false;
+        }
         StringBuilder sb = new StringBuilder(reason);
 
         boolean diffDetected = requestsChanged;
