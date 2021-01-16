@@ -110,7 +110,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private static String[] sInactiveIccIds = new String[SUPPORTED_MODEM_COUNT];
     private static int[] sSimCardState = new int[SUPPORTED_MODEM_COUNT];
     private static int[] sSimApplicationState = new int[SUPPORTED_MODEM_COUNT];
-    private static boolean sIsSubInfoInitialized = false;
+    private static volatile boolean sIsSubInfoInitialized = false;
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
     private Handler mBackgroundHandler;
