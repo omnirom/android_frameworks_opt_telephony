@@ -110,7 +110,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private static String[] sInactiveIccIds = new String[SUPPORTED_MODEM_COUNT];
     private static int[] sSimCardState = new int[SUPPORTED_MODEM_COUNT];
     private static int[] sSimApplicationState = new int[SUPPORTED_MODEM_COUNT];
-    private static boolean sIsSubInfoInitialized = false;
+    private static volatile boolean sIsSubInfoInitialized = false;
     private SubscriptionManager mSubscriptionManager = null;
     private EuiccManager mEuiccManager;
     private Handler mBackgroundHandler;
@@ -340,7 +340,6 @@ public class SubscriptionInfoUpdater extends Handler {
                 Context.TELEPHONY_SERVICE)).getActiveModemCount();
         // For inactive modems, reset its states.
         for (int phoneId = activeModemCount; phoneId < SUPPORTED_MODEM_COUNT; phoneId++) {
-            SubscriptionController.getInstance().clearSubInfoRecord(phoneId);
             sIccId[phoneId] = null;
             sSimCardState[phoneId] = TelephonyManager.SIM_STATE_UNKNOWN;
             sSimApplicationState[phoneId] = TelephonyManager.SIM_STATE_UNKNOWN;
