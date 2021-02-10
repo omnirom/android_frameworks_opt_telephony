@@ -91,6 +91,8 @@ public class CarrierServiceStateTracker extends Handler {
         this.mSST = sst;
         phone.getContext().registerReceiver(mBroadcastReceiver, new IntentFilter(
                 CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED));
+        phone.getContext().registerReceiver(mBroadcastReceiver, new IntentFilter(
+                Intent.ACTION_LOCALE_CHANGED));
         // Listen for subscriber changes
         SubscriptionManager.from(mPhone.getContext()).addOnSubscriptionsChangedListener(
                 new OnSubscriptionsChangedListener(this.getLooper()) {
@@ -342,17 +344,30 @@ public class CarrierServiceStateTracker extends Handler {
     private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            CarrierConfigManager carrierConfigManager = (CarrierConfigManager)
-                    context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
-            PersistableBundle b = carrierConfigManager.getConfigForSubId(mPhone.getSubId());
+            switch (intent.getAction()) {
+                case CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED:
+                    CarrierConfigManager carrierConfigManager = (CarrierConfigManager)
+                            context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
+                    PersistableBundle b = carrierConfigManager.getConfigForSubId(mPhone.getSubId());
 
-            for (Map.Entry<Integer, NotificationType> entry : mNotificationTypeMap.entrySet()) {
-                NotificationType notificationType = entry.getValue();
-                notificationType.setDelay(b);
+                    for (Map.Entry<Integer, NotificationType> entry :
+                            mNotificationTypeMap.entrySet()) {
+                        NotificationType notificationType = entry.getValue();
+                        notificationType.setDelay(b);
+                    }
+                    handleConfigChanges();
+                    break;
+                case Intent.ACTION_LOCALE_CHANGED:
+                    // Upon receiving the locale change broadcast, update the notification's language
+                    handleImsCapabilitiesChanged();
+                    break;
             }
-            handleConfigChanges();
         }
     };
+
+    private void unregisterBroadcastReceiver() {
+        mPhone.getContext().unregisterReceiver(mBroadcastReceiver);
+    }
 
     /**
      * Post a notification to the NotificationManager for changing network type.
@@ -390,6 +405,7 @@ public class CarrierServiceStateTracker extends Handler {
     public void dispose() {
         unregisterPrefNetworkModeObserver();
         unregisterWfcSettingObserver();
+        unregisterBroadcastReceiver();
     }
 
     /**
@@ -588,7 +604,7 @@ public class CarrierServiceStateTracker extends Handler {
                     | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             // Create the PendingIntent
             PendingIntent emergencyIntent = PendingIntent.getActivity(
-                    mContext, 0, notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    mContext, mPhone.getPhoneId(), notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT);
             CharSequence title = mContext.getText(
                     com.android.internal.R.string.EmergencyCallWarningTitle);
             CharSequence details = mContext.getText(

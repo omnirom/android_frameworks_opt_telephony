@@ -167,6 +167,7 @@ public class GsmCdmaPhone extends Phone {
     * {@hide}
     */
     public Boolean mUiccApplicationsEnabled = null;
+
     // keeps track of when we have triggered an emergency call due to the ril.test.emergencynumber
     // param being set and we should generate a simulated exit from the modem upon exit of ECbM.
     private boolean mIsTestingEmergencyCallbackMode = false;

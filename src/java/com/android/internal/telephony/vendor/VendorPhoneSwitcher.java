@@ -269,7 +269,11 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
         for (int i = 0; i < mActiveModemCount; i++) {
             int sub = mSubscriptionController.getSubIdUsingPhoneId(i);
 
-            if (SubscriptionManager.isValidSubscriptionId(sub)) hasAnyActiveSubscription = true;
+            if (SubscriptionManager.isValidSubscriptionId(sub) && isSimReady(i)) {
+                hasAnyActiveSubscription = true;
+            } else {
+		log("slot" + i + " not a valid subscription");
+            }
 
             if (sub != mPhoneSubscriptions[i]) {
                 sb.append(" phone[").append(i).append("] ").append(mPhoneSubscriptions[i]);
