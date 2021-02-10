@@ -1081,4 +1081,8 @@ public abstract class BaseCommands implements CommandsInterface {
     public void unregisterForBarringInfoChanged(Handler h) {
         mBarringInfoChangedRegistrants.remove(h);
     }
+
+    @Override
+    public void getQtiRadioCapability(Message result) {
+    }
 }

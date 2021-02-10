@@ -2524,4 +2524,11 @@ public interface CommandsInterface {
      * @param result Message will be sent back to handler and result.obj will be the AsycResult.
      */
     default void getBarringInfo(Message result) {};
+
+    /**
+     *  Get phone radio capability
+     *
+     *  @param result Callback message.
+     */
+    public void getQtiRadioCapability(Message result);
 }
