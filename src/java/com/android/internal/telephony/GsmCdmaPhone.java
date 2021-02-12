@@ -1211,13 +1211,12 @@ public class GsmCdmaPhone extends Phone {
             return false;
         }
 
-        Phone imsPhone = mImsPhone;
-        if (imsPhone != null
-                && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
-            return imsPhone.handleInCallMmiCommands(dialString);
-        }
-
         if (!isInCall()) {
+            Phone imsPhone = mImsPhone;
+            if (imsPhone != null
+                    && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
+                return imsPhone.handleInCallMmiCommands(dialString);
+            }
             return false;
         }
 
