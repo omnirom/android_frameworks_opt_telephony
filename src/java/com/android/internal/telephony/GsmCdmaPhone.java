@@ -90,6 +90,7 @@ import com.android.internal.telephony.dataconnection.TransportManager;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import com.android.internal.telephony.gsm.GsmMmiCode;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
+import com.android.internal.telephony.imsphone.ImsPhoneCallTracker;
 import com.android.internal.telephony.imsphone.ImsPhoneMmiCode;
 import com.android.internal.telephony.metrics.VoiceCallSessionStats;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -306,6 +307,8 @@ public class GsmCdmaPhone extends Phone {
                 EVENT_UICC_APPS_ENABLEMENT_SETTING_CHANGED, null, false);
 
         loadTtyMode();
+
+        CallManager.getInstance().registerPhone(this);
         logd("GsmCdmaPhone: constructor: sub = " + mPhoneId);
     }
 
@@ -1216,13 +1219,12 @@ public class GsmCdmaPhone extends Phone {
             return false;
         }
 
-        Phone imsPhone = mImsPhone;
-        if (imsPhone != null
-                && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
-            return imsPhone.handleInCallMmiCommands(dialString);
-        }
-
         if (!isInCall()) {
+            Phone imsPhone = mImsPhone;
+            if (imsPhone != null
+                    && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
+                return imsPhone.handleInCallMmiCommands(dialString);
+            }
             return false;
         }
 
@@ -1376,6 +1378,12 @@ public class GsmCdmaPhone extends Phone {
         }
 
         Phone.checkWfcWifiOnlyModeBeforeDial(mImsPhone, mPhoneId, mContext);
+        if (imsPhone != null && !allowWpsOverIms && !useImsForCall && isWpsCall
+                && imsPhone.getCallTracker() instanceof ImsPhoneCallTracker) {
+            logi("WPS call placed over CS; disconnecting all IMS calls..");
+            ImsPhoneCallTracker tracker = (ImsPhoneCallTracker) imsPhone.getCallTracker();
+            tracker.hangupAllConnections();
+        }
 
         if ((useImsForCall && (!isMmiCode || isPotentialUssdCode))
                 || (isMmiCode && useImsForUt)
@@ -1859,6 +1867,11 @@ public class GsmCdmaPhone extends Phone {
     @Override
     public void setCarrierInfoForImsiEncryption(ImsiEncryptionInfo imsiEncryptionInfo) {
         CarrierInfoManager.setCarrierInfoForImsiEncryption(imsiEncryptionInfo, mContext, mPhoneId);
+    }
+
+    @Override
+    public void deleteCarrierInfoForImsiEncryption() {
+        CarrierInfoManager.deleteCarrierInfoForImsiEncryption(mContext);
     }
 
     @Override
@@ -2727,6 +2740,8 @@ public class GsmCdmaPhone extends Phone {
                 break;
 
             case EVENT_CARRIER_CONFIG_CHANGED:
+                // Obtain new radio capabilities from the modem, since some are SIM-dependent
+                mCi.getRadioCapability(obtainMessage(EVENT_GET_RADIO_CAPABILITY));
                 // Only check for the voice radio tech if it not going to be updated by the voice
                 // registration changes.
                 if (!mContext.getResources().getBoolean(
