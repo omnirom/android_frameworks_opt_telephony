@@ -151,8 +151,10 @@ public class GsmCdmaPhone extends Phone {
     //CDMA
     private static final String VM_NUMBER_CDMA = "vm_number_key_cdma";
     private static final String PREFIX_WPS = "*272";
-    private static final String PREFIX_WPS_CLIR_ACTIVATE = "*31#*272";
+    // WPS prefix when CLIR is being deactivated for the call.
     private static final String PREFIX_WPS_CLIR_DEACTIVATE = "#31#*272";
+    // WPS prefix when CLIS is being activated for the call.
+    private static final String PREFIX_WPS_CLIR_ACTIVATE = "*31#*272";
     private CdmaSubscriptionSourceManager mCdmaSSM;
     public int mCdmaSubscriptionSource = CdmaSubscriptionSourceManager.SUBSCRIPTION_SOURCE_UNKNOWN;
     private PowerManager.WakeLock mWakeLock;
@@ -1219,13 +1221,12 @@ public class GsmCdmaPhone extends Phone {
             return false;
         }
 
-        Phone imsPhone = mImsPhone;
-        if (imsPhone != null
-                && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
-            return imsPhone.handleInCallMmiCommands(dialString);
-        }
-
         if (!isInCall()) {
+            Phone imsPhone = mImsPhone;
+            if (imsPhone != null
+                    && imsPhone.getServiceState().getState() == ServiceState.STATE_IN_SERVICE) {
+                return imsPhone.handleInCallMmiCommands(dialString);
+            }
             return false;
         }
 
@@ -1334,9 +1335,9 @@ public class GsmCdmaPhone extends Phone {
                 .getBoolean(CarrierConfigManager.KEY_CARRIER_USE_IMS_FIRST_FOR_EMERGENCY_BOOL);
 
         /** Check if the call is Wireless Priority Service call */
-        boolean isWpsCall = dialString != null ? (dialString.startsWith(PREFIX_WPS) ||
-                dialString.startsWith(PREFIX_WPS_CLIR_ACTIVATE) ||
-                dialString.startsWith(PREFIX_WPS_CLIR_DEACTIVATE)) : false;
+        boolean isWpsCall = dialString != null ? (dialString.startsWith(PREFIX_WPS)
+                || dialString.startsWith(PREFIX_WPS_CLIR_ACTIVATE)
+                || dialString.startsWith(PREFIX_WPS_CLIR_DEACTIVATE)) : false;
         boolean allowWpsOverIms = configManager.getConfigForSubId(getSubId())
                 .getBoolean(CarrierConfigManager.KEY_SUPPORT_WPS_OVER_IMS_BOOL);
 
