@@ -1780,7 +1780,7 @@ public class SubscriptionController extends ISub.Stub {
         // Now that all security checks passes, perform the operation as ourselves.
         final long identity = Binder.clearCallingIdentity();
         try {
-            validateSubId(subId);
+            if (!isActiveSubId(subId)) return 0;
             ContentValues value = new ContentValues(1);
             value.put(SubscriptionManager.HUE, tint);
             if (DBG) logd("[setIconTint]- tint:" + tint + " set");
@@ -1896,7 +1896,7 @@ public class SubscriptionController extends ISub.Stub {
         // Now that all security checks passes, perform the operation as ourselves.
         final long identity = Binder.clearCallingIdentity();
         try {
-            validateSubId(subId);
+            if (!isActiveSubId(subId)) return 0;
             List<SubscriptionInfo> allSubInfo = getSubInfo(null, null);
             // if there is no sub in the db, return 0 since subId does not exist in db
             if (allSubInfo == null || allSubInfo.isEmpty()) return 0;

@@ -2230,6 +2230,10 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         if (DBG) log("sendDtmf");
 
         ImsCall imscall = mForegroundCall.getImsCall();
+        if (imscall == null) {
+            log("sendDtmf : ring call");
+            imscall =  mRingingCall.getImsCall();
+        }
         if (imscall != null) {
             imscall.sendDtmf(c, result);
         }
@@ -2240,10 +2244,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         if (DBG) log("startDtmf");
 
         ImsCall imscall = mForegroundCall.getImsCall();
+        if (imscall == null) {
+            log("startDtmf : ring call");
+            imscall =  mRingingCall.getImsCall();
+        }
         if (imscall != null) {
             imscall.startDtmf(c);
         } else {
-            loge("startDtmf : no foreground call");
+            loge("startDtmf : no foreground or ringing call");
         }
     }
 
@@ -2252,10 +2260,14 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         if (DBG) log("stopDtmf");
 
         ImsCall imscall = mForegroundCall.getImsCall();
+        if (imscall == null) {
+            log("stopDtmf : ring call");
+            imscall =  mRingingCall.getImsCall();
+        }
         if (imscall != null) {
             imscall.stopDtmf();
         } else {
-            loge("stopDtmf : no foreground call");
+            loge("stopDtmf : no foreground or ringing call");
         }
     }
 
