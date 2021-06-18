@@ -1824,9 +1824,9 @@ public class DcTrackerTest extends TelephonyTest {
         clearInvocations(mHandler);
     }
 
-    private void setUpSubscriptionPlans(boolean is5GUnmetered) throws Exception {
+    private void setUpSubscriptionPlans(boolean isNrUnmetered) throws Exception {
         List<SubscriptionPlan> plans = new ArrayList<>();
-        if (is5GUnmetered) {
+        if (isNrUnmetered) {
             plans.add(SubscriptionPlan.Builder
                     .createRecurring(ZonedDateTime.parse("2007-03-14T00:00:00.000Z"),
                             Period.ofMonths(1))
@@ -1842,6 +1842,10 @@ public class DcTrackerTest extends TelephonyTest {
                 .setDataUsage(500_000_000, System.currentTimeMillis())
                 .build());
         replaceInstance(DcTracker.class, "mSubscriptionPlans", mDct, plans);
+    }
+
+    private void resetSubscriptionPlans() throws Exception {
+        replaceInstance(DcTracker.class, "mSubscriptionPlans", mDct, null);
     }
 
     private boolean isNetworkTypeUnmetered(int networkType) throws Exception {
@@ -1883,6 +1887,18 @@ public class DcTrackerTest extends TelephonyTest {
         return (boolean) field.get(mDct);
     }
 
+    private void setUpTempNotMetered() {
+        doReturn((int) TelephonyManager.NETWORK_TYPE_BITMASK_NR)
+                .when(mPhone).getRadioAccessFamily();
+        doReturn(1).when(mPhone).getSubId();
+        mBundle.putBoolean(CarrierConfigManager.KEY_NETWORK_TEMP_NOT_METERED_SUPPORTED_BOOL, true);
+        Intent intent = new Intent(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
+        intent.putExtra(CarrierConfigManager.EXTRA_SLOT_INDEX, mPhone.getPhoneId());
+        intent.putExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX, mPhone.getSubId());
+        mContext.sendBroadcast(intent);
+        waitForLastHandlerAction(mDcTrackerTestHandler.getThreadHandler());
+    }
+
     @Test
     public void testIsNetworkTypeUnmetered() throws Exception {
         initApns(PhoneConstants.APN_TYPE_DEFAULT, new String[]{PhoneConstants.APN_TYPE_ALL});
@@ -1906,7 +1922,6 @@ public class DcTrackerTest extends TelephonyTest {
         plans.add(SubscriptionPlan.Builder
                 .createRecurring(ZonedDateTime.parse("2007-03-14T00:00:00.000Z"),
                         Period.ofMonths(1))
-                .setTitle("Some 5GB Plan")
                 .setDataLimit(SubscriptionPlan.BYTES_UNLIMITED,
                         SubscriptionPlan.LIMIT_BEHAVIOR_THROTTLED)
                 .build());
@@ -1915,6 +1930,8 @@ public class DcTrackerTest extends TelephonyTest {
         assertTrue(isNetworkTypeUnmetered(TelephonyManager.NETWORK_TYPE_NR));
         assertTrue(isNetworkTypeUnmetered(TelephonyManager.NETWORK_TYPE_LTE));
         assertTrue(isNetworkTypeUnmetered(TelephonyManager.NETWORK_TYPE_UNKNOWN));
+
+        resetSubscriptionPlans();
     }
 
     @Test
@@ -1926,7 +1943,7 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn(new TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_LTE,
                 TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA))
                 .when(mDisplayInfoController).getTelephonyDisplayInfo();
-        doReturn(1).when(mPhone).getSubId();
+        setUpTempNotMetered();
 
         // NetCapability should be metered when connected to 5G with no unmetered plan or frequency
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_TELEPHONY_DISPLAY_INFO_CHANGED));
@@ -1963,6 +1980,7 @@ public class DcTrackerTest extends TelephonyTest {
         verify(mDataConnection, times(2)).onMeterednessChanged(true);
 
         resetDataConnection(id);
+        resetSubscriptionPlans();
     }
 
     @Test
@@ -1974,7 +1992,7 @@ public class DcTrackerTest extends TelephonyTest {
         doReturn(new TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_LTE,
                 TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA))
                 .when(mDisplayInfoController).getTelephonyDisplayInfo();
-        doReturn(1).when(mPhone).getSubId();
+        setUpTempNotMetered();
 
         // NetCapability should be metered when connected to 5G with no unmetered plan or frequency
         mDct.sendMessage(mDct.obtainMessage(DctConstants.EVENT_TELEPHONY_DISPLAY_INFO_CHANGED));
@@ -2024,6 +2042,7 @@ public class DcTrackerTest extends TelephonyTest {
         verify(mDataConnection, times(2)).onMeterednessChanged(true);
 
         resetDataConnection(id);
+        resetSubscriptionPlans();
     }
 
     @Test
@@ -2032,6 +2051,7 @@ public class DcTrackerTest extends TelephonyTest {
         int id = setUpDataConnection();
         setUpSubscriptionPlans(true);
         setUpWatchdogTimer();
+        setUpTempNotMetered();
 
         // NetCapability should be unmetered when connected to 5G
         doReturn(new TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_LTE,
@@ -2052,6 +2072,7 @@ public class DcTrackerTest extends TelephonyTest {
         verify(mDataConnection, times(1)).onMeterednessChanged(false);
 
         resetDataConnection(id);
+        resetSubscriptionPlans();
     }
 
     @Test
@@ -2084,6 +2105,7 @@ public class DcTrackerTest extends TelephonyTest {
         assertFalse(getWatchdogStatus());
 
         resetDataConnection(id);
+        resetSubscriptionPlans();
     }
 
     /**
