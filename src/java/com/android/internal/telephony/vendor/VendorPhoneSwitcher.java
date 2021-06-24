@@ -20,6 +20,9 @@ import static android.telephony.SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
 import static android.telephony.SubscriptionManager.INVALID_PHONE_INDEX;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 import static android.telephony.TelephonyManager.RADIO_POWER_UNAVAILABLE;
+import static android.telephony.TelephonyManager.SIM_STATE_PIN_REQUIRED;
+import static android.telephony.TelephonyManager.SIM_STATE_PUK_REQUIRED;
+import static android.telephony.TelephonyManager.SIM_STATE_NETWORK_LOCKED;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -245,6 +248,17 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
         }
     }
 
+    private boolean isSimLocked(int phoneId) {
+        final int simState = mSubscriptionController.getSimStateForSlotIndex(phoneId);
+        if (SIM_STATE_PIN_REQUIRED == simState
+                || SIM_STATE_PUK_REQUIRED == simState
+                || SIM_STATE_NETWORK_LOCKED == simState) {
+            log("SIM locked for phoneId: " + phoneId);
+            return true;
+        }
+        return false;
+    }
+
     @Override
     protected boolean onEvaluate(boolean requestsChanged, String reason) {
         if (!com.android.internal.telephony.SubscriptionInfoUpdater.isSubInfoInitialized()) {
@@ -273,10 +287,10 @@ public class VendorPhoneSwitcher extends PhoneSwitcher {
         for (int i = 0; i < mActiveModemCount; i++) {
             int sub = mSubscriptionController.getSubIdUsingPhoneId(i);
 
-            if (SubscriptionManager.isValidSubscriptionId(sub) && isSimReady(i)) {
+            if (SubscriptionManager.isValidSubscriptionId(sub) && !isSimLocked(i)) {
                 hasAnyActiveSubscription = true;
             } else {
-		log("slot" + i + " not a valid subscription");
+                log("slot" + i + " not a valid subscription or locked");
             }
 
             if (sub != mPhoneSubscriptions[i]) {
