@@ -1698,7 +1698,7 @@ public class PersistAtomsStorage {
                             Files.readAllBytes(mContext.getFileStreamPath(FILENAME).toPath()));
             // Start from scratch if build changes, since mixing atoms from different builds could
             // produce strange results
-            if (!Build.FINGERPRINT.equals(atoms.buildFingerprint)) {
+            if (!String.valueOf(Build.TIME).equals(atoms.buildFingerprint)) {
                 Rlog.d(TAG, "Build changed");
                 return makeNewPersistAtoms();
             }
@@ -2627,7 +2627,7 @@ public class PersistAtomsStorage {
         PersistAtoms atoms = new PersistAtoms();
         // allow pulling only after some time so data are sufficiently aggregated
         long currentTime = getWallTimeMillis();
-        atoms.buildFingerprint = Build.FINGERPRINT;
+        atoms.buildFingerprint = String.valueOf(Build.TIME);
         atoms.voiceCallRatUsagePullTimestampMillis = currentTime;
         atoms.voiceCallSessionPullTimestampMillis = currentTime;
         atoms.incomingSmsPullTimestampMillis = currentTime;
