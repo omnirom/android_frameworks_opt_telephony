@@ -37,7 +37,6 @@ import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.uicc.IccIoResult;
 import com.android.internal.telephony.uicc.IccUtils;
-import androidx.test.InstrumentationRegistry;
 
 import org.junit.After;
 import org.junit.Before;
@@ -94,8 +93,7 @@ public class ApduSenderTest {
         mResponseCaptor = new ResponseCaptor();
         mSelectResponse = null;
 
-        mSender = new ApduSender(InstrumentationRegistry.getContext(), 0 /* phoneId= */,
-                            mMockCi, AID, false /* supportExtendedApdu */);
+        mSender = new ApduSender(mMockCi, AID, false /* supportExtendedApdu */);
         mLooper = TestableLooper.get(this);
     }
 
