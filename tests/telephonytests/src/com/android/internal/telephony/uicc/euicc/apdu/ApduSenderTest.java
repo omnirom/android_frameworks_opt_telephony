@@ -110,7 +110,7 @@ public class ApduSenderTest {
     @Test
     public void testSendEmptyCommands() throws InterruptedException {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "A1A1A19000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         mSender.send((selectResponse, requestBuilder) -> mSelectResponse = selectResponse,
                 mResponseCaptor, mHandler);
@@ -142,7 +142,7 @@ public class ApduSenderTest {
     public void testSend() throws InterruptedException {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A1A1A19000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         mSender.send((selectResponse, requestBuilder) -> requestBuilder.addApdu(
                 10, 1, 2, 3, 0, "a"), mResponseCaptor, mHandler);
@@ -158,7 +158,7 @@ public class ApduSenderTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A19000", "A29000",
                 "A39000", "A49000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         mSender.send((selectResponse, requestBuilder) -> {
             requestBuilder.addApdu(10, 1, 2, 3, 0, "a");
@@ -184,7 +184,7 @@ public class ApduSenderTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A19000", "A29000",
                 "A39000", "A49000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
         mResponseCaptor.stopApduIndex = 2;
 
         mSender.send((selectResponse, requestBuilder) -> {
@@ -209,7 +209,7 @@ public class ApduSenderTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A1A1A16104",
                 "B2B2B2B26102", "C3C39000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         mSender.send((selectResponse, requestBuilder) -> requestBuilder.addApdu(
                 10, 1, 2, 3, 0, "a"), mResponseCaptor, mHandler);
@@ -229,7 +229,7 @@ public class ApduSenderTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A19000", "9000", "9000",
                 "B22B6103", "B2222B9000", "C39000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         // Each segment has 0xFF (the limit of a single command) bytes.
         String s1 = new String(new char[0xFF]).replace("\0", "AA");
@@ -260,7 +260,7 @@ public class ApduSenderTest {
     public void testSendStoreDataLongDataMod0() throws InterruptedException {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "9000", "B2222B9000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         // Each segment has 0xFF (the limit of a single command) bytes.
         String s1 = new String(new char[0xFF]).replace("\0", "AA");
@@ -282,7 +282,7 @@ public class ApduSenderTest {
     public void testSendStoreDataLen0() throws InterruptedException {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "B2222B9000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         mSender.send((selectResponse, requestBuilder) -> {
             requestBuilder.addStoreData("");
@@ -299,7 +299,7 @@ public class ApduSenderTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, "A19000", "9000",
                 "B22B6103", "6985");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         // Each segment has 0xFF (the limit of a single command) bytes.
         String s1 = new String(new char[0xFF]).replace("\0", "AA");
@@ -326,7 +326,7 @@ public class ApduSenderTest {
     @Test
     public void testChannelAlreadyOpened() throws InterruptedException {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi, "9000");
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
 
         ResponseCaptor outerResponseCaptor = new ResponseCaptor();
         mSender.send(

@@ -16,6 +16,8 @@
 
 package com.android.internal.telephony.uicc;
 
+import static com.android.internal.telephony.util.TelephonyUtils.FORCE_VERBOSE_STATE_LOGGING;
+
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -59,7 +61,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class IccRecords extends Handler implements IccConstants {
     private static final String LOG_TAG = "IccRecords";
     protected static final boolean DBG = true;
-    private static final boolean FORCE_VERBOSE_STATE_LOGGING = false; /* stopship if true */
     protected static final boolean VDBG =  FORCE_VERBOSE_STATE_LOGGING ||
             Rlog.isLoggable(LOG_TAG, Log.VERBOSE);
 

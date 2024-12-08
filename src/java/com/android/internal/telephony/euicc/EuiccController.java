@@ -25,7 +25,6 @@ import android.annotation.Nullable;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.admin.DevicePolicyManager;
-import android.app.admin.flags.Flags;
 import android.app.compat.CompatChanges;
 import android.content.ComponentName;
 import android.content.Context;
@@ -622,24 +621,21 @@ public class EuiccController extends IEuiccController.Stub {
             Bundle resolvedBundle, PendingIntent callbackIntent) {
         mAppOpsManager.checkPackage(Binder.getCallingUid(), callingPackage);
 
-        boolean callerHasAdminPrivileges = false;
-        if (Flags.esimManagementEnabled()) {
-            callerHasAdminPrivileges = callerCanManageDevicePolicyManagedSubscriptions(
-                    callingPackage);
-            if (callerHasAdminPrivileges && (switchAfterDownload && !shouldAllowSwitchAfterDownload(
-                    callingPackage))) {
-                // Throw error if calling admin does not have privileges to enable
-                // subscription silently after download but switchAfterDownload is passed as true.
-                sendResult(callbackIntent, ERROR, null);
-                return;
-            }
-            if (mContext.getSystemService(UserManager.class).hasUserRestriction(
-                    UserManager.DISALLOW_SIM_GLOBALLY) && !callerHasAdminPrivileges) {
-                // Only admin managed subscriptions are allowed, but the caller is not authorised to
-                // download admin managed subscriptions. Abort.
-                sendResult(callbackIntent, ERROR, null);
-                return;
-            }
+        boolean callerHasAdminPrivileges =
+                callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
+        if (callerHasAdminPrivileges && (switchAfterDownload && !shouldAllowSwitchAfterDownload(
+                callingPackage))) {
+            // Throw error if calling admin does not have privileges to enable
+            // subscription silently after download but switchAfterDownload is passed as true.
+            sendResult(callbackIntent, ERROR, null);
+            return;
+        }
+        if (mContext.getSystemService(UserManager.class).hasUserRestriction(
+                UserManager.DISALLOW_SIM_GLOBALLY) && !callerHasAdminPrivileges) {
+            // Only admin managed subscriptions are allowed, but the caller is not authorised to
+            // download admin managed subscriptions. Abort.
+            sendResult(callbackIntent, ERROR, null);
+            return;
         }
         // Don't try to resolve the port index for apps which are not targeting on T for backward
         // compatibility. instead always use default port 0.
@@ -837,7 +833,7 @@ public class EuiccController extends IEuiccController.Stub {
                 subscription,
                 switchAfterDownload,
                 forceDeactivateSim,
-                resolvedBundle,
+                addCallingPackageToBundle(resolvedBundle, callingPackage),
                 new EuiccConnector.DownloadCommandCallback() {
                     @Override
                     public void onDownloadComplete(DownloadSubscriptionResult result) {
@@ -934,6 +930,13 @@ public class EuiccController extends IEuiccController.Stub {
                         sendResult(callbackIntent, ERROR, null /* extrasIntent */);
                     }
                 });
+    }
+
+    private static Bundle addCallingPackageToBundle(
+                @Nullable Bundle resolvedBundle, String callingPackage) {
+        resolvedBundle = resolvedBundle == null ? new Bundle() : resolvedBundle;
+        resolvedBundle.putString(EuiccService.EXTRA_PACKAGE_NAME, callingPackage);
+        return resolvedBundle;
     }
 
     /**
@@ -1070,9 +1073,7 @@ public class EuiccController extends IEuiccController.Stub {
     public void deleteSubscription(int cardId, int subscriptionId, String callingPackage,
             PendingIntent callbackIntent) {
         boolean callerCanWriteEmbeddedSubscriptions = callerCanWriteEmbeddedSubscriptions();
-        boolean callerIsAdmin =
-                Flags.esimManagementEnabled()
-                        && callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
+        boolean callerIsAdmin = callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
         mAppOpsManager.checkPackage(Binder.getCallingUid(), callingPackage);
 
         long token = Binder.clearCallingIdentity();
@@ -1745,7 +1746,7 @@ public class EuiccController extends IEuiccController.Stub {
 
     private void refreshSubscriptionsOwnership(boolean isCallerAdmin, String callingPackage,
             int cardId, Set<Integer> subscriptionsBefore) {
-        if (Flags.esimManagementEnabled() && isCallerAdmin) {
+        if (isCallerAdmin) {
             // Mark the newly downloaded subscriptions as being owned by an admin so
             // that actions for that subscription can be restricted,
             // and the admin is limited to effecting only these subscriptions.
@@ -1854,7 +1855,12 @@ public class EuiccController extends IEuiccController.Stub {
         if (bestComponent != null) {
             intent.setPackage(bestComponent.packageName);
         }
-        mContext.sendBroadcast(intent, permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
+        if (mFeatureFlags.hsumBroadcast()) {
+            mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
+                    permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
+        } else {
+            mContext.sendBroadcast(intent, permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
+        }
     }
 
     @Nullable
@@ -1871,9 +1877,6 @@ public class EuiccController extends IEuiccController.Stub {
     }
 
     private Set<Integer> getCurrentEmbeddedSubscriptionIds(int cardId) {
-        if (!Flags.esimManagementEnabled()) {
-            return new ArraySet<>();
-        }
         List<SubscriptionInfo> subscriptionInfos =
                 mSubscriptionManager.getAvailableSubscriptionInfoList();
         int subCount = (subscriptionInfos != null) ? subscriptionInfos.size() : 0;

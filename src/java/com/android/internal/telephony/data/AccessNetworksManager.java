@@ -414,15 +414,19 @@ public class AccessNetworksManager extends Handler {
 
         // bindQualifiedNetworksService posts real work to handler thread. So here we can
         // let the callback execute in binder thread to avoid post twice.
-        mCarrierConfigManager.registerCarrierConfigChangeListener(Runnable::run,
-                (slotIndex, subId, carrierId, specificCarrierId) -> {
-                    if (slotIndex != mPhone.getPhoneId()) return;
-                    // We should wait for carrier config changed event because the target binding
-                    // package name can come from the carrier config. Note that we still get this
-                    // event even when SIM is absent.
-                    if (DBG) log("Carrier config changed. Try to bind qualified network service.");
-                    bindQualifiedNetworksService();
-                });
+        if (mCarrierConfigManager != null) {
+            mCarrierConfigManager.registerCarrierConfigChangeListener(Runnable::run,
+                    (slotIndex, subId, carrierId, specificCarrierId) -> {
+                        if (slotIndex != mPhone.getPhoneId()) return;
+                        // We should wait for carrier config changed event because the target
+                        // binding package name can come from the carrier config. Note that we still
+                        // get this event even when SIM is absent.
+                        if (DBG) {
+                            log("Carrier config changed. Try to bind qualified network service.");
+                        }
+                        bindQualifiedNetworksService();
+                    });
+        }
         bindQualifiedNetworksService();
 
         // Using post to delay the registering because data retry manager and data config

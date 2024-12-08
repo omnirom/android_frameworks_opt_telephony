@@ -45,6 +45,7 @@ import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.location.Country;
 import android.location.CountryDetector;
+import android.os.Binder;
 import android.os.HandlerThread;
 import android.os.Message;
 import android.os.RemoteException;
@@ -114,6 +115,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
 
     private GsmSMSDispatcher mGsmSmsDispatcher;
     private GsmSmsDispatcherTestHandler mGsmSmsDispatcherTestHandler;
+    private int mCallingUserId;
 
     private class GsmSmsDispatcherTestHandler extends HandlerThread {
 
@@ -149,6 +151,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         waitUntilReady();
         mGsmSmsDispatcher = new GsmSMSDispatcher(mPhone, mSmsDispatchersController,
                 mGsmInboundSmsHandler);
+        mCallingUserId = Binder.getCallingUserHandle().getIdentifier();
         processAllMessages();
     }
 
@@ -177,7 +180,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
                 .thenReturn(new Country("US", Country.COUNTRY_SOURCE_SIM));
 
         mGsmSmsDispatcher.sendText("6501002000", "121" /*scAddr*/, "test sms",
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
 
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), anyString(), any(Message.class));
         // Blocked number provider is notified about the emergency contact asynchronously.
@@ -197,7 +200,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
 
         mGsmSmsDispatcher.sendText(
                 getEmergencyNumberFromSystemPropertiesOrDefault(), "121" /*scAddr*/, "test sms",
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
 
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), anyString(), any(Message.class));
         // Blocked number provider is notified about the emergency contact asynchronously.
@@ -245,7 +248,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         // send invalid dest address: +
         mReceivedTestIntent = false;
         mGsmSmsDispatcher.sendText("+", "222" /*scAddr*/, TAG,
-                pendingIntent, null, null, null, false, -1, false, -1, false, 0L);
+                pendingIntent, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         waitForMs(500);
         verify(mSimulatedCommandsVerifier, times(0)).sendSMS(anyString(), anyString(),
                 any(Message.class));
@@ -310,7 +313,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         // send SMS and check sentIntent
         mReceivedTestIntent = false;
         mGsmSmsDispatcher.sendMultipartText("+123" /*destAddr*/, "222" /*scAddr*/, parts,
-                sentIntents, null, null, null, false, -1, false, -1, 0L);
+                sentIntents, null, null, null, mCallingUserId, false, -1, false, -1, 0L);
 
         waitForMs(500);
         synchronized (mLock) {
@@ -390,7 +393,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         mReceivedTestIntent = false;
 
         mGsmSmsDispatcher.sendText("6501002000", "121" /*scAddr*/, "test sms",
-                pendingIntent, null, null, null, false, -1, false, -1, false, 0L);
+                pendingIntent, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         processAllMessages();
         synchronized (mLock) {
             if (!mReceivedTestIntent) {
@@ -414,7 +417,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         mGsmSmsDispatcher.mCarrierMessagingTimeout = 100;
 
         mGsmSmsDispatcher.sendText("6501002000", "121" /*scAddr*/, "test sms",
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         // wait for timeout
         waitForMs(150);
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), anyString(), any(Message.class));
@@ -428,7 +431,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         mockUiccWithCarrierApp();
 
         mGsmSmsDispatcher.sendText("6501002000", "121" /*scAddr*/, "test sms",
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         processAllMessages();
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), anyString(), any(Message.class));
     }
@@ -452,7 +455,8 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         sentIntents.add(sentIntent2);
 
         mGsmSmsDispatcher.sendMultipartText("6501002000" /*destAddr*/, "222" /*scAddr*/, parts,
-                withSentIntents ? sentIntents : null, null, null, null, false, -1, false, -1, 0L);
+                withSentIntents ? sentIntents : null, null, null, null, mCallingUserId,
+                false, -1, false, -1, 0L);
     }
 
     @Test
@@ -524,7 +528,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         }
 
         mGsmSmsDispatcher.sendText("111", "222" /*scAddr*/, TAG,
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
 
         ArgumentCaptor<String> pduCaptor = ArgumentCaptor.forClass(String.class);
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), pduCaptor.capture(),
@@ -545,7 +549,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
             messageRef += parts.size();
         }
         mGsmSmsDispatcher.sendMultipartText("6501002000" /*destAddr*/, "222" /*scAddr*/, parts,
-                null, null, null, null, false, -1, false, -1, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, 0L);
         waitForMs(150);
         ArgumentCaptor<String> pduCaptor = ArgumentCaptor.forClass(String.class);
 
@@ -561,14 +565,14 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
     @Test
     public void testSendTextWithMessageRefNegativeBoundaryCondition() throws Exception {
         mIsimUiccRecords = new IsimUiccRecords(mUiccCardApplication3gpp, mContext,
-                mSimulatedCommands);
+                mSimulatedCommands, mFeatureFlags);
         doReturn(mIsimUiccRecords).when(mPhone).getIccRecords();
         Message msg = mGsmSmsDispatcher.obtainMessage(17);
         mPhone.getIccRecords().setSmssTpmrValue(-1, msg);
         mSubscriptionManagerService.setLastUsedTPMessageReference(mPhone.getSubId(), -1);
 
         mGsmSmsDispatcher.sendText("111", "222" /*scAddr*/, TAG,
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
 
         ArgumentCaptor<String> pduCaptor = ArgumentCaptor.forClass(String.class);
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), pduCaptor.capture(),
@@ -580,12 +584,12 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
     @Test
     public void testSendTextWithMessageRefMaxBoundaryCondition() throws Exception {
         mIsimUiccRecords = new IsimUiccRecords(mUiccCardApplication3gpp, mContext,
-                mSimulatedCommands);
+                mSimulatedCommands, mFeatureFlags);
         doReturn(mIsimUiccRecords).when(mPhone).getIccRecords();
         Message msg = mGsmSmsDispatcher.obtainMessage(17);
         mPhone.getIccRecords().setSmssTpmrValue(255, msg);
         mGsmSmsDispatcher.sendText("111", "222" /*scAddr*/, TAG,
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
 
         ArgumentCaptor<String> pduCaptor = ArgumentCaptor.forClass(String.class);
         verify(mSimulatedCommandsVerifier).sendSMS(anyString(), pduCaptor.capture(),

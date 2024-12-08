@@ -254,7 +254,7 @@ public class SimultaneousCallingTrackerTest extends TelephonyTest {
 
     /**
      * Test that simultaneous calling is not supported when IMS is not registered and cellular
-     * simultaneous calling is only supported for one SIM subscription.
+     * simultaneous calling is not supported for any SIM subscriptions.
      */
     @Test
     @SmallTest
@@ -264,8 +264,8 @@ public class SimultaneousCallingTrackerTest extends TelephonyTest {
         init(2);
         setAndVerifyStaticCapability(STATIC_DSDA_CAPABILITY);
 
-        // Have the modem inform telephony that only phone slot 0 supports DSDA:
-        List<Integer> enabledLogicalSlots = List.of(0);
+        // Have the modem inform telephony that no phone slots currently support DSDA:
+        List<Integer> enabledLogicalSlots = List.of();
         setAndVerifySlotsSupportingSimultaneousCellularCalling(enabledLogicalSlots);
 
         // Trigger onSubscriptionsChanged by updating the subscription ID of a phone slot:

@@ -74,7 +74,7 @@ public class UiccCardApplicationTest extends TelephonyTest {
         mUiccCardAppStatus.pin2 = IccCardStatus.PinState.PINSTATE_ENABLED_VERIFIED;
 
         mUiccCardApplication = new UiccCardApplication(mUiccProfile, mUiccCardAppStatus,
-            mContext, mSimulatedCommands);
+            mContext, mSimulatedCommands, mFeatureFlags);
         mHandler = new Handler() {
             @Override
             public void handleMessage(Message msg) {

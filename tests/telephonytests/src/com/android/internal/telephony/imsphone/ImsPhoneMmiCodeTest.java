@@ -19,10 +19,13 @@ package com.android.internal.telephony.imsphone;
 import static junit.framework.Assert.fail;
 
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.os.AsyncResult;
@@ -35,6 +38,7 @@ import android.testing.TestableLooper;
 import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.CommandException;
+import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.TelephonyTest;
 import com.android.internal.telephony.flags.FeatureFlags;
 
@@ -54,6 +58,9 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
     private static final String TEST_DIAL_STRING_SERVICE_CODE = "*67911";
     private static final String TEST_DIAL_STRING_NO_SERVICE_CODE = "*767911";
     private static final String TEST_DIAL_STRING_NON_EMERGENCY_NUMBER = "11976";
+    private static final String TEST_DIAL_NUMBER = "123456789";
+    private static final String TEST_DIAL_STRING_CFNRY_ACTIVE_CODE = "**61*" + TEST_DIAL_NUMBER;
+    private static final String TEST_DIAL_STRING_CFNRY_DEACTIVE_CODE = "##61#";
     private ImsPhoneMmiCode mImsPhoneMmiCode;
     private ImsPhone mImsPhoneUT;
 
@@ -90,7 +97,7 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
         // Test *67911 is treated as temporary mode CLIR
         doReturn(true).when(mTelephonyManager).isEmergencyNumber(TEST_DIAL_STRING_SERVICE_CODE);
         mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(TEST_DIAL_STRING_SERVICE_CODE,
-                mImsPhoneUT);
+                mImsPhoneUT, mFeatureFlags);
         assertTrue(mImsPhoneMmiCode.isTemporaryModeCLIR());
     }
 
@@ -99,7 +106,7 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
         // Test if prefix isn't *67 or *82
         doReturn(true).when(mTelephonyManager).isEmergencyNumber(TEST_DIAL_STRING_NO_SERVICE_CODE);
         mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(TEST_DIAL_STRING_NO_SERVICE_CODE,
-                mImsPhoneUT);
+                mImsPhoneUT, mFeatureFlags);
         assertTrue(mImsPhoneMmiCode == null);
     }
 
@@ -107,13 +114,14 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
     public void testIsTemporaryModeCLIRForNonEmergencyNumber() {
         // Test if dialing string isn't an emergency number
         mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(TEST_DIAL_STRING_NON_EMERGENCY_NUMBER,
-                mImsPhoneUT);
+                mImsPhoneUT, mFeatureFlags);
         assertTrue(mImsPhoneMmiCode == null);
     }
 
     @Test
     public void testNoCrashOnEmptyMessage() {
-        ImsPhoneMmiCode mmi = ImsPhoneMmiCode.newNetworkInitiatedUssd(null, true, mImsPhoneUT);
+        ImsPhoneMmiCode mmi = ImsPhoneMmiCode.newNetworkInitiatedUssd(null, true, mImsPhoneUT,
+                mFeatureFlags);
         try {
             mmi.onUssdFinishedError();
         } catch (Exception e) {
@@ -134,7 +142,8 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testOperationNotSupported() {
-        mImsPhoneMmiCode = ImsPhoneMmiCode.newNetworkInitiatedUssd(null, true, mImsPhoneUT);
+        mImsPhoneMmiCode = ImsPhoneMmiCode.newNetworkInitiatedUssd(null, true, mImsPhoneUT,
+                mFeatureFlags);
 
         // Emulate request not supported from the network.
         AsyncResult ar = new AsyncResult(null, null,
@@ -142,5 +151,81 @@ public class ImsPhoneMmiCodeTest extends TelephonyTest {
         mImsPhoneMmiCode.getMmiErrorMessage(ar);
         verify(mContext.getResources()).getText(
                 eq(com.android.internal.R.string.mmiErrorNotSupported));
+    }
+
+    @Test
+    @SmallTest
+    public void testActivationCfnrWithCfnry() throws Exception {
+        doNothing().when(mImsPhone).setCallForwardingOption(
+                anyInt(), anyInt(), any(), anyInt(), anyInt(), any());
+
+        doReturn(true).when(mFeatureFlags).useCarrierConfigForCfnryTimeViaMmi();
+
+        int carrierConfigTime = 40;
+        PersistableBundle bundle = new PersistableBundle();
+        bundle.putInt(CarrierConfigManager
+                .KEY_NO_REPLY_TIMER_FOR_CFNRY_SEC_INT, carrierConfigTime);
+        doReturn(bundle).when(mCarrierConfigManager).getConfigForSubId(anyInt());
+
+        int mmiTime = 30;
+        String withoutTimeCode = TEST_DIAL_STRING_CFNRY_ACTIVE_CODE + "#";
+        String withTimeCode = TEST_DIAL_STRING_CFNRY_ACTIVE_CODE + "**" + mmiTime + "#";
+
+        mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(withoutTimeCode, mImsPhoneUT,
+                mFeatureFlags);
+        // For verification, replace the internal object of target with mock
+        replaceInstance(ImsPhoneMmiCode.class, "mPhone", mImsPhoneMmiCode, mImsPhone);
+
+        mImsPhoneMmiCode.processCode();
+        verify(mImsPhone, times(1)).setCallForwardingOption(
+                eq(CommandsInterface.CF_ACTION_REGISTRATION),
+                anyInt(),
+                eq(TEST_DIAL_NUMBER),
+                anyInt(),
+                eq(carrierConfigTime),
+                any());
+
+        mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(withTimeCode, mImsPhoneUT,
+                mFeatureFlags);
+        // For verification, replace the internal object of target with mock
+        replaceInstance(ImsPhoneMmiCode.class, "mPhone", mImsPhoneMmiCode, mImsPhone);
+
+        mImsPhoneMmiCode.processCode();
+        verify(mImsPhone, times(1)).setCallForwardingOption(
+                eq(CommandsInterface.CF_ACTION_REGISTRATION),
+                anyInt(),
+                eq(TEST_DIAL_NUMBER),
+                anyInt(),
+                eq(mmiTime),
+                any());
+    }
+
+    @Test
+    @SmallTest
+    public void testDeactivationCfnrWithCfnry() throws Exception {
+        doNothing().when(mImsPhone).setCallForwardingOption(
+                anyInt(), anyInt(), any(), anyInt(), anyInt(), any());
+
+        doReturn(true).when(mFeatureFlags).useCarrierConfigForCfnryTimeViaMmi();
+
+        int carrierConfigTime = 40;
+        PersistableBundle bundle = new PersistableBundle();
+        bundle.putInt(CarrierConfigManager
+                .KEY_NO_REPLY_TIMER_FOR_CFNRY_SEC_INT, carrierConfigTime);
+        doReturn(bundle).when(mCarrierConfigManager).getConfigForSubId(anyInt());
+
+        mImsPhoneMmiCode = ImsPhoneMmiCode.newFromDialString(TEST_DIAL_STRING_CFNRY_DEACTIVE_CODE,
+                mImsPhoneUT, mFeatureFlags);
+        // For verification, replace the internal object of target with mock
+        replaceInstance(ImsPhoneMmiCode.class, "mPhone", mImsPhoneMmiCode, mImsPhone);
+
+        mImsPhoneMmiCode.processCode();
+        verify(mImsPhone, times(1)).setCallForwardingOption(
+                eq(CommandsInterface.CF_ACTION_ERASURE),
+                anyInt(),
+                eq(null),
+                anyInt(),
+                eq(carrierConfigTime),
+                any());
     }
 }

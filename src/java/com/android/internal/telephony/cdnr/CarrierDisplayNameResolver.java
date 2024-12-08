@@ -478,7 +478,8 @@ public class CarrierDisplayNameResolver {
         CarrierDisplayNameData data = getCarrierDisplayNameFromEf();
         if (DBG) Rlog.d(TAG, "CarrierName from EF: " + data);
         if ((mPhone.getImsPhone() != null) && (mPhone.getImsPhone().getImsRegistrationTech()
-                == ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM)) {
+                == ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM
+                && mPhone.isImsRegistered())) {
             data = getCarrierDisplayNameFromCrossSimCallingOverride(data);
             if (DBG) {
                 Rlog.d(TAG, "CarrierName override by Cross-SIM Calling " + data);

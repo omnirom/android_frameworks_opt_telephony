@@ -1477,6 +1477,17 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testSipRequestCancelled() {
+        doReturn(true).when(mFeatureFlags).remapDisconnectCauseSipRequestCancelled();
+
+        assertEquals(DisconnectCause.NORMAL,
+                mCTUT.getDisconnectCauseFromReasonInfo(
+                        new ImsReasonInfo(ImsReasonInfo.CODE_SIP_REQUEST_CANCELLED, 0),
+                        Call.State.DIALING));
+    }
+
+    @Test
+    @SmallTest
     public void testLowBatteryDisconnectDialing() {
         assertEquals(DisconnectCause.DIAL_LOW_BATTERY, mCTUT.getDisconnectCauseFromReasonInfo(
                 new ImsReasonInfo(ImsReasonInfo.CODE_LOCAL_LOW_BATTERY, 0), Call.State.DIALING));
@@ -2772,6 +2783,32 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         }
         assertNetworkStatsEquals(expectedStats, ifaceStatsCaptor.getValue());
         assertNetworkStatsEquals(expectedStats, uidStatsCaptor.getValue());
+    }
+
+    @Test
+    public void testPreventHangupDuringCallMerge() {
+        // Enable feature flag
+        doReturn(true).when(mFeatureFlags).preventHangupDuringCallMerge();
+
+        // Change carrier config to allow call hold for 2nd call setup
+        PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
+        bundle.putBoolean(CarrierConfigManager.KEY_ALLOW_HOLD_VIDEO_CALL_BOOL, true);
+        mCTUT.updateCarrierConfigCache(bundle);
+
+        // Place a call.
+        placeCallAndMakeActive();
+        // Place a 2nd call
+        ImsPhoneConnection imsPhoneConnection = placeCallAndMakeActive();
+
+        // Try call merge
+        mCTUT.conference();
+
+        try {
+            mCTUT.hangup(imsPhoneConnection.getCall());
+            fail("Expect CallStateException but not");
+        } catch  (CallStateException e) {
+            // Expected exception
+        }
     }
 
     private ImsPhoneConnection placeCallAndMakeActive() {

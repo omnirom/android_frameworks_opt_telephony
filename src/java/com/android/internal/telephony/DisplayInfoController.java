@@ -87,23 +87,26 @@ public class DisplayInfoController extends Handler {
         mLogTag = "DIC-" + mPhone.getPhoneId();
         mServiceState = mPhone.getServiceStateTracker().getServiceState();
         mConfigs = new PersistableBundle();
+        CarrierConfigManager ccm = mPhone.getContext().getSystemService(CarrierConfigManager.class);
         try {
-            mConfigs = mPhone.getContext().getSystemService(CarrierConfigManager.class)
-                    .getConfigForSubId(mPhone.getSubId(),
-                            CarrierConfigManager.KEY_SHOW_ROAMING_INDICATOR_BOOL);
+            if (ccm != null) {
+                mConfigs = ccm.getConfigForSubId(mPhone.getSubId(),
+                        CarrierConfigManager.KEY_SHOW_ROAMING_INDICATOR_BOOL);
+            }
         } catch (Exception ignored) {
             // CarrierConfigLoader might not be available yet.
             // Once it's available, configs will be updated through the listener.
         }
         mPhone.getServiceStateTracker()
                 .registerForServiceStateChanged(this, EVENT_SERVICE_STATE_CHANGED, null);
-        mPhone.getContext().getSystemService(CarrierConfigManager.class)
-                .registerCarrierConfigChangeListener(Runnable::run,
-                        (slotIndex, subId, carrierId, specificCarrierId) -> {
-                            if (slotIndex == mPhone.getPhoneId()) {
-                                obtainMessage(EVENT_CARRIER_CONFIG_CHANGED).sendToTarget();
-                            }
-                        });
+        if (ccm != null) {
+            ccm.registerCarrierConfigChangeListener(Runnable::run,
+                    (slotIndex, subId, carrierId, specificCarrierId) -> {
+                        if (slotIndex == mPhone.getPhoneId()) {
+                            obtainMessage(EVENT_CARRIER_CONFIG_CHANGED).sendToTarget();
+                        }
+                    });
+        }
         mTelephonyDisplayInfo = new TelephonyDisplayInfo(
                 TelephonyManager.NETWORK_TYPE_UNKNOWN,
                 TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE,

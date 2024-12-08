@@ -104,4 +104,22 @@ public class SatelliteConstants {
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface AccessControlType {}
+
+    //// Unknown reason.
+    public static final int TRIGGERING_EVENT_UNKNOWN = 0;
+    // Satellite Access Controller has been triggered by an external event.
+    public static final int TRIGGERING_EVENT_EXTERNAL_REQUEST = 1;
+    // Satellite Access Controller has been triggered by an MCC change event.
+    public static final int TRIGGERING_EVENT_MCC_CHANGED = 2;
+    //Satellite Access Controller has been triggered due to the location setting being enabled.
+    public static final int TRIGGERING_EVENT_LOCATION_SETTINGS_ENABLED = 3;
+
+    @IntDef(prefix = {"TRIGGERING_EVENT_"}, value = {
+            TRIGGERING_EVENT_UNKNOWN,
+            TRIGGERING_EVENT_EXTERNAL_REQUEST,
+            TRIGGERING_EVENT_MCC_CHANGED,
+            TRIGGERING_EVENT_LOCATION_SETTINGS_ENABLED
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface TriggeringEvent {}
 }

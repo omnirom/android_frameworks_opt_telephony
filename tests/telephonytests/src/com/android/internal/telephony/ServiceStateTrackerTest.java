@@ -26,6 +26,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.nullable;
@@ -594,7 +595,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         sst.setRadioPowerForReason(false, false, false, false, reason);
         assertTrue(sst.getRadioPowerOffReasons().contains(reason));
         assertTrue(sst.getRadioPowerOffReasons().size() == 1);
-        verify(mSatelliteController).onCellularRadioPowerOffRequested();
+        verify(mSatelliteController).onSetCellularRadioPowerStateRequested(eq(false));
         clearInvocations(mSatelliteController);
         waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
         assertTrue(mSimulatedCommands.getRadioState() == TelephonyManager.RADIO_POWER_OFF);
@@ -602,7 +603,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 TelephonyManager.RADIO_POWER_REASON_USER);
         assertTrue(sst.getRadioPowerOffReasons().contains(reason));
         assertTrue(sst.getRadioPowerOffReasons().size() == 1);
-        verify(mSatelliteController, never()).onCellularRadioPowerOffRequested();
+        verify(mSatelliteController, never()).onSetCellularRadioPowerStateRequested(anyBoolean());
         waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
         assertTrue(mSimulatedCommands.getRadioState() == TelephonyManager.RADIO_POWER_OFF);
 
@@ -610,7 +611,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         // had been turned off for.
         sst.setRadioPowerForReason(true, false, false, false, reason);
         assertTrue(sst.getRadioPowerOffReasons().isEmpty());
-        verify(mSatelliteController, never()).onCellularRadioPowerOffRequested();
+        verify(mSatelliteController).onSetCellularRadioPowerStateRequested(eq(true));
         waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
         assertTrue(mSimulatedCommands.getRadioState() == TelephonyManager.RADIO_POWER_ON);
 
@@ -1928,6 +1929,8 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         sst.setRadioPower(false);
         waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
         assertTrue(mSimulatedCommands.getRadioState() == TelephonyManager.RADIO_POWER_ON);
+        verify(mSatelliteController).onSetCellularRadioPowerStateRequested(eq(false));
+        verify(mSatelliteController).onPowerOffCellularRadioFailed();
         sst.requestShutdown();
         waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
         assertFalse(mSimulatedCommands.getRadioState()
@@ -3082,6 +3085,7 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         doReturn(mImsPhone).when(mPhone).getImsPhone();
         doReturn(ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM).when(mImsPhone)
                 .getImsRegistrationTech();
+        doReturn(true).when(mPhone).isImsRegistered();
         String[] formats = {CROSS_SIM_CALLING_VOICE_FORMAT, "%s"};
         Resources r = mContext.getResources();
         doReturn(formats).when(r).getStringArray(anyInt());
@@ -3234,6 +3238,69 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         // wifi-calling is disable
         doReturn(false).when(mPhone).isWifiCallingEnabled();
+
+        // update the spn
+        sst.updateSpnDisplay();
+
+        // Plmn should be shown, and the string is "No service"
+        Bundle b = getExtrasFromLastSpnUpdateIntent();
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
+                .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
+    }
+
+    @Test
+    public void testUpdateSpnDisplayLegacy_CrossSimCallingDataOOS_displayOOS() {
+        mBundle.putBoolean(
+                CarrierConfigManager.KEY_ENABLE_CARRIER_DISPLAY_NAME_RESOLVER_BOOL, false);
+        sendCarrierConfigUpdate(PHONE_ID);
+
+        // GSM phone
+        doReturn(true).when(mPhone).isPhoneTypeGsm();
+
+        // Reg tech is Cross Sim but both data and voice are OOS
+        doReturn(ServiceState.STATE_OUT_OF_SERVICE).when(mServiceState).getState();
+        doReturn(ServiceState.STATE_OUT_OF_SERVICE).when(mServiceState).getDataRegistrationState();
+        doReturn(TelephonyManager.NETWORK_TYPE_IWLAN).when(mServiceState).getDataNetworkType();
+        doReturn(mImsPhone).when(mPhone).getImsPhone();
+        doReturn(ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM).when(
+                mImsPhone).getImsRegistrationTech();
+        sst.mSS = mServiceState;
+
+        // wifi-calling is enabled
+        doReturn(true).when(mPhone).isWifiCallingEnabled();
+
+        // update the spn
+        sst.updateSpnDisplay();
+
+        // Plmn should be shown, and the string is "No service"
+        Bundle b = getExtrasFromLastSpnUpdateIntent();
+        assertThat(b.getString(TelephonyManager.EXTRA_PLMN))
+                .isEqualTo(CARRIER_NAME_DISPLAY_NO_SERVICE);
+        assertThat(b.getBoolean(TelephonyManager.EXTRA_SHOW_PLMN)).isTrue();
+    }
+
+    @Test
+    public void testUpdateSpnDisplayLegacy_CrossSimCallingVoiceOOS_displayOOS() {
+        mBundle.putBoolean(
+                CarrierConfigManager.KEY_ENABLE_CARRIER_DISPLAY_NAME_RESOLVER_BOOL, false);
+        sendCarrierConfigUpdate(PHONE_ID);
+
+        // GSM phone
+        doReturn(true).when(mPhone).isPhoneTypeGsm();
+
+        // voice out of service but data in service (connected to Cross Sim IWLAN)
+        doReturn(ServiceState.STATE_OUT_OF_SERVICE).when(mServiceState).getState();
+        doReturn(ServiceState.STATE_IN_SERVICE).when(mServiceState).getDataRegistrationState();
+        doReturn(TelephonyManager.NETWORK_TYPE_IWLAN).when(mServiceState).getDataNetworkType();
+        doReturn(mImsPhone).when(mPhone).getImsPhone();
+        doReturn(ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM).when(
+                mImsPhone).getImsRegistrationTech();
+        doReturn(false).when(mPhone).isImsRegistered();
+        sst.mSS = mServiceState;
+
+        // wifi-calling is enabled
+        doReturn(true).when(mPhone).isWifiCallingEnabled();
 
         // update the spn
         sst.updateSpnDisplay();

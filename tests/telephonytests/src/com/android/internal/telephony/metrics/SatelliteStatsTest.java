@@ -23,6 +23,7 @@ import static com.android.internal.telephony.satellite.SatelliteConstants.CONFIG
 import static com.android.internal.telephony.satellite.SatelliteConstants.ACCESS_CONTROL_TYPE_CACHED_COUNTRY_CODE;
 
 import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
@@ -102,6 +103,10 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setCountOfDemoModeIncomingDatagramFail(2)
                         .setCountOfDatagramTypeKeepAliveSuccess(1)
                         .setCountOfDatagramTypeKeepAliveFail(2)
+                        .setCountOfAllowedSatelliteAccess(1)
+                        .setCountOfDisallowedSatelliteAccess(2)
+                        .setCountOfSatelliteAccessCheckFail(3)
+                        .setIsProvisioned(true)
                         .build();
 
         mSatelliteStats.onSatelliteControllerMetrics(param);
@@ -160,6 +165,59 @@ public class SatelliteStatsTest extends TelephonyTest {
                 stats.countOfDatagramTypeKeepAliveSuccess);
         assertEquals(param.getCountOfDatagramTypeKeepAliveFail(),
                 stats.countOfDatagramTypeKeepAliveFail);
+        assertEquals(param.getCountOfAllowedSatelliteAccess(), stats.countOfAllowedSatelliteAccess);
+        assertEquals(param.getCountOfDisallowedSatelliteAccess(),
+                stats.countOfDisallowedSatelliteAccess);
+        assertEquals(param.getCountOfSatelliteAccessCheckFail(),
+                stats.countOfSatelliteAccessCheckFail);
+        assertEquals(param.isProvisioned(), stats.isProvisioned);
+
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+    }
+
+    @Test
+    public void onSatelliteControllerMetrics_isProvisioned() throws Exception {
+        SatelliteStats.SatelliteControllerParams param =
+                new SatelliteStats.SatelliteControllerParams.Builder()
+                        .setCountOfSatelliteServiceEnablementsSuccess(2)
+                        .setIsProvisioned(true)
+                        .build();
+        mSatelliteStats.onSatelliteControllerMetrics(param);
+
+        ArgumentCaptor<SatelliteController> captor =
+                ArgumentCaptor.forClass(SatelliteController.class);
+        verify(mPersistAtomsStorage, times(1)).addSatelliteControllerStats(captor.capture());
+        SatelliteController stats = captor.getValue();
+        assertEquals(param.getCountOfSatelliteServiceEnablementsSuccess(),
+                stats.countOfSatelliteServiceEnablementsSuccess);
+        assertEquals(param.isProvisioned(), stats.isProvisioned);
+
+        param = new SatelliteStats.SatelliteControllerParams.Builder()
+                .setCountOfSatelliteServiceEnablementsSuccess(2)
+                .build();
+        mSatelliteStats.onSatelliteControllerMetrics(param);
+
+        captor = ArgumentCaptor.forClass(SatelliteController.class);
+        verify(mPersistAtomsStorage, times(2)).addSatelliteControllerStats(captor.capture());
+        stats = captor.getValue();
+        // count should be added
+        assertEquals(2, stats.countOfSatelliteServiceEnablementsSuccess);
+        // isProvisioned value should not be updated
+        assertEquals(true, stats.isProvisioned);
+
+        param = new SatelliteStats.SatelliteControllerParams.Builder()
+                .setCountOfSatelliteServiceEnablementsSuccess(2)
+                .setIsProvisioned(false)
+                .build();
+        mSatelliteStats.onSatelliteControllerMetrics(param);
+
+        captor = ArgumentCaptor.forClass(SatelliteController.class);
+        verify(mPersistAtomsStorage, times(3)).addSatelliteControllerStats(captor.capture());
+        stats = captor.getValue();
+        // count should be added
+        assertEquals(2, stats.countOfSatelliteServiceEnablementsSuccess);
+        // isProvisioned should be updated
+        assertEquals(false, stats.isProvisioned);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -169,9 +227,9 @@ public class SatelliteStatsTest extends TelephonyTest {
         SatelliteStats.SatelliteSessionParams param =
                 new SatelliteStats.SatelliteSessionParams.Builder()
                         .setSatelliteServiceInitializationResult(
-                                SatelliteProtoEnums.SATELLITE_ERROR_NONE)
+                                SatelliteProtoEnums.SATELLITE_RESULT_SUCCESS)
                         .setSatelliteTechnology(SatelliteProtoEnums.NT_RADIO_TECHNOLOGY_PROPRIETARY)
-                        .setTerminationResult(SatelliteProtoEnums.SATELLITE_ERROR_NONE)
+                        .setTerminationResult(SatelliteProtoEnums.SATELLITE_RESULT_SUCCESS)
                         .setInitializationProcessingTime(100)
                         .setTerminationProcessingTime(200)
                         .setSessionDuration(3)
@@ -212,7 +270,7 @@ public class SatelliteStatsTest extends TelephonyTest {
     public void onSatelliteIncomingDatagramMetrics_withAtoms() throws Exception {
         SatelliteStats.SatelliteIncomingDatagramParams param =
                 new SatelliteStats.SatelliteIncomingDatagramParams.Builder()
-                        .setResultCode(SatelliteProtoEnums.SATELLITE_ERROR_NONE)
+                        .setResultCode(SatelliteProtoEnums.SATELLITE_RESULT_SUCCESS)
                         .setDatagramSizeBytes(1 * 1024)
                         .setDatagramTransferTimeMillis(3 * 1000)
                         .setIsDemoMode(true)
@@ -236,7 +294,7 @@ public class SatelliteStatsTest extends TelephonyTest {
         SatelliteStats.SatelliteOutgoingDatagramParams param =
                 new SatelliteStats.SatelliteOutgoingDatagramParams.Builder()
                         .setDatagramType(SatelliteProtoEnums.DATAGRAM_TYPE_LOCATION_SHARING)
-                        .setResultCode(SatelliteProtoEnums.SATELLITE_ERROR_NONE)
+                        .setResultCode(SatelliteProtoEnums.SATELLITE_RESULT_SUCCESS)
                         .setDatagramSizeBytes(1 * 1024)
                         .setDatagramTransferTimeMillis(3 * 1000)
                         .setIsDemoMode(true)
@@ -261,7 +319,7 @@ public class SatelliteStatsTest extends TelephonyTest {
         SatelliteStats.SatelliteProvisionParams param =
                 new SatelliteStats.SatelliteProvisionParams.Builder()
                         .setResultCode(
-                                SatelliteProtoEnums.SATELLITE_SERVICE_PROVISION_IN_PROGRESS)
+                                SatelliteProtoEnums.SATELLITE_RESULT_SERVICE_PROVISION_IN_PROGRESS)
                         .setProvisioningTimeSec(5 * 1000)
                         .setIsProvisionRequest(true)
                         .setIsCanceled(false)
@@ -292,6 +350,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setIsMultiSim(false)
                         .setRecommendingHandoverType(0)
                         .setIsSatelliteAllowedInCurrentLocation(true)
+                        .setIsWifiConnected(true)
+                        .setCarrierId(1)
                         .build();
 
         mSatelliteStats.onSatelliteSosMessageRecommender(param);
@@ -309,6 +369,8 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getRecommendingHandoverType(), stats.recommendingHandoverType);
         assertEquals(param.isSatelliteAllowedInCurrentLocation(),
                 stats.isSatelliteAllowedInCurrentLocation);
+        assertEquals(param.isWifiConnected(), stats.isWifiConnected);
+        assertEquals(param.getCarrierId(), stats.carrierId);
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
 
@@ -372,6 +434,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setSatelliteSessionGapMinSec(15)
                         .setSatelliteSessionGapAvgSec(30)
                         .setSatelliteSessionGapMaxSec(45)
+                        .setCarrierId(10)
+                        .setIsDeviceEntitled(true)
                         .build();
 
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
@@ -390,6 +454,70 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getSatelliteSessionGapMinSec(), stats.satelliteSessionGapMinSec);
         assertEquals(param.getSatelliteSessionGapAvgSec(), stats.satelliteSessionGapAvgSec);
         assertEquals(param.getSatelliteSessionGapMaxSec(), stats.satelliteSessionGapMaxSec);
+        assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.isDeviceEntitled(), stats.isDeviceEntitled);
+
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+    }
+
+    @Test
+    public void onCarrierRoamingSatelliteControllerStatsMetrics_testStaticFields()
+            throws Exception {
+        SatelliteStats.CarrierRoamingSatelliteControllerStatsParams param =
+                new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
+                        .setConfigDataSource(4)
+                        .setCountOfEntitlementStatusQueryRequest(6)
+                        .setCountOfSatelliteConfigUpdateRequest(2)
+                        .setCountOfSatelliteNotificationDisplayed(1)
+                        .setSatelliteSessionGapMinSec(15)
+                        .setSatelliteSessionGapAvgSec(30)
+                        .setSatelliteSessionGapMaxSec(45)
+                        .setCarrierId(10)
+                        .setIsDeviceEntitled(true)
+                        .build();
+        mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
+
+        ArgumentCaptor<CarrierRoamingSatelliteControllerStats> captor =
+                ArgumentCaptor.forClass(CarrierRoamingSatelliteControllerStats.class);
+        verify(mPersistAtomsStorage, times(1)).addCarrierRoamingSatelliteControllerStats(
+                captor.capture());
+        CarrierRoamingSatelliteControllerStats stats = captor.getValue();
+        assertEquals(param.getCountOfEntitlementStatusQueryRequest(),
+                stats.countOfEntitlementStatusQueryRequest);
+        assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.isDeviceEntitled(), stats.isDeviceEntitled);
+
+        param = new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
+                .setCountOfSatelliteConfigUpdateRequest(2)
+                .build();
+        mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
+
+        captor = ArgumentCaptor.forClass(CarrierRoamingSatelliteControllerStats.class);
+        verify(mPersistAtomsStorage, times(2)).addCarrierRoamingSatelliteControllerStats(
+                captor.capture());
+        stats = captor.getValue();
+        // count should be added
+        assertEquals(2, stats.countOfSatelliteConfigUpdateRequest);
+        // static values should not be updated
+        assertEquals(10, stats.carrierId);
+        assertEquals(true, stats.isDeviceEntitled);
+
+        param = new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
+                .setCountOfSatelliteConfigUpdateRequest(2)
+                .setCarrierId(20)
+                .setIsDeviceEntitled(false)
+                .build();
+        mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
+
+        captor = ArgumentCaptor.forClass(CarrierRoamingSatelliteControllerStats.class);
+        verify(mPersistAtomsStorage, times(3)).addCarrierRoamingSatelliteControllerStats(
+                captor.capture());
+        stats = captor.getValue();
+        // count should be added
+        assertEquals(2, stats.countOfSatelliteConfigUpdateRequest);
+        // static values should be updated
+        assertEquals(20, stats.carrierId);
+        assertEquals(false, stats.isDeviceEntitled);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }

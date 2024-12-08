@@ -98,7 +98,7 @@ public class CarrierResolverTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
         ((MockContentResolver) mContext.getContentResolver()).addProvider(
                 CarrierId.AUTHORITY, new CarrierIdContentProvider());
-        mCarrierResolver = new CarrierResolver(mPhone);
+        mCarrierResolver = new CarrierResolver(mPhone, mFeatureFlags);
         mCarrierResolver.sendEmptyMessage(ICC_CHANGED_EVENT);
         processAllMessages();
         logd("CarrierResolverTest -Setup!");

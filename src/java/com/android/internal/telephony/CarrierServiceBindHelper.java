@@ -45,6 +45,7 @@ import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.util.TelephonyUtils;
 
 import java.io.FileDescriptor;
@@ -171,7 +172,7 @@ public class CarrierServiceBindHelper {
                 context, mHandler.getLooper(), UserHandle.ALL);
         try {
             Context contextAsUser = mContext.createPackageContextAsUser(mContext.getPackageName(),
-                0, UserHandle.SYSTEM);
+                0, Flags.supportCarrierServicesForHsum() ? UserHandle.CURRENT : UserHandle.SYSTEM);
             contextAsUser.registerReceiver(mUserUnlockedReceiver,
                 new IntentFilter(Intent.ACTION_USER_UNLOCKED), null /* broadcastPermission */,
                 mHandler);

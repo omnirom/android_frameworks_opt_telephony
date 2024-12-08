@@ -341,7 +341,6 @@ public class DataRetryManagerTest extends TelephonyTest {
 
     @Test
     public void testDataSetupUnthrottling() throws Exception {
-        doReturn(true).when(mFeatureFlags).unthrottleCheckTransport();
         NetworkRequest request = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_IMS)
                 .build();
@@ -807,7 +806,6 @@ public class DataRetryManagerTest extends TelephonyTest {
 
     @Test
     public void testDataRetryLongTimer() {
-        doReturn(true).when(mFeatureFlags).useAlarmCallback();
         // Rule requires a long timer
         DataSetupRetryRule retryRule = new DataSetupRetryRule(
                 "capabilities=internet, retry_interval=120000, maximum_retries=2");
@@ -880,6 +878,40 @@ public class DataRetryManagerTest extends TelephonyTest {
         assertThat(mDataRetryManagerUT.isSimilarNetworkRequestRetryScheduled(tnr,
                 AccessNetworkConstants.TRANSPORT_TYPE_WLAN)).isFalse();
     }
+
+    @Test
+    public void testTrafficDescriptorRequestRetry() {
+        DataSetupRetryRule retryRule = new DataSetupRetryRule(
+                "capabilities=PRIORITIZE_BANDWIDTH, retry_interval=200, maximum_retries=2");
+        doReturn(Collections.singletonList(retryRule)).when(mDataConfigManager)
+                .getDataSetupRetryRules();
+        mDataConfigManagerCallback.onCarrierConfigChanged();
+        processAllMessages();
+
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .build();
+        TelephonyNetworkRequest tnr = new TelephonyNetworkRequest(request, mPhone, mFeatureFlags);
+        DataNetworkController.NetworkRequestList
+                networkRequestList = new DataNetworkController.NetworkRequestList(tnr);
+
+        // failed and retry.
+        mDataRetryManagerUT.evaluateDataSetupRetry(mDataProfile1,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN, networkRequestList, 123,
+                DataCallResponse.RETRY_DURATION_UNDEFINED);
+        processAllFutureMessages();
+
+        tnr = new TelephonyNetworkRequest(new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build(), mPhone, mFeatureFlags);
+        assertThat(mDataRetryManagerUT.isSimilarNetworkRequestRetryScheduled(tnr,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN)).isTrue();
+        assertThat(mDataRetryManagerUT.isSimilarNetworkRequestRetryScheduled(tnr,
+                AccessNetworkConstants.TRANSPORT_TYPE_WLAN)).isFalse();
+    }
+
 
     @Test
     public void testRilCrashedReset() {

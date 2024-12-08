@@ -692,8 +692,18 @@ public abstract class Connection {
                     && mEmergencyNumberInfo.getEmergencyCallRouting()
                         != EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY) {
                 int eccCategory = dialArgs.intentExtras.getInt(
-                        PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
-                        mEmergencyNumberInfo.getEmergencyServiceCategoryBitmask());
+                    PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                    mEmergencyNumberInfo.getEmergencyServiceCategoryBitmask());
+                // According to 3gpp 23.167 section 7.1.2, when CS domain is selected,
+                // emergency routing is performed only if the emergency category is provided.
+                if (this instanceof GsmCdmaConnection
+                        && dialArgs.intentExtras.getInt(
+                                PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED)
+                                == EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED) {
+                    Rlog.d(TAG, "setEmergencyCallInfo: specific eccCategory is required");
+                    return;
+                }
                 Rlog.d(TAG, "setEmergencyCallInfo: enforce emergency routing eccCategory="
                         + eccCategory);
                 List<String> emergencyUrns = dialArgs.intentExtras.getStringArrayList(
@@ -706,10 +716,29 @@ public abstract class Connection {
                         mEmergencyNumberInfo.getMnc(),
                         eccCategory,
                         emergencyUrns,
-                        mEmergencyNumberInfo.getEmergencyNumberSourceBitmask(),
+                        getEmergencyNumberSourceForEmergencyRouting(),
                         EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY);
             }
         }
+    }
+
+    /**
+     * Get the emergency number source to be used for emergency routing calls.
+     * This is not getting actual source, instead its forcing the source to
+     * EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING.
+     * Even when the source is EMERGENCY_NUMBER_SOURCE_DATABASE,
+     * to allow the category information delivered by the network to be used,
+     * the source is set to EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING.
+     */
+    private int getEmergencyNumberSourceForEmergencyRouting() {
+        int source = mEmergencyNumberInfo.getEmergencyNumberSourceBitmask();
+        Rlog.d(TAG, "getEmergencyNumberSourceForEmergencyRouting: source=" + source);
+
+        if (source != EmergencyNumber.EMERGENCY_NUMBER_SOURCE_TEST) {
+            source = EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING;
+        }
+
+        return source;
     }
 
     /**

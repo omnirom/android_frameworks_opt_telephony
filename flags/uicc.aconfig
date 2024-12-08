@@ -43,18 +43,29 @@ flag {
     bug:"318348580"
 }
 
-# OWNER=rambowang TARGET=24Q3
-flag {
-    name: "cleanup_open_logical_channel_record_on_dispose"
-    namespace: "telephony"
-    description: "This flag cleans up the OpenLogicalChannelRecord once SIM is removed"
-    bug:"335046531"
-}
-
 # OWNER=arunvoddu TARGET=24Q4
 flag {
     name: "set_carrier_restriction_status"
     namespace: "telephony"
     description: "This flag controls the visibility of the setCarrierRestrictionStatus API in carrierRestrictionRules class."
     bug:"342411308"
+}
+
+# OWNER=arunvoddu TARGET=24Q4
+flag {
+    name: "uicc_app_count_check_to_create_channel"
+    namespace: "telephony"
+    description: "This flag controls to create the open channel when uicc application count is greater than 0."
+    bug:"349966950"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=mewan TARGET=24Q4
+flag {
+    name: "optimization_apdu_sender"
+    namespace: "telephony"
+    description: "This flag controls optimization of apdu sender class."
+    bug:"335257880"
 }

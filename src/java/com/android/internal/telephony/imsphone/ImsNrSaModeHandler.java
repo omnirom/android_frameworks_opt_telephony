@@ -27,6 +27,8 @@ import static android.telephony.CarrierConfigManager.KEY_CARRIER_NR_AVAILABILITI
 import static android.telephony.ims.stub.ImsRegistrationImplBase.ImsRegistrationTech;
 import static android.telephony.ims.stub.ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN;
 
+import static com.android.internal.telephony.CommandsInterface.IMS_MMTEL_CAPABILITY_VOICE;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.Context;
@@ -52,21 +54,19 @@ import java.util.Set;
 public class ImsNrSaModeHandler extends Handler{
 
     public static final String TAG = "ImsNrSaModeHandler";
-    public static final String MMTEL_FEATURE_TAG =
-            "+g.3gpp.icsi-ref=\"urn%3Aurn-7%3A3gpp-service.ims.icsi.mmtel\"";
 
     private static final int MSG_PRECISE_CALL_STATE_CHANGED = 101;
-    private static final int MSG_REQUEST_IS_VONR_ENABLED = 102;
-    private static final int MSG_RESULT_IS_VONR_ENABLED = 103;
+    private static final int MSG_RESULT_IS_VONR_ENABLED = 102;
 
     private final @NonNull ImsPhone mPhone;
     private @Nullable CarrierConfigManager mCarrierConfigManager;
 
     private @NrSaDisablePolicy int mNrSaDisablePolicy;
     private boolean mIsNrSaDisabledForWfc;
-    private boolean mIsVowifiRegistered;
+    private boolean mIsWifiRegistered;
     private boolean mIsInImsCall;
     private boolean mIsNrSaSupported;
+    private boolean mIsVoiceCapable;
 
     private final CarrierConfigManager.CarrierConfigChangeListener mCarrierConfigChangeListener =
             (slotIndex, subId, carrierId, specificCarrierId) -> setNrSaDisablePolicy(subId);
@@ -100,37 +100,16 @@ public class ImsNrSaModeHandler extends Handler{
      */
     public void onImsRegistered(
             @ImsRegistrationTech int imsRadioTech, @NonNull Set<String> featureTags) {
-        if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_NONE) {
+        if (!mIsNrSaSupported || mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_NONE) {
             return;
         }
 
         Log.d(TAG, "onImsRegistered: ImsRegistrationTech = " + imsRadioTech);
 
-        boolean isVowifiRegChanged = false;
-
-        if (isVowifiRegistered() && imsRadioTech != REGISTRATION_TECH_IWLAN) {
-            setVowifiRegStatus(false);
-            isVowifiRegChanged = true;
-        } else if (!isVowifiRegistered() && imsRadioTech == REGISTRATION_TECH_IWLAN
-                && featureTags.contains(MMTEL_FEATURE_TAG)) {
-            setVowifiRegStatus(true);
-            isVowifiRegChanged = true;
-        }
-
-        if (isVowifiRegChanged) {
-            if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_VOWIFI_REGISTERED) {
-                setNrSaMode(!isVowifiRegistered());
-            } else if ((mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED
-                    || mNrSaDisablePolicy
-                    == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED)
-                    && isImsCallOngoing()) {
-                if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED) {
-                    requestIsVonrEnabled(!isVowifiRegistered());
-                    return;
-                }
-
-                setNrSaMode(!isVowifiRegistered());
-            }
+        final boolean isNewWifiRegistered = imsRadioTech == REGISTRATION_TECH_IWLAN;
+        if (isWifiRegistered() != isNewWifiRegistered) {
+            setWifiRegStatus(isNewWifiRegistered);
+            calculateAndControlNrSaIfNeeded();
         }
     }
 
@@ -141,27 +120,15 @@ public class ImsNrSaModeHandler extends Handler{
      */
     public void onImsUnregistered(
             @ImsRegistrationTech int imsRadioTech) {
-        if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_NONE
-                || imsRadioTech != REGISTRATION_TECH_IWLAN || !isVowifiRegistered()) {
+        if (!mIsNrSaSupported || mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_NONE
+                || imsRadioTech != REGISTRATION_TECH_IWLAN || !isWifiRegistered()) {
             return;
         }
 
         Log.d(TAG, "onImsUnregistered : ImsRegistrationTech = " + imsRadioTech);
 
-        setVowifiRegStatus(false);
-
-        if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_VOWIFI_REGISTERED) {
-            setNrSaMode(true);
-        } else if ((mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED
-                || mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED)
-                && isImsCallOngoing()) {
-            if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED) {
-                requestIsVonrEnabled(true);
-                return;
-            }
-
-            setNrSaMode(true);
-        }
+        setWifiRegStatus(false);
+        calculateAndControlNrSaIfNeeded();
     }
 
     /**
@@ -182,13 +149,23 @@ public class ImsNrSaModeHandler extends Handler{
             isImsCallStatusChanged = true;
         }
 
-        if (isVowifiRegistered() && isImsCallStatusChanged) {
-            if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED) {
-                requestIsVonrEnabled(!isImsCallOngoing());
-                return;
-            }
+        if (isWifiRegistered() && isImsCallStatusChanged) {
+            calculateAndControlNrSaIfNeeded();
+        }
+    }
 
-            setNrSaMode(!isImsCallOngoing());
+    /**
+     * Updates Capability.
+     */
+    public void updateImsCapability(int capabilities) {
+        if (!mIsNrSaSupported || mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_NONE) {
+            return;
+        }
+
+        boolean isVoiceCapable = (IMS_MMTEL_CAPABILITY_VOICE & capabilities) != 0;
+        if (mIsVoiceCapable != isVoiceCapable) {
+            mIsVoiceCapable = isVoiceCapable;
+            calculateAndControlNrSaIfNeeded();
         }
     }
 
@@ -200,11 +177,6 @@ public class ImsNrSaModeHandler extends Handler{
             case MSG_PRECISE_CALL_STATE_CHANGED :
                 onPreciseCallStateChanged();
                 break;
-            case MSG_REQUEST_IS_VONR_ENABLED :
-                Log.d(TAG, "request isVoNrEnabled");
-                mPhone.getDefaultPhone().mCi.isVoNrEnabled(
-                        obtainMessage(MSG_RESULT_IS_VONR_ENABLED, msg.obj), null);
-                break;
             case MSG_RESULT_IS_VONR_ENABLED :
                 ar = (AsyncResult) msg.obj;
 
@@ -212,8 +184,9 @@ public class ImsNrSaModeHandler extends Handler{
                     boolean vonrEnabled = ((Boolean) ar.result).booleanValue();
 
                     Log.d(TAG, "result isVoNrEnabled = " + vonrEnabled);
-                    if (!vonrEnabled) {
-                        setNrSaMode(((Boolean) ar.userObj).booleanValue());
+                    if (isWifiCallingOngoing() && !vonrEnabled) {
+                        // If still WiFi calling is ongoing and VoNR is disabled, disable NR SA.
+                        setNrSaMode(false);
                     }
                 }
 
@@ -262,14 +235,18 @@ public class ImsNrSaModeHandler extends Handler{
         if (mPhone.getSubId() == subId && mCarrierConfigManager != null) {
             PersistableBundle bundle = mCarrierConfigManager.getConfigForSubId(mPhone.getSubId(),
                     KEY_NR_SA_DISABLE_POLICY_INT, KEY_CARRIER_NR_AVAILABILITIES_INT_ARRAY);
-            mNrSaDisablePolicy = bundle.getInt(KEY_NR_SA_DISABLE_POLICY_INT);
             int[] nrAvailabilities = bundle.getIntArray(KEY_CARRIER_NR_AVAILABILITIES_INT_ARRAY);
             mIsNrSaSupported = nrAvailabilities != null
                     && Arrays.stream(nrAvailabilities).anyMatch(
                             value -> value == CARRIER_NR_AVAILABILITY_SA);
 
-            Log.d(TAG, "setNrSaDisablePolicy : NrSaDisablePolicy = "
-                    + mNrSaDisablePolicy + ", IsNrSaSupported = "  + mIsNrSaSupported);
+            if (!mIsNrSaSupported) {
+                return;
+            }
+
+            mNrSaDisablePolicy = bundle.getInt(KEY_NR_SA_DISABLE_POLICY_INT);
+
+            Log.d(TAG, "setNrSaDisablePolicy : NrSaDisablePolicy = " + mNrSaDisablePolicy);
 
             if (mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED
                     || mNrSaDisablePolicy == NR_SA_DISABLE_POLICY_WFC_ESTABLISHED) {
@@ -280,27 +257,20 @@ public class ImsNrSaModeHandler extends Handler{
         }
     }
 
-    private void requestIsVonrEnabled(boolean onOrOff) {
-        Message msg = obtainMessage(MSG_REQUEST_IS_VONR_ENABLED, onOrOff);
-        msg.sendToTarget();
-    }
-
     private void setNrSaMode(boolean onOrOff) {
-        if (mIsNrSaSupported) {
-            mPhone.getDefaultPhone().setN1ModeEnabled(onOrOff, null);
-            Log.i(TAG, "setNrSaMode : " + onOrOff);
+        mPhone.getDefaultPhone().setN1ModeEnabled(onOrOff, null);
+        Log.i(TAG, "setNrSaMode : " + onOrOff);
 
-            setNrSaDisabledForWfc(!onOrOff);
-        }
+        setNrSaDisabledForWfc(!onOrOff);
     }
 
     /**
-     * Sets VoWiFi reg status.
+     * Sets WiFi reg status.
      */
     @VisibleForTesting
-    public void setVowifiRegStatus(boolean registered) {
-        Log.d(TAG, "setVowifiRegStatus : " + registered);
-        mIsVowifiRegistered = registered;
+    public void setWifiRegStatus(boolean registered) {
+        Log.d(TAG, "setWifiRegStatus : " + registered);
+        mIsWifiRegistered = registered;
     }
 
     /**
@@ -313,8 +283,8 @@ public class ImsNrSaModeHandler extends Handler{
     }
 
     @VisibleForTesting
-    public boolean isVowifiRegistered() {
-        return mIsVowifiRegistered;
+    public boolean isWifiRegistered() {
+        return mIsWifiRegistered;
     }
 
     @VisibleForTesting
@@ -322,8 +292,7 @@ public class ImsNrSaModeHandler extends Handler{
         return mIsInImsCall;
     }
 
-    @VisibleForTesting
-    public boolean isNrSaDisabledForWfc() {
+    private boolean isNrSaDisabledForWfc() {
         return mIsNrSaDisabledForWfc;
     }
 
@@ -352,5 +321,57 @@ public class ImsNrSaModeHandler extends Handler{
         }
 
         return false;
+    }
+
+    private void calculateAndControlNrSaIfNeeded() {
+        switch (mNrSaDisablePolicy) {
+            case NR_SA_DISABLE_POLICY_VOWIFI_REGISTERED:
+                if (isNrSaDisabledForWfc() == isWifiRegisteredForVoice()) {
+                    // NR SA is already disabled or condition is not met for disabling NR SA.
+                    // So, no need for further action
+                    return;
+                }
+
+                // Disable NR SA if VoWiFi registered otherwise enable
+                setNrSaMode(!isWifiRegisteredForVoice());
+                return;
+            case NR_SA_DISABLE_POLICY_WFC_ESTABLISHED:
+                if (isNrSaDisabledForWfc() == isWifiCallingOngoing()) {
+                    // NR SA is already disabled or condition is not met for disabling NR SA.
+                    // So, no need for further action
+                    return;
+                }
+
+                // Disable NR SA if VoWiFi call established otherwise enable
+                setNrSaMode(!isWifiCallingOngoing());
+                return;
+            case NR_SA_DISABLE_POLICY_WFC_ESTABLISHED_WHEN_VONR_DISABLED:
+                if (isNrSaDisabledForWfc() == isWifiCallingOngoing()) {
+                    // NR SA is already disabled or condition is not met for disabling NR SA.
+                    // So, no need for further action
+                    return;
+                }
+
+                if (isWifiCallingOngoing()) {
+                    // Query whether VoNR is enabled or not.
+                    mPhone.getDefaultPhone().mCi.isVoNrEnabled(
+                            obtainMessage(MSG_RESULT_IS_VONR_ENABLED), null);
+                    return;
+                }
+
+                // Enable NR SA if there are no VoWiFi calls.
+                setNrSaMode(true);
+                return;
+            default:
+                break;
+        }
+    }
+
+    private boolean isWifiRegisteredForVoice() {
+        return isWifiRegistered() && mIsVoiceCapable;
+    }
+
+    private boolean isWifiCallingOngoing() {
+        return isWifiRegistered() && mIsVoiceCapable && isImsCallOngoing();
     }
 }

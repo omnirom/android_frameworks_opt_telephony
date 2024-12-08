@@ -492,6 +492,19 @@ public class SubscriptionInfoInternal {
     @NonNull private final String mSatelliteEntitlementPlmns;
 
     /**
+     * Whether the carrier roaming to satellite is using ESOS for emergency messaging.
+     * By default, its disabled. It is intended to use integer to fit the database format.
+     */
+    private final int mIsSatelliteESOSSupported;
+
+    /**
+     * Whether this subscription is provisioned for OEM-enabled or carrier roaming NB-IOT satellite
+     * service or not.
+     * By default, its disabled. It is intended to use integer to fit the database format.
+     */
+    private final int mIsSatelliteProvisionedForNonIpDatagram;
+
+    /**
      * Constructor from builder.
      *
      * @param builder Builder of {@link SubscriptionInfoInternal}.
@@ -570,6 +583,9 @@ public class SubscriptionInfoInternal {
         this.mTransferStatus = builder.mTransferStatus;
         this.mIsSatelliteEntitlementStatus = builder.mIsSatelliteEntitlementStatus;
         this.mSatelliteEntitlementPlmns = builder.mSatelliteEntitlementPlmns;
+        this.mIsSatelliteESOSSupported = builder.mIsSatelliteESOSSupported;
+        this.mIsSatelliteProvisionedForNonIpDatagram =
+                builder.mIsSatelliteProvisionedForNonIpDatagram;
     }
 
     /**
@@ -1266,6 +1282,23 @@ public class SubscriptionInfoInternal {
         return mSatelliteEntitlementPlmns;
     }
 
+    /**
+     * @return {@code 1} if the carrier roaming to satellite is using ESOS for emergency messaging.
+     */
+    public int getSatelliteESOSSupported() {
+        return mIsSatelliteESOSSupported;
+    }
+
+    /**
+     * Return whether the subscription is provisioned for oem satellite service or not.
+     *
+     * @return {@code 1} if the subscription is provisioned for oem stellite service. {@code 0}
+     * otherwise.
+     */
+    public int getIsSatelliteProvisionedForNonIpDatagram() {
+        return mIsSatelliteProvisionedForNonIpDatagram;
+    }
+
     /** @return converted {@link SubscriptionInfo}. */
     @NonNull
     public SubscriptionInfo toSubscriptionInfo() {
@@ -1305,6 +1338,7 @@ public class SubscriptionInfoInternal {
                 .setServiceCapabilities(
                         SubscriptionManager.getServiceCapabilitiesSet(mServiceCapabilities))
                 .setTransferStatus(mTransferStatus)
+                .setSatelliteESOSSupported(mIsSatelliteESOSSupported == 1)
                 .build();
     }
 
@@ -1368,6 +1402,9 @@ public class SubscriptionInfoInternal {
                 + " transferStatus=" + mTransferStatus
                 + " satelliteEntitlementStatus=" + mIsSatelliteEntitlementStatus
                 + " satelliteEntitlementPlmns=" + mSatelliteEntitlementPlmns
+                + " isSatelliteESOSSupported=" + mIsSatelliteESOSSupported
+                + " isSatelliteProvisionedForNonIpDatagram="
+                + mIsSatelliteProvisionedForNonIpDatagram
                 + "]";
     }
 
@@ -1430,7 +1467,10 @@ public class SubscriptionInfoInternal {
                 && mServiceCapabilities == that.mServiceCapabilities
                 && mTransferStatus == that.mTransferStatus
                 && mIsSatelliteEntitlementStatus == that.mIsSatelliteEntitlementStatus
-                && mSatelliteEntitlementPlmns == that.mSatelliteEntitlementPlmns;
+                && mSatelliteEntitlementPlmns.equals(that.mSatelliteEntitlementPlmns)
+                && mIsSatelliteESOSSupported == that.mIsSatelliteESOSSupported
+                && mIsSatelliteProvisionedForNonIpDatagram
+                == that.mIsSatelliteProvisionedForNonIpDatagram;
     }
 
     @Override
@@ -1463,7 +1503,8 @@ public class SubscriptionInfoInternal {
                 mIsSatelliteEnabled, mCardId, mIsGroupDisabled,
                 mIsSatelliteAttachEnabledForCarrier, mIsOnlyNonTerrestrialNetwork,
                 mServiceCapabilities, mTransferStatus, mIsSatelliteEntitlementStatus,
-                mSatelliteEntitlementPlmns);
+                mSatelliteEntitlementPlmns, mIsSatelliteESOSSupported,
+                mIsSatelliteProvisionedForNonIpDatagram);
         result = 31 * result + Arrays.hashCode(mNativeAccessRules);
         result = 31 * result + Arrays.hashCode(mCarrierConfigAccessRules);
         result = 31 * result + Arrays.hashCode(mRcsConfig);
@@ -1872,6 +1913,16 @@ public class SubscriptionInfoInternal {
         private String mSatelliteEntitlementPlmns = "";
 
         /**
+         * Whether the carrier roaming to satellite is using ESOS for emergency messaging.
+         */
+        private int mIsSatelliteESOSSupported = 0;
+
+        /**
+         * Whether this subscription is provisioned for oem satellite service or not.
+         */
+        private int mIsSatelliteProvisionedForNonIpDatagram = 0;
+
+        /**
          * Default constructor.
          */
         public Builder() {
@@ -1953,6 +2004,8 @@ public class SubscriptionInfoInternal {
             mTransferStatus = info.mTransferStatus;
             mIsSatelliteEntitlementStatus = info.mIsSatelliteEntitlementStatus;
             mSatelliteEntitlementPlmns = info.mSatelliteEntitlementPlmns;
+            mIsSatelliteESOSSupported = info.mIsSatelliteESOSSupported;
+            mIsSatelliteProvisionedForNonIpDatagram = info.mIsSatelliteProvisionedForNonIpDatagram;
         }
 
         /**
@@ -2919,6 +2972,33 @@ public class SubscriptionInfoInternal {
         @NonNull
         public Builder setSatelliteEntitlementPlmns(@NonNull String satelliteEntitlementPlmns) {
             mSatelliteEntitlementPlmns = satelliteEntitlementPlmns;
+            return this;
+        }
+
+        /**
+         * Set whether the carrier roaming to satellite is using ESOS for emergency messaging.
+         *
+         * @param isSatelliteESOSSupported {@code 1} if the carrier roaming to satellite is using
+         * ESOS for emergency messaging.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatelliteESOSSupported(int isSatelliteESOSSupported) {
+            mIsSatelliteESOSSupported = isSatelliteESOSSupported;
+            return this;
+        }
+
+        /**
+         * Set whether the subscription is provisioned for oem satellite service or not.
+         *
+         * @param isSatelliteProvisionedForNonIpDatagram {@code 1} if the subscription is for NTN,
+         * {@code 0} otherwise.
+         * @return The builder.
+         */
+        @NonNull
+        public Builder setIsSatelliteProvisionedForNonIpDatagram(
+                int isSatelliteProvisionedForNonIpDatagram) {
+            mIsSatelliteProvisionedForNonIpDatagram = isSatelliteProvisionedForNonIpDatagram;
             return this;
         }
 

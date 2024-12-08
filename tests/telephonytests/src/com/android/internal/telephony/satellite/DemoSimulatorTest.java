@@ -119,7 +119,7 @@ public class DemoSimulatorTest extends TelephonyTest {
         moveToNotConnectedState();
 
         verify(mISatelliteListener).onSatelliteModemStateChanged(
-                SatelliteModemState.SATELLITE_MODEM_STATE_NOT_CONNECTED);
+                SatelliteModemState.SATELLITE_MODEM_STATE_OUT_OF_SERVICE);
         ArgumentCaptor<NtnSignalStrength> ntnSignalStrength = ArgumentCaptor.forClass(
                 NtnSignalStrength.class);
         verify(mISatelliteListener).onNtnSignalStrengthChanged(ntnSignalStrength.capture());
@@ -156,9 +156,9 @@ public class DemoSimulatorTest extends TelephonyTest {
         moveToConnectedState();
 
         verify(mISatelliteListener).onSatelliteModemStateChanged(
-                SatelliteModemState.SATELLITE_MODEM_STATE_NOT_CONNECTED);
+                SatelliteModemState.SATELLITE_MODEM_STATE_OUT_OF_SERVICE);
         verify(mISatelliteListener).onSatelliteModemStateChanged(
-                SatelliteModemState.SATELLITE_MODEM_STATE_CONNECTED);
+                SatelliteModemState.SATELLITE_MODEM_STATE_IN_SERVICE);
         ArgumentCaptor<NtnSignalStrength> ntnSignalStrength = ArgumentCaptor.forClass(
                 NtnSignalStrength.class);
         verify(mISatelliteListener, times(2))

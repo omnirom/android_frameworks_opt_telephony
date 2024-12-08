@@ -46,6 +46,7 @@ import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.data.CellularNetworkValidator;
 import com.android.internal.telephony.data.PhoneSwitcher;
 import com.android.internal.telephony.data.TelephonyNetworkFactory;
+import com.android.internal.telephony.data.TelephonyNetworkProvider;
 import com.android.internal.telephony.euicc.EuiccCardController;
 import com.android.internal.telephony.euicc.EuiccController;
 import com.android.internal.telephony.flags.FeatureFlags;
@@ -101,6 +102,7 @@ public class PhoneFactory {
     static private SimultaneousCallingTracker sSimultaneousCallingTracker;
     static private PhoneSwitcher sPhoneSwitcher;
     static private TelephonyNetworkFactory[] sTelephonyNetworkFactories;
+    private static TelephonyNetworkProvider sTelephonyNetworkProvider;
     static private NotificationChannelController sNotificationChannelController;
     static private CellularNetworkValidator sCellularNetworkValidator;
 
@@ -205,7 +207,7 @@ public class PhoneFactory {
 
                 // Instantiate UiccController so that all other classes can just
                 // call getInstance()
-                sUiccController = UiccController.make(context);
+                sUiccController = UiccController.make(context, featureFlags);
 
                 Rlog.i(LOG_TAG, "Creating SubscriptionManagerService");
                 sSubscriptionManagerService = new SubscriptionManagerService(context,
@@ -238,6 +240,12 @@ public class PhoneFactory {
                     packageName = componentName.getPackageName();
                 }
                 Rlog.i(LOG_TAG, "defaultSmsApplication: " + packageName);
+
+                if (sFeatureFlags.smsMmsDeliverBroadcastsRedirectToMainUser()) {
+                    // Explicitly call this, even if the user has no default Sms application, to
+                    // ensure that the System apps have the appropriate permissions.
+                    SmsApplication.grantPermissionsToSystemApps(context);
+                }
 
                 // Set up monitor to watch for changes to SMS packages
                 SmsApplication.initSmsPackageMonitor(context);
@@ -279,9 +287,15 @@ public class PhoneFactory {
 
                 sNotificationChannelController = new NotificationChannelController(context);
 
-                for (int i = 0; i < numPhones; i++) {
-                    sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
-                            Looper.myLooper(), sPhones[i], featureFlags);
+                if (featureFlags.supportNetworkProvider()) {
+                    // Create the TelephonyNetworkProvider instance, which is a singleton.
+                    sTelephonyNetworkProvider = new TelephonyNetworkProvider(Looper.myLooper(),
+                            context, featureFlags);
+                } else {
+                    for (int i = 0; i < numPhones; i++) {
+                        sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
+                                Looper.myLooper(), sPhones[i], featureFlags);
+                    }
                 }
             }
         }
@@ -306,7 +320,10 @@ public class PhoneFactory {
 
             sPhones = copyOf(sPhones, activeModemCount);
             sCommandsInterfaces = copyOf(sCommandsInterfaces, activeModemCount);
-            sTelephonyNetworkFactories = copyOf(sTelephonyNetworkFactories, activeModemCount);
+
+            if (!sFeatureFlags.supportNetworkProvider()) {
+                sTelephonyNetworkFactories = copyOf(sTelephonyNetworkFactories, activeModemCount);
+            }
 
             int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
             for (int i = prevActiveModemCount; i < activeModemCount; i++) {
@@ -318,8 +335,11 @@ public class PhoneFactory {
                         PackageManager.FEATURE_TELEPHONY_IMS)) {
                     sPhones[i].createImsPhone();
                 }
-                sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
-                        Looper.myLooper(), sPhones[i], sFeatureFlags);
+
+                if (!sFeatureFlags.supportNetworkProvider()) {
+                    sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
+                            Looper.myLooper(), sPhones[i], sFeatureFlags);
+                }
             }
         }
     }
@@ -385,6 +405,10 @@ public class PhoneFactory {
             }
             return sPhones;
         }
+    }
+
+    public static TelephonyNetworkProvider getNetworkProvider() {
+        return sTelephonyNetworkProvider;
     }
 
     /**
@@ -573,12 +597,21 @@ public class PhoneFactory {
             pw.flush();
             pw.println("++++++++++++++++++++++++++++++++");
 
-            sTelephonyNetworkFactories[i].dump(fd, pw, args);
+            if (!sFeatureFlags.supportNetworkProvider()) {
+                sTelephonyNetworkFactories[i].dump(fd, pw, args);
+            }
 
             pw.flush();
             pw.decreaseIndent();
             pw.println("++++++++++++++++++++++++++++++++");
         }
+
+        pw.increaseIndent();
+        if (sFeatureFlags.supportNetworkProvider()) {
+            sTelephonyNetworkProvider.dump(fd, pw, args);
+        }
+        pw.decreaseIndent();
+        pw.println("++++++++++++++++++++++++++++++++");
 
         pw.println("UiccController:");
         pw.increaseIndent();

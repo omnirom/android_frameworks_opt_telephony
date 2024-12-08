@@ -83,6 +83,7 @@ public class CdmaInboundSmsHandlerTest extends TelephonyTest {
     private InboundSmsTracker mInboundSmsTracker;
     private final byte[] mSmsPdu = new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
     private final int mSubId0 = 0;
+    private static final UserHandle MOCKED_MAIN_USER = UserHandle.of(10);
 
     private IState getCurrentState() {
         try {
@@ -108,10 +109,13 @@ public class CdmaInboundSmsHandlerTest extends TelephonyTest {
 
         UserManager userManager = (UserManager) mContextFixture.getTestDouble().
                 getSystemService(Context.USER_SERVICE);
+        doReturn(MOCKED_MAIN_USER).when(userManager).getMainUser();
         doReturn(true).when(userManager).isUserUnlocked();
+        doReturn(true).when(mFeatureFlags).smsMmsDeliverBroadcastsRedirectToMainUser();
 
         try {
-            doReturn(new int[]{UserHandle.USER_SYSTEM}).when(mIActivityManager).getRunningUserIds();
+            doReturn(new int[]{0, MOCKED_MAIN_USER.getIdentifier()})
+                .when(mIActivityManager).getRunningUserIds();
         } catch (RemoteException re) {
             StringWriter reString = new StringWriter();
             re.printStackTrace(new PrintWriter(reString));
@@ -157,7 +161,8 @@ public class CdmaInboundSmsHandlerTest extends TelephonyTest {
                 Telephony.Sms.CONTENT_URI.getAuthority(), mContentProvider);
 
         mCdmaInboundSmsHandler = CdmaInboundSmsHandler.makeInboundSmsHandler(mContext,
-            mSmsStorageMonitor, mPhone, null, mTestableLooper.getLooper());
+            mSmsStorageMonitor, mPhone, null, mTestableLooper.getLooper(),
+                mFeatureFlags);
         monitorTestableLooper(new TestableLooper(mCdmaInboundSmsHandler.getHandler().getLooper()));
         processAllMessages();
     }

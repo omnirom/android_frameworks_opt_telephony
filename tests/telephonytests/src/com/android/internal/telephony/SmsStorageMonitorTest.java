@@ -52,7 +52,7 @@ public class SmsStorageMonitorTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
-        mSmsStorageMonitor = new SmsStorageMonitor(mPhone);
+        mSmsStorageMonitor = new SmsStorageMonitor(mPhone, mFeatureFlags);
         mSmsStorageMonitor.setMaxRetries(MAX_RETRIES);
         mSmsStorageMonitor.setRetryDelayInMillis(RETRY_DELAY);
         processAllMessages();

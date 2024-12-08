@@ -19,19 +19,28 @@ package com.android.internal.telephony.satellite;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 import android.os.PersistableBundle;
+import android.telephony.AccessNetworkConstants;
+import android.telephony.NetworkRegistrationInfo;
+import android.telephony.ServiceState;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
 
+import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.TelephonyTest;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -41,12 +50,23 @@ import java.util.Set;
 @TestableLooper.RunWithLooper
 public class SatelliteServiceUtilsTest extends TelephonyTest {
     private static final String TAG = "SatelliteServiceUtilsTest";
+    private static final int SUB_ID = 0;
+    private static final int SUB_ID1 = 1;
+    @Mock private ServiceState mServiceState2;
 
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
         MockitoAnnotations.initMocks(this);
         logd(TAG + " Setup!");
+
+        replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[]{mPhone, mPhone2});
+        when(mPhone.getServiceState()).thenReturn(mServiceState);
+        when(mPhone.getSubId()).thenReturn(SUB_ID);
+        when(mPhone.getPhoneId()).thenReturn(0);
+        when(mPhone2.getServiceState()).thenReturn(mServiceState2);
+        when(mPhone2.getSubId()).thenReturn(SUB_ID1);
+        when(mPhone2.getPhoneId()).thenReturn(1);
     }
 
     @After
@@ -118,5 +138,90 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
         expectedMergedList = Arrays.asList("1", "2", "3", "4");
         mergedList = SatelliteServiceUtils.mergeStrLists(l1, l2, l3);
         assertEquals(expectedMergedList, mergedList);
+    }
+
+    @Test
+    public void testIsCellularAvailable() {
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        assertFalse(SatelliteServiceUtils.isCellularAvailable());
+
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_EMERGENCY_ONLY);
+        assertTrue(SatelliteServiceUtils.isCellularAvailable());
+
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.getState()).thenReturn(ServiceState.STATE_EMERGENCY_ONLY);
+        assertTrue(SatelliteServiceUtils.isCellularAvailable());
+
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.isEmergencyOnly()).thenReturn(true);
+        assertTrue(SatelliteServiceUtils.isCellularAvailable());
+    }
+
+    @Test
+    public void testIsSatellitePlmn() {
+        int subId = 1;
+
+        when(mSatelliteController.getSatellitePlmnsForCarrier(eq(subId)))
+                .thenReturn(new ArrayList<>());
+        assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
+
+        // registered PLMN is null
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setRegisteredPlmn(null)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfoListForTransportType(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)))
+                .thenReturn(List.of(nri));
+        assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
+
+        // cell identity is null
+        when(mSatelliteController.getSatellitePlmnsForCarrier(eq(subId))).thenReturn(
+                List.of("120260"));
+        nri = new NetworkRegistrationInfo.Builder()
+                .setRegisteredPlmn("123456")
+                .setCellIdentity(null)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfoListForTransportType(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)))
+                .thenReturn(List.of(nri));
+        assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
+
+        // mcc and mnc are null
+        when(mCellIdentity.getMccString()).thenReturn(null);
+        when(mCellIdentity.getMncString()).thenReturn(null);
+        nri = new NetworkRegistrationInfo.Builder()
+                .setRegisteredPlmn("123456")
+                .setCellIdentity(mCellIdentity)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfoListForTransportType(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)))
+                .thenReturn(List.of(nri));
+        assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
+
+        // mccmnc equal to satellite PLMN
+        when(mCellIdentity.getMccString()).thenReturn("120");
+        when(mCellIdentity.getMncString()).thenReturn("260");
+        nri = new NetworkRegistrationInfo.Builder()
+                .setRegisteredPlmn("123456")
+                .setCellIdentity(mCellIdentity)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfoListForTransportType(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)))
+                .thenReturn(List.of(nri));
+        assertTrue(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
+
+        // registered PLMN equal to satellite PLMN
+        when(mCellIdentity.getMccString()).thenReturn("123");
+        when(mCellIdentity.getMncString()).thenReturn("456");
+        nri = new NetworkRegistrationInfo.Builder()
+                .setRegisteredPlmn("120260")
+                .setCellIdentity(mCellIdentity)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfoListForTransportType(
+                eq(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)))
+                .thenReturn(List.of(nri));
+        assertTrue(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
     }
 }

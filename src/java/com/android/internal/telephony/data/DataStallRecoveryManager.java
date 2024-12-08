@@ -32,6 +32,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.telephony.Annotation.RadioPowerState;
 import android.telephony.Annotation.ValidationStatus;
@@ -714,7 +715,12 @@ public class DataStallRecoveryManager extends Handler {
         // Put the bundled stats extras on the intent.
         intent.putExtra("EXTRA_DSRS_STATS_BUNDLE", bundle);
 
-        mPhone.getContext().sendBroadcast(intent, READ_PRIVILEGED_PHONE_STATE);
+        if (mFeatureFlags.hsumBroadcast()) {
+            mPhone.getContext().sendBroadcastAsUser(intent, UserHandle.ALL,
+                    READ_PRIVILEGED_PHONE_STATE);
+        } else {
+            mPhone.getContext().sendBroadcast(intent, READ_PRIVILEGED_PHONE_STATE);
+        }
     }
 
     /** Recovery Action: RECOVERY_ACTION_GET_DATA_CALL_LIST */

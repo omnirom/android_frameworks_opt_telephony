@@ -320,6 +320,7 @@ message VoiceCallSession {
     optional bool is_ntn = 41;
     optional bool supports_business_call_composer = 42;
     optional int32 call_composer_status = 43;
+    optional int32 precise_call_state_on_setup = 44;
 
     // Internal use only
     optional int64 setup_begin_millis = 10001;
@@ -717,6 +718,11 @@ message SatelliteController {
     optional int32 count_of_allowed_satellite_access = 26;
     optional int32 count_of_disallowed_satellite_access = 27;
     optional int32 count_of_satellite_access_check_fail = 28;
+    optional bool is_provisioned = 29;
+    optional int32 carrier_id = 30;
+    optional int32 count_of_satellite_allowed_state_changed_events = 31;
+    optional int32 count_of_successful_location_queries = 32;
+    optional int32 count_of_failed_location_queries = 33;
 }
 
 message SatelliteSession {
@@ -733,6 +739,10 @@ message SatelliteSession {
     optional int32 count_of_incoming_datagram_failed = 11;
     optional bool is_demo_mode = 12;
     optional int32 max_ntn_signal_strength_level = 13;
+    optional int32 carrier_id = 14;
+    optional int32 count_of_satellite_notification_displayed = 15;
+    optional int32 count_of_auto_exit_due_to_screen_off = 16;
+    optional int32 count_of_auto_exit_due_to_tn_network = 17;
 }
 
 message SatelliteIncomingDatagram {
@@ -740,6 +750,7 @@ message SatelliteIncomingDatagram {
     optional int32 datagram_size_bytes = 2;
     optional int64 datagram_transfer_time_millis = 3;
     optional bool is_demo_mode = 4;
+    optional int32 carrier_id = 5;
 }
 
 message SatelliteOutgoingDatagram {
@@ -748,6 +759,7 @@ message SatelliteOutgoingDatagram {
     optional int32 datagram_size_bytes = 3;
     optional int64 datagram_transfer_time_millis = 4;
     optional bool is_demo_mode = 5;
+    optional int32 carrier_id = 6;
 }
 
 message SatelliteProvision {
@@ -755,6 +767,7 @@ message SatelliteProvision {
     optional int32 provisioning_time_sec = 2;
     optional bool is_provision_request = 3;
     optional bool is_canceled = 4;
+    optional int32 carrier_id = 5;
 }
 
 message SatelliteSosMessageRecommender {
@@ -766,6 +779,8 @@ message SatelliteSosMessageRecommender {
     optional bool is_multi_sim = 6;
     optional int32 recommending_handover_type = 7;
     optional bool is_satellite_allowed_in_current_location = 8;
+    optional bool is_wifi_connected = 9;
+    optional int32 carrier_id = 10;
 }
 
 message DataNetworkValidation {
@@ -805,6 +820,8 @@ message CarrierRoamingSatelliteControllerStats {
     optional int32 satellite_session_gap_min_sec = 5;
     optional int32 satellite_session_gap_avg_sec = 6;
     optional int32 satellite_session_gap_max_sec = 7;
+    optional int32 carrier_id = 8;
+    optional bool is_device_entitled = 9;
 }
 
 message SatelliteEntitlement {
@@ -832,4 +849,6 @@ message SatelliteAccessController {
     optional int32 result_code = 7;
     repeated string country_codes = 8;
     optional int32 config_data_source = 9;
+    optional int32 carrier_id = 10;
+    optional int32 triggering_event = 11;
 }

@@ -1661,7 +1661,8 @@ public class EmergencyStateTracker {
                     return phone.getServiceStateTracker().isRadioOn()
                             && !satelliteController.isSatelliteEnabled();
                 }
-            }, !isTestEmergencyNumber, phone, isTestEmergencyNumber, waitForInServiceTimeout);
+            }, !isTestEmergencyNumber, phone, isTestEmergencyNumber, waitForInServiceTimeout,
+                    /* forNormalRoutingEmergencyCall */ false);
         } else {
             switchDdsAndSetEmergencyMode(phone, emergencyType);
         }

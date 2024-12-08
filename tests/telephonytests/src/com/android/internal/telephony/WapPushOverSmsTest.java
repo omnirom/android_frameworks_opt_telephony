@@ -30,23 +30,32 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.app.AppOpsManager;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Telephony;
 
 import androidx.test.filters.SmallTest;
+
+import com.android.internal.telephony.flags.FeatureFlags;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.Mockito;
 
 public class WapPushOverSmsTest extends TelephonyTest {
     // Mocked classes
     protected ISms.Stub mISmsStub;
 
     private WapPushOverSms mWapPushOverSmsUT;
+
+    @Mock private FeatureFlags mFeatureFlags;
+    private static final UserHandle MOCKED_MAIN_USER = UserHandle.of(10);
 
     @Before
     public void setUp() throws Exception {
@@ -56,9 +65,14 @@ public class WapPushOverSmsTest extends TelephonyTest {
         // Note that this replaces only cached services in ServiceManager. If a service is not found
         // in the cache, a real instance is used.
         mServiceManagerMockedServices.put("isms", mISmsStub);
+        mFeatureFlags = Mockito.mock(FeatureFlags.class);
+        doReturn(true).when(mFeatureFlags).smsMmsDeliverBroadcastsRedirectToMainUser();
         doReturn(mISmsStub).when(mISmsStub).queryLocalInterface(anyString());
 
-        mWapPushOverSmsUT = new WapPushOverSms(mContext);
+        UserManager userManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
+        doReturn(MOCKED_MAIN_USER).when(userManager).getMainUser();
+
+        mWapPushOverSmsUT = new WapPushOverSms(mContext, mFeatureFlags);
     }
 
     @After
@@ -94,7 +108,7 @@ public class WapPushOverSmsTest extends TelephonyTest {
                 eq(AppOpsManager.OPSTR_RECEIVE_WAP_PUSH),
                 nullable(Bundle.class),
                 isNull(InboundSmsHandler.SmsBroadcastReceiver.class),
-                eq(UserHandle.SYSTEM),
+                eq(MOCKED_MAIN_USER),
                 anyInt());
         Intent intent = intentArgumentCaptor.getValue();
         assertEquals(Telephony.Sms.Intents.WAP_PUSH_DELIVER_ACTION, intent.getAction());

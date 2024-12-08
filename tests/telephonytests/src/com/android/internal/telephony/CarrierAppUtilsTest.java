@@ -23,7 +23,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.CarrierAssociatedAppEntry;
 import android.os.UserHandle;
-import android.platform.test.flag.junit.SetFlagsRule;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.test.mock.MockContentProvider;
@@ -35,12 +34,9 @@ import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
-import com.android.internal.telephony.flags.Flags;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
@@ -63,9 +59,6 @@ public class CarrierAppUtilsTest {
     private static final int USER_ID = 12345;
     private static final String CALLING_PACKAGE = "phone";
 
-    @Rule
-    public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
-
     // Mocked classes
     private Context mContext;
     private PackageManager mPackageManager;
@@ -86,7 +79,6 @@ public class CarrierAppUtilsTest {
 
     @Before
     public void setUp() throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_HIDE_PREINSTALLED_CARRIER_APP_AT_MOST_ONCE);
         System.setProperty("dexmaker.dexcache",
                 InstrumentationRegistry.getTargetContext().getCacheDir().getPath());
         Thread.currentThread().setContextClassLoader(getClass().getClassLoader());

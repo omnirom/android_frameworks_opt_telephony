@@ -34,53 +34,6 @@ flag {
   }
 }
 
-# OWNER=linggm TARGET=24Q2
-flag {
-  name: "use_alarm_callback"
-  namespace: "telephony"
-  description: "Use alarm callback instead of broadcast."
-  bug: "311476875"
-}
-
-# OWNER=linggm TARGET=24Q2
-flag {
-  name: "refine_preferred_data_profile_selection"
-  namespace: "telephony"
-  description: "Upon internet network connect, refine selection of preferred data profile."
-  bug: "311476883"
-}
-
-# OWNER=linggm TARGET=24Q2
-flag {
-  name: "unthrottle_check_transport"
-  namespace: "telephony"
-  description: "Check transport when unthrottle."
-  bug: "303922311"
-}
-
-# OWNER=linggm TARGET=24Q1
-flag {
-  name: "relax_ho_teardown"
-  namespace: "telephony"
-  description: "Relax handover tear down if the device is currently in voice call."
-  bug: "270895912"
-}
-
-# OWNER=linggm TARGET=24Q2
-flag {
-  name: "allow_mmtel_in_non_vops"
-  namespace: "telephony"
-  description: "Allow bring up MMTEL in nonVops area specified by carrier config."
-  bug: "241198464"
-}
-
-# OWNER=jackyu TARGET=24Q2
-flag {
-  name: "metered_embb_urlcc"
-  namespace: "telephony"
-  description: "Force networks that have PRIORITIZE_BANDWIDTH or PRIORITIZE_LATENCY to be metered."
-  bug: "301310451"
-  }
 
 # OWNER=sarahchin TARGET=24Q3
 flag {
@@ -109,14 +62,6 @@ flag {
   bug:"286171724"
 }
 
-# OWNER=nagendranb TARGET=24Q2
-flag {
- name: "notify_data_activity_changed_with_slot"
-  namespace: "telephony"
-  description: "notify data activity changed for slot id"
-  bug: "309896936"
-}
-
 # OWNER=qingqi TARGET=24Q3
 flag {
   name: "vonr_enabled_metric"
@@ -125,28 +70,12 @@ flag {
   bug:"288449751"
 }
 
-# OWNER=willycwhu TARGET=24Q2
-flag {
-  name: "ignore_existing_networks_for_internet_allowed_checking"
-  namespace: "telephony"
-  description: "Ignore existing networks when checking if internet is allowed"
-  bug: "284420611"
-}
-
 # OWNER=apsankar TARGET=24Q3
 flag {
   name: "data_call_session_stats_captures_cross_sim_calling"
   namespace: "telephony"
   description: "The DataCallSessionStats metrics will capture whether the IWLAN PDN is set up on cross-SIM calling."
   bug: "313956117"
-}
-
-# OWNER=jackyu TARGET=24Q2
-flag {
-  name: "force_iwlan_mms"
-  namespace: "telephony"
-  description: "When QNS prefers MMS on IWLAN, MMS will be attempted on IWLAN if it can, even though if existing cellular network already supports MMS."
-  bug: "316211526"
 }
 
 # OWNER=sewook TARGET=24Q3
@@ -172,3 +101,34 @@ flag {
   description: "Write DataRatStateChanged atom"
   bug:"318519337"
 }
+
+# OWNER=jackyu TARGET=24Q4
+flag {
+  name: "dds_callback"
+  namespace: "telephony"
+  description: "Adding new callback when DDS changed"
+  bug:"353723350"
+}
+
+# OWNER=jackyu TARGET=25Q1
+flag {
+  name: "support_network_provider"
+  namespace: "telephony"
+  description: "Deprecate network factory and adapt the new network provider model from connectivity service"
+  bug: "343370895"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=jackyu TARGET=25Q1
+flag {
+  name: "sim_disabled_graceful_tear_down"
+  namespace: "telephony"
+  description: "Gracefully tear down the networks when SIM is disabled."
+  bug: "362372940"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+

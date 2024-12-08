@@ -146,7 +146,6 @@ public class DataConfigManagerTest extends TelephonyTest {
 
     @Test
     public void testMeteredNetworkCapabilities() {
-        doReturn(true).when(mFeatureFlags).meteredEmbbUrlcc();
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_APN_TYPES_STRINGS,
                 new String[] {ApnSetting.TYPE_MMS_STRING, ApnSetting.TYPE_DEFAULT_STRING});
         mBundle.putStringArray(CarrierConfigManager.KEY_CARRIER_METERED_ROAMING_APN_TYPES_STRINGS,

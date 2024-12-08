@@ -21,10 +21,12 @@ import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.emergency.EmergencyNumber;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
 
@@ -312,5 +314,53 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
                 connection.disconnectCauseFromCode(CallFailCause.LOCAL_NETWORK_NO_SERVICE));
         assertEquals(DisconnectCause.OUT_OF_SERVICE,
                 connection.disconnectCauseFromCode(CallFailCause.LOCAL_SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    public void testUpdateEmergencyRouting() {
+        Bundle extras = new Bundle();
+        extras.putBoolean(PhoneConstants.EXTRA_USE_EMERGENCY_ROUTING, true);
+
+        DialArgs dialArgs = new DialArgs.Builder()
+                .setIsEmergency(true)
+                .setIntentExtras(extras)
+                .build();
+
+        doReturn(true).when(mDomainSelectionResolver).isDomainSelectionSupported();
+
+        connection = new GsmCdmaConnection(mPhone, "911", mCT, null, dialArgs);
+        // Not updated when category is unset.
+        assertEquals(getTestEmergencyNumber(), connection.getEmergencyNumberInfo());
+
+        extras.putInt(PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED);
+
+        dialArgs = new DialArgs.Builder()
+                .setIsEmergency(true)
+                .setIntentExtras(extras)
+                .build();
+
+        connection = new GsmCdmaConnection(mPhone, "911", mCT, null, dialArgs);
+        // Not updated when category is EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED.
+        assertEquals(getTestEmergencyNumber(), connection.getEmergencyNumberInfo());
+
+        extras.putInt(PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_POLICE);
+
+        dialArgs = new DialArgs.Builder()
+                .setIsEmergency(true)
+                .setIntentExtras(extras)
+                .build();
+
+        connection = new GsmCdmaConnection(mPhone, "911", mCT, null, dialArgs);
+
+        EmergencyNumber expectedNumber = new EmergencyNumber("911", "us", "30",
+                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_POLICE,
+                new ArrayList<String>(), EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
+                EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY);
+
+        // Updated when category is not EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED.
+        assertNotEquals(getTestEmergencyNumber(), connection.getEmergencyNumberInfo());
+        assertEquals(expectedNumber, connection.getEmergencyNumberInfo());
     }
 }

@@ -18,6 +18,7 @@ package com.android.internal.telephony.cdma;
 
 import static org.mockito.Mockito.*;
 
+import android.os.Binder;
 import android.os.HandlerThread;
 import android.os.Message;
 
@@ -38,6 +39,7 @@ public class CdmaSmsDispatcherTest extends TelephonyTest {
 
     private CdmaSMSDispatcher mCdmaSmsDispatcher;
     private CdmaSmsDispatcherTestHandler mCdmaSmsDispatcherTestHandler;
+    private int mCallingUserId;
 
     private class CdmaSmsDispatcherTestHandler extends HandlerThread {
 
@@ -63,6 +65,7 @@ public class CdmaSmsDispatcherTest extends TelephonyTest {
         mCdmaSmsDispatcherTestHandler = new CdmaSmsDispatcherTestHandler(TAG);
         mCdmaSmsDispatcherTestHandler.start();
         waitUntilReady();
+        mCallingUserId = Binder.getCallingUserHandle().getIdentifier();
     }
 
     @After
@@ -84,14 +87,14 @@ public class CdmaSmsDispatcherTest extends TelephonyTest {
     @Test @SmallTest
     public void testSendText() {
         mCdmaSmsDispatcher.sendText("111"/* desAddr*/, "222" /*scAddr*/, TAG,
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         verify(mSimulatedCommandsVerifier).sendCdmaSms(any(byte[].class), any(Message.class));
     }
 
     @Test @SmallTest
     public void testSendTextWithOutDesAddr() {
         mCdmaSmsDispatcher.sendText(null, "222" /*scAddr*/, TAG,
-                null, null, null, null, false, -1, false, -1, false, 0L);
+                null, null, null, null, mCallingUserId, false, -1, false, -1, false, 0L);
         verify(mSimulatedCommandsVerifier, times(0)).sendImsGsmSms(anyString(), anyString(),
                 anyInt(), anyInt(), any(Message.class));
     }

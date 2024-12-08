@@ -1047,10 +1047,16 @@ public class RIL extends BaseCommands implements CommandsInterface {
                     }
                 } else {
                     mDisabledRadioServices.get(service).add(mPhoneId);
-                    mHalVersion.put(service, RADIO_HAL_VERSION_UNKNOWN);
-                    riljLoge("getRadioServiceProxy: set " + serviceToString(service) + " for "
-                            + HIDL_SERVICE_NAME[mPhoneId] + " as disabled\n"
-                            + android.util.Log.getStackTraceString(new RuntimeException()));
+                    if (isRadioServiceSupported(service)) {
+                        mHalVersion.put(service, RADIO_HAL_VERSION_UNKNOWN);
+                        riljLoge("getRadioServiceProxy: set " + serviceToString(service) + " for "
+                                + HIDL_SERVICE_NAME[mPhoneId] + " as disabled\n"
+                                + android.util.Log.getStackTraceString(new RuntimeException()));
+                    } else {
+                        mHalVersion.put(service, RADIO_HAL_VERSION_UNSUPPORTED);
+                        riljLog("getRadioServiceProxy: set " + serviceToString(service) + " for "
+                                + HIDL_SERVICE_NAME[mPhoneId] + " as disabled (unsupported)");
+                    }
                 }
             }
         } catch (RemoteException e) {
@@ -4238,7 +4244,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
             riljLog(rr.serialString() + "> " + RILUtils.requestToString(rr.mRequest)
                     + " with data profiles : ");
             for (DataProfile profile : dps) {
-                riljLog(profile.toString());
+                riljLog(Objects.toString(profile, "DataProfile is null"));
             }
         }
 
@@ -4374,9 +4380,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
             riljLog(rr.serialString() + "> " + RILUtils.requestToString(rr.mRequest)
                     + " params: " + carrierRestrictionRules);
         }
-
         radioServiceInvokeHelper(HAL_SERVICE_SIM, rr, "setAllowedCarriers", () -> {
-            simProxy.setAllowedCarriers(rr.mSerial, carrierRestrictionRules);
+            simProxy.setAllowedCarriers(rr.mSerial, carrierRestrictionRules,
+                    getHalVersion(HAL_SERVICE_SIM));
         });
     }
 

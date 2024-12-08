@@ -123,7 +123,7 @@ public class UiccControllerTest extends TelephonyTest {
         // (before 1.2) of hal
         mIccCardStatus.mSlotPortMapping = new IccSlotPortMapping();
         mIccCardStatus.mSlotPortMapping.mPhysicalSlotIndex = 0;
-        mUiccControllerUT = UiccController.make(mContext);
+        mUiccControllerUT = UiccController.make(mContext, mFeatureFlags);
         // reset sLastSlotStatus so that onGetSlotStatusDone always sees a change in the slot status
         mUiccControllerUT.sLastSlotStatus = null;
         processAllMessages();
@@ -145,7 +145,7 @@ public class UiccControllerTest extends TelephonyTest {
                 com.android.internal.R.array.non_removable_euicc_slots,
                 nonRemovableEuiccSlots);
         replaceInstance(UiccController.class, "mInstance", null, null);
-        mUiccControllerUT = UiccController.make(mContext);
+        mUiccControllerUT = UiccController.make(mContext, mFeatureFlags);
         processAllMessages();
     }
 

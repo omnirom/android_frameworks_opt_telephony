@@ -96,39 +96,6 @@ flag {
     bug:"271921464"
 }
 
-# OWNER=rambowang TARGET=24Q3
-flag {
-    name: "fix_crash_on_getting_config_when_phone_is_gone"
-    namespace: "telephony"
-    description: "Fix VCN crash when calling CarrierConfigManager.getConfigForSubId while phone process has gone."
-    bug:"319791612"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=rambowang TARGET=24Q3
-flag {
-    name: "add_anomaly_when_notify_config_changed_with_invalid_phone"
-    namespace: "telephony"
-    description: "Report anomaly when CarrierConfigLoader received config change with sub that maps to invalid phoneId"
-    bug:"270757342"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=rambowang TARGET=24Q3
-flag {
-    name: "hide_preinstalled_carrier_app_at_most_once"
-    namespace: "telephony"
-    description: "Fix bug when preloaded carrier app is uninstalled and lose provisioning data"
-    bug:"158028151"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
 # OWNER=sangyun TARGET=24Q3
 flag {
     name: "roaming_notification_for_single_data_network"
@@ -217,3 +184,48 @@ flag {
         purpose: PURPOSE_BUGFIX
     }
 }
+
+# OWNER=joonhunshin TARGET=24Q4
+flag {
+    name: "use_carrier_config_for_cfnry_time_via_mmi"
+    namespace: "telephony"
+    description: "This flag allows the no reply timer to be referenced in the carrier config when setting up call forward via MMI code and there is no timer value."
+    bug:"342346827"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=jackyu TARGET=25Q2
+flag {
+    name: "hsum_broadcast"
+    namespace: "telephony"
+    description: "Fixed the bug that broadcast intent is only sent to the system user."
+    bug:"362554272"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=rambowang TARGET=25Q2
+flag {
+    name: "support_carrier_services_for_hsum"
+    namespace: "telephony"
+    description: "Support Carrier Services (APIs) for HSUM."
+    bug:"345522246"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=jackyu TARGET=25Q2
+flag {
+    name: "hsum_package_manager"
+    namespace: "telephony"
+    description: "Fixed the bug that package manager is not for the right user"
+    bug:"356827794"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+

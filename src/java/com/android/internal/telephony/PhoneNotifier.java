@@ -156,4 +156,7 @@ public interface PhoneNotifier {
 
     /** Notify carrier roaming non-terrestrial network mode changed. **/
     void notifyCarrierRoamingNtnModeChanged(Phone sender, boolean active);
+
+    /** Notify eligibility to connect to carrier roaming non-terrestrial network changed. */
+    void notifyCarrierRoamingNtnEligibleStateChanged(Phone sender, boolean eligible);
 }

@@ -39,6 +39,8 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.os.AsyncResult;
+import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
@@ -47,6 +49,9 @@ import android.util.Log;
 import android.util.Pair;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+import com.android.internal.annotations.GuardedBy;
+import com.android.internal.telephony.flags.FeatureFlags;
 
 import org.junit.After;
 import org.junit.Before;
@@ -72,6 +77,8 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
     LocaleTracker mMockLocaleTracker2;
     @Mock Location mMockLocation;
     @Mock Network mMockNetwork;
+    @Mock
+    private FeatureFlags mMockFeatureFlags;
 
     @Captor
     private ArgumentCaptor<LocationListener> mLocationListenerCaptor;
@@ -114,8 +121,9 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
 
         when(mLocationManager.getProviders(true)).thenReturn(Arrays.asList("TEST_PROVIDER"));
 
+        when(mMockFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(true);
         mCountryDetectorUT = new TestTelephonyCountryDetector(
-                mLooper, mContext, mLocationManager, mConnectivityManager);
+                mLooper, mContext, mLocationManager, mConnectivityManager, mMockFeatureFlags);
         if (isGeoCoderImplemented()) {
             verify(mLocationManager).requestLocationUpdates(anyString(), anyLong(), anyFloat(),
                     mLocationListenerCaptor.capture());
@@ -137,8 +145,10 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
         clearInvocations(mLocationManager);
         clearInvocations(mConnectivityManager);
         when(mMockLocaleTracker.getCurrentCountry()).thenReturn("US");
-        TelephonyCountryDetector inst1 = TelephonyCountryDetector.getInstance(mContext);
-        TelephonyCountryDetector inst2 = TelephonyCountryDetector.getInstance(mContext);
+        TelephonyCountryDetector inst1 = TelephonyCountryDetector
+                .getInstance(mContext, mMockFeatureFlags);
+        TelephonyCountryDetector inst2 = TelephonyCountryDetector
+                .getInstance(mContext, mMockFeatureFlags);
         assertEquals(inst1, inst2);
         if (isGeoCoderImplemented()) {
             verify(mLocationManager, never()).requestLocationUpdates(anyString(), anyLong(),
@@ -322,6 +332,31 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
         verify(mLocationManager).removeUpdates(any(LocationListener.class));
     }
 
+    @Test
+    public void testRegisterUnregisterForWifiConnectivityStateChanged() {
+        WifiConnectivityStateChangedListener listener = new WifiConnectivityStateChangedListener(
+                mLooper);
+
+        mCountryDetectorUT.registerForWifiConnectivityStateChanged(listener,
+                1 /* EVENT_WIFI_CONNECTIVITY_STATE_CHANGED*/, null);
+
+        // Wi-fi becomes available
+        clearInvocations(mLocationManager);
+        mNetworkCapabilities.setTransportType(NetworkCapabilities.TRANSPORT_WIFI, true);
+        mNetworkCallbackCaptor.getValue().onAvailable(mMockNetwork);
+        mTestableLooper.processAllMessages();
+        assertTrue(listener.getIsWifiConnected());
+
+        // Wi-fi becomes not available
+        clearInvocations(mLocationManager);
+        mNetworkCapabilities.setTransportType(NetworkCapabilities.TRANSPORT_WIFI, false);
+        mNetworkCallbackCaptor.getValue().onUnavailable();
+        mTestableLooper.processAllMessages();
+        assertFalse(listener.getIsWifiConnected());
+
+        mCountryDetectorUT.unregisterForWifiConnectivityStateChanged(listener);
+    }
+
     private static boolean isGeoCoderImplemented() {
         return Geocoder.isPresent();
     }
@@ -357,8 +392,9 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
          * @param locationManager  The LocationManager instance.
          */
         TestTelephonyCountryDetector(Looper looper, Context context,
-                LocationManager locationManager, ConnectivityManager connectivityManager) {
-            super(looper, context, locationManager, connectivityManager);
+                LocationManager locationManager, ConnectivityManager connectivityManager,
+                FeatureFlags featureFlags) {
+            super(looper, context, locationManager, connectivityManager, featureFlags);
         }
 
         @Override
@@ -373,6 +409,39 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
 
         public static long getLocationUpdateRequestQuotaResetTimeoutMillis() {
             return WAIT_FOR_LOCATION_UPDATE_REQUEST_QUOTA_RESET_TIMEOUT_MILLIS;
+        }
+    }
+
+    private static class WifiConnectivityStateChangedListener extends Handler {
+        private static final int EVENT_WIFI_CONNECTIVITY_STATE_CHANGED = 1;
+        private final Object mIsWifiConnectedLock = new Object();
+        @GuardedBy("mIsWifiConnectedLock")
+        private boolean mIsWifiConnected = false;
+
+        WifiConnectivityStateChangedListener(Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case EVENT_WIFI_CONNECTIVITY_STATE_CHANGED: {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    synchronized (mIsWifiConnectedLock) {
+                        mIsWifiConnected = (boolean) ar.result;
+                    }
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
+
+        public boolean getIsWifiConnected() {
+            synchronized (mIsWifiConnectedLock) {
+                return mIsWifiConnected;
+            }
         }
     }
 }

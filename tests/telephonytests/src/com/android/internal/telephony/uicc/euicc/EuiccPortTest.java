@@ -1202,7 +1202,7 @@ public class EuiccPortTest extends TelephonyTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi,
                 "E00582030200009000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, responses);
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
         return channel;
     }
 
@@ -1210,7 +1210,7 @@ public class EuiccPortTest extends TelephonyTest {
         int channel = LogicalChannelMocker.mockOpenLogicalChannelResponse(mMockCi,
                 "E00582030201009000");
         LogicalChannelMocker.mockSendToLogicalChannel(mMockCi, channel, responses);
-        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel);
+        LogicalChannelMocker.mockCloseLogicalChannel(mMockCi, channel, /* error= */ null);
         return channel;
     }
 }

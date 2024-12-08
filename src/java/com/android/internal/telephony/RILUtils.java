@@ -1944,6 +1944,31 @@ public class RILUtils {
     }
 
     /**
+     * Convert a list of CarrierIdentifiers into an array of CarrierInfo.aidl
+     *
+     * @param carriers List of CarrierIdentifiers
+     * @return The converted array of CarrierInfos.
+     */
+    public static android.hardware.radio.sim.CarrierInfo[] convertToHalCarrierInfoListAidl(
+            List<CarrierIdentifier> carriers) {
+        android.hardware.radio.sim.CarrierInfo[] result =
+                new android.hardware.radio.sim.CarrierInfo[carriers.size()];
+        for (int i = 0; i < carriers.size(); i++) {
+            CarrierIdentifier ci = carriers.get(i);
+            android.hardware.radio.sim.CarrierInfo carrierInfo =
+                    new android.hardware.radio.sim.CarrierInfo();
+            carrierInfo.mcc = convertNullToEmptyString(ci.getMcc());
+            carrierInfo.mnc = convertNullToEmptyString(ci.getMnc());
+            carrierInfo.spn = ci.getSpn();
+            carrierInfo.imsiPrefix = ci.getImsi();
+            carrierInfo.gid1 = ci.getGid1();
+            carrierInfo.gid2 = ci.getGid2();
+            result[i] = carrierInfo;
+        }
+        return result;
+    }
+
+    /**
      * Convert to Dial defined in radio/1.0/types.hal
      * @param address Address
      * @param clirMode CLIR mode

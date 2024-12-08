@@ -21,9 +21,9 @@ android_test {
     srcs: ["**/*.java"],
 
     libs: [
-        "android.test.base",
-        "android.test.mock",
-        "android.test.runner",
+        "android.test.base.stubs",
+        "android.test.mock.stubs",
+        "android.test.runner.stubs",
         "ims-common",
         "unsupportedappusage",
         "telephony-common",

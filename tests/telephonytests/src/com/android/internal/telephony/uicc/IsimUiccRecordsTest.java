@@ -66,7 +66,7 @@ public class IsimUiccRecordsTest extends TelephonyTest {
     private class IsimUiccRecordsUT extends IsimUiccRecords {
         IsimUiccRecordsUT(UiccCardApplication app, Context c,
                 CommandsInterface ci, IccFileHandler mFhMock) {
-            super(app, c, ci);
+            super(app, c, ci, mFeatureFlags);
             mFh = mFhMock;
         }
     }

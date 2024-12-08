@@ -28,14 +28,6 @@ flag {
   bug: "296097429"
 }
 
-# OWNER=rambowang TARGET=24Q3
-flag {
-  name: "data_only_service_allow_emergency_call_only"
-  namespace: "telephony"
-  description: "Support emergency call only for data only cellular service."
-  bug: "296097429"
-}
-
 # OWNER=hhshin TARGET=24Q3
 flag {
   name: "support_psim_to_esim_conversion"
@@ -72,6 +64,18 @@ flag {
   namespace: "telephony"
   description: "Reset the default values to the remaining sim"
   bug: "339394518"
+
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=jackyu TARGET=24Q4
+flag {
+  name: "uicc_phone_number_fix"
+  namespace: "telephony"
+  description: "Fixed that empty phone number when getLine1Number returns empty"
+  bug: "302437869"
 
   metadata {
     purpose: PURPOSE_BUGFIX

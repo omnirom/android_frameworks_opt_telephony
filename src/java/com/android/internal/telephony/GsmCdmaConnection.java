@@ -30,6 +30,7 @@ import android.telephony.CarrierConfigManager;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.ServiceState;
+import android.telephony.emergency.EmergencyNumber;
 import android.text.TextUtils;
 
 import com.android.internal.telephony.PhoneInternalInterface.DialArgs;
@@ -186,7 +187,7 @@ public class GsmCdmaConnection extends Connection {
 
         mAddress = PhoneNumberUtils.extractNetworkPortionAlt(dialString);
         if (dialArgs.isEmergency) {
-            setEmergencyCallInfo(mOwner, null);
+            setEmergencyCallInfo(mOwner, dialArgs);
 
             // There was no emergency number info found for this call, however it is
             // still marked as an emergency number. This may happen if it was a redialed

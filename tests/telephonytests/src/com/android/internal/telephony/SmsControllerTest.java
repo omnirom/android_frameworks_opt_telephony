@@ -31,6 +31,7 @@ import static org.mockito.Mockito.verify;
 
 import android.compat.testing.PlatformCompatChangeRule;
 import android.content.pm.PackageManager;
+import android.os.Binder;
 import android.os.Build;
 import android.telephony.TelephonyManager;
 import android.testing.AndroidTestingRunner;
@@ -67,6 +68,7 @@ public class SmsControllerTest extends TelephonyTest {
     private SmsController mSmsControllerUT;
     private final String smscAddrStr = "+1206313004";
     private String mCallingPackage;
+    private int mCallingUserId;
 
     @Before
     public void setUp() throws Exception {
@@ -74,6 +76,7 @@ public class SmsControllerTest extends TelephonyTest {
         mAdnRecordCache = Mockito.mock(AdnRecordCache.class);
         mSmsControllerUT = new SmsController(mContext, mFeatureFlags);
         mCallingPackage = mContext.getOpPackageName();
+        mCallingUserId = Binder.getCallingUserHandle().getIdentifier();
 
         doReturn(true).when(mPackageManager).hasSystemFeature(
                 PackageManager.FEATURE_TELEPHONY_MESSAGING);
@@ -196,9 +199,9 @@ public class SmsControllerTest extends TelephonyTest {
         doReturn(true).when(mSubscriptionManager)
                 .isSubscriptionAssociatedWithUser(eq(subId), any());
 
-        mSmsControllerUT.sendVisualVoicemailSmsForSubscriber(mCallingPackage,null ,
-                subId, null, 0, null, null);
-        verify(mIccSmsInterfaceManager).sendTextWithSelfPermissions(any(),
+        mSmsControllerUT.sendVisualVoicemailSmsForSubscriber(mCallingPackage, mCallingUserId,
+                null , subId, null, 0, null, null);
+        verify(mIccSmsInterfaceManager).sendTextWithSelfPermissions(any(), eq(mCallingUserId),
                 any(), any(), any(), any(), any(), any(), eq(false), eq(true));
     }
 
@@ -206,10 +209,11 @@ public class SmsControllerTest extends TelephonyTest {
     public void sendVisualVoicemailSmsForSubscriber_phoneIsInEcm() {
         doReturn(true).when(mPhone).isInEcm();
 
-        mSmsControllerUT.sendVisualVoicemailSmsForSubscriber(mCallingPackage,null ,
-                1, null, 0, null, null);
+        mSmsControllerUT.sendVisualVoicemailSmsForSubscriber(mCallingPackage, mCallingUserId,
+                null , 1, null, 0, null, null);
         verify(mIccSmsInterfaceManager, never()).sendTextWithSelfPermissions(any(),
-                any(), any(), any(), any(), any(), any(), eq(false), eq(true));
+                eq(mCallingUserId), any(), any(), any(), any(), any(), any(),
+                eq(false), eq(true));
 
         doReturn(false).when(mPhone).isInEcm();
     }
@@ -223,7 +227,8 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, "1234", null, "text", null, null, false, 0L, true);
+                .sendText(mCallingPackage, mCallingUserId,
+                        "1234", null, "text", null, null, false, 0L, true);
     }
 
     @Test
@@ -239,7 +244,8 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, "1234", null, "text", null, null, false, 0L, true);
+                .sendText(mCallingPackage, mCallingUserId,
+                        "1234", null, "text", null, null, false, 0L, true);
     }
 
     @Test
@@ -255,7 +261,8 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(0))
-                .sendText(mCallingPackage, "1234", null, "text", null, null, false, 0L, true);
+                .sendText(mCallingPackage, mCallingUserId,
+                        "1234", null, "text", null, null, false, 0L, true);
     }
 
     @Test
@@ -320,6 +327,7 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, "1234", null, "text", null, null, false, 0L, true);
+                .sendText(mCallingPackage, mCallingUserId,
+                        "1234", null, "text", null, null, false, 0L, true);
     }
 }

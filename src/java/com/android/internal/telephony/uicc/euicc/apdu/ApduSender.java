@@ -161,6 +161,20 @@ public class ApduSender {
     }
 
     /**
+     * Closes any open channel.
+     *
+     * <p>Used by EuiccSession#endSession.
+     */
+    public void closeAnyOpenChannel() {
+        // TODO: implement this. Different from existing closeExistingChannelIfExists()
+        // which is only used in constructor and don't worry about multi-thread racing.
+        // 1. Acquire channel lock
+        // 2. Check sharedpref for existing open channel
+        // 3. Close any open channel
+        // 4. Release channel lock
+    }
+
+    /**
      * Sends the current command and then continue to send the next one. If this is the last
      * command or any error happens, {@code resultCallback} will be called.
      *

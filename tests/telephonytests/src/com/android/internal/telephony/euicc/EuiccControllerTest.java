@@ -41,7 +41,6 @@ import static org.mockito.Mockito.when;
 import android.Manifest;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
-import android.app.admin.flags.Flags;
 import android.compat.testing.PlatformCompatChangeRule;
 import android.content.Context;
 import android.content.Intent;
@@ -49,6 +48,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Parcelable;
 import android.os.RemoteException;
 import android.os.UserManager;
@@ -87,8 +87,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.mockito.stubbing.Answer;
 import org.mockito.stubbing.Stubber;
 
@@ -106,6 +111,8 @@ public class EuiccControllerTest extends TelephonyTest {
     public TestRule compatChangeRule = new PlatformCompatChangeRule();
     @Rule
     public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+    @Rule
+    public MockitoRule rule = MockitoJUnit.rule();
 
     private static final DownloadableSubscription SUBSCRIPTION =
             DownloadableSubscription.forActivationCode("abcde");
@@ -145,8 +152,8 @@ public class EuiccControllerTest extends TelephonyTest {
     private static final long AVAILABLE_MEMORY = 123L;
 
     // Mocked classes
-    private EuiccConnector mMockConnector;
-    private UiccSlot mUiccSlot;
+    @Mock private EuiccConnector mMockConnector;
+    @Captor private ArgumentCaptor<Bundle> mBundleCaptor;
 
     private TestEuiccController mController;
     private int mSavedEuiccProvisionedValue;
@@ -218,8 +225,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
-        mMockConnector = Mockito.mock(EuiccConnector.class);
-        mUiccSlot = Mockito.mock(UiccSlot.class);
         mController = new TestEuiccController(mContext, mMockConnector, mFeatureFlags);
 
         PackageInfo pi = new PackageInfo();
@@ -580,8 +585,15 @@ public class EuiccControllerTest extends TelephonyTest {
     public void testDownloadSubscription_success() throws Exception {
         setHasWriteEmbeddedPermission(true);
         setUpUiccSlotData();
+
         callDownloadSubscription(SUBSCRIPTION, true /* switchAfterDownload */, true /* complete */,
                 EuiccService.RESULT_OK, 0 /* resolvableError */, "whatever" /* callingPackage */);
+
+        verify(mMockConnector).downloadSubscription(anyInt(), anyInt(),
+                any(), eq(true), anyBoolean(), mBundleCaptor.capture(), any());
+        assertEquals(
+                "whatever",
+                mBundleCaptor.getValue().getString(EuiccService.EXTRA_PACKAGE_NAME));
         verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK, 0 /* detailedCode */);
         // switchAfterDownload = true so no refresh should occur.
         assertFalse(mController.mCalledRefreshSubscriptionsAndSendResult);
@@ -591,8 +603,15 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_noSwitch_success() throws Exception {
         setHasWriteEmbeddedPermission(true);
+
         callDownloadSubscription(SUBSCRIPTION, false /* switchAfterDownload */, true /* complete */,
                 EuiccService.RESULT_OK, 0 /* resolvableError */, "whatever" /* callingPackage */);
+
+        verify(mMockConnector).downloadSubscription(anyInt(), anyInt(),
+                any(), eq(false), anyBoolean(), mBundleCaptor.capture(), any());
+        assertEquals(
+                "whatever",
+                mBundleCaptor.getValue().getString(EuiccService.EXTRA_PACKAGE_NAME));
         verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK, 0 /* detailedCode */);
         assertTrue(mController.mCalledRefreshSubscriptionsAndSendResult);
     }
@@ -857,7 +876,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_noAdminPermission()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(false);
         setUpUiccSlotData();
@@ -883,7 +901,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_adminPermission()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setHasWriteEmbeddedPermission(false);
 
@@ -898,7 +915,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_adminPermission_usingSwitchAfterDownload_fails()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setUpUiccSlotData();
@@ -924,7 +940,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_profileOwner_usingSwitchAfterDownload_fails()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setUpUiccSlotData();
@@ -953,7 +968,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_orgOwnedProfileOwner_usingSwitchAfterDownload_success()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setUpUiccSlotData();
@@ -979,7 +993,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_deviceOwner_usingSwitchAfterDownload_success()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setUpUiccSlotData();
@@ -1005,7 +1018,6 @@ public class EuiccControllerTest extends TelephonyTest {
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_onlyAdminManagedAllowed_callerNotAdmin_error()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasManageDevicePolicyManagedSubscriptionsPermission(false);
         setHasWriteEmbeddedPermission(true);
         doReturn(true)
@@ -1021,27 +1033,8 @@ public class EuiccControllerTest extends TelephonyTest {
 
     @Test
     @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
-    public void testDownloadSubscription_onlyAdminManagedAllowed_callerNotAdmin_disabled_success()
-            throws Exception {
-        mSetFlagsRule.disableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
-        setHasManageDevicePolicyManagedSubscriptionsPermission(false);
-        setHasWriteEmbeddedPermission(true);
-        doReturn(true)
-                .when(mUserManager)
-                .hasUserRestriction(UserManager.DISALLOW_SIM_GLOBALLY);
-
-        callDownloadSubscription(SUBSCRIPTION, false /* switchAfterDownload */, true /* complete */,
-                EuiccService.RESULT_OK, 0 /* resolvableError */, "whatever" /* callingPackage */);
-
-        verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK, 0 /* detailedCode */);
-        assertTrue(mController.mCalledRefreshSubscriptionsAndSendResult);
-    }
-
-    @Test
-    @DisableCompatChanges({EuiccManager.SHOULD_RESOLVE_PORT_INDEX_FOR_APPS})
     public void testDownloadSubscription_onlyAdminManagedAllowed_callerIsAdmin_success()
             throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         setHasWriteEmbeddedPermission(false);
         doReturn(true)
@@ -1102,7 +1095,6 @@ public class EuiccControllerTest extends TelephonyTest {
 
     @Test
     public void testDeleteSubscription_adminOwned_success() throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
         String callingPackage = "whatever";
@@ -1126,33 +1118,7 @@ public class EuiccControllerTest extends TelephonyTest {
     }
 
     @Test
-    public void testDeleteSubscription_adminOwned_featureDisabled_success() throws Exception {
-        mSetFlagsRule.disableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
-        setHasWriteEmbeddedPermission(true);
-        setHasManageDevicePolicyManagedSubscriptionsPermission(false);
-        String callingPackage = "whatever";
-        SubscriptionInfo subInfo1 = new SubscriptionInfo.Builder()
-                .setId(SUBSCRIPTION_ID)
-                .setEmbedded(true)
-                .setIccId(ICC_ID)
-                .setCardId(CARD_ID)
-                .setPortIndex(TelephonyManager.DEFAULT_PORT_INDEX)
-                .setGroupOwner(callingPackage)
-                .build();
-        ArrayList<SubscriptionInfo> subInfos = new ArrayList<>(Arrays.asList(subInfo1));
-        when(mSubscriptionManager.getAvailableSubscriptionInfoList()).thenReturn(subInfos);
-
-        callDeleteSubscription(
-                SUBSCRIPTION_ID, ICC_ID, true /* complete */,
-                0 /* result */, callingPackage /* callingPackage */);
-
-        verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK,
-                0 /* detailedCode */);
-    }
-
-    @Test
     public void testDeleteSubscription_adminOwned_noPermissions_error() throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ESIM_MANAGEMENT_ENABLED);
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(false);
         String callingPackage = "whatever";

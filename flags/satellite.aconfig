@@ -34,3 +34,31 @@ flag {
     description: "This flag enables satellite persistent logging"
     bug:"339877723"
 }
+
+# OWNER=hyosunkim TARGET=24Q3
+flag {
+    name: "carrier_roaming_nb_iot_ntn"
+    namespace: "telephony"
+    description: "This flag enables satellite carrier roaming to nb iot ntn."
+    bug:"348253735"
+}
+
+# OWNER=tnd TARGET=24Q4
+flag {
+    name: "oem_enabled_satellite_phase_2"
+    is_exported: true
+    namespace: "telephony"
+    description: "This flag controls satellite communication supported by OEMs in phase 2."
+    bug:"349624547"
+}
+
+# OWNER=youngtaecha TARGET=24Q4
+flag {
+  name: "geofence_enhancement_for_better_ux"
+  namespace: "telephony"
+  description: "Enhance geofence to improve UX experience"
+  bug: "347711329"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}

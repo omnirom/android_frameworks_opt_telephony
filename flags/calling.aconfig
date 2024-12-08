@@ -4,7 +4,6 @@ container: "system"
 # OWNER=breadley TARGET=24Q3
 flag {
   name: "simultaneous_calling_indications"
-  is_exported: true
   namespace: "telephony"
   description: "APIs that are used to notify simultaneous calling changes to other applications."
   bug: "297446980"
@@ -21,10 +20,44 @@ flag {
 
 # OWNER=stevestatia TARGET=24Q4
 flag {
+    name: "national_country_code_formatting_for_local_calls"
+    namespace: "telephony"
+    description: "Make requests and bug fixes for formatting local calls based on country codes easier with a more scalable solution."
+    bug: "293993310"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=stevestatia TARGET=24Q4
+flag {
     name: "remove_country_code_from_local_singapore_calls"
     namespace: "telephony"
     description: "Fix bug where the country code is being shown when merging in local Singapore numbers to conference calls."
     bug:"284416645"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=grantmenke TARGET=25Q1
+flag {
+    name: "remap_disconnect_cause_sip_request_cancelled"
+    namespace: "telephony"
+    description: "Fix dialer UI bug by remapping disconnect CODE_SIP_REQUEST_CANCELLED to DisconnectCause.NORMAL"
+    bug: "351258918"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+    is_exported: true
+}
+
+# OWNER=breadley TARGET=24Q4
+flag {
+    name: "delay_phone_account_registration"
+    namespace: "telephony"
+    description: "Fix bug where telephony would try to register for PhoneAccounts when Telecom isn't ready yet"
+    bug: "349731543"
     metadata {
         purpose: PURPOSE_BUGFIX
     }

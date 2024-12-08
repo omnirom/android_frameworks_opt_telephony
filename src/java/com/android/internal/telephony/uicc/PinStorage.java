@@ -36,6 +36,7 @@ import static com.android.internal.telephony.TelephonyStatsLog.PIN_STORAGE_EVENT
 import static com.android.internal.telephony.TelephonyStatsLog.PIN_STORAGE_EVENT__EVENT__PIN_VERIFICATION_SUCCESS;
 import static com.android.internal.telephony.uicc.IccCardStatus.PinState.PINSTATE_ENABLED_NOT_VERIFIED;
 import static com.android.internal.telephony.uicc.IccCardStatus.PinState.PINSTATE_ENABLED_VERIFIED;
+import static com.android.internal.telephony.util.TelephonyUtils.FORCE_VERBOSE_STATE_LOGGING;
 
 import android.annotation.Nullable;
 import android.app.KeyguardManager;
@@ -56,6 +57,7 @@ import android.telephony.TelephonyManager;
 import android.telephony.TelephonyManager.SimState;
 import android.util.Base64;
 import android.util.IndentingPrintWriter;
+import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.R;
@@ -88,7 +90,8 @@ import javax.crypto.spec.GCMParameterSpec;
  */
 public class PinStorage extends Handler {
     private static final String TAG = "PinStorage";
-    private static final boolean VDBG = false;  // STOPSHIP if true
+    private static final boolean VDBG = FORCE_VERBOSE_STATE_LOGGING ||
+            Rlog.isLoggable(TAG, Log.VERBOSE);
 
     /**
      * Time duration in milliseconds to allow automatic PIN verification after reboot. All unused

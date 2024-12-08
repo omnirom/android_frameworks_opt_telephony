@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony.satellite.metrics;
 
+import static android.telephony.TelephonyManager.UNKNOWN_CARRIER_ID;
 import static android.telephony.satellite.NtnSignalStrength.NTN_SIGNAL_STRENGTH_NONE;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_RESULT_SUCCESS;
 
@@ -52,6 +53,10 @@ public class SessionMetricsStats {
     private int mCountOfIncomingDatagramFailed;
     private boolean mIsDemoMode;
     private @NtnSignalStrength.NtnSignalStrengthLevel int mMaxNtnSignalStrengthLevel;
+    private int mCarrierId;
+    private int mCountOfSatelliteNotificationDisplayed;
+    private int mCountOfAutoExitDueToScreenOff;
+    private int mCountOfAutoExitDueToTnNetwork;
 
     private SessionMetricsStats() {
         initializeSessionMetricsParam();
@@ -213,6 +218,35 @@ public class SessionMetricsStats {
         return this;
     }
 
+    /** Sets the Carrier ID of this NTN session. */
+    public SessionMetricsStats setCarrierId(int carrierId) {
+        mCarrierId = carrierId;
+        logd("setCarrierId(" + carrierId + ")");
+        return this;
+    }
+
+    /** Increase the count of Satellite Notification Display. */
+    public SessionMetricsStats addCountOfSatelliteNotificationDisplayed() {
+        mCountOfSatelliteNotificationDisplayed++;
+        logd("addCountOfSatelliteNotificationDisplayed: current count="
+                + mCountOfSatelliteNotificationDisplayed);
+        return this;
+    }
+
+    /** Increase the count of auto exit from P2P satellite messaging due to screen off. */
+    public SessionMetricsStats addCountOfAutoExitDueToScreenOff() {
+        mCountOfAutoExitDueToScreenOff++;
+        logd("addCountOfAutoExitDueToScreenOff: current count=" + mCountOfAutoExitDueToScreenOff);
+        return this;
+    }
+
+    /** Increase the count of auto exit from P2P satellite messaging due to scan TN network. */
+    public SessionMetricsStats addCountOfAutoExitDueToTnNetwork() {
+        mCountOfAutoExitDueToTnNetwork++;
+        logd("addCountOfAutoExitDueToTnNetwork: current count=" + mCountOfAutoExitDueToTnNetwork);
+        return this;
+    }
+
     /** Report the session metrics atoms to PersistAtomsStorage in telephony. */
     public void reportSessionMetrics() {
         SatelliteStats.SatelliteSessionParams sessionParams =
@@ -229,6 +263,11 @@ public class SessionMetricsStats {
                         .setCountOfIncomingDatagramFailed(mCountOfIncomingDatagramFailed)
                         .setIsDemoMode(mIsDemoMode)
                         .setMaxNtnSignalStrengthLevel(mMaxNtnSignalStrengthLevel)
+                        .setCarrierId(mCarrierId)
+                        .setCountOfSatelliteNotificationDisplayed(
+                                mCountOfSatelliteNotificationDisplayed)
+                        .setCountOfAutoExitDueToScreenOff(mCountOfAutoExitDueToScreenOff)
+                        .setCountOfAutoExitDueToTnNetwork(mCountOfAutoExitDueToTnNetwork)
                         .build();
         logd("reportSessionMetrics: " + sessionParams.toString());
         SatelliteStats.getInstance().onSatelliteSessionMetrics(sessionParams);
@@ -277,6 +316,10 @@ public class SessionMetricsStats {
         mCountOfIncomingDatagramFailed = 0;
         mIsDemoMode = false;
         mMaxNtnSignalStrengthLevel = NTN_SIGNAL_STRENGTH_NONE;
+        mCarrierId = UNKNOWN_CARRIER_ID;
+        mCountOfSatelliteNotificationDisplayed = 0;
+        mCountOfAutoExitDueToScreenOff = 0;
+        mCountOfAutoExitDueToTnNetwork = 0;
     }
 
     private static void logd(@NonNull String log) {

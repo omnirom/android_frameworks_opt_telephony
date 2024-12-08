@@ -771,6 +771,14 @@ public class PersistAtomsStorage {
         atom.countOfDisallowedSatelliteAccess += stats.countOfDisallowedSatelliteAccess;
         atom.countOfSatelliteAccessCheckFail += stats.countOfSatelliteAccessCheckFail;
 
+        atom.isProvisioned = stats.isProvisioned;
+        atom.carrierId = stats.carrierId;
+
+        atom.countOfSatelliteAllowedStateChangedEvents
+                += stats.countOfSatelliteAllowedStateChangedEvents;
+        atom.countOfSuccessfulLocationQueries += stats.countOfSuccessfulLocationQueries;
+        atom.countOfFailedLocationQueries += stats.countOfFailedLocationQueries;
+
         mAtoms.satelliteController = atomArray;
         saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
     }
@@ -869,6 +877,8 @@ public class PersistAtomsStorage {
         atom.satelliteSessionGapMinSec = stats.satelliteSessionGapMinSec;
         atom.satelliteSessionGapAvgSec = stats.satelliteSessionGapAvgSec;
         atom.satelliteSessionGapMaxSec = stats.satelliteSessionGapMaxSec;
+        atom.carrierId = stats.carrierId;
+        atom.isDeviceEntitled = stats.isDeviceEntitled;
 
         mAtoms.carrierRoamingSatelliteControllerStats = atomArray;
         saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
@@ -2331,7 +2341,12 @@ public class PersistAtomsStorage {
                     && stats.countOfIncomingDatagramSuccess == key.countOfIncomingDatagramSuccess
                     && stats.countOfIncomingDatagramFailed == key.countOfIncomingDatagramFailed
                     && stats.isDemoMode == key.isDemoMode
-                    && stats.maxNtnSignalStrengthLevel == key.maxNtnSignalStrengthLevel) {
+                    && stats.maxNtnSignalStrengthLevel == key.maxNtnSignalStrengthLevel
+                    && stats.carrierId == key.carrierId
+                    && stats.countOfSatelliteNotificationDisplayed
+                    == key.countOfSatelliteNotificationDisplayed
+                    && stats.countOfAutoExitDueToScreenOff == key.countOfAutoExitDueToScreenOff
+                    && stats.countOfAutoExitDueToTnNetwork == key.countOfAutoExitDueToTnNetwork) {
                 return stats;
             }
         }
@@ -2350,7 +2365,9 @@ public class PersistAtomsStorage {
                     && stats.isImsRegistered == key.isImsRegistered
                     && stats.cellularServiceState == key.cellularServiceState
                     && stats.isMultiSim == key.isMultiSim
-                    && stats.recommendingHandoverType == key.recommendingHandoverType) {
+                    && stats.recommendingHandoverType == key.recommendingHandoverType
+                    && stats.isWifiConnected == key.isWifiConnected
+                    && stats.carrierId == key.carrierId) {
                 return stats;
             }
         }

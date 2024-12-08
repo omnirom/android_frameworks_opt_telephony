@@ -432,35 +432,18 @@ public class DataProfileManager extends Handler {
      */
     private void onInternetDataNetworkConnected(@NonNull Set<DataNetwork> internetNetworks) {
         DataProfile defaultProfile = null;
-        if (mFeatureFlags.refinePreferredDataProfileSelection()) {
-            // Most of the cases there should be only one.
-            // but in case there are multiple, find the default internet network, and choose the
-            // one which has longest life cycle.
-            defaultProfile = internetNetworks.stream()
-                    .filter(network -> mPreferredDataProfile == null
-                            // Find the one most resembles the current preferred profile,
-                            // avoiding e.g. DUN default network.
-                            || canPreferredDataProfileSatisfy(
-                            network.getAttachedNetworkRequestList()))
-                    .map(DataNetwork::getDataProfile)
-                    .min(Comparator.comparingLong(DataProfile::getLastSetupTimestamp))
-                    .orElse(null);
-        } else {
-            if (internetNetworks.size() == 1) {
-                // Most of the cases there should be only one.
-                defaultProfile = internetNetworks.stream().findFirst().get().getDataProfile();
-            } else if (internetNetworks.size() > 1) {
-                // but in case there are multiple, find the default internet network, and choose the
-                // one which has longest life cycle.
-                defaultProfile = internetNetworks.stream()
-                        .filter(network -> mPreferredDataProfile == null
-                                || canPreferredDataProfileSatisfy(
-                                network.getAttachedNetworkRequestList()))
-                        .map(DataNetwork::getDataProfile)
-                        .min(Comparator.comparingLong(DataProfile::getLastSetupTimestamp))
-                        .orElse(null);
-            }
-        }
+        // Most of the cases there should be only one.
+        // but in case there are multiple, find the default internet network, and choose the
+        // one which has longest life cycle.
+        defaultProfile = internetNetworks.stream()
+                .filter(network -> mPreferredDataProfile == null
+                        // Find the one most resembles the current preferred profile,
+                        // avoiding e.g. DUN default network.
+                        || canPreferredDataProfileSatisfy(
+                        network.getAttachedNetworkRequestList()))
+                .map(DataNetwork::getDataProfile)
+                .min(Comparator.comparingLong(DataProfile::getLastSetupTimestamp))
+                .orElse(null);
 
         // Update a working internet data profile by subid as a future candidate for preferred
         // data profile after APNs are reset to default

@@ -115,3 +115,25 @@ flag {
         purpose: PURPOSE_BUGFIX
     }
 }
+
+# OWNER=joonhunshin TARGET=24Q4
+flag {
+    name: "prevent_hangup_during_call_merge"
+    namespace: "telephony"
+    description: "This flag prevents hangup call during call merge"
+    bug:"317070933"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=joonhunshin TARGET=24Q4
+flag {
+    name: "avoid_deleting_ims_object_from_cache"
+    namespace: "telephony"
+    description: "This flag controls deleting cached object to synchronize part of application callback and part of ImsFeature behavior"
+    bug:"353577279"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}

@@ -122,8 +122,8 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
     static final int FAKE_USER_ID2 = 11;
     static final int FAKE_SATELLITE_ATTACH_FOR_CARRIER_ENABLED = 1;
     static final int FAKE_SATELLITE_ATTACH_FOR_CARRIER_DISABLED = 0;
-    static final int FAKE_SATELLITE_IS_NTN_ENABLED = 1;
-    static final int FAKE_SATELLITE_IS_NTN_DISABLED = 0;
+    static final int FAKE_SATELLITE_IS_ONLY_NTN_ENABLED = 1;
+    static final int FAKE_SATELLITE_IS_ONLY_NTN_DISABLED = 0;
     static final int FAKE_SERVICE_CAPABILITIES_1 =
             SubscriptionManager.SERVICE_CAPABILITY_DATA_BITMASK;
     static final int FAKE_SERVICE_CAPABILITIES_2 =
@@ -132,6 +132,8 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
     static final int FAKE_SATELLITE_ENTITLEMENT_STATUS_DISABLED = 0;
     static final String FAKE_SATELLITE_ENTITLEMENT_PLMNS1 = "123123,12310";
     static final String FAKE_SATELLITE_ENTITLEMENT_PLMNS2 = "";
+    static final int FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED = 1;
+    static final int FAKE_SATELLITE_ESOS_SUPPORTED_DISABLED = 0;
 
     static final String FAKE_MAC_ADDRESS1 = "DC:E5:5B:38:7D:40";
     static final String FAKE_MAC_ADDRESS2 = "DC:B5:4F:47:F3:4C";
@@ -140,6 +142,9 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
 
     static final int FAKE_TRANSFER_STATUS_TRANSFERRED_OUT = 1;
     static final int FAKE_TRANSFER_STATUS_CONVERTED = 2;
+
+    static final int FAKE_SATELLITE_PROVISIONED = 1;
+    static final int FAKE_SATELLITE_NOT_PROVISIONED = 0;
 
     static final SubscriptionInfoInternal FAKE_SUBSCRIPTION_INFO1 =
             new SubscriptionInfoInternal.Builder()
@@ -208,12 +213,14 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
                     .setSatelliteEnabled(0)
                     .setSatelliteAttachEnabledForCarrier(
                             FAKE_SATELLITE_ATTACH_FOR_CARRIER_DISABLED)
-                    .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_NTN_DISABLED)
+                    .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_ONLY_NTN_DISABLED)
                     .setGroupDisabled(false)
                     .setServiceCapabilities(FAKE_SERVICE_CAPABILITIES_1)
                     .setTransferStatus(FAKE_TRANSFER_STATUS_TRANSFERRED_OUT)
                     .setSatelliteEntitlementStatus(FAKE_SATELLITE_ENTITLEMENT_STATUS_DISABLED)
                     .setSatelliteEntitlementPlmns(FAKE_SATELLITE_ENTITLEMENT_PLMNS2)
+                    .setSatelliteESOSSupported(FAKE_SATELLITE_ESOS_SUPPORTED_DISABLED)
+                    .setIsSatelliteProvisionedForNonIpDatagram(FAKE_SATELLITE_NOT_PROVISIONED)
                     .build();
 
     static final SubscriptionInfoInternal FAKE_SUBSCRIPTION_INFO2 =
@@ -283,12 +290,14 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
                     .setSatelliteEnabled(1)
                     .setSatelliteAttachEnabledForCarrier(
                             FAKE_SATELLITE_ATTACH_FOR_CARRIER_ENABLED)
-                    .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_NTN_ENABLED)
+                    .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED)
                     .setGroupDisabled(false)
                     .setServiceCapabilities(FAKE_SERVICE_CAPABILITIES_2)
                     .setTransferStatus(FAKE_TRANSFER_STATUS_CONVERTED)
                     .setSatelliteEntitlementStatus(FAKE_SATELLITE_ENTITLEMENT_STATUS_ENABLED)
                     .setSatelliteEntitlementPlmns(FAKE_SATELLITE_ENTITLEMENT_PLMNS1)
+                    .setSatelliteESOSSupported(FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED)
+                    .setIsSatelliteProvisionedForNonIpDatagram(FAKE_SATELLITE_PROVISIONED)
                     .build();
 
     private SubscriptionDatabaseManager mDatabaseManagerUT;
@@ -450,6 +459,7 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
         when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(true);
         when(mFeatureFlags.dataOnlyCellularService()).thenReturn(true);
         when(mFeatureFlags.supportPsimToEsimConversion()).thenReturn(true);
+        when(mFeatureFlags.carrierRoamingNbIotNtn()).thenReturn(true);
         mDatabaseManagerUT = new SubscriptionDatabaseManager(mContext, Looper.myLooper(),
                 mFeatureFlags, mSubscriptionDatabaseManagerCallback);
         logd("SubscriptionDatabaseManagerTest -Setup!");
@@ -2010,28 +2020,28 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
         // exception is expected if there is nothing in the database.
         assertThrows(IllegalArgumentException.class,
                 () -> mDatabaseManagerUT.setNtn(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                        FAKE_SATELLITE_IS_NTN_ENABLED));
+                        FAKE_SATELLITE_IS_ONLY_NTN_ENABLED));
 
         SubscriptionInfoInternal subInfo = insertSubscriptionAndVerify(FAKE_SUBSCRIPTION_INFO1);
         mDatabaseManagerUT.setNtn(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                FAKE_SATELLITE_IS_NTN_ENABLED);
+                FAKE_SATELLITE_IS_ONLY_NTN_ENABLED);
         processAllMessages();
 
         subInfo = new SubscriptionInfoInternal.Builder(subInfo)
-                .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_NTN_ENABLED)
+                .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED)
                 .build();
         verifySubscription(subInfo);
         verify(mSubscriptionDatabaseManagerCallback, times(2)).onSubscriptionChanged(eq(1));
 
         assertThat(mDatabaseManagerUT.getSubscriptionProperty(
                 FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                SimInfo.COLUMN_IS_NTN)).isEqualTo(FAKE_SATELLITE_IS_NTN_ENABLED);
+                SimInfo.COLUMN_IS_ONLY_NTN)).isEqualTo(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED);
 
         mDatabaseManagerUT.setSubscriptionProperty(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                SimInfo.COLUMN_IS_NTN, FAKE_SATELLITE_IS_NTN_DISABLED);
+                SimInfo.COLUMN_IS_ONLY_NTN, FAKE_SATELLITE_IS_ONLY_NTN_DISABLED);
         assertThat(mDatabaseManagerUT.getSubscriptionInfoInternal(
                         FAKE_SUBSCRIPTION_INFO1.getSubscriptionId()).getOnlyNonTerrestrialNetwork())
-                .isEqualTo(FAKE_SATELLITE_IS_NTN_DISABLED);
+                .isEqualTo(FAKE_SATELLITE_IS_ONLY_NTN_DISABLED);
     }
 
     @Test
@@ -2074,13 +2084,13 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
         SubscriptionInfoInternal subInfo = insertSubscriptionAndVerify(FAKE_SUBSCRIPTION_INFO1);
         mDatabaseManagerUT.setSatelliteAttachEnabledForCarrier(
                 FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                FAKE_SATELLITE_IS_NTN_DISABLED);
+                FAKE_SATELLITE_IS_ONLY_NTN_DISABLED);
         processAllMessages();
 
         when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(false);
         reset(mSubscriptionDatabaseManagerCallback);
         subInfo = new SubscriptionInfoInternal.Builder(subInfo)
-                .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_NTN_ENABLED)
+                .setOnlyNonTerrestrialNetwork(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED)
                 .build();
 
         int subId = subInfo.getSubscriptionId();
@@ -2100,13 +2110,13 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
 
         assertThat(mDatabaseManagerUT.getSubscriptionProperty(
                 FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                SimInfo.COLUMN_IS_NTN)).isNotEqualTo(FAKE_SATELLITE_IS_NTN_ENABLED);
+                SimInfo.COLUMN_IS_ONLY_NTN)).isNotEqualTo(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED);
 
         mDatabaseManagerUT.setSubscriptionProperty(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
-                SimInfo.COLUMN_IS_NTN, FAKE_SATELLITE_IS_NTN_ENABLED);
+                SimInfo.COLUMN_IS_ONLY_NTN, FAKE_SATELLITE_IS_ONLY_NTN_ENABLED);
         assertThat(mDatabaseManagerUT.getSubscriptionInfoInternal(
                 FAKE_SUBSCRIPTION_INFO1.getSubscriptionId()).getOnlyNonTerrestrialNetwork())
-                .isNotEqualTo(FAKE_SATELLITE_IS_NTN_ENABLED);
+                .isNotEqualTo(FAKE_SATELLITE_IS_ONLY_NTN_ENABLED);
     }
 
     @Test
@@ -2356,5 +2366,70 @@ public class SubscriptionDatabaseManagerTest extends TelephonyTest {
                         FAKE_SUBSCRIPTION_INFO1.getSubscriptionId())
                 .getSatelliteEntitlementPlmns())
                 .isEqualTo(FAKE_SATELLITE_ENTITLEMENT_PLMNS2);
+    }
+
+    @Test
+    public void testUpdateSatelliteESOSSupported() throws Exception {
+        // exception is expected if there is nothing in the database.
+        assertThrows(IllegalArgumentException.class,
+                () -> mDatabaseManagerUT.setSatelliteESOSSupported(
+                        FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                        FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED));
+
+        SubscriptionInfoInternal subInfo = insertSubscriptionAndVerify(FAKE_SUBSCRIPTION_INFO1);
+        mDatabaseManagerUT.setSatelliteESOSSupported(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED);
+        processAllMessages();
+
+        subInfo = new SubscriptionInfoInternal.Builder(subInfo)
+                .setSatelliteESOSSupported(FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED)
+                .build();
+        verifySubscription(subInfo);
+        verify(mSubscriptionDatabaseManagerCallback, times(2)).onSubscriptionChanged(eq(1));
+
+        assertThat(mDatabaseManagerUT.getSubscriptionProperty(
+                FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                SimInfo.COLUMN_SATELLITE_ESOS_SUPPORTED)).isEqualTo(
+                FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED);
+
+        mDatabaseManagerUT.setSubscriptionProperty(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                SimInfo.COLUMN_SATELLITE_ESOS_SUPPORTED, FAKE_SATELLITE_ESOS_SUPPORTED_DISABLED);
+        assertThat(mDatabaseManagerUT.getSubscriptionInfoInternal(
+                        FAKE_SUBSCRIPTION_INFO1.getSubscriptionId())
+                .getSatelliteESOSSupported()).isEqualTo(FAKE_SATELLITE_ESOS_SUPPORTED_DISABLED);
+    }
+
+    @Test
+    public void testUpdateSatelliteProvisionedStatus() throws Exception {
+        // exception is expected if there is nothing in the database.
+        assertThrows(IllegalArgumentException.class,
+                () -> mDatabaseManagerUT.setIsSatelliteProvisionedForNonIpDatagram(
+                        FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                        FAKE_SATELLITE_PROVISIONED));
+
+        SubscriptionInfoInternal subInfo = insertSubscriptionAndVerify(FAKE_SUBSCRIPTION_INFO1);
+        mDatabaseManagerUT.setIsSatelliteProvisionedForNonIpDatagram(
+                FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                FAKE_SATELLITE_PROVISIONED);
+        processAllMessages();
+
+        subInfo = new SubscriptionInfoInternal.Builder(subInfo)
+                .setIsSatelliteProvisionedForNonIpDatagram(FAKE_SATELLITE_PROVISIONED)
+                .build();
+        verifySubscription(subInfo);
+        verify(mSubscriptionDatabaseManagerCallback, times(2)).onSubscriptionChanged(eq(1));
+
+        assertThat(mDatabaseManagerUT.getSubscriptionProperty(
+                FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM))
+                .isEqualTo(FAKE_SATELLITE_PROVISIONED);
+
+        mDatabaseManagerUT.setSubscriptionProperty(FAKE_SUBSCRIPTION_INFO1.getSubscriptionId(),
+                SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM,
+                FAKE_SATELLITE_NOT_PROVISIONED);
+        assertThat(mDatabaseManagerUT.getSubscriptionInfoInternal(
+                        FAKE_SUBSCRIPTION_INFO1.getSubscriptionId())
+                .getIsSatelliteProvisionedForNonIpDatagram())
+                .isEqualTo(FAKE_SATELLITE_NOT_PROVISIONED);
     }
 }

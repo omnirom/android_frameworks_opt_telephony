@@ -34,9 +34,11 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemProperties;
+import android.os.UserHandle;
 import android.telephony.DropBoxManagerLoggerBackend;
 import android.telephony.PersistentLogger;
 import android.telephony.Rlog;
+import android.telephony.SubscriptionManager;
 import android.telephony.satellite.ISatelliteTransmissionUpdateCallback;
 import android.telephony.satellite.PointingInfo;
 import android.telephony.satellite.SatelliteManager;
@@ -189,6 +191,7 @@ public class PointingAppController {
         public static final int EVENT_SEND_DATAGRAM_STATE_CHANGED = 2;
         public static final int EVENT_RECEIVE_DATAGRAM_STATE_CHANGED = 3;
         public static final int EVENT_DATAGRAM_TRANSFER_STATE_CHANGED = 4;
+        public static final int EVENT_SEND_DATAGRAM_REQUESTED = 5;
 
         private final ConcurrentHashMap<IBinder, ISatelliteTransmissionUpdateCallback> mListeners;
 
@@ -277,6 +280,24 @@ public class PointingAppController {
                     break;
                 }
 
+                case EVENT_SEND_DATAGRAM_REQUESTED: {
+                    logd("Received EVENT_SEND_DATAGRAM_REQUESTED");
+                    int datagramType = (int) msg.obj;
+                    List<IBinder> toBeRemoved = new ArrayList<>();
+                    mListeners.values().forEach(listener -> {
+                        try {
+                            listener.onSendDatagramRequested(datagramType);
+                        } catch (RemoteException e) {
+                            logd("EVENT_SEND_DATAGRAM_REQUESTED RemoteException: " + e);
+                            toBeRemoved.add(listener.asBinder());
+                        }
+                    });
+                    toBeRemoved.forEach(listener -> {
+                        mListeners.remove(listener);
+                    });
+                    break;
+                }
+
                 default:
                     loge("SatelliteTransmissionUpdateHandler unknown event: " + msg.what);
             }
@@ -290,6 +311,7 @@ public class PointingAppController {
      */
     public void registerForSatelliteTransmissionUpdates(int subId,
             ISatelliteTransmissionUpdateCallback callback) {
+        subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
                 mSatelliteTransmissionUpdateHandlers.get(subId);
         if (handler != null) {
@@ -318,6 +340,7 @@ public class PointingAppController {
      */
     public void unregisterForSatelliteTransmissionUpdates(int subId, Consumer<Integer> result,
             ISatelliteTransmissionUpdateCallback callback) {
+        subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
                 mSatelliteTransmissionUpdateHandlers.get(subId);
         if (handler != null) {
@@ -404,7 +427,7 @@ public class PointingAppController {
             mLastNeedFullScreenPointingUI = needFullScreenPointingUI;
             mLastIsDemoMode = isDemoMode;
             mLastIsEmergency = isEmergency;
-            mContext.startActivity(launchIntent);
+            mContext.startActivityAsUser(launchIntent, UserHandle.CURRENT);
         } catch (ActivityNotFoundException ex) {
             ploge("startPointingUI: Pointing UI app activity is not found, ex=" + ex);
         }
@@ -426,6 +449,7 @@ public class PointingAppController {
             int sendPendingCount, int errorCode) {
         DatagramTransferStateHandlerRequest request = new DatagramTransferStateHandlerRequest(
                 datagramType, datagramTransferState, sendPendingCount, errorCode);
+        subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
                 mSatelliteTransmissionUpdateHandlers.get(subId);
 
@@ -439,12 +463,32 @@ public class PointingAppController {
         }
     }
 
+    /**
+     * This API is used to notify PointingAppController that a send datagram has just been
+     * requested.
+     */
+    public void onSendDatagramRequested(
+            int subId, @SatelliteManager.DatagramType int datagramType) {
+        subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
+        SatelliteTransmissionUpdateHandler handler =
+                mSatelliteTransmissionUpdateHandlers.get(subId);
+        if (handler != null) {
+            Message msg = handler.obtainMessage(
+                    SatelliteTransmissionUpdateHandler.EVENT_SEND_DATAGRAM_REQUESTED,
+                    datagramType);
+            msg.sendToTarget();
+        } else {
+            ploge("SatelliteTransmissionUpdateHandler not found for subId: " + subId);
+        }
+    }
+
     public void updateReceiveDatagramTransferState(int subId,
             @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
             int receivePendingCount, int errorCode) {
         DatagramTransferStateHandlerRequest request = new DatagramTransferStateHandlerRequest(
                 SatelliteManager.DATAGRAM_TYPE_UNKNOWN, datagramTransferState, receivePendingCount,
                 errorCode);
+        subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
                 mSatelliteTransmissionUpdateHandlers.get(subId);
 

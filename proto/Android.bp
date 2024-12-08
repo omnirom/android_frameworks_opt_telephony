@@ -31,3 +31,12 @@ java_library_static {
     // Pin java_version until jarjar is certified to support later versions. http://b/72703434
     java_version: "1.8",
 }
+
+java_library_static {
+    name: "telephony-config-update-proto-lite",
+    proto: {
+        type: "lite",
+    },
+    srcs: ["src/**/telephony_config_update.proto"],
+    host_supported: true,
+}

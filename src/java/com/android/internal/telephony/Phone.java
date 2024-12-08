@@ -281,9 +281,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     // Key used to read/write the ID for storing the call forwarding status
     public static final String CF_ID = "cf_id_key";
 
-    // Key used to read/write "disable DNS server check" pref (used for testing)
-    private static final String DNS_SERVER_CHECK_DISABLED_KEY = "dns_server_check_disabled_key";
-
     // Integer used to let the calling application know that the we are ignoring auto mode switch.
     private static final int ALREADY_IN_AUTO_SELECTION = 1;
 
@@ -334,7 +331,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     public CommandsInterface mCi;
     protected int mVmCount = 0;
-    private boolean mDnsCheckDisabled;
     protected DataNetworkController mDataNetworkController;
     /* Used for dispatching signals to configured carrier apps */
     protected CarrierSignalAgent mCarrierSignalAgent;
@@ -486,6 +482,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private static final String ALLOWED_NETWORK_TYPES_TEXT_POWER = "power";
     private static final String ALLOWED_NETWORK_TYPES_TEXT_CARRIER = "carrier";
     private static final String ALLOWED_NETWORK_TYPES_TEXT_ENABLE_2G = "enable_2g";
+    private static final String ALLOWED_NETWORK_TYPES_TEXT_TEST = "test";
     private static final int INVALID_ALLOWED_NETWORK_TYPES = -1;
     protected boolean mIsCarrierNrSupported = false;
     protected boolean mIsAllowedNetworkTypesLoadedFromDb = false;
@@ -615,7 +612,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         setUnitTestMode(unitTestMode);
 
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(context);
-        mDnsCheckDisabled = sp.getBoolean(DNS_SERVER_CHECK_DISABLED_KEY, false);
         mCi.setOnCallRing(this, EVENT_CALL_RING, null);
 
         /* "Voice capable" means that this device supports circuit-switched
@@ -661,7 +657,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         // Initialize device storage and outgoing SMS usage monitors for SMSDispatchers.
         mTelephonyComponentFactory = telephonyComponentFactory;
         mSmsStorageMonitor = mTelephonyComponentFactory.inject(SmsStorageMonitor.class.getName())
-                .makeSmsStorageMonitor(this);
+                .makeSmsStorageMonitor(this, mFeatureFlags);
         mSmsUsageMonitor = mTelephonyComponentFactory.inject(SmsUsageMonitor.class.getName())
                 .makeSmsUsageMonitor(context);
         mUiccController = UiccController.getInstance();
@@ -902,6 +898,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                         Rlog.e(mLogTag, "Invalid Exception for usage setting " + ar.exception);
                         break; // technically extraneous, but good hygiene
                     }
+                } else {
+                    mUsageSettingFromModem = msg.arg1;
                 }
                 break;
             default:
@@ -982,26 +980,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     // Will be called when icc changed
     protected abstract void onUpdateIccAvailability();
-
-    /**
-     * Disables the DNS check (i.e., allows "0.0.0.0").
-     * Useful for lab testing environment.
-     * @param b true disables the check, false enables.
-     */
-    public void disableDnsCheck(boolean b) {
-        mDnsCheckDisabled = b;
-        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(getContext());
-        SharedPreferences.Editor editor = sp.edit();
-        editor.putBoolean(DNS_SERVER_CHECK_DISABLED_KEY, b);
-        editor.apply();
-    }
-
-    /**
-     * Returns true if the DNS check is currently disabled.
-     */
-    public boolean isDnsCheckDisabled() {
-        return mDnsCheckDisabled;
-    }
 
     /**
      * Register for getting notifications for change in the Call State {@link Call.State}
@@ -2512,6 +2490,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 return TelephonyManager.ALLOWED_NETWORK_TYPES_REASON_CARRIER;
             case ALLOWED_NETWORK_TYPES_TEXT_ENABLE_2G:
                 return TelephonyManager.ALLOWED_NETWORK_TYPES_REASON_ENABLE_2G;
+            case ALLOWED_NETWORK_TYPES_TEXT_TEST:
+                return TelephonyManager.ALLOWED_NETWORK_TYPES_REASON_TEST;
             default:
                 return INVALID_ALLOWED_NETWORK_TYPES;
         }
@@ -2535,6 +2515,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
                 return ALLOWED_NETWORK_TYPES_TEXT_CARRIER;
             case TelephonyManager.ALLOWED_NETWORK_TYPES_REASON_ENABLE_2G:
                 return ALLOWED_NETWORK_TYPES_TEXT_ENABLE_2G;
+            case TelephonyManager.ALLOWED_NETWORK_TYPES_REASON_TEST:
+                return ALLOWED_NETWORK_TYPES_TEXT_TEST;
             default:
                 throw new IllegalArgumentException(
                         "No DB name conversion available for allowed network type reason: " + reason
@@ -3199,7 +3181,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent intent = new Intent(TelephonyIntents.SECRET_CODE_ACTION,
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-            mContext.sendBroadcast(intent, null, options.toBundle());
+            if (mFeatureFlags.hsumBroadcast()) {
+                mContext.sendBroadcastAsUser(intent, UserHandle.ALL, null, options.toBundle());
+            } else {
+                mContext.sendBroadcast(intent, null, options.toBundle());
+            }
 
             // {@link TelephonyManager.ACTION_SECRET_CODE} will replace {@link
             // TelephonyIntents#SECRET_CODE_ACTION} in the next Android version. Before
@@ -3207,7 +3193,12 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
                     Uri.parse("android_secret_code://" + code));
             secrectCodeIntent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-            mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
+            if (mFeatureFlags.hsumBroadcast()) {
+                mContext.sendBroadcastAsUser(secrectCodeIntent, UserHandle.ALL, null,
+                        options.toBundle());
+            } else {
+                mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
+            }
         }
     }
 
@@ -4495,7 +4486,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mCi.getUsageSetting(obtainMessage(EVENT_GET_USAGE_SETTING_DONE));
             // If the modem value is already known, and the value has changed, proceed to update.
         } else if (mPreferredUsageSetting != mUsageSettingFromModem) {
-            mCi.setUsageSetting(obtainMessage(EVENT_SET_USAGE_SETTING_DONE),
+            mCi.setUsageSetting(obtainMessage(EVENT_SET_USAGE_SETTING_DONE,
+                        mPreferredUsageSetting, 0 /* unused */),
                     mPreferredUsageSetting);
         }
         return true;
@@ -4921,6 +4913,14 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * @return The sms dispatchers controller
+     */
+    @Nullable
+    public SmsDispatchersController getSmsDispatchersController() {
+        return null;
+    }
+
+    /**
      * @return The data settings manager
      */
     @NonNull
@@ -5326,11 +5326,31 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mNotifier.notifyCarrierRoamingNtnModeChanged(this, active);
     }
 
+    /**
+     * Notify external listeners that the device eligibility to connect to carrier roaming
+     * non-terrestrial network changed.
+     *
+     * @param eligible {@code true} when the device is eligible for satellite
+     * communication if all the following conditions are met:
+     * <ul>
+     * <li>Any subscription on the device supports P2P satellite messaging which is defined by
+     * {@link CarrierConfigManager#KEY_SATELLITE_ATTACH_SUPPORTED_BOOL} </li>
+     * <li>{@link CarrierConfigManager#KEY_CARRIER_ROAMING_NTN_CONNECT_TYPE_INT} set to
+     * {@link CarrierConfigManager#CARRIER_ROAMING_NTN_CONNECT_MANUAL} </li>
+     * <li>The device is in {@link ServiceState#STATE_OUT_OF_SERVICE}, not connected to Wi-Fi,
+     * and the hysteresis timer defined by {@link CarrierConfigManager
+     * #KEY_CARRIER_SUPPORTED_SATELLITE_NOTIFICATION_HYSTERESIS_SEC_INT} is expired. </li>
+     * </ul>
+     */
+    public void notifyCarrierRoamingNtnEligibleStateChanged(boolean eligible) {
+        logd("notifyCarrierRoamingNtnEligibleStateChanged eligible:" + eligible);
+        mNotifier.notifyCarrierRoamingNtnEligibleStateChanged(this, eligible);
+    }
+
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Phone: subId=" + getSubId());
         pw.println(" mPhoneId=" + mPhoneId);
         pw.println(" mCi=" + mCi);
-        pw.println(" mDnsCheckDisabled=" + mDnsCheckDisabled);
         pw.println(" mDoesRilSendMultipleCallRing=" + mDoesRilSendMultipleCallRing);
         pw.println(" mCallRingContinueToken=" + mCallRingContinueToken);
         pw.println(" mCallRingDelay=" + mCallRingDelay);
@@ -5345,7 +5365,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         pw.println(" mNotifier=" + mNotifier);
         pw.println(" mSimulatedRadioControl=" + mSimulatedRadioControl);
         pw.println(" mUnitTestMode=" + mUnitTestMode);
-        pw.println(" isDnsCheckDisabled()=" + isDnsCheckDisabled());
         pw.println(" getUnitTestMode()=" + getUnitTestMode());
         pw.println(" getState()=" + getState());
         pw.println(" getIccSerialNumber()=" + Rlog.pii(mLogTag, getIccSerialNumber()));

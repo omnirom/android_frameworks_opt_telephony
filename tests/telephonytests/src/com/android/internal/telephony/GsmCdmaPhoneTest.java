@@ -2018,6 +2018,42 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
     @Test
     @SmallTest
+    public void testUsageSettingUpdate_ResetToDefault() {
+        setupUsageSettingResources();
+        mPhoneUT.mCi = mMockCi;
+
+        SubscriptionInfoInternal si = makeSubscriptionInfoInternal(
+                false, SubscriptionManager.USAGE_SETTING_DATA_CENTRIC);
+        doReturn(si).when(mSubscriptionManagerService).getSubscriptionInfoInternal(anyInt());
+
+        mPhoneUT.updateUsageSetting();
+        processAllMessages();
+
+        verify(mMockCi).getUsageSetting(any());
+        mPhoneUT.sendMessage(mPhoneUT.obtainMessage(GsmCdmaPhone.EVENT_GET_USAGE_SETTING_DONE,
+                new AsyncResult(null,
+                        new int[]{SubscriptionManager.USAGE_SETTING_VOICE_CENTRIC}, null)));
+        processAllMessages();
+
+        // Grab the message to ensure it returns the preferred value for updating the cache
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(mMockCi).setUsageSetting(
+                messageCaptor.capture(), eq(SubscriptionManager.USAGE_SETTING_DATA_CENTRIC));
+        AsyncResult.forMessage(messageCaptor.getValue());
+        messageCaptor.getValue().sendToTarget();
+        processAllMessages();
+
+        si = makeSubscriptionInfoInternal(false, SubscriptionManager.USAGE_SETTING_VOICE_CENTRIC);
+        doReturn(si).when(mSubscriptionManagerService).getSubscriptionInfoInternal(anyInt());
+
+        mPhoneUT.updateUsageSetting();
+        processAllMessages();
+
+        verify(mMockCi).setUsageSetting(any(), eq(SubscriptionManager.USAGE_SETTING_VOICE_CENTRIC));
+    }
+
+    @Test
+    @SmallTest
     public void testUsageSettingUpdate_DefaultOpportunistic() {
         setupUsageSettingResources();
         mPhoneUT.mCi = mMockCi;

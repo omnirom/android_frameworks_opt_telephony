@@ -35,6 +35,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.os.RegistrantList;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.telephony.Rlog;
@@ -42,6 +43,7 @@ import android.util.Pair;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.flags.FeatureFlags;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -83,6 +85,8 @@ public class TelephonyCountryDetector extends Handler {
     @NonNull private final Geocoder mGeocoder;
     @NonNull private final LocationManager mLocationManager;
     @NonNull private final ConnectivityManager mConnectivityManager;
+    @NonNull private final RegistrantList mWifiConnectivityStateChangedRegistrantList =
+            new RegistrantList();
     @NonNull private final Object mLock = new Object();
     @NonNull
     @GuardedBy("mLock")
@@ -106,6 +110,10 @@ public class TelephonyCountryDetector extends Handler {
     private Map<String, Long> mOverriddenCachedNetworkCountryCodes = new HashMap<>();
     @GuardedBy("mLock")
     private boolean mIsCountryCodesOverridden = false;
+    private final RegistrantList mCountryCodeChangedRegistrants = new RegistrantList();
+
+    private FeatureFlags mFeatureFlags = null;
+
     @NonNull private final LocationListener mLocationListener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
@@ -183,22 +191,26 @@ public class TelephonyCountryDetector extends Handler {
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     protected TelephonyCountryDetector(@NonNull Looper looper, @NonNull Context context,
             @NonNull LocationManager locationManager,
-            @NonNull ConnectivityManager connectivityManager) {
+            @NonNull ConnectivityManager connectivityManager,
+            FeatureFlags featureFlags) {
         super(looper);
         mLocationManager = locationManager;
         mGeocoder = new Geocoder(context);
         mConnectivityManager = connectivityManager;
+        mFeatureFlags = featureFlags;
         initialize();
     }
 
     /** @return the singleton instance of the {@link TelephonyCountryDetector} */
-    public static synchronized TelephonyCountryDetector getInstance(@NonNull Context context) {
+    public static synchronized TelephonyCountryDetector getInstance(@NonNull Context context,
+            FeatureFlags featureFlags) {
         if (sInstance == null) {
             HandlerThread handlerThread = new HandlerThread("TelephonyCountryDetector");
             handlerThread.start();
             sInstance = new TelephonyCountryDetector(handlerThread.getLooper(), context,
                     context.getSystemService(LocationManager.class),
-                    context.getSystemService(ConnectivityManager.class));
+                    context.getSystemService(ConnectivityManager.class),
+                    featureFlags);
         }
         return sInstance;
     }
@@ -286,6 +298,8 @@ public class TelephonyCountryDetector extends Handler {
                 handleNetworkCountryCodeChangedEvent((NetworkCountryCodeInfo) msg.obj);
                 break;
             case EVENT_WIFI_CONNECTIVITY_STATE_CHANGED:
+                handleEventWifiConnectivityStateChanged();
+                break;
             case EVENT_LOCATION_UPDATE_REQUEST_QUOTA_RESET:
                 evaluateRequestingLocationUpdates();
                 break;
@@ -468,6 +482,17 @@ public class TelephonyCountryDetector extends Handler {
             }
         }
         evaluateRequestingLocationUpdates();
+        if (mFeatureFlags.oemEnabledSatelliteFlag()) {
+            logd("mCountryCodeChangedRegistrants.notifyRegistrants()");
+            mCountryCodeChangedRegistrants.notifyRegistrants();
+        } else {
+            logd("mCountryCodeChangedRegistrants.notifyRegistrants() is not called");
+        }
+    }
+
+    private void handleEventWifiConnectivityStateChanged() {
+        mWifiConnectivityStateChangedRegistrantList.notifyResult(isWifiNetworkConnected());
+        evaluateRequestingLocationUpdates();
     }
 
     private void setLocationCountryCode(@NonNull Pair<String, Long> countryCodeInfo) {
@@ -533,13 +558,36 @@ public class TelephonyCountryDetector extends Handler {
         }
     }
 
-    private boolean isWifiNetworkConnected() {
+    /**
+     * Check whether Wi-Fi network is connected or not.
+     * @return {@code true} is Wi-Fi is connected, {@code false} otherwise.
+     */
+    public boolean isWifiNetworkConnected() {
         Network activeNetwork = mConnectivityManager.getActiveNetwork();
         NetworkCapabilities networkCapabilities =
                 mConnectivityManager.getNetworkCapabilities(activeNetwork);
         return networkCapabilities != null
                 && networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
                 && networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    /**
+     * Register a callback to receive Wi-Fi connectivity state changes.
+     * @param h Handler for notification message
+     * @param what User-defined message code.
+     * @param obj User object.
+     */
+    public void registerForWifiConnectivityStateChanged(@NonNull Handler h, int what,
+            @Nullable Object obj) {
+        mWifiConnectivityStateChangedRegistrantList.add(h, what, obj);
+    }
+
+    /**
+     * Unregisters for Wi-Fi connectivity state changes.
+     * @param h Handler to be removed from the registrant list.
+     */
+    public void unregisterForWifiConnectivityStateChanged(@NonNull Handler h) {
+        mWifiConnectivityStateChangedRegistrantList.remove(h);
     }
 
     /**
@@ -556,6 +604,26 @@ public class TelephonyCountryDetector extends Handler {
     private static boolean isMockModemAllowed() {
         return (DEBUG || SystemProperties.getBoolean(ALLOW_MOCK_MODEM_PROPERTY, false)
                 || SystemProperties.getBoolean(BOOT_ALLOW_MOCK_MODEM_PROPERTY, false));
+    }
+
+    /**
+     * Register a callback for country code changed events
+     *
+     * @param h    Handler to notify
+     * @param what msg.what when the message is delivered
+     * @param obj  AsyncResult.userObj when the message is delivered
+     */
+    public void registerForCountryCodeChanged(Handler h, int what, Object obj) {
+        mCountryCodeChangedRegistrants.add(h, what, obj);
+    }
+
+    /**
+     * Unregister a callback for country code changed events
+     *
+     * @param h Handler to notifyf
+     */
+    public void unregisterForCountryCodeChanged(Handler h) {
+        mCountryCodeChangedRegistrants.remove(h);
     }
 
     private static void logd(@NonNull String log) {

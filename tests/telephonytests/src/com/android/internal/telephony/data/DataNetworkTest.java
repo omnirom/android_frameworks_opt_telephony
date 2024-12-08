@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Matchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -86,6 +87,7 @@ import com.android.internal.telephony.data.DataNetwork.DataNetworkCallback;
 import com.android.internal.telephony.data.DataNetworkController.NetworkRequestList;
 import com.android.internal.telephony.data.DataSettingsManager.DataSettingsManagerCallback;
 import com.android.internal.telephony.data.LinkBandwidthEstimator.LinkBandwidthEstimatorCallback;
+import com.android.internal.telephony.data.PhoneSwitcher.PhoneSwitcherCallback;
 import com.android.internal.telephony.metrics.DataCallSessionStats;
 import com.android.internal.telephony.test.SimulatedCommands;
 
@@ -238,13 +240,13 @@ public class DataNetworkTest extends TelephonyTest {
     // Mocked classes
     private DataNetworkCallback mDataNetworkCallback;
     private DataCallSessionStats mDataCallSessionStats;
-    private PhoneSwitcher mMockedPhoneSwitcher;
-
     private final NetworkRegistrationInfo mIwlanNetworkRegistrationInfo =
             new NetworkRegistrationInfo.Builder()
                     .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_IWLAN)
                     .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
                     .build();
+
+    private PhoneSwitcherCallback mPhoneSwitcherCallback;
 
     private void setSuccessfulSetupDataResponse(DataServiceManager dsm, int cid) {
         setSuccessfulSetupDataResponse(dsm, cid, Collections.emptyList(), null);
@@ -379,14 +381,13 @@ public class DataNetworkTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
+        doReturn(1).when(mPhone).getSubId();
         doReturn(mImsPhone).when(mPhone).getImsPhone();
         doReturn(mImsCT).when(mImsPhone).getCallTracker();
         doReturn(PhoneConstants.State.IDLE).when(mImsCT).getState();
 
         mDataNetworkCallback = Mockito.mock(DataNetworkCallback.class);
         mDataCallSessionStats = Mockito.mock(DataCallSessionStats.class);
-        mMockedPhoneSwitcher = Mockito.mock(PhoneSwitcher.class);
-        replaceInstance(PhoneSwitcher.class, "sPhoneSwitcher", null, mMockedPhoneSwitcher);
         doAnswer(invocation -> {
             ((Runnable) invocation.getArguments()[0]).run();
             return null;
@@ -2418,9 +2419,11 @@ public class DataNetworkTest extends TelephonyTest {
 
     @Test
     public void testMmsCapabilityRemovedWhenMmsPreferredOnIwlan() throws Exception {
-        doReturn(true).when(mFeatureFlags).forceIwlanMms();
-        doReturn(true).when(mDataConfigManager).isForceIwlanMmsFeatureEnabled();
         setupDataNetwork();
+
+        TelephonyNetworkAgent mockNetworkAgent = Mockito.mock(TelephonyNetworkAgent.class);
+        replaceInstance(DataNetwork.class, "mNetworkAgent",
+                mDataNetworkUT, mockNetworkAgent);
 
         assertThat(mDataNetworkUT.getNetworkCapabilities()
                 .hasCapability(NetworkCapabilities.NET_CAPABILITY_MMS)).isTrue();
@@ -2466,11 +2469,13 @@ public class DataNetworkTest extends TelephonyTest {
                 .onPreferredTransportChanged(NetworkCapabilities.NET_CAPABILITY_MMS, false);
         processAllMessages();
 
-        // Check if MMS capability is removed.
+        // Check if MMS capability is removed, and we don't recreat network agent which triggers
+        // powering comsuming internet validation.
         assertThat(mDataNetworkUT.getNetworkCapabilities()
                 .hasCapability(NetworkCapabilities.NET_CAPABILITY_MMS)).isFalse();
+        verify(mockNetworkAgent, never()).abandon();
 
-        // Now QNS prefers MMS on IWLAN
+        // Now QNS prefers MMS on WWAN
         doReturn(AccessNetworkConstants.TRANSPORT_TYPE_WWAN).when(mAccessNetworksManager)
             .getPreferredTransportByNetworkCapability(NetworkCapabilities.NET_CAPABILITY_MMS);
         accessNetworksManagerCallbackArgumentCaptor.getValue()
@@ -2656,5 +2661,36 @@ public class DataNetworkTest extends TelephonyTest {
         //Check now transport type for the data network is cellular
         assertThat(mDataNetworkUT.getNetworkCapabilities()
                 .hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)).isTrue();
+    }
+
+    @Test
+    public void testPrimaryTransport() throws Exception {
+        doReturn(0).when(mPhoneSwitcher).getPreferredDataPhoneId();
+        setupDataNetwork();
+        TelephonyNetworkAgent mockNetworkAgent = Mockito.mock(TelephonyNetworkAgent.class);
+        replaceInstance(DataNetwork.class, "mNetworkAgent",
+                mDataNetworkUT, mockNetworkAgent);
+
+        ArgumentCaptor<PhoneSwitcherCallback> callbackCaptor =
+                ArgumentCaptor.forClass(PhoneSwitcherCallback.class);
+        verify(mPhoneSwitcher).registerCallback(callbackCaptor.capture());
+        mPhoneSwitcherCallback = callbackCaptor.getValue();
+
+        // Switch the preferred data subscription to another.
+        mPhoneSwitcherCallback.onPreferredDataPhoneIdChanged(1);
+        processAllMessages();
+
+        ArgumentCaptor<NetworkScore> networkScoreCaptor =
+                ArgumentCaptor.forClass(NetworkScore.class);
+        verify(mockNetworkAgent).sendNetworkScore(networkScoreCaptor.capture());
+        assertThat(networkScoreCaptor.getValue().isTransportPrimary()).isFalse();
+        clearInvocations(mockNetworkAgent);
+
+        // Switch back
+        mPhoneSwitcherCallback.onPreferredDataPhoneIdChanged(0);
+        processAllMessages();
+
+        verify(mockNetworkAgent).sendNetworkScore(networkScoreCaptor.capture());
+        assertThat(networkScoreCaptor.getValue().isTransportPrimary()).isTrue();
     }
 }

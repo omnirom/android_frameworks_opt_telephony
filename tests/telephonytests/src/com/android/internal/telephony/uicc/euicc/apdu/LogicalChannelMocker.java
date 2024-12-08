@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony.uicc.euicc.apdu;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -30,7 +31,6 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.uicc.IccIoResult;
 import com.android.internal.telephony.uicc.IccUtils;
 
-import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -48,13 +48,12 @@ public final class LogicalChannelMocker {
         int[] responseInts = isException ? null : getSelectResponse(responseObject.toString());
         Throwable exception = isException ? (Throwable) responseObject : null;
 
-        ArgumentCaptor<Message> response = ArgumentCaptor.forClass(Message.class);
         doAnswer((Answer<Void>) invocation -> {
-            Message msg = response.getValue();
+            Message msg = invocation.getArgument(2);
             AsyncResult.forMessage(msg, responseInts, exception);
             msg.sendToTarget();
             return null;
-        }).when(mockCi).iccOpenLogicalChannel(anyString(), anyInt(), response.capture());
+        }).when(mockCi).iccOpenLogicalChannel(anyString(), anyInt(), any());
         return LOGICAL_CHANNEL;
     }
 
@@ -64,22 +63,20 @@ public final class LogicalChannelMocker {
      */
     public static void mockSendToLogicalChannel(CommandsInterface mockCi, int channel,
             Object... responseObjects) {
-        ArgumentCaptor<Message> response = ArgumentCaptor.forClass(Message.class);
-
         doAnswer(new Answer() {
             private int mIndex = 0;
 
             @Override
             public Object answer(InvocationOnMock invocation) throws Throwable {
-                Object responseObject = responseObjects[mIndex++];
-                mockIccTransmitApduLogicalChannelResponse(response, responseObject);
+                Object response = responseObjects[mIndex++];
+                mockIccTransmitApduLogicalChannelResponse(invocation.getArgument(8), response);
                 return null;
             }
         }).when(mockCi).iccTransmitApduLogicalChannel(eq(channel), anyInt(), anyInt(), anyInt(),
-                anyInt(), anyInt(), anyString(), anyBoolean(), response.capture());
+                anyInt(), anyInt(), anyString(), anyBoolean(), any());
     }
 
-    private static void mockIccTransmitApduLogicalChannelResponse(ArgumentCaptor<Message> response,
+    private static void mockIccTransmitApduLogicalChannelResponse(Message msg,
             Object responseObject) throws Throwable {
 
         boolean isException = responseObject instanceof Throwable;
@@ -95,20 +92,22 @@ public final class LogicalChannelMocker {
         IccIoResult result = isException ? null : new IccIoResult(sw1, sw2, hex);
         Throwable exception = isException ? (Throwable) responseObject : null;
 
-        Message msg = response.getValue();
         AsyncResult.forMessage(msg, result, exception);
         msg.sendToTarget();
     }
 
-    public static void mockCloseLogicalChannel(CommandsInterface mockCi, int channel) {
-        ArgumentCaptor<Message> response = ArgumentCaptor.forClass(Message.class);
+    /**
+     * @param error can be {@code null} for a success response or an exception for a failure
+     */
+    public static void mockCloseLogicalChannel(
+            CommandsInterface mockCi, int channel, @Nullable Throwable error) {
         doAnswer((Answer<Void>) invocation -> {
-            Message msg = response.getValue();
-            AsyncResult.forMessage(msg);
+            Message msg = invocation.getArgument(2);
+            AsyncResult.forMessage(msg, null, error);
             msg.sendToTarget();
             return null;
         }).when(mockCi).iccCloseLogicalChannel(eq(channel),
-                eq(true /*isEs10*/), response.capture());
+                eq(true /*isEs10*/), any());
     }
 
     private static int[] getSelectResponse(String responseHex) {

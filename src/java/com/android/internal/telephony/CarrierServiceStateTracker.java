@@ -116,7 +116,8 @@ public class CarrierServiceStateTracker extends Handler {
         mTelephonyManager = mPhone.getContext().getSystemService(
                 TelephonyManager.class).createForSubscriptionId(mPhone.getSubId());
         CarrierConfigManager ccm = mPhone.getContext().getSystemService(CarrierConfigManager.class);
-        ccm.registerCarrierConfigChangeListener(
+        if (ccm != null) {
+            ccm.registerCarrierConfigChangeListener(
                 mPhone.getContext().getMainExecutor(),
                 (slotIndex, subId, carrierId, specificCarrierId) -> {
                     if (slotIndex != mPhone.getPhoneId()) return;
@@ -143,6 +144,7 @@ public class CarrierServiceStateTracker extends Handler {
                     }
                     handleConfigChanges();
                 });
+        }
 
         // Listen for subscriber changes
         SubscriptionManager.from(mPhone.getContext()).addOnSubscriptionsChangedListener(

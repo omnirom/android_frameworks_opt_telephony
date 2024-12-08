@@ -23,7 +23,6 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import android.telephony.CellIdentityGsm;
 import android.telephony.CellInfo;
@@ -101,23 +100,7 @@ public class DefaultPhoneNotifierTest extends TelephonyTest {
     }
 
     @Test @SmallTest
-    public void testNotifyDataActivity() throws Exception {
-        when(mFeatureFlags.notifyDataActivityChangedWithSlot()).thenReturn(false);
-        //mock data activity state
-        doReturn(TelephonyManager.DATA_ACTIVITY_NONE).when(mPhone).getDataActivityState();
-        mDefaultPhoneNotifierUT.notifyDataActivity(mPhone);
-        verify(mTelephonyRegistryManager).notifyDataActivityChanged(eq(0),
-                eq(TelephonyManager.DATA_ACTIVITY_NONE));
-
-        doReturn(1).when(mPhone).getSubId();
-        doReturn(TelephonyManager.DATA_ACTIVITY_IN).when(mPhone).getDataActivityState();
-        mDefaultPhoneNotifierUT.notifyDataActivity(mPhone);
-        verify(mTelephonyRegistryManager).notifyDataActivityChanged(eq(1),
-                eq(TelephonyManager.DATA_ACTIVITY_IN));
-    }
-    @Test @SmallTest
     public void testNotifyDataActivityWithSlot() throws Exception {
-        when(mFeatureFlags.notifyDataActivityChangedWithSlot()).thenReturn(true);
         //mock data activity state
         doReturn(TelephonyManager.DATA_ACTIVITY_NONE).when(mPhone).getDataActivityState();
         doReturn(PHONE_ID).when(mPhone).getPhoneId();
@@ -399,6 +382,15 @@ public class DefaultPhoneNotifierTest extends TelephonyTest {
         int subId = mPhone.getSubId();
         mDefaultPhoneNotifierUT.notifyCarrierRoamingNtnModeChanged(mPhone, true);
         verify(mTelephonyRegistryManager).notifyCarrierRoamingNtnModeChanged(
+                eq(subId), eq(true));
+    }
+
+    @Test
+    @SmallTest
+    public void testCarrierRoamingNtnEligibleStateChanged() {
+        int subId = mPhone.getSubId();
+        mDefaultPhoneNotifierUT.notifyCarrierRoamingNtnEligibleStateChanged(mPhone, true);
+        verify(mTelephonyRegistryManager).notifyCarrierRoamingNtnEligibleStateChanged(
                 eq(subId), eq(true));
     }
 }

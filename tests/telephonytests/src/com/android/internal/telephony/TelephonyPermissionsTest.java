@@ -37,6 +37,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.Process;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.permission.LegacyPermissionManager;
@@ -556,6 +557,38 @@ public class TelephonyPermissionsTest {
                         UserHandle.SYSTEM);
         assertFalse(TelephonyPermissions.checkSubscriptionAssociatedWithUser(mMockContext, SUB_ID,
                 UserHandle.SYSTEM));
+    }
+
+    @Test
+    public void testIsSystemOrPhone_systemUser() {
+        assertTrue(TelephonyPermissions.isSystemOrPhone(Process.SYSTEM_UID));
+        assertTrue(TelephonyPermissions.isSystemOrPhone(Process.PHONE_UID));
+
+        assertFalse(TelephonyPermissions.isSystemOrPhone(1002));
+    }
+
+    @Test
+    public void testIsSystemOrPhone_nonSystemUser() {
+        assertTrue(TelephonyPermissions.isSystemOrPhone(1001000));
+        assertTrue(TelephonyPermissions.isSystemOrPhone(1001001));
+
+        assertFalse(TelephonyPermissions.isSystemOrPhone(1001002));
+    }
+
+    @Test
+    public void testIsRootOrShell_systemUser() {
+        assertTrue(TelephonyPermissions.isRootOrShell(Process.ROOT_UID));
+        assertTrue(TelephonyPermissions.isRootOrShell(Process.SHELL_UID));
+
+        assertFalse(TelephonyPermissions.isRootOrShell(1002));
+    }
+
+    @Test
+    public void testIsRootOrShell_nonSystemUser() {
+        assertTrue(TelephonyPermissions.isRootOrShell(1000000));
+        assertTrue(TelephonyPermissions.isRootOrShell(1002000));
+
+        assertFalse(TelephonyPermissions.isRootOrShell(1001002));
     }
 
     // Put mMockTelephony into service cache so that TELEPHONY_SUPPLIER will get it.

@@ -16,6 +16,8 @@
 
 package com.android.internal.telephony.satellite.metrics;
 
+import static android.telephony.TelephonyManager.UNKNOWN_CARRIER_ID;
+
 import android.annotation.NonNull;
 import android.telephony.satellite.SatelliteManager;
 import android.util.Log;
@@ -37,6 +39,7 @@ public class ProvisionMetricsStats {
     private int mProvisioningStartTimeSec;
     private boolean mIsProvisionRequest;
     private boolean mIsCanceled;
+    private int mCarrierId;
 
     private ProvisionMetricsStats() {
         initializeProvisionParams();
@@ -80,6 +83,12 @@ public class ProvisionMetricsStats {
         return this;
     }
 
+    /** Sets the Carrier of NTN satellite */
+    public ProvisionMetricsStats setCarrierId(int carrierId) {
+        mCarrierId = carrierId;
+        return this;
+    }
+
     /** Report the provision metrics atoms to PersistAtomsStorage in telephony */
     public void reportProvisionMetrics() {
         SatelliteStats.SatelliteProvisionParams provisionParams =
@@ -89,9 +98,10 @@ public class ProvisionMetricsStats {
                                 (System.currentTimeMillis() / 1000) - mProvisioningStartTimeSec)
                         .setIsProvisionRequest(mIsProvisionRequest)
                         .setIsCanceled(mIsCanceled)
+                        .setCarrierId(mCarrierId)
                         .build();
         SatelliteStats.getInstance().onSatelliteProvisionMetrics(provisionParams);
-        logd("reportProvisionMetrics: " + provisionParams.toString());
+        logd("reportProvisionMetrics: " + provisionParams);
         initializeProvisionParams();
     }
 
@@ -100,6 +110,7 @@ public class ProvisionMetricsStats {
         mProvisioningStartTimeSec = INVALID_TIME;
         mIsProvisionRequest = false;
         mIsCanceled = false;
+        mCarrierId = UNKNOWN_CARRIER_ID;
     }
 
     private static void logd(@NonNull String log) {

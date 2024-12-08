@@ -18,6 +18,7 @@ package com.android.internal.telephony;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 
@@ -270,5 +271,15 @@ public class CarrierDisplayNameResolverTest extends TelephonyTest {
 
         assertThat(data.shouldShowPlmn()).isTrue();
         assertThat(data.getPlmn()).isEqualTo(HOME_PLMN_NUMERIC);
+    }
+
+    @Test
+    public void testCarrierDisplayNameData_enforceNonNullDataSpn() {
+        try {
+            CarrierDisplayNameData cdnd = new CarrierDisplayNameData.Builder()
+                    .setSpn("testSpn").build();
+            fail("Expected IAE");
+        } catch (IllegalArgumentException expected) {
+        }
     }
 }

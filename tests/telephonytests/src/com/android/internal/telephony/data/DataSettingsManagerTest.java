@@ -42,6 +42,7 @@ import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.TelephonyTest;
 import com.android.internal.telephony.data.DataSettingsManager.DataSettingsManagerCallback;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
+import com.android.internal.telephony.subscription.SubscriptionManagerService;
 
 import org.junit.After;
 import org.junit.Before;
@@ -181,6 +182,49 @@ public class DataSettingsManagerTest extends TelephonyTest {
         doReturn(true).when(phone2).isUserDataEnabled();
         callback.onUserDataEnabledChanged(true, "callingPackage");
         verify(mPhone).notifyDataEnabled(true, TelephonyManager.DATA_ENABLED_REASON_OVERRIDE);
+    }
+
+    @Test
+    public void testUpdateDataEnabledAndNotifyOverrideDdsChange() throws Exception {
+        // Mock 2nd phone the DDS phone.
+        int phone2Id = 1;
+        int phone2SubId = 2;
+        doReturn(phone2SubId).when(mSubscriptionManagerService).getDefaultDataSubId();
+        Phone phone2 = Mockito.mock(Phone.class);
+        doReturn(phone2Id).when(phone2).getPhoneId();
+        doReturn(phone2SubId).when(phone2).getSubId();
+        doReturn(phone2Id).when(mSubscriptionManagerService).getPhoneId(phone2SubId);
+        DataSettingsManager dataSettingsManager2 = Mockito.mock(DataSettingsManager.class);
+        doReturn(dataSettingsManager2).when(phone2).getDataSettingsManager();
+        doReturn(true).when(phone2).isUserDataEnabled();
+
+        mPhones = new Phone[] {mPhone, phone2};
+        replaceInstance(PhoneFactory.class, "sPhones", null, mPhones);
+        ArgumentCaptor<SubscriptionManagerService.SubscriptionManagerServiceCallback>
+                callbackArgumentCaptor = ArgumentCaptor
+                .forClass(SubscriptionManagerService.SubscriptionManagerServiceCallback.class);
+
+        mDataSettingsManagerUT.sendEmptyMessage(11 /* EVENT_INITIALIZE */);
+        mDataSettingsManagerUT.setDataEnabled(TelephonyManager.DATA_ENABLED_REASON_USER, false, "");
+        processAllMessages();
+
+        // Verify listening to DDS change callback
+        verify(mSubscriptionManagerService, times(2))
+                .registerCallback(callbackArgumentCaptor.capture());
+        SubscriptionManagerService.SubscriptionManagerServiceCallback callback =
+                callbackArgumentCaptor.getValue();
+
+        // Mock the phone as nonDDS auto switch override enabled.
+        clearInvocations(mPhones);
+        mDataSettingsManagerUT.setMobileDataPolicy(
+                TelephonyManager.MOBILE_DATA_POLICY_AUTO_DATA_SWITCH, true);
+        processAllMessages();
+        verify(mPhone).notifyDataEnabled(true, TelephonyManager.DATA_ENABLED_REASON_OVERRIDE);
+
+        // The phone became DDS, data should be disabled
+        doReturn(mPhone.getSubId()).when(mSubscriptionManagerService).getDefaultDataSubId();
+        callback.onDefaultDataSubscriptionChanged(mPhone.getSubId());
+        verify(mPhone).notifyDataEnabled(false, TelephonyManager.DATA_ENABLED_REASON_OVERRIDE);
     }
 
     @Test

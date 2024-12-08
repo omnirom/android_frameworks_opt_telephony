@@ -69,6 +69,7 @@ public class SubscriptionInfoTest {
                 .setServiceCapabilities(SubscriptionManager.getServiceCapabilitiesSet(
                     SubscriptionManager.SERVICE_CAPABILITY_DATA_BITMASK))
                 .setTransferStatus(1)
+                .setSatelliteESOSSupported(true)
                 .build();
     }
 

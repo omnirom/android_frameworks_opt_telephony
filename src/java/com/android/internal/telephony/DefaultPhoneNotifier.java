@@ -135,13 +135,9 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
 
         int subId = sender.getSubId();
 
-        if (mFeatureFlags.notifyDataActivityChangedWithSlot()) {
-            int phoneId = sender.getPhoneId();
-            mTelephonyRegistryMgr.notifyDataActivityChanged(phoneId, subId,
-                    sender.getDataActivityState());
-        } else {
-            mTelephonyRegistryMgr.notifyDataActivityChanged(subId, sender.getDataActivityState());
-        }
+        int phoneId = sender.getPhoneId();
+        mTelephonyRegistryMgr.notifyDataActivityChanged(phoneId, subId,
+                sender.getDataActivityState());
     }
 
     @Override
@@ -322,6 +318,12 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     @Override
     public void notifyCarrierRoamingNtnModeChanged(Phone sender, boolean active) {
         mTelephonyRegistryMgr.notifyCarrierRoamingNtnModeChanged(sender.getSubId(), active);
+    }
+
+    @Override
+    public void notifyCarrierRoamingNtnEligibleStateChanged(Phone sender, boolean eligible) {
+        mTelephonyRegistryMgr.notifyCarrierRoamingNtnEligibleStateChanged(
+                sender.getSubId(), eligible);
     }
 
     /**

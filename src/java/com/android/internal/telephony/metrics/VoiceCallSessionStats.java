@@ -26,6 +26,16 @@ import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSIO
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_DURATION__CALL_DURATION_LESS_THAN_THIRTY_MINUTES;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_DURATION__CALL_DURATION_MORE_THAN_ONE_HOUR;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_DURATION__CALL_DURATION_UNKNOWN;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_ACTIVE;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_ALERTING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DIALING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DISCONNECTED;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DISCONNECTING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_HOLDING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_IDLE;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_INCOMING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_WAITING;
+import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_UNKNOWN;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__DIRECTION__CALL_DIRECTION_MO;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__DIRECTION__CALL_DIRECTION_MT;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION__MAIN_CODEC_QUALITY__CODEC_QUALITY_FULLBAND;
@@ -540,6 +550,7 @@ public class VoiceCallSessionStats {
 
         // Compute time it took to fail setup (except for MT calls that have never been picked up)
         if (proto.setupFailed && proto.setupBeginMillis != 0L && proto.setupDurationMillis == 0) {
+            proto.preciseCallStateOnSetup = convertCallStateEnumToInt(Call.State.DISCONNECTED);
             proto.setupDurationMillis = (int) (getTimeMillis() - proto.setupBeginMillis);
         }
 
@@ -632,6 +643,7 @@ public class VoiceCallSessionStats {
 
     private void checkCallSetup(Connection conn, VoiceCallSession proto) {
         if (proto.setupBeginMillis != 0L && isSetupFinished(conn.getCall())) {
+            proto.preciseCallStateOnSetup = convertCallStateEnumToInt(conn.getState());
             proto.setupDurationMillis = (int) (getTimeMillis() - proto.setupBeginMillis);
             proto.setupBeginMillis = 0L;
         }
@@ -1090,6 +1102,31 @@ public class VoiceCallSessionStats {
             default:
                 // All other states are considered as not in handover
                 proto.handoverInProgress = false;
+        }
+    }
+
+    private int convertCallStateEnumToInt(Call.State state) {
+        switch (state) {
+            case IDLE:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_IDLE;
+            case ACTIVE:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_ACTIVE;
+            case HOLDING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_HOLDING;
+            case DIALING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DIALING;
+            case ALERTING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_ALERTING;
+            case INCOMING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_INCOMING;
+            case WAITING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_WAITING;
+            case DISCONNECTED:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DISCONNECTED;
+            case DISCONNECTING:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_DISCONNECTING;
+            default:
+                return VOICE_CALL_SESSION__CALL_STATE_ON_SETUP__CALL_STATE_UNKNOWN;
         }
     }
 }

@@ -189,7 +189,7 @@ public class TelephonyNetworkRequestTest extends TelephonyTest {
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_ENTERPRISE)
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_SUPL)
                         .build(), mPhone, mFeatureFlags);
-        assertThat(request.getApnTypeNetworkCapability())
+        assertThat(request.getHighestPriorityApnTypeNetworkCapability())
                 .isEqualTo(NetworkCapabilities.NET_CAPABILITY_SUPL);
 
         request = new TelephonyNetworkRequest(
@@ -198,7 +198,7 @@ public class TelephonyNetworkRequestTest extends TelephonyTest {
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED)
                         .build(), mPhone, mFeatureFlags);
-        assertThat(request.getApnTypeNetworkCapability())
+        assertThat(request.getHighestPriorityApnTypeNetworkCapability())
                 .isEqualTo(NetworkCapabilities.NET_CAPABILITY_FOTA);
 
         request = new TelephonyNetworkRequest(
@@ -207,7 +207,7 @@ public class TelephonyNetworkRequestTest extends TelephonyTest {
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED)
                         .build(), mPhone, mFeatureFlags);
-        assertThat(request.getApnTypeNetworkCapability())
+        assertThat(request.getHighestPriorityApnTypeNetworkCapability())
                 .isEqualTo(NetworkCapabilities.NET_CAPABILITY_EIMS);
     }
 

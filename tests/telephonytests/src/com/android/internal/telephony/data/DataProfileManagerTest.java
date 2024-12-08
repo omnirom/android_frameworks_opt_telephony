@@ -1046,7 +1046,6 @@ public class DataProfileManagerTest extends TelephonyTest {
 
     @Test
     public void testSetPreferredDataProfile() {
-        doReturn(true).when(mFeatureFlags).refinePreferredDataProfileSelection();
         TelephonyNetworkRequest tnr = new TelephonyNetworkRequest(
                 new NetworkRequest.Builder()
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

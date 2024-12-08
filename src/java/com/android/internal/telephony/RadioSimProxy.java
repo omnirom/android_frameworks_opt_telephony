@@ -24,6 +24,8 @@ import android.telephony.Rlog;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.PersoSubState;
 import com.android.internal.telephony.uicc.SimPhonebookRecord;
 
+import java.util.Collections;
+
 /**
  * A holder for IRadioSim.
  * Use getAidl to get IRadioSim and call the AIDL implementations of the HAL APIs.
@@ -512,27 +514,44 @@ public class RadioSimProxy extends RadioServiceProxy {
 
     /**
      * Call IRadioSim#setAllowedCarriers
-     * @param serial Serial number of request
+     *
+     * @param serial                  Serial number of request
      * @param carrierRestrictionRules Allowed carriers
-     * @throws RemoteException
      */
-    public void setAllowedCarriers(int serial, CarrierRestrictionRules carrierRestrictionRules)
-            throws RemoteException {
+    public void setAllowedCarriers(int serial, CarrierRestrictionRules carrierRestrictionRules,
+            HalVersion halversion) throws RemoteException {
         if (isEmpty()) return;
         if (isAidl()) {
-            // Prepare structure with allowed list, excluded list and priority
             android.hardware.radio.sim.CarrierRestrictions carrierRestrictions =
                     new android.hardware.radio.sim.CarrierRestrictions();
-            carrierRestrictions.allowedCarriers = RILUtils.convertToHalCarrierRestrictionListAidl(
-                    carrierRestrictionRules.getAllowedCarriers());
-            carrierRestrictions.excludedCarriers = RILUtils.convertToHalCarrierRestrictionListAidl(
-                    carrierRestrictionRules.getExcludedCarriers());
+            if (halversion.greaterOrEqual(RIL.RADIO_HAL_VERSION_2_2)) {
+                carrierRestrictions.allowedCarrierInfoList =
+                        RILUtils.convertToHalCarrierInfoListAidl(
+                                carrierRestrictionRules.getAllowedCarriers());
+                carrierRestrictions.excludedCarrierInfoList =
+                        RILUtils.convertToHalCarrierInfoListAidl(
+                                carrierRestrictionRules.getExcludedCarriers());
+                carrierRestrictions.allowedCarriers =
+                        RILUtils.convertToHalCarrierRestrictionListAidl(Collections.EMPTY_LIST);
+                carrierRestrictions.excludedCarriers =
+                        RILUtils.convertToHalCarrierRestrictionListAidl(Collections.EMPTY_LIST);
+            } else {
+                // Prepare structure with allowed list, excluded list and priority
+                carrierRestrictions.allowedCarriers =
+                        RILUtils.convertToHalCarrierRestrictionListAidl(
+                                carrierRestrictionRules.getAllowedCarriers());
+                carrierRestrictions.excludedCarriers =
+                        RILUtils.convertToHalCarrierRestrictionListAidl(
+                                carrierRestrictionRules.getExcludedCarriers());
+            }
             carrierRestrictions.allowedCarriersPrioritized =
                     (carrierRestrictionRules.getDefaultCarrierRestriction()
                             == CarrierRestrictionRules.CARRIER_RESTRICTION_DEFAULT_NOT_ALLOWED);
+            carrierRestrictions.status = carrierRestrictionRules.getCarrierRestrictionStatus();
             mSimProxy.setAllowedCarriers(serial, carrierRestrictions,
                     RILUtils.convertToHalSimLockMultiSimPolicyAidl(
                             carrierRestrictionRules.getMultiSimPolicy()));
+            Rlog.d(TAG, "RadioSimProxy setAllowedCarriers params = " + carrierRestrictions);
         } else {
             // Prepare structure with allowed list, excluded list and priority
             android.hardware.radio.V1_4.CarrierRestrictionsWithPriority carrierRestrictions =
