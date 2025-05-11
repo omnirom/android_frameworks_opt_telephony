@@ -1580,7 +1580,8 @@ public class DataNetworkController extends Handler {
      * @return The data evaluation result.
      */
     @NonNull
-    private DataEvaluation evaluateNetworkRequest(
+    @VisibleForTesting
+    public DataEvaluation evaluateNetworkRequest(
             @NonNull TelephonyNetworkRequest networkRequest, DataEvaluationReason reason) {
         DataEvaluation evaluation = new DataEvaluation(reason);
         int transport = mAccessNetworksManager.getPreferredTransportByNetworkCapability(
@@ -2235,6 +2236,9 @@ public class DataNetworkController extends Handler {
             }
             // When the device is on satellite, internet with restricted capabilities always honor
             // soft disallowed reasons and not respected as restricted request
+            // Note - ping test are performed with restricted request on satellite assuming they cannot
+            // bypass any checks. If below is removed, reevaluate the ping request in
+            // CellularNetworkValidator and the getInternetEvaluation in AutoDataSwitchController
             return !(mServiceState.isUsingNonTerrestrialNetwork()
                     && networkRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET));
 
@@ -3543,6 +3547,15 @@ public class DataNetworkController extends Handler {
     }
 
     /**
+     * Called when SIM is absent.
+     */
+    private void onSimAbsent() {
+        log("onSimAbsent");
+        sendMessage(obtainMessage(EVENT_REEVALUATE_EXISTING_DATA_NETWORKS,
+                DataEvaluationReason.SIM_REMOVAL));
+    }
+
+    /**
      * Called when SIM state changes.
      *
      * @param simState SIM state. (Note this is mixed with card state and application state.)
@@ -3550,22 +3563,13 @@ public class DataNetworkController extends Handler {
     private void onSimStateChanged(@SimState int simState) {
         log("onSimStateChanged: state=" + TelephonyManager.simStateToString(simState));
         if (mSimState != simState) {
+            mSimState = simState;
             if (simState == TelephonyManager.SIM_STATE_ABSENT) {
-                log("onSimStateChanged: SIM absent.");
-                sendMessage(obtainMessage(EVENT_REEVALUATE_EXISTING_DATA_NETWORKS,
-                        DataEvaluationReason.SIM_REMOVAL));
-            } else if (simState == TelephonyManager.SIM_STATE_NOT_READY
-                    && mSimState == TelephonyManager.SIM_STATE_LOADED) {
-                if (mFeatureFlags.simDisabledGracefulTearDown()) {
-                    log("onSimStateChanged: SIM disabled.");
-                    sendMessage(obtainMessage(EVENT_REEVALUATE_EXISTING_DATA_NETWORKS,
-                            DataEvaluationReason.SIM_DISABLED));
-                }
+                onSimAbsent();
             } else if (simState == TelephonyManager.SIM_STATE_LOADED) {
                 sendMessage(obtainMessage(EVENT_REEVALUATE_UNSATISFIED_NETWORK_REQUESTS,
                         DataEvaluationReason.SIM_LOADED));
             }
-            mSimState = simState;
             mDataNetworkControllerCallbacks.forEach(callback -> callback.invokeFromExecutor(
                     () -> callback.onSimStateChanged(mSimState)));
         }
