@@ -229,6 +229,17 @@ public class PhoneConfigurationManager {
     }
 
     /**
+     * Listener for listening to events in the {@link android.telephony.TelephonyRegistryManager}
+     */
+    private final SubscriptionManager.OnSubscriptionsChangedListener mSubscriptionsChangedListener =
+            new SubscriptionManager.OnSubscriptionsChangedListener() {
+                @Override
+                public void onSubscriptionsChanged() {
+                    updateSimultaneousSubIdsFromPhoneIdMappingAndNotify();
+                }
+            };
+
+    /**
      * If virtual DSDA is enabled for this UE, then increase maxActiveVoiceSubscriptions to 2.
      */
     private PhoneCapability maybeOverrideMaxActiveVoiceSubscriptions(
@@ -278,14 +289,11 @@ public class PhoneConfigurationManager {
         // Register for subId updates to notify listeners when simultaneous calling is configured
         if (mFeatureFlags.simultaneousCallingIndications()
                 && (bkwdsCompatDsda || halSupportSimulCalling)) {
+            Log.d(LOG_TAG, "maybeEnableCellularDSDASupport: registering "
+                            + "mSubscriptionsChangedListener");
             mContext.getSystemService(TelephonyRegistryManager.class)
                     .addOnSubscriptionsChangedListener(
-                            new SubscriptionManager.OnSubscriptionsChangedListener() {
-                                @Override
-                                public void onSubscriptionsChanged() {
-                                    updateSimultaneousSubIdsFromPhoneIdMappingAndNotify();
-                                }
-                            }, mHandler::post);
+                            mSubscriptionsChangedListener, mHandler::post);
         }
     }
 

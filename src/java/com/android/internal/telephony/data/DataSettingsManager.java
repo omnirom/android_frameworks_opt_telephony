@@ -216,7 +216,6 @@ public class DataSettingsManager extends Handler {
                 break;
             }
             case EVENT_SUBSCRIPTIONS_CHANGED: {
-                mSubId = (int) msg.obj;
                 refreshEnabledMobileDataPolicy();
                 updateDataEnabledAndNotify(TelephonyManager.DATA_ENABLED_REASON_USER,
                         mPhone.getContext().getOpPackageName(),
@@ -313,11 +312,12 @@ public class DataSettingsManager extends Handler {
                     public void onSubscriptionsChanged() {
                         if (mSubId != mPhone.getSubId()) {
                             log("onSubscriptionsChanged: " + mSubId + " to " + mPhone.getSubId());
+                            mSubId = mPhone.getSubId();
                             obtainMessage(EVENT_SUBSCRIPTIONS_CHANGED, mPhone.getSubId())
                                     .sendToTarget();
                         }
                     }
-                }, this::post);
+                }, Runnable::run);
         // some overall mobile data override policy depend on whether DDS is user data enabled.
         for (Phone phone : PhoneFactory.getPhones()) {
             if (phone.getPhoneId() != mPhone.getPhoneId()) {
@@ -467,8 +467,8 @@ public class DataSettingsManager extends Handler {
         if (isStandAloneOpportunistic(mSubId) && !enabled) return;
         boolean changed = GlobalSettingsHelper.setInt(mPhone.getContext(),
                 Settings.Global.MOBILE_DATA, mSubId, (enabled ? 1 : 0));
-        log("Set user data enabled to " + enabled + ", changed=" + changed + ", callingPackage="
-                + callingPackage);
+        logl("Set user data enabled to " + enabled + " on sub " + mSubId + ", changed="
+                + changed + ", callingPackage=" + callingPackage);
         if (changed) {
             logl("UserDataEnabled changed to " + enabled);
             mPhone.notifyUserMobileDataStateChanged(enabled);
@@ -555,8 +555,9 @@ public class DataSettingsManager extends Handler {
         // Will trigger handleDataOnRoamingChange() through observer
         boolean changed = GlobalSettingsHelper.setBoolean(mPhone.getContext(),
                 Settings.Global.DATA_ROAMING, mSubId, enabled);
+        logl("DataRoamingEnabled set to " + enabled + " on sub " + mSubId
+                + ", changed=" + changed);
         if (changed) {
-            logl("DataRoamingEnabled changed to " + enabled);
             mDataSettingsManagerCallbacks.forEach(callback -> callback.invokeFromExecutor(
                     () -> callback.onDataRoamingEnabledChanged(enabled)));
         }

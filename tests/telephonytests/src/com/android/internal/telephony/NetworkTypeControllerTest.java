@@ -112,6 +112,7 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         // Capture listener to emulate the carrier config change notification used later
         ArgumentCaptor<CarrierConfigManager.CarrierConfigChangeListener> listenerArgumentCaptor =
                 ArgumentCaptor.forClass(CarrierConfigManager.CarrierConfigChangeListener.class);
+        setPhysicalLinkStatus(true);
         mNetworkTypeController =
                 new NetworkTypeController(mPhone, mDisplayInfoController, mFeatureFlags);
         processAllMessages();
@@ -374,7 +375,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
     @Test
     public void testTransitionToCurrentStateNrConnectedIdle() throws Exception {
         assertEquals("DefaultState", getCurrentState().getName());
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         doReturn(new ArrayList<>()).when(mSST).getPhysicalChannelConfigList();
         sendCarrierConfigChanged();
@@ -640,7 +640,7 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         mNetworkTypeController.sendMessage(11 /* EVENT_PHYSICAL_CHANNEL_CONFIGS_CHANGED */,
                 new AsyncResult(null, new ArrayList<>(), null));
         processAllMessages();
-        assertEquals("connected_mmwave", getCurrentState().getName());
+        assertEquals("connected_rrc_idle", getCurrentState().getName());
 
         // bands and bandwidths should stay ratcheted as long as anchor NR cell is the same
         physicalChannelConfigs.remove(pcc2);
@@ -704,7 +704,7 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         mNetworkTypeController.sendMessage(11 /* EVENT_PHYSICAL_CHANNEL_CONFIGS_CHANGED */,
                 new AsyncResult(null, new ArrayList<>(), null));
         processAllMessages();
-        assertEquals("connected_mmwave", getCurrentState().getName());
+        assertEquals("connected_rrc_idle", getCurrentState().getName());
 
         // bands and bandwidths should change if PCC list changes
         physicalChannelConfigs.remove(pcc2);
@@ -809,7 +809,14 @@ public class NetworkTypeControllerTest extends TelephonyTest {
                 new NetworkTypeController(mPhone, mDisplayInfoController, mFeatureFlags);
         sendCarrierConfigChanged();
         processAllMessages();
-        testTransitionToCurrentStateNrConnectedMmwave();
+
+        // service state of NrConnectedMmwave shouldn't affect the result
+        doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
+        doReturn(ServiceState.FREQUENCY_RANGE_MMWAVE).when(mServiceState).getNrFrequencyRange();
+
+        mNetworkTypeController.sendMessage(3 /* EVENT_SERVICE_STATE_CHANGED */);
+        processAllMessages();
+
         doReturn(NetworkRegistrationInfo.NR_STATE_NOT_RESTRICTED).when(mServiceState).getNrState();
         mNetworkTypeController.sendMessage(4 /* EVENT_PHYSICAL_LINK_STATUS_CHANGED */,
                 DataCallResponse.LINK_STATUS_ACTIVE);
@@ -1252,7 +1259,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testPrimaryTimerPrimaryCellChangeNrIdle() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
         physicalChannelConfigs.add(new PhysicalChannelConfig.Builder()
@@ -1353,6 +1359,60 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         // should trigger 30 second secondary timer
         assertEquals("legacy", getCurrentState().getName());
         assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertTrue(mNetworkTypeController.areAnyTimersActive());
+
+        // secondary timer expires
+        moveTimeForward(30 * 1000);
+        processAllMessages();
+
+        assertEquals("legacy", getCurrentState().getName());
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertFalse(mNetworkTypeController.areAnyTimersActive());
+    }
+
+    @Test
+    public void testSecondaryPciTimerExpire() throws Exception {
+        testTransitionToCurrentStateNrConnectedMmwave();
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
+                mNetworkTypeController.getOverrideNetworkType());
+
+        mBundle.putString(CarrierConfigManager.KEY_5G_ICON_DISPLAY_GRACE_PERIOD_STRING,
+                "connected_mmwave,any,10;connected,any,10;not_restricted_rrc_con,any,10");
+        mBundle.putInt(CarrierConfigManager.KEY_NR_ADVANCED_PCI_CHANGE_SECONDARY_TIMER_SECONDS_INT,
+                30);
+        sendCarrierConfigChanged();
+
+        // should trigger 10 second primary timer
+        doReturn(NetworkRegistrationInfo.NR_STATE_NONE).when(mServiceState).getNrState();
+        mNetworkTypeController.sendMessage(3 /* EVENT_SERVICE_STATE_CHANGED */);
+        processAllMessages();
+
+        assertEquals("legacy", getCurrentState().getName());
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertTrue(mNetworkTypeController.areAnyTimersActive());
+
+        // Before primary timer expires, PCI changed, indicating 5G UW might soon recover
+        moveTimeForward(5 * 1000);
+        mNetworkTypeController.sendMessage(11 /* EVENT_PHYSICAL_CHANNEL_CONFIGS_CHANGED */,
+                new AsyncResult(null,
+                        List.of(new PhysicalChannelConfig.Builder()
+                                .setPhysicalCellId(2)
+                                .setNetworkType(TelephonyManager.NETWORK_TYPE_NR)
+                                .setCellConnectionStatus(CellInfo.CONNECTION_PRIMARY_SERVING)
+                        .build()),
+                        null));
+        processAllMessages();
+
+        // primary timer expires
+        moveTimeForward(5 * 1000);
+        processAllMessages();
+
+        // should trigger 30 second secondary timer
+        assertEquals("legacy", getCurrentState().getName());
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
                 mNetworkTypeController.getOverrideNetworkType());
         assertTrue(mNetworkTypeController.areAnyTimersActive());
 
@@ -1509,7 +1569,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testTransitionToNrIdle() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         doReturn(ServiceState.FREQUENCY_RANGE_HIGH).when(mServiceState).getNrFrequencyRange();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
@@ -1555,7 +1614,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testSecondaryTimerAdvanceBand() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         doReturn(ServiceState.FREQUENCY_RANGE_HIGH).when(mServiceState).getNrFrequencyRange();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
@@ -1677,7 +1735,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testSecondaryTimerExpireNrIdle() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
         physicalChannelConfigs.add(new PhysicalChannelConfig.Builder()
@@ -1748,7 +1805,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testSecondaryTimerResetNrIdle() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
         physicalChannelConfigs.add(new PhysicalChannelConfig.Builder()
@@ -1830,7 +1886,6 @@ public class NetworkTypeControllerTest extends TelephonyTest {
 
     @Test
     public void testSecondaryTimerPrimaryCellChangeNrIdle() throws Exception {
-        doReturn(true).when(mFeatureFlags).supportNrSaRrcIdle();
         doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
         ArrayList<PhysicalChannelConfig> physicalChannelConfigs = new ArrayList<>();
         physicalChannelConfigs.add(new PhysicalChannelConfig.Builder()

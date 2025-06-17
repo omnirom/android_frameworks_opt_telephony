@@ -22,7 +22,7 @@ import static android.telephony.TelephonyManager.SIM_ACTIVATION_STATE_RESTRICTED
 import static android.telephony.TelephonyManager.SIM_ACTIVATION_STATE_UNKNOWN;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 

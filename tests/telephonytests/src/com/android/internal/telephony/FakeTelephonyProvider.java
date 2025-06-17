@@ -138,7 +138,12 @@ public class FakeTelephonyProvider extends MockContentProvider {
                     + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_PLMNS + " TEXT,"
                     + Telephony.SimInfo.COLUMN_SATELLITE_ESOS_SUPPORTED + " INTEGER DEFAULT 0,"
                     + Telephony.SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM
-                    + " INTEGER DEFAULT 0"
+                    + " INTEGER DEFAULT 0,"
+                    + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_BARRED_PLMNS + " TEXT,"
+                    + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS + " TEXT,"
+                    + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP + " TEXT,"
+                    + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY + " TEXT,"
+                    + Telephony.SimInfo.COLUMN_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY + " TEXT"
                     + ");";
         }
 

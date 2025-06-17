@@ -43,6 +43,7 @@ import android.util.Pair;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.flags.FeatureFlags;
+import com.android.internal.telephony.util.WorkerThread;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -205,12 +206,19 @@ public class TelephonyCountryDetector extends Handler {
     public static synchronized TelephonyCountryDetector getInstance(@NonNull Context context,
             FeatureFlags featureFlags) {
         if (sInstance == null) {
-            HandlerThread handlerThread = new HandlerThread("TelephonyCountryDetector");
-            handlerThread.start();
-            sInstance = new TelephonyCountryDetector(handlerThread.getLooper(), context,
-                    context.getSystemService(LocationManager.class),
-                    context.getSystemService(ConnectivityManager.class),
-                    featureFlags);
+            if (featureFlags.threadShred()) {
+                sInstance = new TelephonyCountryDetector(WorkerThread.get().getLooper(), context,
+                        context.getSystemService(LocationManager.class),
+                        context.getSystemService(ConnectivityManager.class),
+                        featureFlags);
+            } else {
+                HandlerThread handlerThread = new HandlerThread("TelephonyCountryDetector");
+                handlerThread.start();
+                sInstance = new TelephonyCountryDetector(handlerThread.getLooper(), context,
+                        context.getSystemService(LocationManager.class),
+                        context.getSystemService(ConnectivityManager.class),
+                        featureFlags);
+            }
         }
         return sInstance;
     }
@@ -482,12 +490,8 @@ public class TelephonyCountryDetector extends Handler {
             }
         }
         evaluateRequestingLocationUpdates();
-        if (mFeatureFlags.oemEnabledSatelliteFlag()) {
-            logd("mCountryCodeChangedRegistrants.notifyRegistrants()");
-            mCountryCodeChangedRegistrants.notifyRegistrants();
-        } else {
-            logd("mCountryCodeChangedRegistrants.notifyRegistrants() is not called");
-        }
+        logd("mCountryCodeChangedRegistrants.notifyRegistrants()");
+        mCountryCodeChangedRegistrants.notifyRegistrants();
     }
 
     private void handleEventWifiConnectivityStateChanged(boolean connected) {

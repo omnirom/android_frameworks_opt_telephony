@@ -101,7 +101,6 @@ public class PointingAppControllerTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
         MockitoAnnotations.initMocks(this);
         logd(TAG + " Setup!");
-        when(mFeatureFlags.satellitePersistentLogging()).thenReturn(true);
         mInOrderForPointingUi = inOrder(mContext);
         replaceInstance(SatelliteModemInterface.class, "sInstance", null,
                 mMockSatelliteModemInterface);

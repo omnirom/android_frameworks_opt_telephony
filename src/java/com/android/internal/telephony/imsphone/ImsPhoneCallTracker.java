@@ -259,6 +259,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
     private Optional<Integer> mCurrentlyConnectedSubId = Optional.empty();
 
     private final MmTelFeatureListener mMmTelFeatureListener = new MmTelFeatureListener();
+    private com.android.server.telecom.flags.FeatureFlags mTelecomFlags =
+            new com.android.server.telecom.flags.FeatureFlagsImpl();
     private class MmTelFeatureListener extends MmTelFeature.Listener {
 
         private IImsCallSessionListener processIncomingCall(@NonNull IImsCallSession c,
@@ -312,11 +314,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                         // activeCall could be null if the foreground call is in a disconnected
                         // state.  If either of the calls is null there is no need to check if
                         // one will be disconnected on answer.
-                        // Use VideoProfile.STATE_BIDIRECTIONAL to not affect existing
-                        // implementation. Video state of user response is handled in acceptCall().
                         boolean answeringWillDisconnect =
-                                shouldDisconnectActiveCallOnAnswer(activeCall, imsCall,
-                                        VideoProfile.STATE_BIDIRECTIONAL);
+                                shouldDisconnectActiveCallOnAnswer(activeCall, imsCall);
                         conn.setActiveCallDisconnectedOnAnswer(answeringWillDisconnect);
                     }
                 }
@@ -2223,7 +2222,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             ImsCall ringingCall = mRingingCall.getImsCall();
             if (mForegroundCall.hasConnections() && mRingingCall.hasConnections()) {
                 answeringWillDisconnect =
-                        shouldDisconnectActiveCallOnAnswer(activeCall, ringingCall, videoState);
+                        shouldDisconnectActiveCallOnAnswer(activeCall, ringingCall);
             }
 
             // Cache video state for pending MT call.
@@ -3119,6 +3118,8 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
             conn.maybeChangeRingbackState();
 
             maybeSetVideoCallProvider(conn, imsCall);
+            // Update IMS call status if the call attributes are changed - i.e. call network type.
+            mImsCallInfoTracker.updateImsCallStatus(conn);
             // IMS call profile might be changed while call state is maintained. In this case, it's
             // required to notify to CallAttributesListener.
             // Since call state is not changed, TelephonyRegistry will not notify to
@@ -4083,6 +4084,13 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
                     Rlog.w(LOG_TAG, "onCallResumeFailed: got a resume failed for a different call"
                             + " in the single call unhold case");
                 }
+            }
+            ImsPhoneConnection conn = findConnection(imsCall);
+            // Send connection event so that Telecom can unhold the call the bg call that was held
+            // for calls across phone accounts.
+            if (mTelecomFlags.enableCallSequencing() && conn != null
+                    && conn.getState() != ImsPhoneCall.State.DISCONNECTED) {
+                conn.onConnectionEvent(android.telecom.Connection.EVENT_CALL_RESUME_FAILED, null);
             }
             mPhone.notifySuppServiceFailed(Phone.SuppService.RESUME);
             mMetrics.writeOnImsCallResumeFailed(mPhone.getPhoneId(), imsCall.getCallSession(),
@@ -5533,13 +5541,11 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
      *
      * @param activeCall The active call.
      * @param incomingCall The incoming call.
-     * @param incomingCallVideoState The media type of incoming call acceptance.
-     *                              {@link VideoProfile.VideoState}
      * @return {@code true} if answering the incoming call will cause the active call to be
      *      disconnected, {@code false} otherwise.
      */
     private boolean shouldDisconnectActiveCallOnAnswer(ImsCall activeCall,
-            ImsCall incomingCall, int incomingCallVideoState) {
+            ImsCall incomingCall) {
 
         if (activeCall == null || incomingCall == null) {
             return false;
@@ -5554,14 +5560,7 @@ public class ImsPhoneCallTracker extends CallTracker implements ImsPullCall {
         boolean isActiveCallOnWifi = activeCall.isWifiCall();
         boolean isVoWifiEnabled = mImsManager.isWfcEnabledByPlatform()
                 && mImsManager.isWfcEnabledByUser();
-        boolean isIncomingCallAudio = true;
-        if (!mFeatureFlags.terminateActiveVideoCallWhenAcceptingSecondVideoCallAsAudioOnly()) {
-            isIncomingCallAudio = !incomingCall.isVideoCall();
-        } else {
-            isIncomingCallAudio = !incomingCall.isVideoCall()
-                    || incomingCallVideoState == VideoProfile.STATE_AUDIO_ONLY;
-        }
-
+        boolean isIncomingCallAudio = !incomingCall.isVideoCall();
         log("shouldDisconnectActiveCallOnAnswer : isActiveCallVideo=" + isActiveCallVideo +
                 " isActiveCallOnWifi=" + isActiveCallOnWifi + " isIncomingCallAudio=" +
                 isIncomingCallAudio + " isVowifiEnabled=" + isVoWifiEnabled);

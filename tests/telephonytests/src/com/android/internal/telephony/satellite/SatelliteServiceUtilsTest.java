@@ -19,6 +19,7 @@ package com.android.internal.telephony.satellite;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +43,7 @@ import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +55,8 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
     private static final int SUB_ID = 0;
     private static final int SUB_ID1 = 1;
     @Mock private ServiceState mServiceState2;
+
+    @Mock SatelliteControllerTest.TestSatelliteController mMockSatelliteController;
 
     @Before
     public void setUp() throws Exception {
@@ -67,6 +71,8 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
         when(mPhone2.getServiceState()).thenReturn(mServiceState2);
         when(mPhone2.getSubId()).thenReturn(SUB_ID1);
         when(mPhone2.getPhoneId()).thenReturn(1);
+        replaceInstance(SatelliteController.class, "sInstance", null,
+                mMockSatelliteController);
     }
 
     @After
@@ -144,6 +150,8 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
     public void testIsCellularAvailable() {
         when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
         when(mServiceState2.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState.getNetworkRegistrationInfo(anyInt(), anyInt())).thenReturn(null);
+        when(mServiceState2.getNetworkRegistrationInfo(anyInt(), anyInt())).thenReturn(null);
         assertFalse(SatelliteServiceUtils.isCellularAvailable());
 
         when(mServiceState.getState()).thenReturn(ServiceState.STATE_EMERGENCY_ONLY);
@@ -157,14 +165,30 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
         when(mServiceState2.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
         when(mServiceState2.isEmergencyOnly()).thenReturn(true);
         assertTrue(SatelliteServiceUtils.isCellularAvailable());
+
+        NetworkRegistrationInfo dataNri = new NetworkRegistrationInfo.Builder()
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfo(anyInt(), anyInt())).thenReturn(dataNri);
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.isEmergencyOnly()).thenReturn(false);
+        assertTrue(SatelliteServiceUtils.isCellularAvailable());
+
+        dataNri = new NetworkRegistrationInfo.Builder()
+                .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_EMERGENCY)
+                .build();
+        when(mServiceState.getNetworkRegistrationInfo(anyInt(), anyInt())).thenReturn(dataNri);
+        when(mServiceState.getState()).thenReturn(ServiceState.STATE_OUT_OF_SERVICE);
+        when(mServiceState2.isEmergencyOnly()).thenReturn(false);
+        assertFalse(SatelliteServiceUtils.isCellularAvailable());
     }
 
     @Test
     public void testIsSatellitePlmn() {
         int subId = 1;
 
-        when(mSatelliteController.getSatellitePlmnsForCarrier(eq(subId)))
-                .thenReturn(new ArrayList<>());
+        when(mMockSatelliteController.getAllPlmnSet())
+                .thenReturn(new HashSet<>(new ArrayList<>()));
         assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
 
         // registered PLMN is null
@@ -177,8 +201,8 @@ public class SatelliteServiceUtilsTest extends TelephonyTest {
         assertFalse(SatelliteServiceUtils.isSatellitePlmn(subId, mServiceState));
 
         // cell identity is null
-        when(mSatelliteController.getSatellitePlmnsForCarrier(eq(subId))).thenReturn(
-                List.of("120260"));
+        when(mMockSatelliteController.getAllPlmnSet()).thenReturn(
+                new HashSet<>(List.of("120260")));
         nri = new NetworkRegistrationInfo.Builder()
                 .setRegisteredPlmn("123456")
                 .setCellIdentity(null)

@@ -21,13 +21,14 @@ import static com.android.internal.telephony.TelephonyStatsLog.CELLULAR_SERVICE_
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.nullable;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 
 import android.app.ActivityManager;
@@ -143,6 +144,7 @@ import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccPort;
 import com.android.internal.telephony.uicc.UiccProfile;
 import com.android.internal.telephony.uicc.UiccSlot;
+import com.android.internal.telephony.util.WorkerThread;
 import com.android.server.pm.permission.LegacyPermissionManagerService;
 
 import org.mockito.Mockito;
@@ -172,23 +174,6 @@ public abstract class TelephonyTest {
                     EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
             new ArrayList<String>(), EmergencyNumber.EMERGENCY_NUMBER_SOURCE_NETWORK_SIGNALING,
             EmergencyNumber.EMERGENCY_CALL_ROUTING_NORMAL);
-
-    private static final Field MESSAGE_QUEUE_FIELD;
-    private static final Field MESSAGE_WHEN_FIELD;
-    private static final Field MESSAGE_NEXT_FIELD;
-
-    static {
-        try {
-            MESSAGE_QUEUE_FIELD = MessageQueue.class.getDeclaredField("mMessages");
-            MESSAGE_QUEUE_FIELD.setAccessible(true);
-            MESSAGE_WHEN_FIELD = Message.class.getDeclaredField("when");
-            MESSAGE_WHEN_FIELD.setAccessible(true);
-            MESSAGE_NEXT_FIELD = Message.class.getDeclaredField("next");
-            MESSAGE_NEXT_FIELD.setAccessible(true);
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Failed to initialize TelephonyTest", e);
-        }
-    }
 
     // Mocked classes
     protected FeatureFlags mFeatureFlags;
@@ -579,11 +564,13 @@ public abstract class TelephonyTest {
         mDomainSelectionResolver = Mockito.mock(DomainSelectionResolver.class);
         mNullCipherNotifier = Mockito.mock(NullCipherNotifier.class);
 
-        doReturn(true).when(mFeatureFlags).minimalTelephonyCdmCheck();
-        doReturn(true).when(mFeatureFlags).supportNetworkProvider();
-        doReturn(true).when(mFeatureFlags).hsumBroadcast();
-        doReturn(true).when(mFeatureFlags).hsumPackageManager();
+        lenient().doReturn(true).when(mFeatureFlags).hsumBroadcast();
+        lenient().doReturn(true).when(mFeatureFlags).hsumPackageManager();
+        lenient().doReturn(true).when(mFeatureFlags).dataServiceCheck();
+        lenient().doReturn(true).when(mFeatureFlags).phoneTypeCleanup();
+        lenient().doReturn(true).when(mFeatureFlags).cleanupCdma();
 
+        WorkerThread.reset();
         TelephonyManager.disableServiceHandleCaching();
         PropertyInvalidatedCache.disableForTestMode();
         // For testing do not allow Log.WTF as it can cause test process to crash
@@ -609,16 +596,16 @@ public abstract class TelephonyTest {
         Settings.Global.getInt(mContext.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON, 0);
 
         mServiceManagerMockedServices.put("isub", mSubscriptionManagerService);
-        doReturn(mSubscriptionManagerService).when(mSubscriptionManagerService)
+        lenient().doReturn(mSubscriptionManagerService).when(mSubscriptionManagerService)
                 .queryLocalInterface(anyString());
 
         mPhone.mCi = mSimulatedCommands;
         mCT.mCi = mSimulatedCommands;
-        doReturn(mUiccCard).when(mPhone).getUiccCard();
-        doReturn(mUiccCard).when(mUiccSlot).getUiccCard();
-        doReturn(mUiccCard).when(mUiccController).getUiccCardForPhone(anyInt());
-        doReturn(mUiccPort).when(mPhone).getUiccPort();
-        doReturn(mUiccProfile).when(mUiccPort).getUiccProfile();
+        lenient().doReturn(mUiccCard).when(mPhone).getUiccCard();
+        lenient().doReturn(mUiccCard).when(mUiccSlot).getUiccCard();
+        lenient().doReturn(mUiccCard).when(mUiccController).getUiccCardForPhone(anyInt());
+        lenient().doReturn(mUiccPort).when(mPhone).getUiccPort();
+        lenient().doReturn(mUiccProfile).when(mUiccPort).getUiccProfile();
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         mTelecomManager = mContext.getSystemService(TelecomManager.class);
@@ -643,124 +630,130 @@ public abstract class TelephonyTest {
         mLocationManager = (LocationManager) mContext.getSystemService(Context.LOCATION_SERVICE);
 
         //mTelephonyComponentFactory
-        doReturn(mTelephonyComponentFactory).when(mTelephonyComponentFactory).inject(anyString());
-        doReturn(mSST).when(mTelephonyComponentFactory)
+        lenient().doReturn(mTelephonyComponentFactory).when(mTelephonyComponentFactory)
+                .inject(anyString());
+        lenient().doReturn(mSST).when(mTelephonyComponentFactory)
                 .makeServiceStateTracker(nullable(GsmCdmaPhone.class),
                         nullable(CommandsInterface.class), nullable(FeatureFlags.class));
-        doReturn(mEmergencyNumberTracker).when(mTelephonyComponentFactory)
+        lenient().doReturn(mEmergencyNumberTracker).when(mTelephonyComponentFactory)
                 .makeEmergencyNumberTracker(nullable(Phone.class),
                         nullable(CommandsInterface.class), any(FeatureFlags.class));
-        doReturn(getTestEmergencyNumber()).when(mEmergencyNumberTracker)
+        lenient().doReturn(getTestEmergencyNumber()).when(mEmergencyNumberTracker)
                 .getEmergencyNumber(any());
-        doReturn(mUiccProfile).when(mTelephonyComponentFactory)
+        lenient().doReturn(mUiccProfile).when(mTelephonyComponentFactory)
                 .makeUiccProfile(nullable(Context.class), nullable(CommandsInterface.class),
                         nullable(IccCardStatus.class), anyInt(), nullable(UiccCard.class),
                         nullable(Object.class), any(FeatureFlags.class));
-        doReturn(mCT).when(mTelephonyComponentFactory)
+        lenient().doReturn(mCT).when(mTelephonyComponentFactory)
                 .makeGsmCdmaCallTracker(nullable(GsmCdmaPhone.class), any(FeatureFlags.class));
-        doReturn(mIccPhoneBookIntManager).when(mTelephonyComponentFactory)
+        lenient().doReturn(mIccPhoneBookIntManager).when(mTelephonyComponentFactory)
                 .makeIccPhoneBookInterfaceManager(nullable(Phone.class));
-        doReturn(mDisplayInfoController).when(mTelephonyComponentFactory)
+        lenient().doReturn(mDisplayInfoController).when(mTelephonyComponentFactory)
                 .makeDisplayInfoController(nullable(Phone.class), any(FeatureFlags.class));
-        doReturn(mWspTypeDecoder).when(mTelephonyComponentFactory)
+        lenient().doReturn(mWspTypeDecoder).when(mTelephonyComponentFactory)
                 .makeWspTypeDecoder(nullable(byte[].class));
-        doReturn(mImsCT).when(mTelephonyComponentFactory)
+        lenient().doReturn(mImsCT).when(mTelephonyComponentFactory)
                 .makeImsPhoneCallTracker(nullable(ImsPhone.class), any(FeatureFlags.class));
-        doReturn(mCdmaSSM).when(mTelephonyComponentFactory)
+        lenient().doReturn(mCdmaSSM).when(mTelephonyComponentFactory)
                 .getCdmaSubscriptionSourceManagerInstance(nullable(Context.class),
                         nullable(CommandsInterface.class), nullable(Handler.class),
                         anyInt(), nullable(Object.class));
-        doReturn(mImsExternalCallTracker).when(mTelephonyComponentFactory)
+        lenient().doReturn(mImsExternalCallTracker).when(mTelephonyComponentFactory)
                 .makeImsExternalCallTracker(nullable(ImsPhone.class));
-        doReturn(mImsNrSaModeHandler).when(mTelephonyComponentFactory)
+        lenient().doReturn(mImsNrSaModeHandler).when(mTelephonyComponentFactory)
                 .makeImsNrSaModeHandler(nullable(ImsPhone.class));
-        doReturn(mAppSmsManager).when(mTelephonyComponentFactory)
+        lenient().doReturn(mAppSmsManager).when(mTelephonyComponentFactory)
                 .makeAppSmsManager(nullable(Context.class));
-        doReturn(mCarrierSignalAgent).when(mTelephonyComponentFactory)
+        lenient().doReturn(mCarrierSignalAgent).when(mTelephonyComponentFactory)
                 .makeCarrierSignalAgent(nullable(Phone.class));
-        doReturn(mCarrierActionAgent).when(mTelephonyComponentFactory)
+        lenient().doReturn(mCarrierActionAgent).when(mTelephonyComponentFactory)
                 .makeCarrierActionAgent(nullable(Phone.class));
-        doReturn(mDeviceStateMonitor).when(mTelephonyComponentFactory)
+        lenient().doReturn(mDeviceStateMonitor).when(mTelephonyComponentFactory)
                 .makeDeviceStateMonitor(nullable(Phone.class), any(FeatureFlags.class));
-        doReturn(mAccessNetworksManager).when(mTelephonyComponentFactory)
+        lenient().doReturn(mAccessNetworksManager).when(mTelephonyComponentFactory)
                 .makeAccessNetworksManager(nullable(Phone.class), any(Looper.class));
-        doReturn(mNitzStateMachine).when(mTelephonyComponentFactory)
+        lenient().doReturn(mNitzStateMachine).when(mTelephonyComponentFactory)
                 .makeNitzStateMachine(nullable(GsmCdmaPhone.class));
-        doReturn(mLocaleTracker).when(mTelephonyComponentFactory)
+        lenient().doReturn(mLocaleTracker).when(mTelephonyComponentFactory)
                 .makeLocaleTracker(nullable(Phone.class), nullable(NitzStateMachine.class),
                         nullable(Looper.class), any(FeatureFlags.class));
-        doReturn(mEriManager).when(mTelephonyComponentFactory)
+        lenient().doReturn(mEriManager).when(mTelephonyComponentFactory)
                 .makeEriManager(nullable(Phone.class), anyInt());
-        doReturn(mLinkBandwidthEstimator).when(mTelephonyComponentFactory)
+        lenient().doReturn(mLinkBandwidthEstimator).when(mTelephonyComponentFactory)
                 .makeLinkBandwidthEstimator(nullable(Phone.class), any(Looper.class));
-        doReturn(mDataProfileManager).when(mTelephonyComponentFactory)
+        lenient().doReturn(mDataProfileManager).when(mTelephonyComponentFactory)
                 .makeDataProfileManager(any(Phone.class), any(DataNetworkController.class),
                         any(DataServiceManager.class), any(Looper.class),
                         any(FeatureFlags.class),
                         any(DataProfileManager.DataProfileManagerCallback.class));
-        doReturn(mSafetySource).when(mTelephonyComponentFactory)
+        lenient().doReturn(mSafetySource).when(mTelephonyComponentFactory)
                 .makeCellularNetworkSecuritySafetySource(any(Context.class));
-        doReturn(mIdentifierDisclosureNotifier)
+        lenient().doReturn(mIdentifierDisclosureNotifier)
                 .when(mTelephonyComponentFactory)
-                .makeIdentifierDisclosureNotifier(any(CellularNetworkSecuritySafetySource.class));
-        doReturn(mNullCipherNotifier)
+                .makeIdentifierDisclosureNotifier(
+                        nullable(CellularNetworkSecuritySafetySource.class));
+        lenient().doReturn(mNullCipherNotifier)
                 .when(mTelephonyComponentFactory)
-                .makeNullCipherNotifier(any(CellularNetworkSecuritySafetySource.class));
+                .makeNullCipherNotifier(nullable(CellularNetworkSecuritySafetySource.class));
 
         //mPhone
-        doReturn(mContext).when(mPhone).getContext();
-        doReturn(mContext).when(mImsPhone).getContext();
-        doReturn(true).when(mPhone).getUnitTestMode();
-        doReturn(mUiccProfile).when(mPhone).getIccCard();
-        doReturn(mServiceState).when(mPhone).getServiceState();
-        doReturn(mServiceState).when(mImsPhone).getServiceState();
-        doReturn(mPhone).when(mImsPhone).getDefaultPhone();
-        doReturn(true).when(mPhone).isPhoneTypeGsm();
-        doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
-        doReturn(mCT).when(mPhone).getCallTracker();
-        doReturn(mSST).when(mPhone).getServiceStateTracker();
-        doReturn(mDeviceStateMonitor).when(mPhone).getDeviceStateMonitor();
-        doReturn(mDisplayInfoController).when(mPhone).getDisplayInfoController();
-        doReturn(mSignalStrengthController).when(mPhone).getSignalStrengthController();
-        doReturn(mEmergencyNumberTracker).when(mPhone).getEmergencyNumberTracker();
-        doReturn(mCarrierSignalAgent).when(mPhone).getCarrierSignalAgent();
-        doReturn(mCarrierActionAgent).when(mPhone).getCarrierActionAgent();
-        doReturn(mAppSmsManager).when(mPhone).getAppSmsManager();
-        doReturn(mIccSmsInterfaceManager).when(mPhone).getIccSmsInterfaceManager();
-        doReturn(mAccessNetworksManager).when(mPhone).getAccessNetworksManager();
-        doReturn(mDataSettingsManager).when(mDataNetworkController).getDataSettingsManager();
-        doReturn(mDataNetworkController).when(mPhone).getDataNetworkController();
-        doReturn(mDataSettingsManager).when(mPhone).getDataSettingsManager();
-        doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
-        doReturn(mSignalStrength).when(mPhone).getSignalStrength();
-        doReturn(mVoiceCallSessionStats).when(mPhone).getVoiceCallSessionStats();
-        doReturn(mVoiceCallSessionStats).when(mImsPhone).getVoiceCallSessionStats();
-        doReturn(mSmsStats).when(mPhone).getSmsStats();
-        doReturn(mTelephonyAnalytics).when(mPhone).getTelephonyAnalytics();
-        doReturn(mImsStats).when(mImsPhone).getImsStats();
+        lenient().doReturn(mContext).when(mPhone).getContext();
+        lenient().doReturn(mContext).when(mPhone2).getContext();
+        lenient().doReturn(mContext).when(mImsPhone).getContext();
+        lenient().doReturn(true).when(mPhone).getUnitTestMode();
+        lenient().doReturn(mUiccProfile).when(mPhone).getIccCard();
+        lenient().doReturn(mServiceState).when(mPhone).getServiceState();
+        lenient().doReturn(mServiceState).when(mImsPhone).getServiceState();
+        lenient().doReturn(mPhone).when(mImsPhone).getDefaultPhone();
+        lenient().doReturn(true).when(mPhone).isPhoneTypeGsm();
+        lenient().doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
+        lenient().doReturn(mCT).when(mPhone).getCallTracker();
+        lenient().doReturn(mSST).when(mPhone).getServiceStateTracker();
+        lenient().doReturn(mDeviceStateMonitor).when(mPhone).getDeviceStateMonitor();
+        lenient().doReturn(mDisplayInfoController).when(mPhone).getDisplayInfoController();
+        lenient().doReturn(mSignalStrengthController).when(mPhone).getSignalStrengthController();
+        lenient().doReturn(mEmergencyNumberTracker).when(mPhone).getEmergencyNumberTracker();
+        lenient().doReturn(mCarrierSignalAgent).when(mPhone).getCarrierSignalAgent();
+        lenient().doReturn(mCarrierActionAgent).when(mPhone).getCarrierActionAgent();
+        lenient().doReturn(mAppSmsManager).when(mPhone).getAppSmsManager();
+        lenient().doReturn(mIccSmsInterfaceManager).when(mPhone).getIccSmsInterfaceManager();
+        lenient().doReturn(mAccessNetworksManager).when(mPhone).getAccessNetworksManager();
+        lenient().doReturn(mDataSettingsManager).when(mDataNetworkController)
+                .getDataSettingsManager();
+        lenient().doReturn(mDataNetworkController).when(mPhone).getDataNetworkController();
+        lenient().doReturn(mDataSettingsManager).when(mPhone).getDataSettingsManager();
+        lenient().doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
+        lenient().doReturn(mSignalStrength).when(mPhone).getSignalStrength();
+        lenient().doReturn(mVoiceCallSessionStats).when(mPhone).getVoiceCallSessionStats();
+        lenient().doReturn(mVoiceCallSessionStats).when(mImsPhone).getVoiceCallSessionStats();
+        lenient().doReturn(mSmsStats).when(mPhone).getSmsStats();
+        lenient().doReturn(mTelephonyAnalytics).when(mPhone).getTelephonyAnalytics();
+        lenient().doReturn(mImsStats).when(mImsPhone).getImsStats();
         mIccSmsInterfaceManager.mDispatchersController = mSmsDispatchersController;
-        doReturn(mLinkBandwidthEstimator).when(mPhone).getLinkBandwidthEstimator();
-        doReturn(mCellIdentity).when(mPhone).getCurrentCellIdentity();
-        doReturn(mCellLocation).when(mCellIdentity).asCellLocation();
-        doReturn(mDataConfigManager).when(mDataNetworkController).getDataConfigManager();
-        doReturn(mDataProfileManager).when(mDataNetworkController).getDataProfileManager();
-        doReturn(mDataRetryManager).when(mDataNetworkController).getDataRetryManager();
-        doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
-        doReturn(0).when(mPhone).getPhoneId();
-        doReturn(true).when(mPhone).hasCalling();
-        doReturn(true).when(mPhone2).hasCalling();
+        lenient().doReturn(mLinkBandwidthEstimator).when(mPhone).getLinkBandwidthEstimator();
+        lenient().doReturn(mCellIdentity).when(mPhone).getCurrentCellIdentity();
+        lenient().doReturn(mCellLocation).when(mCellIdentity).asCellLocation();
+        lenient().doReturn(mDataConfigManager).when(mDataNetworkController).getDataConfigManager();
+        lenient().doReturn(mDataProfileManager).when(mDataNetworkController)
+                .getDataProfileManager();
+        lenient().doReturn(mDataRetryManager).when(mDataNetworkController).getDataRetryManager();
+        lenient().doReturn(mCarrierPrivilegesTracker).when(mPhone).getCarrierPrivilegesTracker();
+        lenient().doReturn(0).when(mPhone).getPhoneId();
+        lenient().doReturn(1).when(mPhone2).getPhoneId();
+        lenient().doReturn(true).when(mPhone).hasCalling();
+        lenient().doReturn(true).when(mPhone2).hasCalling();
 
         //mUiccController
-        doReturn(mUiccCardApplication3gpp).when(mUiccController).getUiccCardApplication(anyInt(),
-                eq(UiccController.APP_FAM_3GPP));
-        doReturn(mUiccCardApplication3gpp2).when(mUiccController).getUiccCardApplication(anyInt(),
-                eq(UiccController.APP_FAM_3GPP2));
-        doReturn(mUiccCardApplicationIms).when(mUiccController).getUiccCardApplication(anyInt(),
-                eq(UiccController.APP_FAM_IMS));
-        doReturn(mUiccCard).when(mUiccController).getUiccCard(anyInt());
-        doReturn(mUiccPort).when(mUiccController).getUiccPort(anyInt());
+        lenient().doReturn(mUiccCardApplication3gpp).when(mUiccController).getUiccCardApplication(
+                anyInt(), eq(UiccController.APP_FAM_3GPP));
+        lenient().doReturn(mUiccCardApplication3gpp2).when(mUiccController).getUiccCardApplication(
+                anyInt(), eq(UiccController.APP_FAM_3GPP2));
+        lenient().doReturn(mUiccCardApplicationIms).when(mUiccController).getUiccCardApplication(
+                anyInt(), eq(UiccController.APP_FAM_IMS));
+        lenient().doReturn(mUiccCard).when(mUiccController).getUiccCard(anyInt());
+        lenient().doReturn(mUiccPort).when(mUiccController).getUiccPort(anyInt());
 
-        doAnswer(new Answer<IccRecords>() {
+        lenient().doAnswer(new Answer<IccRecords>() {
             public IccRecords answer(InvocationOnMock invocation) {
                 switch ((Integer) invocation.getArguments()[1]) {
                     case UiccController.APP_FAM_3GPP:
@@ -775,53 +768,54 @@ public abstract class TelephonyTest {
                 }
             }
         }).when(mUiccController).getIccRecords(anyInt(), anyInt());
-        doReturn(new UiccSlot[] {mUiccSlot}).when(mUiccController).getUiccSlots();
-        doReturn(mUiccSlot).when(mUiccController).getUiccSlotForPhone(anyInt());
-        doReturn(mPinStorage).when(mUiccController).getPinStorage();
+        lenient().doReturn(new UiccSlot[] {mUiccSlot}).when(mUiccController).getUiccSlots();
+        lenient().doReturn(mUiccSlot).when(mUiccController).getUiccSlotForPhone(anyInt());
+        lenient().doReturn(mPinStorage).when(mUiccController).getPinStorage();
 
         //UiccCardApplication
-        doReturn(mSimRecords).when(mUiccCardApplication3gpp).getIccRecords();
-        doReturn(mRuimRecords).when(mUiccCardApplication3gpp2).getIccRecords();
-        doReturn(mIsimUiccRecords).when(mUiccCardApplicationIms).getIccRecords();
+        lenient().doReturn(mSimRecords).when(mUiccCardApplication3gpp).getIccRecords();
+        lenient().doReturn(mRuimRecords).when(mUiccCardApplication3gpp2).getIccRecords();
+        lenient().doReturn(mIsimUiccRecords).when(mUiccCardApplicationIms).getIccRecords();
 
         //mUiccProfile
-        doReturn(mSimRecords).when(mUiccProfile).getIccRecords();
-        doAnswer(new Answer<IccRecords>() {
+        lenient().doReturn(mSimRecords).when(mUiccProfile).getIccRecords();
+        lenient().doAnswer(new Answer<IccRecords>() {
             public IccRecords answer(InvocationOnMock invocation) {
                 return mSimRecords;
             }
         }).when(mUiccProfile).getIccRecords();
 
         //mUiccProfile
-        doReturn(mUiccCardApplication3gpp).when(mUiccProfile).getApplication(
+        lenient().doReturn(mUiccCardApplication3gpp).when(mUiccProfile).getApplication(
                 eq(UiccController.APP_FAM_3GPP));
-        doReturn(mUiccCardApplication3gpp2).when(mUiccProfile).getApplication(
+        lenient().doReturn(mUiccCardApplication3gpp2).when(mUiccProfile).getApplication(
                 eq(UiccController.APP_FAM_3GPP2));
-        doReturn(mUiccCardApplicationIms).when(mUiccProfile).getApplication(
+        lenient().doReturn(mUiccCardApplicationIms).when(mUiccProfile).getApplication(
                 eq(UiccController.APP_FAM_IMS));
 
         //SMS
-        doReturn(true).when(mSmsStorageMonitor).isStorageAvailable();
-        doReturn(true).when(mSmsUsageMonitor).check(nullable(String.class), anyInt());
-        doReturn(true).when(mTelephonyManager).getSmsReceiveCapableForPhone(anyInt(), anyBoolean());
-        doReturn(true).when(mTelephonyManager).getSmsSendCapableForPhone(
+        lenient().doReturn(true).when(mSmsStorageMonitor).isStorageAvailable();
+        lenient().doReturn(true).when(mSmsUsageMonitor).check(nullable(String.class), anyInt());
+        lenient().doReturn(true).when(mTelephonyManager).getSmsReceiveCapableForPhone(anyInt(),
+                anyBoolean());
+        lenient().doReturn(true).when(mTelephonyManager).getSmsSendCapableForPhone(
                 anyInt(), anyBoolean());
 
         //Misc
-        doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
+        lenient().doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(mServiceState)
                 .getRilDataRadioTechnology();
-        doReturn(new TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_LTE,
+        lenient().doReturn(new TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_LTE,
                 TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE, false, false, false))
                 .when(mDisplayInfoController).getTelephonyDisplayInfo();
-        doReturn(mPhone).when(mCT).getPhone();
-        doReturn(mImsEcbm).when(mImsManager).getEcbmInterface();
-        doReturn(mPhone).when(mInboundSmsHandler).getPhone();
-        doReturn(mImsCallProfile).when(mImsCall).getCallProfile();
-        doReturn(mIBinder).when(mIIntentSender).asBinder();
+        lenient().doReturn(mPhone).when(mCT).getPhone();
+        lenient().doReturn(mImsEcbm).when(mImsManager).getEcbmInterface();
+        lenient().doReturn(mPhone).when(mInboundSmsHandler).getPhone();
+        lenient().doReturn(mImsCallProfile).when(mImsCall).getCallProfile();
+        lenient().doReturn(mIBinder).when(mIIntentSender).asBinder();
         doAnswer(invocation -> {
             Intent[] intents = invocation.getArgument(6);
             if (intents != null && intents.length > 0) {
-                doReturn(intents[0]).when(mIActivityManager)
+                lenient().doReturn(intents[0]).when(mIActivityManager)
                         .getIntentForIntentSender(mIIntentSender);
             }
             return mIIntentSender;
@@ -829,8 +823,9 @@ public abstract class TelephonyTest {
                 nullable(String.class), nullable(String.class), nullable(IBinder.class),
                 nullable(String.class), anyInt(), nullable(Intent[].class),
                 nullable(String[].class), anyInt(), nullable(Bundle.class), anyInt());
-        doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
-        doReturn(true).when(mTelephonyManager).isDataCapable();
+        lenient().doReturn(mTelephonyManager).when(mTelephonyManager)
+                .createForSubscriptionId(anyInt());
+        lenient().doReturn(true).when(mTelephonyManager).isDataCapable();
 
         mContextFixture.addSystemFeature(PackageManager.FEATURE_TELECOM);
         mContextFixture.addSystemFeature(PackageManager.FEATURE_TELEPHONY_CALLING);
@@ -838,45 +833,46 @@ public abstract class TelephonyTest {
         mContextFixture.addSystemFeature(PackageManager.FEATURE_TELEPHONY_EUICC);
         mContextFixture.addSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING);
 
-        doReturn(TelephonyManager.PHONE_TYPE_GSM).when(mTelephonyManager).getPhoneType();
-        doReturn(mServiceState).when(mSST).getServiceState();
-        doReturn(mServiceStateStats).when(mSST).getServiceStateStats();
+        lenient().doReturn(TelephonyManager.PHONE_TYPE_GSM).when(mTelephonyManager).getPhoneType();
+        lenient().doReturn(mServiceState).when(mSST).getServiceState();
+        lenient().doReturn(mServiceStateStats).when(mSST).getServiceStateStats();
         mSST.mSS = mServiceState;
         mSST.mRestrictedState = mRestrictedState;
         mServiceManagerMockedServices.put("connectivity_metrics_logger", mConnMetLoggerBinder);
         mServiceManagerMockedServices.put("package", mMockPackageManager);
         mServiceManagerMockedServices.put("legacy_permission", mMockLegacyPermissionManager);
         logd("mMockLegacyPermissionManager replaced");
-        doReturn(new int[]{AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
+        lenient().doReturn(new int[]{AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
                 AccessNetworkConstants.TRANSPORT_TYPE_WLAN})
                 .when(mAccessNetworksManager).getAvailableTransports();
-        doReturn(true).when(mDataSettingsManager).isDataEnabled();
-        doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
+        lenient().doReturn(true).when(mDataSettingsManager).isDataEnabled();
+        lenient().doReturn(mNetworkRegistrationInfo).when(mServiceState).getNetworkRegistrationInfo(
                 anyInt(), anyInt());
-        doReturn(RIL.RADIO_HAL_VERSION_2_0).when(mPhone).getHalVersion(anyInt());
-        doReturn(2).when(mSignalStrength).getLevel();
-        doReturn(mMockRadioConfigProxy).when(mMockRadioConfig).getRadioConfigProxy(any());
+        lenient().doReturn(RIL.RADIO_HAL_VERSION_2_0).when(mPhone).getHalVersion(anyInt());
+        lenient().doReturn(2).when(mSignalStrength).getLevel();
+        lenient().doReturn(mMockRadioConfigProxy).when(mMockRadioConfig).getRadioConfigProxy(any());
 
         // WiFi
-        doReturn(mWifiInfo).when(mWifiManager).getConnectionInfo();
-        doReturn(2).when(mWifiManager).calculateSignalLevel(anyInt());
-        doReturn(4).when(mWifiManager).getMaxSignalLevel();
+        lenient().doReturn(mWifiInfo).when(mWifiManager).getConnectionInfo();
+        lenient().doReturn(2).when(mWifiManager).calculateSignalLevel(anyInt());
+        lenient().doReturn(4).when(mWifiManager).getMaxSignalLevel();
 
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             NetworkCapabilities nc = invocation.getArgument(0);
             return new VcnNetworkPolicyResult(
                     false /* isTearDownRequested */, nc);
         }).when(mVcnManager).applyVcnNetworkPolicy(any(), any());
 
         //SIM
-        doReturn(1).when(mTelephonyManager).getSimCount();
-        doReturn(1).when(mTelephonyManager).getPhoneCount();
-        doReturn(1).when(mTelephonyManager).getActiveModemCount();
+        lenient().doReturn(1).when(mTelephonyManager).getSimCount();
+        lenient().doReturn(1).when(mTelephonyManager).getPhoneCount();
+        lenient().doReturn(1).when(mTelephonyManager).getActiveModemCount();
         // Have getMaxPhoneCount always return the same value with getPhoneCount by default.
-        doAnswer((invocation)->Math.max(mTelephonyManager.getActiveModemCount(),
+        lenient().doAnswer((invocation)->Math.max(mTelephonyManager.getActiveModemCount(),
                 mTelephonyManager.getPhoneCount()))
                 .when(mTelephonyManager).getSupportedModemCount();
-        doReturn(mStatsManager).when(mContext).getSystemService(eq(Context.NETWORK_STATS_SERVICE));
+        lenient().doReturn(mStatsManager).when(mContext)
+                .getSystemService(eq(Context.NETWORK_STATS_SERVICE));
 
         //Data
         //Initial state is: userData enabled, provisioned.
@@ -887,56 +883,57 @@ public abstract class TelephonyTest {
                 Settings.Global.DEVICE_PROVISIONING_MOBILE_DATA_ENABLED, 1);
         Settings.Global.putInt(resolver, Settings.Global.DATA_ROAMING, 0);
 
-        doReturn(90).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(90).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_EIMS));
-        doReturn(80).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(80).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_SUPL));
-        doReturn(70).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(70).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_MMS));
-        doReturn(70).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(70).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_XCAP));
-        doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_CBS));
-        doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_MCX));
-        doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(50).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_FOTA));
-        doReturn(40).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(40).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_IMS));
-        doReturn(30).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(30).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_DUN));
-        doReturn(20).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(20).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_ENTERPRISE));
-        doReturn(20).when(mDataConfigManager).getNetworkCapabilityPriority(
+        lenient().doReturn(20).when(mDataConfigManager).getNetworkCapabilityPriority(
                 eq(NetworkCapabilities.NET_CAPABILITY_INTERNET));
-        doReturn(60000).when(mDataConfigManager).getAnomalyNetworkConnectingTimeoutMs();
-        doReturn(60000).when(mDataConfigManager)
+        lenient().doReturn(60000).when(mDataConfigManager).getAnomalyNetworkConnectingTimeoutMs();
+        lenient().doReturn(60000).when(mDataConfigManager)
                 .getAnomalyNetworkDisconnectingTimeoutMs();
-        doReturn(60000).when(mDataConfigManager).getNetworkHandoverTimeoutMs();
-        doReturn(new DataConfigManager.EventFrequency(300000, 12))
+        lenient().doReturn(60000).when(mDataConfigManager).getNetworkHandoverTimeoutMs();
+        lenient().doReturn(new DataConfigManager.EventFrequency(300000, 12))
                 .when(mDataConfigManager).getAnomalySetupDataCallThreshold();
-        doReturn(new DataConfigManager.EventFrequency(0, 2))
+        lenient().doReturn(new DataConfigManager.EventFrequency(0, 2))
                 .when(mDataConfigManager).getAnomalyImsReleaseRequestThreshold();
-        doReturn(new DataConfigManager.EventFrequency(300000, 12))
+        lenient().doReturn(new DataConfigManager.EventFrequency(300000, 12))
                 .when(mDataConfigManager).getAnomalyNetworkUnwantedThreshold();
 
         // CellularNetworkValidator
-        doReturn(SubscriptionManager.INVALID_PHONE_INDEX)
+        lenient().doReturn(SubscriptionManager.INVALID_PHONE_INDEX)
                 .when(mCellularNetworkValidator).getSubIdInValidation();
-        doReturn(true).when(mCellularNetworkValidator).isValidationFeatureSupported();
+        lenient().doReturn(true).when(mCellularNetworkValidator).isValidationFeatureSupported();
 
         // Metrics
-        doReturn(null).when(mContext).getFileStreamPath(anyString());
-        doReturn(mPersistAtomsStorage).when(mMetricsCollector).getAtomsStorage();
-        doReturn(mDefaultNetworkMonitor).when(mMetricsCollector).getDefaultNetworkMonitor();
-        doReturn(mWifiManager).when(mContext).getSystemService(eq(Context.WIFI_SERVICE));
-        doReturn(mDeviceStateHelper).when(mMetricsCollector).getDeviceStateHelper();
-        doReturn(CELLULAR_SERVICE_STATE__FOLD_STATE__STATE_UNKNOWN)
+        lenient().doReturn(null).when(mContext).getFileStreamPath(anyString());
+        lenient().doReturn(mPersistAtomsStorage).when(mMetricsCollector).getAtomsStorage();
+        lenient().doReturn(mDefaultNetworkMonitor).when(mMetricsCollector)
+                .getDefaultNetworkMonitor();
+        lenient().doReturn(mWifiManager).when(mContext).getSystemService(eq(Context.WIFI_SERVICE));
+        lenient().doReturn(mDeviceStateHelper).when(mMetricsCollector).getDeviceStateHelper();
+        lenient().doReturn(CELLULAR_SERVICE_STATE__FOLD_STATE__STATE_UNKNOWN)
                 .when(mDeviceStateHelper)
                 .getFoldState();
-        doReturn(null).when(mContext).getSystemService(eq(Context.DEVICE_STATE_SERVICE));
+        lenient().doReturn(null).when(mContext).getSystemService(eq(Context.DEVICE_STATE_SERVICE));
 
-        doReturn(false).when(mDomainSelectionResolver).isDomainSelectionSupported();
+        lenient().doReturn(false).when(mDomainSelectionResolver).isDomainSelectionSupported();
         DomainSelectionResolver.setDomainSelectionResolver(mDomainSelectionResolver);
 
         //Use reflection to mock singletons
@@ -1046,6 +1043,28 @@ public abstract class TelephonyTest {
 
     protected static void logd(String s) {
         Log.d(TAG, s);
+    }
+
+    protected void unmockActivityManager() throws Exception {
+        // Normally, these two should suffice. But we're having some flakiness due to restored
+        // instances being mocks...
+        restoreInstance(Singleton.class, "mInstance", mIActivityManagerSingleton);
+        restoreInstance(ActivityManager.class, "IActivityManagerSingleton", null);
+
+        // Copy-paste from android.app.ActivityManager.IActivityManagerSingleton
+        Singleton<IActivityManager> amSingleton = new Singleton<IActivityManager>() {
+                @Override
+                protected IActivityManager create() {
+                    final IBinder b = ServiceManager.getService(Context.ACTIVITY_SERVICE);
+                    final IActivityManager am = IActivityManager.Stub.asInterface(b);
+                    return am;
+                }
+            };
+
+        // ...so we're setting correct values explicitly, to be sure and not let the flake propagate
+        // to other tests.
+        replaceInstance(Singleton.class, "mInstance", mIActivityManagerSingleton, null);
+        replaceInstance(ActivityManager.class, "IActivityManagerSingleton", null, amSingleton);
     }
 
     public static class FakeBlockedNumberContentProvider extends MockContentProvider {
@@ -1313,36 +1332,12 @@ public abstract class TelephonyTest {
     }
 
     /**
-     * @return The longest delay from all the message queues.
-     */
-    private long getLongestDelay() {
-        long delay = 0;
-        for (TestableLooper looper : mTestableLoopers) {
-            MessageQueue queue = looper.getLooper().getQueue();
-            try {
-                Message msg = (Message) MESSAGE_QUEUE_FIELD.get(queue);
-                while (msg != null) {
-                    delay = Math.max(msg.getWhen(), delay);
-                    msg = (Message) MESSAGE_NEXT_FIELD.get(msg);
-                }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Access failed in TelephonyTest", e);
-            }
-        }
-        return delay;
-    }
-
-    /**
      * @return {@code true} if there are any messages in the queue.
      */
     private boolean messagesExist() {
         for (TestableLooper looper : mTestableLoopers) {
-            MessageQueue queue = looper.getLooper().getQueue();
-            try {
-                Message msg = (Message) MESSAGE_QUEUE_FIELD.get(queue);
-                if (msg != null) return true;
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Access failed in TelephonyTest", e);
+            if (looper.peekWhen() > 0) {
+                return true;
             }
         }
         return false;
@@ -1352,8 +1347,14 @@ public abstract class TelephonyTest {
      * Handle all messages including the delayed messages.
      */
     public void processAllFutureMessages() {
+        final long now = SystemClock.uptimeMillis();
         while (messagesExist()) {
-            moveTimeForward(getLongestDelay());
+            for (TestableLooper looper : mTestableLoopers) {
+                long nextDelay = looper.peekWhen() - now;
+                if (nextDelay > 0) {
+                    looper.moveTimeForward(nextDelay);
+                }
+            }
             processAllMessages();
         }
     }
@@ -1378,20 +1379,7 @@ public abstract class TelephonyTest {
      */
     public void moveTimeForward(long milliSeconds) {
         for (TestableLooper looper : mTestableLoopers) {
-            MessageQueue queue = looper.getLooper().getQueue();
-            try {
-                Message msg = (Message) MESSAGE_QUEUE_FIELD.get(queue);
-                while (msg != null) {
-                    long updatedWhen = msg.getWhen() - milliSeconds;
-                    if (updatedWhen < 0) {
-                        updatedWhen = 0;
-                    }
-                    MESSAGE_WHEN_FIELD.set(msg, updatedWhen);
-                    msg = (Message) MESSAGE_NEXT_FIELD.get(msg);
-                }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Access failed in TelephonyTest", e);
-            }
+            looper.moveTimeForward(milliSeconds);
         }
     }
 }

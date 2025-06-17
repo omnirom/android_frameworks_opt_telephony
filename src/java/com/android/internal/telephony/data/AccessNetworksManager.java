@@ -56,7 +56,6 @@ import com.android.internal.telephony.IIntegerConsumer;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.SlidingWindowEventCounter;
 import com.android.internal.telephony.flags.FeatureFlags;
-import com.android.internal.util.FunctionalUtils;
 import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
@@ -324,12 +323,6 @@ public class AccessNetworksManager extends Handler {
         public void onNetworkValidationRequested(@NetCapability int networkCapability,
                 @NonNull IIntegerConsumer resultCodeCallback) {
             DataNetworkController dnc = mPhone.getDataNetworkController();
-            if (!mFeatureFlags.networkValidation()) {
-                FunctionalUtils.ignoreRemoteException(resultCodeCallback::accept)
-                        .accept(DataServiceCallback.RESULT_ERROR_UNSUPPORTED);
-                return;
-            }
-
             log("onNetworkValidationRequested: networkCapability = ["
                     + DataUtils.networkCapabilityToString(networkCapability) + "]");
 
@@ -347,13 +340,11 @@ public class AccessNetworksManager extends Handler {
 
         @Override
         public void onReconnectQualifiedNetworkType(int apnTypes, int qualifiedNetworkType) {
-            if (mFeatureFlags.reconnectQualifiedNetwork()) {
-                log("onReconnectQualifiedNetworkType: apnTypes = ["
-                        + ApnSetting.getApnTypesStringFromBitmask(apnTypes)
-                        + "], networks = [" + AccessNetworkType.toString(qualifiedNetworkType)
-                        + "]");
-                handleQualifiedNetworksChanged(apnTypes, new int[]{qualifiedNetworkType}, true);
-            }
+            log("onReconnectQualifiedNetworkType: apnTypes = ["
+                    + ApnSetting.getApnTypesStringFromBitmask(apnTypes)
+                    + "], networks = [" + AccessNetworkType.toString(qualifiedNetworkType)
+                    + "]");
+            handleQualifiedNetworksChanged(apnTypes, new int[]{qualifiedNetworkType}, true);
         }
     }
 

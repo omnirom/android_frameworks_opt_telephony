@@ -166,3 +166,14 @@ flag {
     bug:"359721349"
     is_exported: true
 }
+
+# OWNER=joonhunshin TARGET=25Q2
+flag {
+    name: "skip_mmi_code_check_for_emergency_call"
+    namespace: "telephony"
+    description: "This flag allows to skip the MMI code check for the emergency number."
+    bug:"378065922"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}

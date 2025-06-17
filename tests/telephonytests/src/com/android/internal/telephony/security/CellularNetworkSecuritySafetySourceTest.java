@@ -31,13 +31,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import android.app.ActivityManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.safetycenter.SafetySourceData;
 import android.safetycenter.SafetySourceIssue;
-import android.util.Singleton;
 
 import com.android.internal.R;
 import com.android.internal.telephony.TelephonyTest;
@@ -61,9 +59,7 @@ public final class CellularNetworkSecuritySafetySourceTest extends TelephonyTest
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
 
-        // unmock ActivityManager to be able to register receiver, create real PendingIntents.
-        restoreInstance(Singleton.class, "mInstance", mIActivityManagerSingleton);
-        restoreInstance(ActivityManager.class, "IActivityManagerSingleton", null);
+        unmockActivityManager();
 
         SubscriptionInfoInternal info0 = new SubscriptionInfoInternal.Builder()
                 .setId(0)

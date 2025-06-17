@@ -28,6 +28,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.IInterface;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.permission.LegacyPermissionManager;
@@ -51,6 +52,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.ExponentialBackoff;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.util.TelephonyUtils;
+import com.android.internal.telephony.util.WorkerThread;
 
 import java.io.PrintWriter;
 import java.util.HashSet;
@@ -264,7 +266,7 @@ public class ImsServiceController {
     // Enable ImsServiceControllerTest and SipDelegateManagerTest cases if this is re-enabled.
     private static final boolean ENFORCE_SINGLE_SERVICE_FOR_SIP_TRANSPORT = false;
     private final ComponentName mComponentName;
-    private final HandlerThread mHandlerThread = new HandlerThread("ImsServiceControllerHandler");
+    private final HandlerThread mHandlerThread;
     private final Handler mHandler;
     private final LegacyPermissionManager mPermissionManager;
     private final FeatureFlags mFeatureFlags;
@@ -362,8 +364,17 @@ public class ImsServiceController {
         mContext = context;
         mComponentName = componentName;
         mCallbacks = callbacks;
-        mHandlerThread.start();
-        mHandler = new Handler(mHandlerThread.getLooper());
+        Looper looper;
+        if (featureFlags.threadShred()) {
+            mHandlerThread = null;
+            mHandler = new Handler(WorkerThread.get().getLooper());
+            looper = WorkerThread.get().getLooper();
+        } else {
+            mHandlerThread = new HandlerThread("ImsServiceControllerHandler");
+            mHandlerThread.start();
+            mHandler = new Handler(mHandlerThread.getLooper());
+            looper = mHandlerThread.getLooper();
+        }
         mBackoff = new ExponentialBackoff(
                 mRebindRetry.getStartDelay(),
                 mRebindRetry.getMaximumDelay(),
@@ -373,7 +384,7 @@ public class ImsServiceController {
         mPermissionManager = (LegacyPermissionManager) mContext.getSystemService(
                 Context.LEGACY_PERMISSION_SERVICE);
         mRepo = repo;
-        mImsEnablementTracker = new ImsEnablementTracker(mHandlerThread.getLooper(), componentName);
+        mImsEnablementTracker = new ImsEnablementTracker(looper, componentName);
         mFeatureFlags = featureFlags;
         mPackageManager = mContext.getPackageManager();
         if (mPackageManager != null) {
@@ -404,6 +415,7 @@ public class ImsServiceController {
         mRepo = repo;
         mFeatureFlags = featureFlags;
         mImsEnablementTracker = new ImsEnablementTracker(handler.getLooper(), componentName);
+        mHandlerThread = null;
     }
 
     /**

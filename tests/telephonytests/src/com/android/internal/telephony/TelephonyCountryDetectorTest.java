@@ -119,7 +119,6 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
 
         when(mLocationManager.getProviders(true)).thenReturn(Arrays.asList("TEST_PROVIDER"));
 
-        when(mMockFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(true);
         mCountryDetectorUT = new TestTelephonyCountryDetector(
                 mLooper, mContext, mLocationManager, mConnectivityManager, mMockFeatureFlags);
         verify(mConnectivityManager).registerNetworkCallback(

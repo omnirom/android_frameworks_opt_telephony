@@ -164,7 +164,6 @@ public class AutoDataSwitchControllerTest extends TelephonyTest {
 
         // Change data config
         doReturn(true).when(mDataConfigManager).isPingTestBeforeAutoDataSwitchRequired();
-        doReturn(true).when(mDataConfigManager).doesAutoDataSwitchAllowRoaming();
         doReturn(10000L).when(mDataConfigManager)
                 .getAutoDataSwitchAvailabilityStabilityTimeThreshold();
         doReturn(120000L).when(mDataConfigManager)
@@ -197,9 +196,7 @@ public class AutoDataSwitchControllerTest extends TelephonyTest {
         mScheduledEventsToExtras = getPrivateField(mAutoDataSwitchControllerUT,
                 "mScheduledEventsToExtras", Map.class);
 
-        doReturn(true).when(mFeatureFlags).autoDataSwitchAllowRoaming();
-        doReturn(true).when(mFeatureFlags).carrierEnabledSatelliteFlag();
-        doReturn(true).when(mFeatureFlags).autoDataSwitchUsesDataEnabled();
+        doReturn(true).when(mFeatureFlags).autoDataSwitchEnhanced();
     }
 
     @After
@@ -296,7 +293,7 @@ public class AutoDataSwitchControllerTest extends TelephonyTest {
     }
 
     @Test
-    public void testRoaming_prefer_roam_over_nonTerrestrial() {
+    public void testRoaming_prefer_roam_over_satellite() {
         // DDS -> nDDS: Prefer Roaming over non-terrestrial
         prepareIdealUsesNonDdsCondition();
         mIsNonTerrestrialNetwork = true;
@@ -319,6 +316,23 @@ public class AutoDataSwitchControllerTest extends TelephonyTest {
                 true/*needValidation*/);
         mIsNonTerrestrialNetwork = false;
     }
+
+    @Test
+    public void testRoaming_satellite_bypass_settings() {
+        prepareIdealUsesNonDdsCondition();
+
+        doReturn(true).when(mDataConfigManager).isIgnoringDataRoamingSettingForSatellite();
+        doReturn(false).when(mPhone).getDataRoamingEnabled();
+
+        mIsNonTerrestrialNetwork = true;
+        serviceStateChanged(PHONE_1, NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
+        mIsNonTerrestrialNetwork = false;
+        serviceStateChanged(PHONE_2, NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
+        processAllFutureMessages();
+
+        verify(mMockedPhoneSwitcherCallback).onRequireValidation(PHONE_2, true/*needValidation*/);
+    }
+
 
     @Test
     public void testRoaming_roaming_but_roam_disabled() {
@@ -369,21 +383,19 @@ public class AutoDataSwitchControllerTest extends TelephonyTest {
     @Test
     public void testRoaming_same_roaming_condition_uses_rat_signalStrength() {
         // On primary phone
-        // 1. Both roaming, user allow roaming on both phone, uses RAT score to decide switch.
+        // 1. Both roaming, user allow roaming on both phone, do NOT use RAT score to decide switch.
         prepareIdealUsesNonDdsCondition();
         serviceStateChanged(PHONE_1, NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
         serviceStateChanged(PHONE_2, NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
         processAllFutureMessages();
 
-        verify(mMockedPhoneSwitcherCallback).onRequireValidation(PHONE_2, true/*needValidation*/);
+        verify(mMockedPhoneSwitcherCallback, never()).onRequireValidation(PHONE_2,
+                true/*needValidation*/);
 
         // On backup phone
         doReturn(PHONE_2).when(mPhoneSwitcher).getPreferredDataPhoneId();
-        // 2. Both roaming, user allow roaming on both phone, uses RAT score to decide switch.
-        signalStrengthChanged(PHONE_1, SignalStrength.SIGNAL_STRENGTH_GREAT);
-        signalStrengthChanged(PHONE_2, SignalStrength.SIGNAL_STRENGTH_POOR);
-        displayInfoChanged(PHONE_1, mGoodTelephonyDisplayInfo);
-        displayInfoChanged(PHONE_2, mBadTelephonyDisplayInfo);
+        // 2. Both roaming, do NOT uses RAT score to decide switch, so switch back to primary.
+        mAutoDataSwitchControllerUT.evaluateAutoDataSwitch(EVALUATION_REASON_DATA_SETTINGS_CHANGED);
         processAllFutureMessages();
 
         verify(mMockedPhoneSwitcherCallback).onRequireValidation(DEFAULT_PHONE_INDEX,

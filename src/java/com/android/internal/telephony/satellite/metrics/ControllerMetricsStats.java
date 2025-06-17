@@ -22,6 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.BatteryManager;
+import android.os.SystemClock;
 import android.telephony.satellite.SatelliteManager;
 import android.util.Log;
 
@@ -45,7 +46,7 @@ public class ControllerMetricsStats {
     private int mBatteryLevelWhenServiceOn;
     private boolean mIsSatelliteModemOn;
     private Boolean mIsBatteryCharged = null;
-    private int mBatteryChargedStartTimeSec;
+    private long mBatteryChargedStartTime;
     private int mTotalBatteryChargeTimeSec;
 
     /**
@@ -145,6 +146,8 @@ public class ControllerMetricsStats {
                 builder.setCountOfDatagramTypeLocationSharingSuccess(ADD_COUNT);
             } else if (datagramType == SatelliteManager.DATAGRAM_TYPE_KEEP_ALIVE) {
                 builder.setCountOfDatagramTypeKeepAliveSuccess(ADD_COUNT).build();
+            } else if (datagramType == SatelliteManager.DATAGRAM_TYPE_SMS) {
+                builder.setCountOfOutgoingDatagramTypeSmsSuccess(ADD_COUNT);
             }
         }
 
@@ -169,6 +172,8 @@ public class ControllerMetricsStats {
                 builder.setCountOfDatagramTypeLocationSharingFail(ADD_COUNT);
             } else if (datagramType == SatelliteManager.DATAGRAM_TYPE_KEEP_ALIVE) {
                 builder.setCountOfDatagramTypeKeepAliveFail(ADD_COUNT);
+            } else if (datagramType == SatelliteManager.DATAGRAM_TYPE_SMS) {
+                builder.setCountOfOutgoingDatagramTypeSmsFail(ADD_COUNT);
             }
         }
 
@@ -177,7 +182,7 @@ public class ControllerMetricsStats {
         mSatelliteStats.onSatelliteControllerMetrics(controllerParam);
     }
 
-    /** Report a counter when an attempt for incoming datagram is failed */
+    /** Increase counters for successful and failed incoming datagram attempts */
     public void reportIncomingDatagramCount(
             @NonNull @SatelliteManager.SatelliteResult int result, boolean isDemoMode) {
         SatelliteStats.SatelliteControllerParams.Builder builder =
@@ -190,13 +195,31 @@ public class ControllerMetricsStats {
             }
         } else {
             if (result == SatelliteManager.SATELLITE_RESULT_SUCCESS) {
-                builder.setCountOfIncomingDatagramSuccess(ADD_COUNT);
+                builder.setCountOfIncomingDatagramSuccess(ADD_COUNT)
+                        .setCountOfIncomingDatagramTypeSosSmsSuccess(ADD_COUNT);
+
             } else {
-                builder.setCountOfIncomingDatagramFail(ADD_COUNT);
+                builder.setCountOfIncomingDatagramFail(ADD_COUNT)
+                        .setCountOfIncomingDatagramTypeSosSmsFail(ADD_COUNT);
             }
         }
         SatelliteStats.SatelliteControllerParams  controllerParam = builder.build();
         logd("reportIncomingDatagramCount(): " + controllerParam);
+        mSatelliteStats.onSatelliteControllerMetrics(controllerParam);
+    }
+
+    /** Increase counters for successful and failed incoming ntn sms attempts */
+    public void reportIncomingNtnSmsCount(
+            @NonNull @SatelliteManager.SatelliteResult int result) {
+        SatelliteStats.SatelliteControllerParams.Builder builder =
+                new SatelliteStats.SatelliteControllerParams.Builder();
+        if (result == SatelliteManager.SATELLITE_RESULT_SUCCESS) {
+            builder.setCountOfIncomingDatagramTypeSmsSuccess(ADD_COUNT);
+        } else {
+            builder.setCountOfIncomingDatagramTypeSmsFail(ADD_COUNT);
+        }
+        SatelliteStats.SatelliteControllerParams  controllerParam = builder.build();
+        logd("reportIncomingNtnSmsCount(): " + controllerParam);
         mSatelliteStats.onSatelliteControllerMetrics(controllerParam);
     }
 
@@ -265,7 +288,7 @@ public class ControllerMetricsStats {
     /** Return the total service up time for satellite service */
     @VisibleForTesting
     public int captureTotalServiceUpTimeSec() {
-        long totalTimeMillis = getCurrentTime() - mSatelliteOnTimeMillis;
+        long totalTimeMillis = getElapsedRealtime() - mSatelliteOnTimeMillis;
         mSatelliteOnTimeMillis = 0;
         return (int) (totalTimeMillis / 1000);
     }
@@ -286,7 +309,7 @@ public class ControllerMetricsStats {
             startCaptureBatteryLevel();
 
             // log the timestamp of the satellite modem power on
-            mSatelliteOnTimeMillis = getCurrentTime();
+            mSatelliteOnTimeMillis = getElapsedRealtime();
 
             // register broadcast receiver for monitoring battery status change
             IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
@@ -329,13 +352,12 @@ public class ControllerMetricsStats {
 
             // When charged, log the start time of battery charging
             if (isCharged) {
-                mBatteryChargedStartTimeSec = (int) (getCurrentTime() / 1000);
+                mBatteryChargedStartTime = getElapsedRealtime();
                 // When discharged, log the accumulated total battery charging time.
             } else {
                 mTotalBatteryChargeTimeSec +=
-                        (int) (getCurrentTime() / 1000)
-                                - mBatteryChargedStartTimeSec;
-                mBatteryChargedStartTimeSec = 0;
+                        (int) ((getElapsedRealtime() - mBatteryChargedStartTime) / 1000);
+                mBatteryChargedStartTime = 0;
             }
         }
     }
@@ -415,6 +437,17 @@ public class ControllerMetricsStats {
     }
 
     /**
+     * Report a current version of satellite access config.
+     */
+    public void reportCurrentVersionOfSatelliteAccessConfig(int version) {
+        logd("reportCurrentVersionOfSatelliteAccessConfig:" + version);
+        mSatelliteStats.onSatelliteControllerMetrics(
+                new SatelliteStats.SatelliteControllerParams.Builder()
+                        .setVersionOfSatelliteAccessControl(version)
+                        .build());
+    }
+
+    /**
      * Add count when the notification for P2P SMS over satellite avaibility is shown or removed.
      */
     public void reportP2PSmsEligibilityNotificationsCount(boolean isEligible) {
@@ -448,9 +481,9 @@ public class ControllerMetricsStats {
 
         @Override
         public void onReceive(Context context, Intent intent) {
-            long currentTime = getCurrentTime();
-            if (currentTime - mLastUpdatedTime > UPDATE_INTERVAL) {
-                mLastUpdatedTime = currentTime;
+            long elapsedTimeSinceBoot = getElapsedRealtime();
+            if (elapsedTimeSinceBoot - mLastUpdatedTime > UPDATE_INTERVAL) {
+                mLastUpdatedTime = elapsedTimeSinceBoot;
                 int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
                 boolean isCharged = (status == BatteryManager.BATTERY_STATUS_CHARGING);
                 logd("Battery is charged(" + isCharged + ")");
@@ -465,8 +498,8 @@ public class ControllerMetricsStats {
     }
 
     @VisibleForTesting
-    public long getCurrentTime() {
-        return System.currentTimeMillis();
+    public long getElapsedRealtime() {
+        return SystemClock.elapsedRealtime();
     }
 
     private static void logd(@NonNull String log) {

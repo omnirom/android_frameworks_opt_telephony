@@ -30,11 +30,9 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RegistrantList;
 import android.os.RemoteException;
-import android.telephony.DropBoxManagerLoggerBackend;
 import android.telephony.IBooleanConsumer;
 import android.telephony.IIntegerConsumer;
 import android.telephony.PersistentLogger;
-import android.telephony.Rlog;
 import android.telephony.satellite.NtnSignalStrength;
 import android.telephony.satellite.SatelliteCapabilities;
 import android.telephony.satellite.SatelliteDatagram;
@@ -49,6 +47,7 @@ import android.telephony.satellite.stub.ISatelliteListener;
 import android.telephony.satellite.stub.SatelliteModemState;
 import android.telephony.satellite.stub.SatelliteService;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.Pair;
 
 import com.android.internal.R;
@@ -255,10 +254,7 @@ public class SatelliteModemInterface {
             SatelliteController satelliteController,
             @NonNull Looper looper,
             @NonNull FeatureFlags featureFlags) {
-        if (isSatellitePersistentLoggingEnabled(context, featureFlags)) {
-            mPersistentLogger = new PersistentLogger(
-                    DropBoxManagerLoggerBackend.getInstance(context));
-        }
+        mPersistentLogger = SatelliteServiceUtils.getPersistentLogger(context);
         mContext = context;
         mDemoSimulator = DemoSimulator.make(context, satelliteController);
         mVendorListener = new SatelliteListener(false);
@@ -1164,13 +1160,9 @@ public class SatelliteModemInterface {
                         }, new IBooleanConsumer.Stub() {
                             @Override
                             public void accept(boolean result) {
-                                // Convert for compatibility with SatelliteResponse
-                                // TODO: This should just report result instead.
-                                int[] enabled = new int[] {result ? 1 : 0};
-                                plogd("requestIsSatelliteEnabledForCarrier: "
-                                        + Arrays.toString(enabled));
+                                plogd("requestIsSatelliteEnabledForCarrier: " + result);
                                 Binder.withCleanCallingIdentity(() -> sendMessageWithResult(
-                                        message, enabled,
+                                        message, result,
                                         SatelliteManager.SATELLITE_RESULT_SUCCESS));
                             }
                         });
@@ -1430,35 +1422,22 @@ public class SatelliteModemInterface {
     }
 
     private static void logd(@NonNull String log) {
-        Rlog.d(TAG, log);
+        Log.d(TAG, log);
     }
 
     private static void loge(@NonNull String log) {
-        Rlog.e(TAG, log);
-    }
-
-    private boolean isSatellitePersistentLoggingEnabled(
-            @NonNull Context context, @NonNull FeatureFlags featureFlags) {
-        if (featureFlags.satellitePersistentLogging()) {
-            return true;
-        }
-        try {
-            return context.getResources().getBoolean(
-                    R.bool.config_dropboxmanager_persistent_logging_enabled);
-        } catch (RuntimeException e) {
-            return false;
-        }
+        Log.e(TAG, log);
     }
 
     private void plogd(@NonNull String log) {
-        Rlog.d(TAG, log);
+        Log.d(TAG, log);
         if (mPersistentLogger != null) {
             mPersistentLogger.debug(TAG, log);
         }
     }
 
     private void ploge(@NonNull String log) {
-        Rlog.e(TAG, log);
+        Log.e(TAG, log);
         if (mPersistentLogger != null) {
             mPersistentLogger.error(TAG, log);
         }

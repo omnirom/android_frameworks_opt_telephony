@@ -505,6 +505,36 @@ public class SubscriptionInfoInternal {
     private final int mIsSatelliteProvisionedForNonIpDatagram;
 
     /**
+     * The satellite entitlement barred plmns based on the entitlement query results
+     * By default, its empty. It is intended to use string to fit the database format.
+     */
+    @NonNull private final String mSatelliteEntitlementBarredPlmnsList;
+
+    /**
+     * The satellite entitlement data plan for plmns based on the entitlement query results
+     * By default, its empty. It is intended to use string to fit the database format.
+     */
+    @NonNull private final String mSatelliteEntitlementDataPlanForPlmn;
+
+    /**
+     * The satellite entitlement plmns services based on the entitlement query results
+     * By default, its empty. It is intended to use string to fit the database format.
+     */
+    @NonNull private final String mSatelliteEntitlementServicesForPlmn;
+
+    /**
+     * The satellite entitlement plmns data service policy based on the entitlement query results
+     * By default, its empty. It is intended to use string to fit the database format.
+     */
+    @NonNull private final String mSatellitePlmnsDataServicePolicy;
+
+    /**
+     * The satellite entitlement plmns voice service policy based on the entitlement query results
+     * By default, its empty. It is intended to use string to fit the database format.
+     */
+    @NonNull private final String mSatellitePlmnsVoiceServicePolicy;
+
+    /**
      * Constructor from builder.
      *
      * @param builder Builder of {@link SubscriptionInfoInternal}.
@@ -586,6 +616,11 @@ public class SubscriptionInfoInternal {
         this.mIsSatelliteESOSSupported = builder.mIsSatelliteESOSSupported;
         this.mIsSatelliteProvisionedForNonIpDatagram =
                 builder.mIsSatelliteProvisionedForNonIpDatagram;
+        this.mSatelliteEntitlementBarredPlmnsList = builder.mSatelliteEntitlementBarredPlmnsList;
+        this.mSatelliteEntitlementDataPlanForPlmn = builder.mSatelliteEntitlementDataPlanForPlmn;
+        this.mSatelliteEntitlementServicesForPlmn = builder.mSatelliteEntitlementServicesForPlmn;
+        this.mSatellitePlmnsDataServicePolicy = builder.mSatellitePlmnsDataServicePolicy;
+        this.mSatellitePlmnsVoiceServicePolicy = builder.mSatellitePlmnsVoiceServicePolicy;
     }
 
     /**
@@ -1299,6 +1334,55 @@ public class SubscriptionInfoInternal {
         return mIsSatelliteProvisionedForNonIpDatagram;
     }
 
+    /**
+     * @return Satellite entitlement barred plmns is empty or not by entitlement query result.
+     *
+     */
+    @NonNull
+    public String getSatelliteEntitlementBarredPlmnsList() {
+        return mSatelliteEntitlementBarredPlmnsList;
+    }
+
+    /**
+     * @return Satellite entitlement data plan for plmns is empty or not by entitlement query
+     * result.
+     *
+     */
+    @NonNull
+    public String getSatelliteEntitlementDataPlanForPlmns() {
+        return mSatelliteEntitlementDataPlanForPlmn;
+    }
+
+    /**
+     * @return Satellite entitlement data plan for plmns is empty or not by entitlement query
+     * result.
+     *
+     */
+    @NonNull
+    public String getSatelliteEntitlementPlmnsServiceTypes() {
+        return mSatelliteEntitlementServicesForPlmn;
+    }
+
+    /**
+     * @return Satellite entitlement plmns data service policy is empty or not by entitlement query
+     * result.
+     *
+     */
+    @NonNull
+    public String getSatellitePlmnsDataServicePolicy() {
+        return mSatellitePlmnsDataServicePolicy;
+    }
+
+    /**
+     * @return Satellite entitlement plmns voice service policy is empty or not by entitlement query
+     * result.
+     *
+     */
+    @NonNull
+    public String getSatellitePlmnsVoiceServicePolicy() {
+        return mSatellitePlmnsVoiceServicePolicy;
+    }
+
     /** @return converted {@link SubscriptionInfo}. */
     @NonNull
     public SubscriptionInfo toSubscriptionInfo() {
@@ -1405,6 +1489,11 @@ public class SubscriptionInfoInternal {
                 + " isSatelliteESOSSupported=" + mIsSatelliteESOSSupported
                 + " isSatelliteProvisionedForNonIpDatagram="
                 + mIsSatelliteProvisionedForNonIpDatagram
+                + " mSatelliteEntitlementBarredPlmnsList=" + mSatelliteEntitlementBarredPlmnsList
+                + " mSatelliteEntitlementDataPlanForPlmn=" + mSatelliteEntitlementDataPlanForPlmn
+                + " mSatelliteEntitlementServicesForPlmn=" + mSatelliteEntitlementServicesForPlmn
+                + " mSatellitePlmnsDataServicePolicy=" + mSatellitePlmnsDataServicePolicy
+                + " mSatellitePlmnsVoiceServicePolicy=" + mSatellitePlmnsVoiceServicePolicy
                 + "]";
     }
 
@@ -1470,7 +1559,15 @@ public class SubscriptionInfoInternal {
                 && mSatelliteEntitlementPlmns.equals(that.mSatelliteEntitlementPlmns)
                 && mIsSatelliteESOSSupported == that.mIsSatelliteESOSSupported
                 && mIsSatelliteProvisionedForNonIpDatagram
-                == that.mIsSatelliteProvisionedForNonIpDatagram;
+                == that.mIsSatelliteProvisionedForNonIpDatagram
+                && mSatelliteEntitlementBarredPlmnsList.equals(
+                that.mSatelliteEntitlementBarredPlmnsList)
+                && mSatelliteEntitlementDataPlanForPlmn.equals(
+                that.mSatelliteEntitlementDataPlanForPlmn)
+                && mSatelliteEntitlementServicesForPlmn.equals(
+                that.mSatelliteEntitlementServicesForPlmn)
+                && mSatellitePlmnsDataServicePolicy.equals(that.mSatellitePlmnsDataServicePolicy)
+                && mSatellitePlmnsVoiceServicePolicy.equals(that.mSatellitePlmnsVoiceServicePolicy);
     }
 
     @Override
@@ -1504,7 +1601,9 @@ public class SubscriptionInfoInternal {
                 mIsSatelliteAttachEnabledForCarrier, mIsOnlyNonTerrestrialNetwork,
                 mServiceCapabilities, mTransferStatus, mIsSatelliteEntitlementStatus,
                 mSatelliteEntitlementPlmns, mIsSatelliteESOSSupported,
-                mIsSatelliteProvisionedForNonIpDatagram);
+                mIsSatelliteProvisionedForNonIpDatagram, mSatelliteEntitlementBarredPlmnsList,
+                mSatelliteEntitlementDataPlanForPlmn, mSatelliteEntitlementServicesForPlmn,
+                mSatellitePlmnsDataServicePolicy, mSatellitePlmnsVoiceServicePolicy);
         result = 31 * result + Arrays.hashCode(mNativeAccessRules);
         result = 31 * result + Arrays.hashCode(mCarrierConfigAccessRules);
         result = 31 * result + Arrays.hashCode(mRcsConfig);
@@ -1923,6 +2022,41 @@ public class SubscriptionInfoInternal {
         private int mIsSatelliteProvisionedForNonIpDatagram = 0;
 
         /**
+         * Whether satellite entitlement barred plmns is empty or not by entitlement query result.
+         */
+        @NonNull
+        private String mSatelliteEntitlementBarredPlmnsList = "";
+
+        /**
+         * Whether satellite entitlement data plan for plmns is empty or not by entitlement query
+         * result.
+         */
+        @NonNull
+        private String mSatelliteEntitlementDataPlanForPlmn = "";
+
+        /**
+         * Whether satellite entitlement servicves for plmns is empty or not by entitlement query
+         * result.
+         */
+        @NonNull
+        private String mSatelliteEntitlementServicesForPlmn = "";
+
+        /**
+         * Whether satellite entitlement plmns data service policy isempty or not by entitlement
+         * query result.
+         */
+        @NonNull
+        private String mSatellitePlmnsDataServicePolicy = "";
+
+        /**
+         * Whether satellite entitlement plmns voice service policy isempty or not by entitlement
+         * query result.
+         */
+        @NonNull
+        private String mSatellitePlmnsVoiceServicePolicy = "";
+
+
+        /**
          * Default constructor.
          */
         public Builder() {
@@ -2006,6 +2140,11 @@ public class SubscriptionInfoInternal {
             mSatelliteEntitlementPlmns = info.mSatelliteEntitlementPlmns;
             mIsSatelliteESOSSupported = info.mIsSatelliteESOSSupported;
             mIsSatelliteProvisionedForNonIpDatagram = info.mIsSatelliteProvisionedForNonIpDatagram;
+            mSatelliteEntitlementBarredPlmnsList = info.mSatelliteEntitlementBarredPlmnsList;
+            mSatelliteEntitlementDataPlanForPlmn = info.mSatelliteEntitlementDataPlanForPlmn;
+            mSatelliteEntitlementServicesForPlmn = info.mSatelliteEntitlementServicesForPlmn;
+            mSatellitePlmnsDataServicePolicy = info.mSatellitePlmnsDataServicePolicy;
+            mSatellitePlmnsVoiceServicePolicy = info.mSatellitePlmnsVoiceServicePolicy;
         }
 
         /**
@@ -3009,6 +3148,74 @@ public class SubscriptionInfoInternal {
          */
         public SubscriptionInfoInternal build() {
             return new SubscriptionInfoInternal(this);
+        }
+
+        /**
+         * Set whether satellite entitlement plmns is empty or not by entitlement query result.
+         *
+         * @param plmnsBarredList satellite entitlement plmns is empty or not by
+         * entitlement query result.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatelliteEntitlementBarredPlmnsList(@NonNull String plmnsBarredList) {
+            mSatelliteEntitlementBarredPlmnsList = plmnsBarredList;
+            return this;
+        }
+
+        /**
+         * Set whether satellite entitlement Data plan for plmn is empty or not by entitlement
+         * query result.
+         *
+         * @param plmnDataPlanJson satellite entitlement data plan for plmns.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatelliteEntitlementDataPlanForPlmns(@NonNull String plmnDataPlanJson) {
+            mSatelliteEntitlementDataPlanForPlmn = plmnDataPlanJson;
+            return this;
+        }
+
+        /**
+         * Set whether satellite entitlement services for the plmns is empty or not by entitlement
+         * query result.
+         *
+         * @param plmnServiceMapCv satellite entitlement services for plmns.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatelliteEntitlementPlmnServiceTypes(
+                @NonNull String plmnServiceMapCv) {
+            mSatelliteEntitlementServicesForPlmn = plmnServiceMapCv;
+            return this;
+        }
+
+        /**
+         * Set whether satellite entitlement plmns data service policy is empty or not by
+         * entitlement query result.
+         *
+         * @param satellitePlmnsDataServicePolicy satellite entitlement plmns data service policy.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatellitePlmnsDataServicePolicy(
+                @NonNull String satellitePlmnsDataServicePolicy) {
+            mSatellitePlmnsDataServicePolicy = satellitePlmnsDataServicePolicy;
+            return this;
+        }
+
+        /**
+         * Set whether satellite entitlement plmns voice service policy is empty or not by
+         * entitlement query result.
+         *
+         * @param satellitePlmnsVoiceServicePolicy satellite entitlement plmns voice service policy.
+         * @return The builder
+         */
+        @NonNull
+        public Builder setSatellitePlmnsVoiceServicePolicy(
+                @NonNull String satellitePlmnsVoiceServicePolicy) {
+            mSatellitePlmnsVoiceServicePolicy = satellitePlmnsVoiceServicePolicy;
+            return this;
         }
     }
 }

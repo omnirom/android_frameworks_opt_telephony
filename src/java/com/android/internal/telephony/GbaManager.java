@@ -39,7 +39,9 @@ import android.text.TextUtils;
 import android.util.SparseArray;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.metrics.RcsStats;
+import com.android.internal.telephony.util.WorkerThread;
 import com.android.telephony.Rlog;
 
 import java.util.NoSuchElementException;
@@ -65,6 +67,8 @@ public class GbaManager {
     @VisibleForTesting
     public static final int REQUEST_TIMEOUT_MS = 5000;
     private final RcsStats mRcsStats;
+
+    private final FeatureFlags mFeatureFlags;
 
     private final String mLogTag;
     private final Context mContext;
@@ -202,7 +206,7 @@ public class GbaManager {
 
     @VisibleForTesting
     public GbaManager(Context context, int subId, String servicePackageName, int releaseTime,
-            RcsStats rcsStats) {
+            RcsStats rcsStats, Looper looper, FeatureFlags featureFlags) {
         mContext = context;
         mSubId = subId;
         mLogTag = "GbaManager[" + subId + "]";
@@ -210,9 +214,15 @@ public class GbaManager {
         mServicePackageName = servicePackageName;
         mReleaseTime = releaseTime;
 
-        HandlerThread headlerThread = new HandlerThread(mLogTag);
-        headlerThread.start();
-        mHandler = new GbaManagerHandler(headlerThread.getLooper());
+        mFeatureFlags = featureFlags;
+
+        if (mFeatureFlags.threadShred()) {
+            mHandler = new GbaManagerHandler(looper);
+        } else {
+            HandlerThread headlerThread = new HandlerThread(mLogTag);
+            headlerThread.start();
+            mHandler = new GbaManagerHandler(headlerThread.getLooper());
+        }
 
         if (mReleaseTime < 0) {
             mHandler.sendEmptyMessage(EVENT_BIND_SERVICE);
@@ -224,9 +234,15 @@ public class GbaManager {
      * create a GbaManager instance for a sub
      */
     public static GbaManager make(Context context, int subId,
-            String servicePackageName, int releaseTime) {
-        GbaManager gm = new GbaManager(context, subId, servicePackageName, releaseTime,
-                RcsStats.getInstance());
+            String servicePackageName, int releaseTime, FeatureFlags featureFlags) {
+        GbaManager gm;
+        if (featureFlags.threadShred()) {
+            gm = new GbaManager(context, subId, servicePackageName, releaseTime,
+                    RcsStats.getInstance(), WorkerThread.get().getLooper(), featureFlags);
+        } else {
+            gm = new GbaManager(context, subId, servicePackageName, releaseTime,
+                    RcsStats.getInstance(), null, featureFlags);
+        }
         synchronized (sGbaManagers) {
             sGbaManagers.put(subId, gm);
         }
@@ -521,11 +537,15 @@ public class GbaManager {
     @VisibleForTesting
     public void destroy() {
         mHandler.removeCallbacksAndMessages(null);
-        mHandler.getLooper().quit();
+        if (!mFeatureFlags.threadShred()) {
+            mHandler.getLooper().quit();
+        }
         mRequestQueue.clear();
         mCallbacks.clear();
         unbindService();
-        sGbaManagers.remove(mSubId);
+        synchronized (sGbaManagers) {
+            sGbaManagers.remove(mSubId);
+        }
     }
 
     private void logv(String msg) {

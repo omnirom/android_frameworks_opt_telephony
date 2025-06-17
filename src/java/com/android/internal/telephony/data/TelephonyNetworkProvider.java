@@ -32,6 +32,7 @@ import android.telephony.SubscriptionManager;
 import android.util.ArrayMap;
 import android.util.LocalLog;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.data.PhoneSwitcher.PhoneSwitcherCallback;
@@ -152,7 +153,7 @@ public class TelephonyNetworkProvider extends NetworkProvider implements Network
             return;
         }
 
-        mPhoneSwitcher.onRequestNetwork(request);
+        mPhoneSwitcher.onRequestNetwork(networkRequest);
 
         // Check with PhoneSwitcher to see where to route the request.
         int phoneId = getPhoneIdForNetworkRequest(networkRequest);
@@ -187,7 +188,7 @@ public class TelephonyNetworkProvider extends NetworkProvider implements Network
             return;
         }
 
-        mPhoneSwitcher.onReleaseNetwork(request);
+        mPhoneSwitcher.onReleaseNetwork(networkRequest);
         int phoneId = mNetworkRequests.remove(networkRequest);
         Phone phone = PhoneFactory.getPhone(phoneId);
         if (phone != null) {
@@ -233,10 +234,12 @@ public class TelephonyNetworkProvider extends NetworkProvider implements Network
     /**
      * @return The maximal network capabilities that telephony can support.
      */
+    @VisibleForTesting
     @NonNull
-    private NetworkCapabilities makeNetworkFilter() {
+    public NetworkCapabilities makeNetworkFilter() {
         final NetworkCapabilities.Builder builder = new NetworkCapabilities.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_IA)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_MMTEL)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -253,13 +256,6 @@ public class TelephonyNetworkProvider extends NetworkProvider implements Network
                 .setNetworkSpecifier(new MatchAllNetworkSpecifier());
         TelephonyNetworkRequest.getAllSupportedNetworkCapabilities()
                 .forEach(builder::addCapability);
-
-        // TODO: b/328622096 remove the try/catch
-        try {
-            builder.addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE);
-        } catch (IllegalArgumentException exception) {
-            log("TRANSPORT_SATELLITE is not supported.");
-        }
 
         return builder.build();
     }

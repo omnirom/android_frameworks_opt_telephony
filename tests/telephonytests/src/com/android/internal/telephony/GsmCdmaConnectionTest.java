@@ -89,12 +89,6 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
 
     @Test @SmallTest
     public void testOriginalDialString(){
-        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
-        connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
-                new DialArgs.Builder().build());
-        assertEquals("+8610000", connection.getOrigDialString());
-
-        doReturn(PhoneConstants.PHONE_TYPE_GSM).when(mPhone).getPhoneType();
         connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
                 new DialArgs.Builder().build());
         assertEquals("+8610000", connection.getOrigDialString());
@@ -102,24 +96,6 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
 
     @Test @SmallTest
     public void testSanityGSM() {
-        connection = new GsmCdmaConnection(mPhone, String.format(
-                "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
-                new DialArgs.Builder().build());
-        logd("Testing initial state of GsmCdmaConnection");
-        assertEquals(GsmCdmaCall.State.IDLE, connection.getState());
-        assertEquals(Connection.PostDialState.NOT_STARTED, connection.getPostDialState());
-        assertEquals(DisconnectCause.NOT_DISCONNECTED, DisconnectCause.NOT_DISCONNECTED);
-        assertEquals(0, connection.getDisconnectTime());
-        assertEquals(0, connection.getHoldDurationMillis());
-        assertEquals(PhoneConstants.PRESENTATION_ALLOWED, connection.getNumberPresentation());
-        assertFalse(connection.isMultiparty());
-        assertNotNull(connection.getRemainingPostDialString());
-        assertEquals("+1 (700).555-41NN,1234", connection.getOrigDialString());
-    }
-
-    @Test @SmallTest
-    public void testSanityCDMA() {
-        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
         connection = new GsmCdmaConnection(mPhone, String.format(
                 "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
                 new DialArgs.Builder().build());
@@ -155,25 +131,6 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
     }
 
     @Test @MediumTest
-    public void testCDMAPostDialPause() {
-        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
-        connection = new GsmCdmaConnection(mPhone, String.format(
-                "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
-                new DialArgs.Builder().build());
-        logd("Mock connection state from alerting to active ");
-        mDC.state = DriverCall.State.ALERTING;
-        connection.update(mDC);
-        mDC.state = DriverCall.State.ACTIVE;
-        connection.update(mDC);
-        logd("process post dail sequence with pause");
-        assertEquals(Connection.PostDialState.PAUSE, connection.getPostDialState());
-        /* pause for 2000 ms */
-        moveTimeForward(GsmCdmaConnection.PAUSE_DELAY_MILLIS_CDMA);
-        processAllMessages();
-        assertEquals(Connection.PostDialState.COMPLETE, connection.getPostDialState());
-    }
-
-    @Test @MediumTest
     public void testGSMPostDialPause() {
         connection = new GsmCdmaConnection(mPhone, String.format(
                 "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
@@ -187,25 +144,6 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
         assertEquals(Connection.PostDialState.STARTED, connection.getPostDialState());
         /* pause for 2000 ms */
         moveTimeForward(GsmCdmaConnection.PAUSE_DELAY_MILLIS_GSM);
-        processAllMessages();
-        assertEquals(Connection.PostDialState.COMPLETE, connection.getPostDialState());
-    }
-
-
-    @Test @SmallTest
-    public void testPostDialWait() {
-        doReturn(PhoneConstants.PHONE_TYPE_CDMA).when(mPhone).getPhoneType();
-        connection = new GsmCdmaConnection(mPhone,
-                String.format("+1 (700).555-41NN%c1234", PhoneNumberUtils.WAIT),mCT,null,
-                new DialArgs.Builder().build());
-        logd("Mock connection state transition from alerting to active ");
-        mDC.state = DriverCall.State.ALERTING;
-        connection.update(mDC);
-        mDC.state = DriverCall.State.ACTIVE;
-        connection.update(mDC);
-        logd("Process the post dial sequence with wait ");
-        assertEquals(Connection.PostDialState.WAIT, connection.getPostDialState());
-        connection.proceedAfterWaitChar();
         processAllMessages();
         assertEquals(Connection.PostDialState.COMPLETE, connection.getPostDialState());
     }

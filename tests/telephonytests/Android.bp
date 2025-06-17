@@ -44,6 +44,7 @@ android_test {
         "platform-compat-test-rules",
         "flag-junit",
         "telephony_flags_core_java_lib",
+        "telephony-config-update-proto-lite",
     ],
 
     jarjar_rules: ":jarjar-rules-telephony-tests",

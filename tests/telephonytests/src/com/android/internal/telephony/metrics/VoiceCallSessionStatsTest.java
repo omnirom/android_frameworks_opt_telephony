@@ -235,8 +235,6 @@ public class VoiceCallSessionStatsTest extends TelephonyTest {
         mVoiceCallSessionStats1 = new TestableVoiceCallSessionStats(
                 1, mSecondPhone, mFeatureFlags);
         mVoiceCallSessionStats1.onServiceStateChanged(mSecondServiceState);
-
-        doReturn(true).when(mFeatureFlags).vonrEnabledMetric();
     }
 
     @After

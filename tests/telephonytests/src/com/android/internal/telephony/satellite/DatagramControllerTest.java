@@ -35,7 +35,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -87,7 +87,6 @@ public class DatagramControllerTest extends TelephonyTest {
                 mMockSatelliteController);
         replaceInstance(SatelliteSessionController.class, "sInstance", null,
                 mMockSatelliteSessionController);
-        when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(true);
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
         mDatagramControllerUT = new DatagramController(
                 mContext, Looper.myLooper(), mFeatureFlags, mMockPointingAppController);
@@ -149,9 +148,9 @@ public class DatagramControllerTest extends TelephonyTest {
         int errorCode = SATELLITE_RESULT_SUCCESS;
         mDatagramControllerUT.updateSendStatus(SUB_ID, DATAGRAM_TYPE_KEEP_ALIVE,
                 SATELLITE_DATAGRAM_TRANSFER_STATE_SENDING, sendPendingCount, errorCode);
-        verifyZeroInteractions(mMockSatelliteSessionController);
-        verifyZeroInteractions(mMockPointingAppController);
-        verifyZeroInteractions(mMockDatagramReceiver);
+        verifyNoMoreInteractions(mMockSatelliteSessionController);
+        verifyNoMoreInteractions(mMockPointingAppController);
+        verifyNoMoreInteractions(mMockDatagramReceiver);
     }
 
     @Test

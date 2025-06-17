@@ -32,7 +32,6 @@ import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CHANGE_SIM
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CONFERENCE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_DATA_REGISTRATION_STATE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_DELETE_SMS_ON_SIM;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_DEVICE_IDENTITY;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_DEVICE_IMEI;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_DTMF;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_ENABLE_UICC_APPLICATIONS;
@@ -57,7 +56,6 @@ import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_UICC_A
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_HANGUP;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_HANGUP_FOREGROUND_RESUME_BACKGROUND;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_HANGUP_WAITING_OR_BACKGROUND;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_IMS_REGISTRATION_STATE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_IMS_SEND_SMS;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_LAST_CALL_FAIL_CAUSE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_NV_READ_ITEM;
@@ -98,8 +96,8 @@ import static junit.framework.Assert.fail;
 
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
@@ -356,8 +354,6 @@ public class RILTest extends TelephonyTest {
             replaceInstance(RIL.class, "mHalVersion", mRILUnderTest, mHalVersionV14);
         } catch (Exception e) {
         }
-
-        doReturn(true).when(mFeatureFlags).combineRilDeathHandle();
     }
 
     @After
@@ -1014,15 +1010,6 @@ public class RILTest extends TelephonyTest {
 
     @FlakyTest
     @Test
-    public void testGetDeviceIdentity() throws Exception {
-        mRILUnderTest.getDeviceIdentity(obtainMessage());
-        verify(mRadioProxy).getDeviceIdentity(mSerialNumberCaptor.capture());
-        verifyRILResponse(
-                mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_DEVICE_IDENTITY);
-    }
-
-    @FlakyTest
-    @Test
     public void testExitEmergencyCallbackMode() throws Exception {
         mRILUnderTest.exitEmergencyCallbackMode(obtainMessage());
         verify(mRadioProxy).exitEmergencyCallbackMode(mSerialNumberCaptor.capture());
@@ -1154,15 +1141,6 @@ public class RILTest extends TelephonyTest {
                 eq(RILUtils.convertToHalDataProfile14(dataProfile)));
         verifyRILResponse(
                 mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_SET_INITIAL_ATTACH_APN);
-    }
-
-    @FlakyTest
-    @Test
-    public void testGetImsRegistrationState() throws Exception {
-        mRILUnderTest.getImsRegistrationState(obtainMessage());
-        verify(mRadioProxy).getImsRegistrationState(mSerialNumberCaptor.capture());
-        verifyRILResponse(
-                mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_IMS_REGISTRATION_STATE);
     }
 
     @FlakyTest

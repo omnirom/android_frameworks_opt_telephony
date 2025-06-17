@@ -18,8 +18,7 @@ package com.android.internal.telephony.uicc;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyObject;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -87,7 +86,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
                 response.sendToTarget();
                 return null;
             }
-        }).when(mAdnRecordCache).requestLoadAllAdnLike(anyInt(), anyInt(), (Message) anyObject());
+        }).when(mAdnRecordCache).requestLoadAllAdnLike(anyInt(), anyInt(), (Message) any());
 
         doAnswer(invocation -> {
             Message response = (Message) invocation.getArguments()[0];
@@ -95,7 +94,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
             AsyncResult.forMessage(response).result = mAdnList;
             response.sendToTarget();
             return null;
-        }).when(mSimPhonebookRecordCache).requestLoadAllPbRecords((Message)anyObject());
+        }).when(mSimPhonebookRecordCache).requestLoadAllPbRecords((Message)any());
         mIccPhoneBookInterfaceManagerHandler = new IccPhoneBookInterfaceManagerHandler(TAG);
         mIccPhoneBookInterfaceManagerHandler.start();
 
@@ -131,7 +130,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
                 response.sendToTarget();
                 return null;
             }
-        }).when(mAdnRecordCache).requestLoadAllAdnLike(anyInt(), anyInt(), (Message) anyObject());
+        }).when(mAdnRecordCache).requestLoadAllAdnLike(anyInt(), anyInt(), (Message) any());
         List<AdnRecord> adnListResultNew = mIccPhoneBookInterfaceMgr.getAdnRecordsInEf(
                 IccConstants.EF_ADN);
         //the later read return null due to exception
@@ -153,7 +152,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
             AsyncResult.forMessage(response).exception = new RuntimeException();
             response.sendToTarget();
             return null;
-        }).when(mSimPhonebookRecordCache).requestLoadAllPbRecords((Message) anyObject());
+        }).when(mSimPhonebookRecordCache).requestLoadAllPbRecords((Message) any());
         List<AdnRecord> adnListResultNew = mIccPhoneBookInterfaceMgr.getAdnRecordsInEf(
                 IccConstants.EF_ADN);
         //the later read return null due to exception
@@ -177,7 +176,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
             }
         }).when(mAdnRecordCache).updateAdnBySearch(
             anyInt(), any(), any(),
-            any(), (Message) anyObject());
+            any(), (Message) any());
 
         ContentValues values = new ContentValues();
         values.put(IccProvider.STR_TAG, "");
@@ -206,7 +205,7 @@ public class IccPhoneBookInterfaceManagerTest extends TelephonyTest {
             response.sendToTarget();
             return null;
         }).when(mSimPhonebookRecordCache).updateSimPbAdnBySearch(any(),
-            any(), (Message) anyObject());
+            any(), (Message) any());
 
         ContentValues values = new ContentValues();
         values.put(IccProvider.STR_TAG, "");

@@ -19,14 +19,6 @@ flag {
     bug:"296437388"
 }
 
-# OWNER=nagendranb TARGET=24Q3
-flag {
-    name: "satellite_internet"
-    namespace: "telephony"
-    description: "This flag enables satellite internet support."
-    bug:"326972202"
-}
-
 # OWNER=xalle TARGET=24Q3
 flag {
     name: "satellite_persistent_logging"
@@ -80,4 +72,34 @@ flag {
   description: "Introduce SatelliteManager APIs for carrier apps to monitor satellite state change"
   bug: "357638490"
   is_exported: true
+}
+
+# OWNER=karthickmj TARGET=25Q4
+flag {
+  name: "satellite_25q4_apis"
+  namespace: "telephony"
+  description: "This flag controls the changes for the new satellite APIs"
+  bug: "383254935"
+  is_exported: true
+}
+
+# OWNER=arunvoddu TARGET=25Q2
+flag {
+  name: "starlink_data_bugfix"
+  namespace: "telephony"
+  description: "This flag controls the satellite related bug fixes"
+  bug: "393966687"
+  is_exported: true
+}
+
+# OWNER=amallampati TARGET=25Q3
+flag {
+    name: "satellite_exit_p2p_session_outside_geofence"
+    is_exported: true
+    namespace: "telephony"
+    description: "Exit P2P satellite session outside geofence"
+    bug:"391926447"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

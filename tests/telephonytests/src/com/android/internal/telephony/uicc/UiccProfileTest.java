@@ -34,7 +34,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PersistableBundle;
@@ -484,34 +483,6 @@ public class UiccProfileTest extends TelephonyTest {
                 mUiccProfile.mHandler.obtainMessage(UiccProfile.EVENT_APP_READY));
         waitForMs(100);
         processAllMessages();
-    }
-
-    @Test
-    @SmallTest
-    public void testUpdateUiccProfileApplicationCdmaSupported() {
-        // CDMA supported
-        doReturn(true)
-            .when(mPackageManager).hasSystemFeature(PackageManager.FEATURE_TELEPHONY_CDMA);
-
-        testWithCsimApp();
-
-        // CDMA is supported and CSIM app is not ready, so state should be NOT_READY
-        assertEquals(State.NOT_READY, mUiccProfile.getState());
-    }
-
-    @Test
-    @SmallTest
-    public void testUpdateUiccProfileApplicationCdmaNotSupported() {
-        // CDMA not supported
-        doReturn(false)
-            .when(mPackageManager).hasSystemFeature(PackageManager.FEATURE_TELEPHONY_CDMA);
-
-        testWithCsimApp();
-
-        // state is loaded as all records are loaded right away as SimulatedCommands returns
-        // response for them right away. Ideally applications and records should be mocked.
-        // CSIM is not ready but that should not matter since CDMA is not supported.
-        assertEquals(State.LOADED, mUiccProfile.getState());
     }
 
     @Test

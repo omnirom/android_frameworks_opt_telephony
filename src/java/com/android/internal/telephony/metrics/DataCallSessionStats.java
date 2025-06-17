@@ -310,6 +310,7 @@ public class DataCallSessionStats {
         copy.isNtn = call.isNtn;
         copy.isSatelliteTransport = call.isSatelliteTransport;
         copy.isProvisioningProfile = call.isProvisioningProfile;
+        copy.isNbIotNtn = call.isNbIotNtn;
         return copy;
     }
 
@@ -337,8 +338,13 @@ public class DataCallSessionStats {
         proto.handoverFailureRat = new int[0];
         proto.isNonDds = false;
         proto.isIwlanCrossSim = false;
-        proto.isNtn = mSatelliteController != null
-                ? mSatelliteController.isInSatelliteModeForCarrierRoaming(mPhone) : false;
+        if (mSatelliteController != null) {
+            proto.isNtn = mSatelliteController.isInSatelliteModeForCarrierRoaming(mPhone);
+            proto.isNbIotNtn = mSatelliteController.isInCarrierRoamingNbIotNtn(mPhone);
+        } else {
+            proto.isNtn = false;
+            proto.isNbIotNtn = false;
+        }
         proto.isSatelliteTransport = isSatellite;
         proto.isProvisioningProfile = getIsProvisioningProfile();
         return proto;

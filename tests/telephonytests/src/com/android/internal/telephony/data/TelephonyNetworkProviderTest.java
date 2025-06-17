@@ -391,4 +391,25 @@ public class TelephonyNetworkProviderTest extends TelephonyTest {
         verifyRequestReleasedOnPhone(1, request);
         verifyRequestSentOnPhone(0, request);
     }
+
+    @Test
+    public void testMakeNetworkFilter() {
+        doReturn(Set.of(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH,
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY,
+                NetworkCapabilities.NET_CAPABILITY_VSIM, NetworkCapabilities.NET_CAPABILITY_MMS,
+                NetworkCapabilities.NET_CAPABILITY_XCAP)).when(mDataConfigManager)
+                .getUnsupportedNetworkCapabilities();
+
+        NetworkCapabilities caps = mTelephonyNetworkProvider.makeNetworkFilter();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)).isTrue();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_FOTA)).isTrue();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_IA)).isTrue();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH))
+                .isFalse();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY))
+                .isFalse();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VSIM)).isFalse();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_MMS)).isFalse();
+        assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_XCAP)).isFalse();
+    }
 }

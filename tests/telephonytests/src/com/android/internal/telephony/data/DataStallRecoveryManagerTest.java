@@ -19,10 +19,11 @@ package com.android.internal.telephony.data;
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.junit.Assert.assertNotNull;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -91,7 +92,6 @@ public class DataStallRecoveryManagerTest extends TelephonyTest {
         Field field = DataStallRecoveryManager.class.getDeclaredField("mPredictWaitingMillis");
         field.setAccessible(true);
 
-        doReturn(true).when(mFeatureFlags).dsrsDiagnosticsEnabled();
         mFakeContentResolver = new FakeContentResolver();
         doReturn(mFakeContentResolver).when(mContext).getContentResolver();
         // Set the global settings for action enabled state and duration to
@@ -433,7 +433,6 @@ public class DataStallRecoveryManagerTest extends TelephonyTest {
     @Test
     public void testSendDSRMData() throws Exception {
         ArgumentCaptor<Intent> captorIntent = ArgumentCaptor.forClass(Intent.class);
-        boolean isDsrsDiagnosticsEnabled = mFeatureFlags.dsrsDiagnosticsEnabled();
 
         logd("Set phone status to normal status.");
         sendOnInternetDataNetworkCallback(true);
@@ -465,13 +464,8 @@ public class DataStallRecoveryManagerTest extends TelephonyTest {
             logd(bundle.toString());
             int size = bundle.size();
             logd("bundle size is " + size);
-            if (isDsrsDiagnosticsEnabled) {
-                // Check if bundle size is 27
-                assertThat(size).isEqualTo(27);
-            } else {
-                // Check if bundle size is 19
-                assertThat(size).isEqualTo(19);
-            }
+            // Check if bundle size is 27
+            assertThat(size).isEqualTo(27);
         }
     }
 
@@ -587,5 +581,25 @@ public class DataStallRecoveryManagerTest extends TelephonyTest {
 
         // recovery action will jump to modem reset action if user doing the radio restart.
         assertThat(mDataStallRecoveryManager.getRecoveryAction()).isEqualTo(4);
+    }
+
+    @Test
+    public void testDoNotDoRecoveryActionWhenActiveCall() throws Exception {
+        sendOnInternetDataNetworkCallback(true);
+        mDataStallRecoveryManager.setRecoveryAction(
+                DataStallRecoveryManager.RECOVERY_ACTION_RADIO_RESTART);
+        doReturn(mSignalStrength).when(mPhone).getSignalStrength();
+        // Simulate active call
+        doReturn(PhoneConstants.State.OFFHOOK).when(mPhone).getState();
+
+        logd("Sending validation failed callback");
+        sendValidationStatusCallback(NetworkAgent.VALIDATION_STATUS_NOT_VALID);
+        processAllFutureMessages();
+
+        verify(mSST, never()).powerOffRadioSafely();
+        verify(mPhone, never()).rebootModem(any());
+
+        assertThat(mDataStallRecoveryManager.getRecoveryAction())
+                .isEqualTo(DataStallRecoveryManager.RECOVERY_ACTION_RADIO_RESTART);
     }
 }

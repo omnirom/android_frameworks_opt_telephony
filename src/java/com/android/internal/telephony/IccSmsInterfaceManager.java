@@ -950,14 +950,6 @@ public class IccSmsInterfaceManager {
         return (boolean) setRequest.mResult;
     }
 
-    public boolean enableCellBroadcast(int messageIdentifier, int ranType) {
-        return enableCellBroadcastRange(messageIdentifier, messageIdentifier, ranType);
-    }
-
-    public boolean disableCellBroadcast(int messageIdentifier, int ranType) {
-        return disableCellBroadcastRange(messageIdentifier, messageIdentifier, ranType);
-    }
-
     public boolean enableCellBroadcastRange(int startMessageId, int endMessageId, int ranType) {
         mContext.enforceCallingPermission(android.Manifest.permission.RECEIVE_EMERGENCY_BROADCAST,
                 "enabling cell broadcast range [" + startMessageId + "-" + endMessageId + "]. "

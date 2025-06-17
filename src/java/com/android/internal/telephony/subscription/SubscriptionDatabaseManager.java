@@ -30,6 +30,7 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.provider.Telephony;
 import android.provider.Telephony.SimInfo;
+import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.SubscriptionManager.DataRoamingMode;
@@ -49,9 +50,14 @@ import android.util.LocalLog;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.flags.FeatureFlags;
+import com.android.internal.telephony.satellite.SatelliteController;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.util.function.TriConsumer;
 import com.android.telephony.Rlog;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -299,7 +305,22 @@ public class SubscriptionDatabaseManager extends Handler {
                     SubscriptionInfoInternal::getSatelliteESOSSupported),
             new AbstractMap.SimpleImmutableEntry<>(
                     SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM,
-                    SubscriptionInfoInternal::getIsSatelliteProvisionedForNonIpDatagram)
+                    SubscriptionInfoInternal::getIsSatelliteProvisionedForNonIpDatagram),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_BARRED_PLMNS,
+                    SubscriptionInfoInternal::getSatelliteEntitlementBarredPlmnsList),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS,
+                    SubscriptionInfoInternal::getSatelliteEntitlementDataPlanForPlmns),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP,
+                    SubscriptionInfoInternal::getSatelliteEntitlementPlmnsServiceTypes),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY,
+                    SubscriptionInfoInternal::getSatellitePlmnsDataServicePolicy),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY,
+                    SubscriptionInfoInternal::getSatellitePlmnsVoiceServicePolicy)
     );
 
     /**
@@ -510,7 +531,22 @@ public class SubscriptionDatabaseManager extends Handler {
                     SubscriptionDatabaseManager::setNumberFromIms),
             new AbstractMap.SimpleImmutableEntry<>(
                     SimInfo.COLUMN_SATELLITE_ENTITLEMENT_PLMNS,
-                    SubscriptionDatabaseManager::setSatelliteEntitlementPlmns)
+                    SubscriptionDatabaseManager::setSatelliteEntitlementPlmns),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_BARRED_PLMNS,
+                    SubscriptionDatabaseManager::setSatelliteEntitlementBarredPlmns),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS,
+                    SubscriptionDatabaseManager::setSatelliteEntitlementDataPlanForPlmns),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP,
+                    SubscriptionDatabaseManager::setSatelliteEntitlementPlmnServiceTypeMap),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY,
+                    SubscriptionDatabaseManager::setSatelliteEntitlementPlmnDataServicePolicy),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    SimInfo.COLUMN_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY,
+                    SubscriptionDatabaseManager::setSatelliteEntitlementPlmnVoiceServicePolicy)
     );
 
     /**
@@ -2072,9 +2108,6 @@ public class SubscriptionDatabaseManager extends Handler {
      * @throws IllegalArgumentException if the subscription does not exist.
      */
     public void setNtn(int subId, int isNtn) {
-        if (!mFeatureFlags.oemEnabledSatelliteFlag()) {
-            return;
-        }
         writeDatabaseAndCacheHelper(subId, SimInfo.COLUMN_IS_ONLY_NTN, isNtn,
                 SubscriptionInfoInternal.Builder::setOnlyNonTerrestrialNetwork);
     }
@@ -2157,17 +2190,56 @@ public class SubscriptionDatabaseManager extends Handler {
     }
 
     /**
-     * Set satellite entitlement plmn list by entitlement query result.
+     * Save the satellite entitlement Info in the subscription database.
      *
-     * @param subId Subscription id.
-     * @param satelliteEntitlementPlmnList Satellite entitlement plmn list
+     * @param subId                     subId.
+     * @param allowedPlmnList           Plmn [MCC+MNC] list of codes to determine if satellite
+     *                                  communication is allowed. Ex : "123123,12310".
+     * @param barredPlmnList            Plmn [MCC+MNC] list of codes to determine if satellite
+     *                                  communication is not allowed.  Ex : "123123,12310".
+     * @param plmnDataPlanMap           data plan per plmn of type
+     *                                  {@link SatelliteController#SATELLITE_DATA_PLAN_METERED} OR
+     *                                  {@link SatelliteController#SATELLITE_DATA_PLAN_UNMETERED}.
+     *                                  Ex : {"302820":0, "31026":1}
+     * @param plmnServiceTypeMap        list of supported services per plmn of type
+     *                                  {@link
+     *                                  android.telephony.NetworkRegistrationInfo.ServiceType}).
+     *                                  Ex : {"302820":[1,3],"31026":[2,3]}
+     * @param plmnDataServicePolicyMap  data support mode per plmn map of types
+     *                                  {@link CarrierConfigManager.SATELLITE_DATA_SUPPORT_MODE}.
+     *                                  Ex : {"302820":2, "31026":1}
+     * @param plmnVoiceServicePolicyMap voice support mode per plmn map of types
+     *                                  {@link CarrierConfigManager.SATELLITE_DATA_SUPPORT_MODE}
+     *                                  . Ex : {"302820":2, "31026":1}.
      * @throws IllegalArgumentException if the subscription does not exist.
      */
-    public void setSatelliteEntitlementPlmnList(int subId,
-            @NonNull List<String> satelliteEntitlementPlmnList) {
-        String satelliteEntitlementPlmns = satelliteEntitlementPlmnList.stream().collect(
+    public void setSatelliteEntitlementInfo(int subId,
+            @NonNull List<String> allowedPlmnList,
+            @Nullable List<String> barredPlmnList,
+            @Nullable Map<String, Integer> plmnDataPlanMap,
+            @Nullable Map<String, List<Integer>> plmnServiceTypeMap,
+            @Nullable Map<String, Integer> plmnDataServicePolicyMap,
+            @Nullable Map<String, Integer> plmnVoiceServicePolicyMap) {
+        String satelliteEntitlementPlmns = allowedPlmnList.stream().collect(
                 Collectors.joining(","));
         setSatelliteEntitlementPlmns(subId, satelliteEntitlementPlmns);
+
+        String satelliteEntitlementBarredPlmns = barredPlmnList.stream().collect(
+                Collectors.joining(","));
+        setSatelliteEntitlementBarredPlmns(subId, satelliteEntitlementBarredPlmns);
+
+
+        String plmnDataPlanJson = serializeMapToJsonString(plmnDataPlanMap);
+        setSatelliteEntitlementDataPlanForPlmns(subId, plmnDataPlanJson);
+
+        String plmnServiceTypeJson = serializeMapListToJsonString(plmnServiceTypeMap);
+        setSatelliteEntitlementPlmnServiceTypeMap(subId, plmnServiceTypeJson);
+
+        String plmnDataServicePolicyJson = serializeMapToJsonString(plmnDataServicePolicyMap);
+        setSatelliteEntitlementPlmnDataServicePolicy(subId, plmnDataServicePolicyJson);
+
+        String plmnVoiceServicePolicyJson = serializeMapToJsonString(plmnVoiceServicePolicyMap);
+        setSatelliteEntitlementPlmnVoiceServicePolicy(subId, plmnVoiceServicePolicyJson);
     }
 
     /**
@@ -2203,6 +2275,81 @@ public class SubscriptionDatabaseManager extends Handler {
                 SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM,
                 isSatelliteProvisionedForNonIpDatagram,
                 SubscriptionInfoInternal.Builder::setIsSatelliteProvisionedForNonIpDatagram);
+    }
+
+    /**
+     * Set satellite entitlement barred plmns list by entitlement query result.
+     *
+     * @param subId Subscription id.
+     * @param satelliteEntitlementBarredPlmns Satellite entitlement barred plmns
+     * @throws IllegalArgumentException if the subscription does not exist.
+     */
+    public void setSatelliteEntitlementBarredPlmns(int subId,
+            @NonNull String satelliteEntitlementBarredPlmns) {
+        writeDatabaseAndCacheHelper(subId,
+                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_BARRED_PLMNS,
+                satelliteEntitlementBarredPlmns,
+                SubscriptionInfoInternal.Builder::setSatelliteEntitlementBarredPlmnsList);
+    }
+
+    /**
+     * Set satellite entitlement data plan for the plmns by entitlement query result.
+     *
+     * @param subId Subscription id.
+     * @param plmnDataPlanJson Satellite entitlement data plan for plmns.
+     * @throws IllegalArgumentException if the subscription does not exist.
+     */
+    public void setSatelliteEntitlementDataPlanForPlmns(int subId,
+            @NonNull String plmnDataPlanJson) {
+        writeDatabaseAndCacheHelper(subId,
+                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS,
+                plmnDataPlanJson,
+                SubscriptionInfoInternal.Builder::setSatelliteEntitlementDataPlanForPlmns);
+    }
+
+    /**
+     * Set satellite entitlement services for the plmns by entitlement query result.
+     *
+     * @param subId                     Subscription id.
+     * @param plmnServiceTypeJson Satellite entitlement services for plmns.
+     * @throws IllegalArgumentException if the subscription does not exist.
+     */
+    public void setSatelliteEntitlementPlmnServiceTypeMap(int subId,
+            @NonNull String plmnServiceTypeJson) {
+        writeDatabaseAndCacheHelper(subId,
+                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP,
+                plmnServiceTypeJson,
+                SubscriptionInfoInternal.Builder::setSatelliteEntitlementPlmnServiceTypes);
+    }
+
+    /**
+     * Set satellite entitlement data service policy for plmns by entitlement query result.
+     *
+     * @param subId Subscription id.
+     * @param satellitePlmnsDataServicePolicy Satellite entitlement data service policy for plmns.
+     * @throws IllegalArgumentException if the subscription does not exist.
+     */
+    public void setSatelliteEntitlementPlmnDataServicePolicy(int subId,
+            @NonNull String satellitePlmnsDataServicePolicy) {
+        writeDatabaseAndCacheHelper(subId,
+                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY,
+                satellitePlmnsDataServicePolicy,
+                SubscriptionInfoInternal.Builder::setSatellitePlmnsDataServicePolicy);
+    }
+
+    /**
+     * Set satellite entitlement voice service policy for plmns by entitlement query result.
+     *
+     * @param subId Subscription id.
+     * @param satellitePlmnsVoiceServicePolicy Satellite entitlement voice service policy for plmns.
+     * @throws IllegalArgumentException if the subscription does not exist.
+     */
+    public void setSatelliteEntitlementPlmnVoiceServicePolicy(int subId,
+            @NonNull String satellitePlmnsVoiceServicePolicy) {
+        writeDatabaseAndCacheHelper(subId,
+                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY,
+                satellitePlmnsVoiceServicePolicy,
+                SubscriptionInfoInternal.Builder::setSatellitePlmnsVoiceServicePolicy);
     }
 
     /**
@@ -2446,11 +2593,24 @@ public class SubscriptionDatabaseManager extends Handler {
                                 SimInfo.COLUMN_SATELLITE_ENTITLEMENT_PLMNS)))
                 .setIsSatelliteProvisionedForNonIpDatagram(cursor.getInt(
                         cursor.getColumnIndexOrThrow(
-                                SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM)));
-        if (mFeatureFlags.oemEnabledSatelliteFlag()) {
-            builder.setOnlyNonTerrestrialNetwork(cursor.getInt(cursor.getColumnIndexOrThrow(
-                    SimInfo.COLUMN_IS_ONLY_NTN)));
-        }
+                                SimInfo.COLUMN_IS_SATELLITE_PROVISIONED_FOR_NON_IP_DATAGRAM)))
+                .setSatelliteEntitlementBarredPlmnsList(cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_BARRED_PLMNS)))
+                .setSatelliteEntitlementDataPlanForPlmns(cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS)))
+                .setSatelliteEntitlementPlmnServiceTypes(cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP)))
+                .setSatellitePlmnsDataServicePolicy(cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY)))
+                .setSatellitePlmnsVoiceServicePolicy(cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                SimInfo.COLUMN_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY)));
+        builder.setOnlyNonTerrestrialNetwork(cursor.getInt(cursor.getColumnIndexOrThrow(
+                SimInfo.COLUMN_IS_ONLY_NTN)));
         if (mFeatureFlags.supportPsimToEsimConversion()) {
             builder.setTransferStatus(cursor.getInt(cursor.getColumnIndexOrThrow(
                     SimInfo.COLUMN_TRANSFER_STATUS)));
@@ -2549,6 +2709,52 @@ public class SubscriptionDatabaseManager extends Handler {
         writeDatabaseAndCacheHelper(subId, SimInfo.COLUMN_TRANSFER_STATUS,
                 status,
                 SubscriptionInfoInternal.Builder::setTransferStatus);
+    }
+
+    /**
+     * Serialize the given Map<String, Integer> to Json model string.
+     *
+     * @param mapInfo of type Map
+     * @return Json in string format.
+     */
+    public String serializeMapToJsonString(Map<String, Integer> mapInfo) {
+        JSONObject json = new JSONObject();
+        if (mapInfo == null || mapInfo.isEmpty()) {
+            return json.toString();
+        }
+        try {
+            for (Map.Entry<String, Integer> entry : mapInfo.entrySet()) {
+                json.put(entry.getKey(), entry.getValue());
+            }
+        } catch (JSONException e) {
+            loge("serializeMapToCV JSON error: " + e.getMessage());
+        }
+        return json.toString();
+    }
+
+    /**
+     * Serialize the given Map<String, List<Integer>> to Json model string.
+     *
+     * @param mapList of type Map
+     * @return Json in string format.
+     */
+    public String serializeMapListToJsonString(Map<String, List<Integer>> mapList) {
+        JSONObject json = new JSONObject();
+        if (mapList == null || mapList.isEmpty()) {
+            return json.toString();
+        }
+        try {
+            for (Map.Entry<String, List<Integer>> entry : mapList.entrySet()) {
+                JSONArray jsonArray = new JSONArray();
+                for (int value : entry.getValue()) {
+                    jsonArray.put(value);
+                }
+                json.put(entry.getKey(), jsonArray);
+            }
+        } catch (JSONException e) {
+            loge("serializeMapListToCV JSON error: " + e.getMessage());
+        }
+        return json.toString();
     }
 
     /**

@@ -112,6 +112,7 @@ import android.text.TextUtils;
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
 import com.android.internal.telephony.data.KeepaliveStatus;
+import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.gsm.SsData;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.uicc.IccRefreshResponse;
@@ -571,6 +572,7 @@ public class RadioIndication extends IRadioIndication.Stub {
     }
 
     public void cdmaCallWaiting(int indicationType, CdmaCallWaiting callWaitingRecord) {
+        if (Flags.phoneTypeCleanup()) return;
         mRil.processIndication(HAL_SERVICE_RADIO, indicationType);
 
         // todo: create a CdmaCallWaitingNotification constructor that takes in these fields to make
@@ -609,6 +611,7 @@ public class RadioIndication extends IRadioIndication.Stub {
 
     public void cdmaInfoRec(int indicationType,
                             android.hardware.radio.V1_0.CdmaInformationRecords records) {
+        if (Flags.phoneTypeCleanup()) return;
         mRil.processIndication(HAL_SERVICE_RADIO, indicationType);
 
         int numberOfInfoRecs = records.infoRec.size();

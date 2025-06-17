@@ -29,6 +29,18 @@ flag {
     }
 }
 
+# OWNER=tgunn TARGET=25Q2
+flag {
+    name: "robust_number_verification"
+    namespace: "telephony"
+    description: "Makes range matching more robust for TelephonyManager#requestNumberVerification"
+    bug:"400984263"
+    is_exported: true
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
 # OWNER=stevestatia TARGET=24Q4
 flag {
     name: "remove_country_code_from_local_singapore_calls"
@@ -78,6 +90,7 @@ flag {
     namespace: "telephony"
     description: "To prevent passing the TelephonyRegistry's original instance to listeners in the same process"
     bug:"379126049"
+    is_exported: true
     metadata {
         purpose: PURPOSE_BUGFIX
     }

@@ -25,9 +25,10 @@ import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
+import static org.junit.Assume.assumeFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -36,17 +37,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Country;
 import android.location.CountryDetector;
-import android.net.Uri;
 import android.os.Binder;
 import android.os.HandlerThread;
 import android.os.Message;
@@ -56,12 +56,13 @@ import android.provider.Settings;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.service.carrier.ICarrierMessagingService;
+import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
 import android.telephony.SmsManager;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
-import android.util.Singleton;
 
+import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.FlakyTest;
 import androidx.test.filters.MediumTest;
 import androidx.test.filters.SmallTest;
@@ -75,6 +76,7 @@ import com.android.internal.telephony.TelephonyTest;
 import com.android.internal.telephony.TelephonyTestUtils;
 import com.android.internal.telephony.TestApplication;
 import com.android.internal.telephony.flags.Flags;
+import com.android.internal.telephony.satellite.SatelliteController;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.IsimUiccRecords;
 
@@ -103,6 +105,7 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
     private SMSDispatcher.SmsTracker mSmsTracker;
     private ISub.Stub mISubStub;
     private ICarrierMessagingService.Stub mICarrierAppMessagingService;
+    private SatelliteController mMockSatelliteController;
 
     private Object mLock = new Object();
     private boolean mReceivedTestIntent;
@@ -139,12 +142,20 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
+
+        // unmock ActivityManager to be able to register receiver, create real PendingIntent and
+        // receive TEST_INTENT
+        unmockActivityManager();
+
         mSmsDispatchersController = mock(SmsDispatchersController.class);
         mGsmInboundSmsHandler = mock(GsmInboundSmsHandler.class);
         mCountryDetector = mock(CountryDetector.class);
         mSmsTracker = mock(SMSDispatcher.SmsTracker.class);
         mISubStub = mock(ISub.Stub.class);
         mICarrierAppMessagingService = mock(ICarrierMessagingService.Stub.class);
+        mMockSatelliteController = mock(SatelliteController.class);
+        replaceInstance(SatelliteController.class, "sInstance", null,
+                mMockSatelliteController);
 
         // Note that this replaces only cached services in ServiceManager. If a service is not found
         // in the cache, a real instance is used.
@@ -233,10 +244,6 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
     }
 
     private void registerTestIntentReceiver() throws Exception {
-        // unmock ActivityManager to be able to register receiver, create real PendingIntent and
-        // receive TEST_INTENT
-        restoreInstance(Singleton.class, "mInstance", mIActivityManagerSingleton);
-        restoreInstance(ActivityManager.class, "IActivityManagerSingleton", null);
         Context realContext = TestApplication.getAppContext();
         realContext.registerReceiver(mTestReceiver, new IntentFilter(TEST_INTENT),
                 Context.RECEIVER_EXPORTED);
@@ -536,9 +543,15 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         }
     }
 
+    private void skipOnAutomotive() {
+        assumeFalse(InstrumentationRegistry.getTargetContext().getPackageManager().hasSystemFeature(
+                PackageManager.FEATURE_AUTOMOTIVE));
+    }
+
     @Test
     @SmallTest
     public void testSendMultipartSmsByCarrierAppNoResponse() throws Exception {
+        skipOnAutomotive(); // TODO(b/401440427): don't skip
         mockCarrierApp();
         // do not mock result, instead reduce the timeout for test
         mGsmSmsDispatcher.mCarrierMessagingTimeout = 100;
@@ -695,5 +708,28 @@ public class GsmSmsDispatcherTest extends TelephonyTest {
         boolean isMtSmsPollingMessage = tracker.isMtSmsPollingMessage(mContext);
 
         assertFalse(isMtSmsPollingMessage);
+    }
+
+    @Test
+    public void testShouldBlockPremiumSmsInSatelliteMode() {
+        doReturn(true).when(mMockSatelliteController).isSatelliteBeingEnabled();
+        assertTrue(mGsmSmsDispatcher.shouldBlockPremiumSmsInSatelliteMode());
+
+        int subId = mPhone.getSubId();
+        doReturn(subId).when(mMockSatelliteController).getSelectedSatelliteSubId();
+        doReturn(false).when(mMockSatelliteController).isSatelliteBeingEnabled();
+        doReturn(true).when(mMockSatelliteController).isSatelliteEnabled();
+        doReturn(new int[]{NetworkRegistrationInfo.SERVICE_TYPE_DATA}).when(
+                mMockSatelliteController).getSupportedServicesOnCarrierRoamingNtn(anyInt());
+        assertTrue(mGsmSmsDispatcher.shouldBlockPremiumSmsInSatelliteMode());
+
+        doReturn(true).when(mMockSatelliteController).isSatelliteEnabled();
+        doReturn(new int[]{NetworkRegistrationInfo.SERVICE_TYPE_DATA,
+                NetworkRegistrationInfo.SERVICE_TYPE_SMS}).when(
+                mMockSatelliteController).getSupportedServicesOnCarrierRoamingNtn(anyInt());
+        assertFalse(mGsmSmsDispatcher.shouldBlockPremiumSmsInSatelliteMode());
+
+        doReturn(false).when(mMockSatelliteController).isSatelliteEnabled();
+        assertFalse(mGsmSmsDispatcher.shouldBlockPremiumSmsInSatelliteMode());
     }
 }

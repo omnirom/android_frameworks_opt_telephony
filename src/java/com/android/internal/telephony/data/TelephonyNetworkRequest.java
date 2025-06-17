@@ -32,6 +32,7 @@ import android.telephony.data.TrafficDescriptor;
 import android.telephony.data.TrafficDescriptor.OsAppId;
 
 import com.android.internal.telephony.Phone;
+import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.flags.FeatureFlags;
 
 import java.lang.annotation.Retention;
@@ -41,6 +42,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -327,31 +329,29 @@ public class TelephonyNetworkRequest {
         if ((hasAttribute(CAPABILITY_ATTRIBUTE_APN_SETTING)
                 || hasAttribute(CAPABILITY_ATTRIBUTE_TRAFFIC_DESCRIPTOR_DNN))
                 && dataProfile.getApnSetting() != null) {
-            if (mFeatureFlags.satelliteInternet()) {
-                if (mNativeNetworkRequest.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
-                        && !mNativeNetworkRequest.hasTransport(
-                                NetworkCapabilities.TRANSPORT_SATELLITE)) {
-                    if (mDataConfigManager != null) {
-                        if (Arrays.stream(getCapabilities()).noneMatch(mDataConfigManager
-                                .getForcedCellularTransportCapabilities()::contains)) {
-                            // If the request is explicitly for the cellular, then the data profile
-                            // needs to support cellular.
-                            if (!dataProfile.getApnSetting().isForInfrastructure(
-                                    ApnSetting.INFRASTRUCTURE_CELLULAR)) {
-                                return false;
-                            }
+            if (mNativeNetworkRequest.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+                    && !mNativeNetworkRequest.hasTransport(
+                            NetworkCapabilities.TRANSPORT_SATELLITE)) {
+                if (mDataConfigManager != null) {
+                    if (Arrays.stream(getCapabilities()).noneMatch(mDataConfigManager
+                            .getForcedCellularTransportCapabilities()::contains)) {
+                        // If the request is explicitly for the cellular, then the data profile
+                        // needs to support cellular.
+                        if (!dataProfile.getApnSetting().isForInfrastructure(
+                                ApnSetting.INFRASTRUCTURE_CELLULAR)) {
+                            return false;
                         }
                     }
-                } else if (mNativeNetworkRequest.hasTransport(
-                        NetworkCapabilities.TRANSPORT_SATELLITE)
-                        && !mNativeNetworkRequest.hasTransport(
-                                NetworkCapabilities.TRANSPORT_CELLULAR)) {
-                    // If the request is explicitly for the satellite, then the data profile needs
-                    // to support satellite.
-                    if (!dataProfile.getApnSetting().isForInfrastructure(
-                            ApnSetting.INFRASTRUCTURE_SATELLITE)) {
-                        return false;
-                    }
+                }
+            } else if (mNativeNetworkRequest.hasTransport(
+                    NetworkCapabilities.TRANSPORT_SATELLITE)
+                    && !mNativeNetworkRequest.hasTransport(
+                            NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                // If the request is explicitly for the satellite, then the data profile needs
+                // to support satellite.
+                if (!dataProfile.getApnSetting().isForInfrastructure(
+                        ApnSetting.INFRASTRUCTURE_SATELLITE)) {
+                    return false;
                 }
             }
             // Fallback to the legacy APN type matching.
@@ -437,7 +437,11 @@ public class TelephonyNetworkRequest {
     @NonNull
     @NetCapability
     public static List<Integer> getAllSupportedNetworkCapabilities() {
-        return CAPABILITY_ATTRIBUTE_MAP.keySet().stream().toList();
+        Set<Integer> unsupportedCaps = PhoneFactory.getDefaultPhone()
+                .getDataNetworkController().getDataConfigManager()
+                .getUnsupportedNetworkCapabilities();
+        return CAPABILITY_ATTRIBUTE_MAP.keySet().stream()
+                .filter(cap -> !unsupportedCaps.contains(cap)).toList();
     }
 
     /**

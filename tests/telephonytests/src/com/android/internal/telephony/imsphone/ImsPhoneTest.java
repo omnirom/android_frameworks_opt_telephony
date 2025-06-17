@@ -43,11 +43,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyChar;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.nullable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyChar;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
@@ -459,6 +459,30 @@ public class ImsPhoneTest extends TelephonyTest {
 
         mImsPhoneUT.dial(dialString,
                 new ImsPhone.ImsDialArgs.Builder().setVideoState(videoState).build());
+        verify(mImsCT).dial(eq(dialString), any(ImsPhone.ImsDialArgs.class));
+    }
+
+    @Test
+    @SmallTest
+    public void testDialWithShortEmergencyNumber() throws Exception {
+        // Pre-condition
+        // Exist active call, try to set up 2-digit emergency number.
+        doReturn(Call.State.ACTIVE).when(mForegroundCall).getState();
+
+        String dialString = "17";
+        int videoState = 0;
+        ImsPhone.ImsDialArgs imsDialArgs = new ImsPhone.ImsDialArgs.Builder()
+                .setVideoState(videoState)
+                .setIsEmergency(true)
+                .build();
+
+        Connection connection = mImsPhoneUT.dial(dialString, imsDialArgs);
+        assertEquals(null, connection);
+        verify(mImsCT, never()).dial(eq(dialString), any(ImsPhone.ImsDialArgs.class));
+
+        doReturn(true).when(mFeatureFlags).skipMmiCodeCheckForEmergencyCall();
+
+        mImsPhoneUT.dial(dialString, imsDialArgs);
         verify(mImsCT).dial(eq(dialString), any(ImsPhone.ImsDialArgs.class));
     }
 

@@ -19,7 +19,7 @@ package android.telephony.ims;
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertTrue;
 
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 

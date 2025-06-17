@@ -714,14 +714,17 @@ public class CarrierServiceStateTracker extends Handler {
          * add a button to the notification that has a broadcast intent embedded to silence the
          * notification
          */
-        private Notification.Action createDoNotShowAgainAction(Context context) {
+        private Notification.Action createDoNotShowAgainAction(Context c) {
             final PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                    context,
+                    c,
                     0,
                     new Intent(ACTION_NEVER_ASK_AGAIN),
                     PendingIntent.FLAG_IMMUTABLE);
-            return new Notification.Action.Builder(null, "Do Not Show Again",
-                    pendingIntent).build();
+            CharSequence text = "Do Not Ask Again";
+            if (c != null && mFeatureFlags.dynamicDoNotAskAgainText()) {
+                text = c.getText(com.android.internal.R.string.emergency_calling_do_not_show_again);
+            }
+            return new Notification.Action.Builder(null, text, pendingIntent).build();
         }
     }
 

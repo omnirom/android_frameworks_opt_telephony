@@ -30,8 +30,8 @@ import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TR
 import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_SENDING;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_SEND_FAILED;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_SEND_SUCCESS;
-import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_WAITING_TO_CONNECT;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_UNKNOWN;
+import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_WAITING_TO_CONNECT;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_MODEM_STATE_CONNECTED;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_MODEM_STATE_DATAGRAM_TRANSFERRING;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_MODEM_STATE_ENABLING_SATELLITE;
@@ -59,7 +59,6 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.WorkSource;
-import android.telephony.DropBoxManagerLoggerBackend;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.PersistentLogger;
 import android.telephony.ServiceState;
@@ -177,6 +176,8 @@ public class SatelliteSessionController extends StateMachine {
     private long mSatelliteStayAtListeningFromReceivingMillis;
     private long mSatelliteNbIotInactivityTimeoutMillis;
     private boolean mIgnoreCellularServiceState = false;
+    private Boolean mIsConcurrentTnScanningSupportedForCtsTest = null;
+    private Boolean mIsTnScanningDuringSatelliteSessionAllowedForCtsTest = null;
     private final ConcurrentHashMap<IBinder, ISatelliteModemStateCallback> mListeners;
     @SatelliteManager.SatelliteModemState private int mCurrentState;
     @SatelliteManager.SatelliteModemState private int mPreviousState;
@@ -274,11 +275,7 @@ public class SatelliteSessionController extends StateMachine {
             @NonNull SatelliteModemInterface satelliteModemInterface) {
         super(TAG, looper);
 
-        if (isSatellitePersistentLoggingEnabled(context, featureFlags)) {
-            mPersistentLogger = new PersistentLogger(
-                    DropBoxManagerLoggerBackend.getInstance(context));
-        }
-
+        mPersistentLogger = SatelliteServiceUtils.getPersistentLogger(context);
         mContext = context;
         mFeatureFlags = featureFlags;
         mSatelliteModemInterface = satelliteModemInterface;
@@ -542,6 +539,37 @@ public class SatelliteSessionController extends StateMachine {
             }
             unbindService();
             bindService();
+        }
+        return true;
+    }
+
+    /**
+     * This API can be used by only CTS to override TN scanning support.
+     *
+     * @param concurrentTnScanningSupported Whether concurrent TN scanning is supported.
+     * @param tnScanningDuringSatelliteSessionAllowed Whether TN scanning is allowed during
+     * a satellite session.
+     * @return {@code true} if the TN scanning support is set successfully,
+     * {@code false} otherwise.
+     */
+    boolean setTnScanningSupport(boolean reset, boolean concurrentTnScanningSupported,
+        boolean tnScanningDuringSatelliteSessionAllowed) {
+        if (!isMockModemAllowed()) {
+            ploge("setTnScanningSupport: modifying TN scanning support is not allowed");
+            return false;
+        }
+
+        plogd("setTnScanningSupport: reset=" + reset
+                  + ", concurrentTnScanningSupported=" + concurrentTnScanningSupported
+                  + ", tnScanningDuringSatelliteSessionAllowed="
+                  + tnScanningDuringSatelliteSessionAllowed);
+        if (reset) {
+            mIsConcurrentTnScanningSupportedForCtsTest = null;
+            mIsTnScanningDuringSatelliteSessionAllowedForCtsTest = null;
+        } else {
+            mIsConcurrentTnScanningSupportedForCtsTest = concurrentTnScanningSupported;
+            mIsTnScanningDuringSatelliteSessionAllowedForCtsTest =
+                    tnScanningDuringSatelliteSessionAllowed;
         }
         return true;
     }
@@ -2027,20 +2055,12 @@ public class SatelliteSessionController extends StateMachine {
         return true;
     }
 
-    private boolean isSatellitePersistentLoggingEnabled(
-            @NonNull Context context, @NonNull FeatureFlags featureFlags) {
-        if (featureFlags.satellitePersistentLogging()) {
-            return true;
-        }
-        try {
-            return context.getResources().getBoolean(
-                    R.bool.config_dropboxmanager_persistent_logging_enabled);
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
     private boolean isConcurrentTnScanningSupported() {
+        if (mIsConcurrentTnScanningSupportedForCtsTest != null) {
+            plogd("isConcurrentTnScanningSupported: mIsConcurrentTnScanningSupportedForCtsTest="
+                    + mIsConcurrentTnScanningSupportedForCtsTest);
+            return mIsConcurrentTnScanningSupportedForCtsTest;
+        }
         try {
             return mContext.getResources().getBoolean(
                 R.bool.config_satellite_modem_support_concurrent_tn_scanning);
@@ -2051,6 +2071,12 @@ public class SatelliteSessionController extends StateMachine {
     }
 
     private boolean isTnScanningAllowedDuringSatelliteSession() {
+        if (mIsTnScanningDuringSatelliteSessionAllowedForCtsTest != null) {
+            plogd("isTnScanningAllowedDuringSatelliteSession: "
+                    + "mIsTnScanningDuringSatelliteSessionAllowedForCtsTest="
+                    + mIsTnScanningDuringSatelliteSessionAllowedForCtsTest);
+            return mIsTnScanningDuringSatelliteSessionAllowedForCtsTest;
+        }
         try {
             return mContext.getResources().getBoolean(
                     R.bool.config_satellite_allow_tn_scanning_during_satellite_session);

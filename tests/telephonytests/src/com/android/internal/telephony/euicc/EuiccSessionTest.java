@@ -107,7 +107,8 @@ public class EuiccSessionTest extends TelephonyTest {
 
     @Before
     public void setUp() throws Exception {
-        mEuiccSession = new EuiccSession();
+        super.setUp(getClass().getSimpleName());
+        mEuiccSession = new EuiccSession(mContext);
     }
 
     @Test
@@ -128,7 +129,25 @@ public class EuiccSessionTest extends TelephonyTest {
 
     @Test
     @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
+    public void startOneSession_featureOverlayDisabled_noop() throws Exception {
+        mEuiccSession.startSession(SESSION_ID_1);
+        mEuiccSession.noteChannelOpen(mApduSender);
+        mEuiccSession.noteChannelOpen(mApduSender2);
+
+        assertThat(mEuiccSession.hasSession()).isFalse();
+
+        mEuiccSession.endSession(SESSION_ID_1);
+
+        assertThat(mEuiccSession.hasSession()).isFalse();
+        verify(mApduSender, never()).closeAnyOpenChannel();
+        verify(mApduSender2, never()).closeAnyOpenChannel();
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
     public void startOneSession_endSession_hasSession() throws Exception {
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.euicc_optimize_apdu_sender, true);
         mEuiccSession.startSession(SESSION_ID_1);
         mEuiccSession.noteChannelOpen(mApduSender);
         mEuiccSession.noteChannelOpen(mApduSender2);
@@ -150,6 +169,8 @@ public class EuiccSessionTest extends TelephonyTest {
     @Test
     @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
     public void startTwoSession_endSession_hasSession() throws Exception {
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.euicc_optimize_apdu_sender, true);
         mEuiccSession.startSession(SESSION_ID_1);
         mEuiccSession.noteChannelOpen(mApduSender);
         mEuiccSession.startSession(SESSION_ID_2);
@@ -170,6 +191,8 @@ public class EuiccSessionTest extends TelephonyTest {
     @Test
     @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
     public void startTwoSessions_endAllSessions_hasSession() throws Exception {
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.euicc_optimize_apdu_sender, true);
         mEuiccSession.startSession(SESSION_ID_1);
         mEuiccSession.noteChannelOpen(mApduSender);
         mEuiccSession.startSession(SESSION_ID_2);
@@ -188,6 +211,8 @@ public class EuiccSessionTest extends TelephonyTest {
     @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
     public void noteChannelOpen_noSession_endSession_noop() throws Exception {
         // noteChannelOpen called without a session started
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.euicc_optimize_apdu_sender, true);
         mEuiccSession.noteChannelOpen(mApduSender);
 
         assertThat(mEuiccSession.hasSession()).isFalse();
@@ -202,6 +227,8 @@ public class EuiccSessionTest extends TelephonyTest {
     @EnableFlags(Flags.FLAG_OPTIMIZATION_APDU_SENDER)
     public void endAllSessions_noSession_endAllSessions_noOp() throws Exception {
         // noteChannelOpen called without a session started
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.euicc_optimize_apdu_sender, true);
         mEuiccSession.noteChannelOpen(mApduSender);
 
         assertThat(mEuiccSession.hasSession()).isFalse();

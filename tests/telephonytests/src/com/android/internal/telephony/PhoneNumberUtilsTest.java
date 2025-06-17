@@ -21,8 +21,6 @@ import static junit.framework.Assert.assertFalse;
 import static junit.framework.Assert.assertNull;
 import static junit.framework.Assert.assertTrue;
 
-import com.android.internal.telephony.flags.Flags;
-
 import android.net.Uri;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.telephony.PhoneNumberUtils;
@@ -31,6 +29,8 @@ import android.text.style.TtsSpan;
 
 import androidx.test.filters.FlakyTest;
 import androidx.test.filters.SmallTest;
+
+import com.android.internal.telephony.flags.Flags;
 
 import org.junit.After;
 import org.junit.Before;
@@ -560,6 +560,8 @@ public class PhoneNumberUtilsTest {
         assertEquals("+16502910000", PhoneNumberUtils.formatNumberToE164("650 2910000", "US"));
         assertNull(PhoneNumberUtils.formatNumberToE164("1234567", "US"));
         assertEquals("+18004664114", PhoneNumberUtils.formatNumberToE164("800-GOOG-114", "US"));
+
+        assertEquals("+447445032046", PhoneNumberUtils.formatNumberToE164("0 7445 032046", "GB"));
     }
 
     @SmallTest

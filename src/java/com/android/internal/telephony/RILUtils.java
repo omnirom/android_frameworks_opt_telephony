@@ -1698,9 +1698,6 @@ public class RILUtils {
         if ((networkTypeBitmask & TelephonyManager.NETWORK_TYPE_BITMASK_NR) != 0) {
             raf |= android.hardware.radio.RadioAccessFamily.NR;
         }
-        if ((networkTypeBitmask & TelephonyManager.NETWORK_TYPE_BITMASK_NB_IOT_NTN) != 0) {
-            raf |= android.hardware.radio.RadioAccessFamily.NB_IOT_NTN;
-        }
         return (raf == 0) ? android.hardware.radio.RadioAccessFamily.UNKNOWN : raf;
     }
 

@@ -48,7 +48,6 @@ public class SubscriptionInfoTest {
 
     @Before
     public void setUp() throws Exception {
-        mSetFlagsRule.enableFlags(Flags.FLAG_OEM_ENABLED_SATELLITE_FLAG);
         mSubscriptionInfoUT = new SubscriptionInfo.Builder()
                 .setId(1)
                 .setIccId("890126042XXXXXXXXXXX")
@@ -88,9 +87,7 @@ public class SubscriptionInfoTest {
         assertThat(mSubscriptionInfoUT.getSubscriptionId()).isEqualTo(1);
         assertThat(mSubscriptionInfoUT.getSimSlotIndex()).isEqualTo(0);
         assertThat(mSubscriptionInfoUT.getIccId()).isEqualTo("890126042XXXXXXXXXXX");
-        if (Flags.oemEnabledSatelliteFlag()) {
-            assertThat(mSubscriptionInfoUT.isOnlyNonTerrestrialNetwork()).isTrue();
-        }
+        assertThat(mSubscriptionInfoUT.isOnlyNonTerrestrialNetwork()).isTrue();
         assertThat(mSubscriptionInfoUT.getServiceCapabilities()).isEqualTo(
                 Set.of(SubscriptionManager.SERVICE_CAPABILITY_DATA));
         if (Flags.supportPsimToEsimConversion()) {

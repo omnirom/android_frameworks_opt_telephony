@@ -30,3 +30,14 @@ flag {
     description: "Enable temporary failures in CarrierMessagingService"
     bug:"326610112"
 }
+
+# OWNER=melhuishj TARGET=25Q3
+flag {
+    name: "disable_carrier_network_change_on_carrier_app_lost"
+    namespace: "telephony"
+    description: "Set carrier network change status to false whenever the carrier app is lost"
+    bug:"333571417"
+    metadata {
+      purpose: PURPOSE_BUGFIX
+    }
+}

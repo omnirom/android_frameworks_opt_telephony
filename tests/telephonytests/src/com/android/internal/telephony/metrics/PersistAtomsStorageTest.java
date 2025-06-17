@@ -1153,6 +1153,13 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mSatelliteController1.countOfP2PSmsAvailableNotificationShown = 3;
         mSatelliteController1.countOfP2PSmsAvailableNotificationRemoved = 5;
         mSatelliteController1.isNtnOnlyCarrier = false;
+        mSatelliteController1.versionOfSatelliteAccessConfig = 10;
+        mSatelliteController1.countOfIncomingDatagramTypeSosSmsSuccess = 1;
+        mSatelliteController1.countOfIncomingDatagramTypeSosSmsFail = 2;
+        mSatelliteController1.countOfOutgoingDatagramTypeSmsSuccess = 3;
+        mSatelliteController1.countOfOutgoingDatagramTypeSmsFail = 4;
+        mSatelliteController1.countOfIncomingDatagramTypeSmsSuccess = 5;
+        mSatelliteController1.countOfIncomingDatagramTypeSmsFail = 6;
 
         mSatelliteController2 = new SatelliteController();
         mSatelliteController2.countOfSatelliteServiceEnablementsSuccess = 2 + 1;
@@ -1187,6 +1194,13 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mSatelliteController2.countOfP2PSmsAvailableNotificationShown = 30;
         mSatelliteController2.countOfP2PSmsAvailableNotificationRemoved = 50;
         mSatelliteController2.isNtnOnlyCarrier = true;
+        mSatelliteController2.versionOfSatelliteAccessConfig = 12;
+        mSatelliteController2.countOfIncomingDatagramTypeSosSmsSuccess = 11;
+        mSatelliteController2.countOfIncomingDatagramTypeSosSmsFail = 12;
+        mSatelliteController2.countOfOutgoingDatagramTypeSmsSuccess = 31;
+        mSatelliteController2.countOfOutgoingDatagramTypeSmsFail = 14;
+        mSatelliteController2.countOfIncomingDatagramTypeSmsSuccess = 15;
+        mSatelliteController2.countOfIncomingDatagramTypeSmsFail = 16;
 
         // SatelliteController atom has one data point
         mSatelliteControllers =
@@ -1358,6 +1372,8 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mCarrierRoamingSatelliteSession1.countOfOutgoingSms = 4;
         mCarrierRoamingSatelliteSession1.countOfIncomingMms = 1;
         mCarrierRoamingSatelliteSession1.countOfOutgoingMms = 1;
+        mCarrierRoamingSatelliteSession1.isMultiSim = false;
+        mCarrierRoamingSatelliteSession1.isNbIotNtn = false;
 
         mCarrierRoamingSatelliteSession2 = new CarrierRoamingSatelliteSession();
         mCarrierRoamingSatelliteSession2.carrierId = 2;
@@ -1376,6 +1392,8 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mCarrierRoamingSatelliteSession2.countOfOutgoingSms = 4;
         mCarrierRoamingSatelliteSession2.countOfIncomingMms = 1;
         mCarrierRoamingSatelliteSession2.countOfOutgoingMms = 1;
+        mCarrierRoamingSatelliteSession2.isMultiSim = true;
+        mCarrierRoamingSatelliteSession2.isNbIotNtn = true;
 
         mCarrierRoamingSatelliteSessions = new CarrierRoamingSatelliteSession[] {
                 mCarrierRoamingSatelliteSession1, mCarrierRoamingSatelliteSession2};
@@ -1391,6 +1409,9 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mCarrierRoamingSatelliteControllerStats1.satelliteSessionGapMaxSec = 4;
         mCarrierRoamingSatelliteControllerStats1.carrierId = 1;
         mCarrierRoamingSatelliteControllerStats1.isDeviceEntitled = true;
+        mCarrierRoamingSatelliteControllerStats1.isMultiSim = false;
+        mCarrierRoamingSatelliteControllerStats1.countOfSatelliteSessions = 1;
+        mCarrierRoamingSatelliteControllerStats1.isNbIotNtn = false;
 
         mCarrierRoamingSatelliteControllerStats2 = new CarrierRoamingSatelliteControllerStats();
         mCarrierRoamingSatelliteControllerStats2.configDataSource =
@@ -1403,6 +1424,9 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         mCarrierRoamingSatelliteControllerStats2.satelliteSessionGapMaxSec = 15;
         mCarrierRoamingSatelliteControllerStats2.carrierId = 10;
         mCarrierRoamingSatelliteControllerStats2.isDeviceEntitled = false;
+        mCarrierRoamingSatelliteControllerStats2.isMultiSim = true;
+        mCarrierRoamingSatelliteControllerStats2.countOfSatelliteSessions = 2;
+        mCarrierRoamingSatelliteControllerStats2.isNbIotNtn = true;
 
         // CarrierRoamingSatelliteController has one data point
         mCarrierRoamingSatelliteControllerStats = new CarrierRoamingSatelliteControllerStats[] {
@@ -4452,6 +4476,20 @@ public class PersistAtomsStorageTest extends TelephonyTest {
         expected.countOfP2PSmsAvailableNotificationRemoved =
                 mSatelliteController1.countOfP2PSmsAvailableNotificationRemoved * 2;
         expected.isNtnOnlyCarrier = mSatelliteController1.isNtnOnlyCarrier;
+        expected.versionOfSatelliteAccessConfig =
+                mSatelliteController1.versionOfSatelliteAccessConfig;
+        expected.countOfIncomingDatagramTypeSosSmsSuccess =
+                mSatelliteController1.countOfIncomingDatagramTypeSosSmsSuccess * 2;
+        expected.countOfIncomingDatagramTypeSosSmsFail =
+                mSatelliteController1.countOfIncomingDatagramTypeSosSmsFail * 2;
+        expected.countOfOutgoingDatagramTypeSmsSuccess =
+                mSatelliteController1.countOfOutgoingDatagramTypeSmsSuccess * 2;
+        expected.countOfOutgoingDatagramTypeSmsFail =
+                mSatelliteController1.countOfOutgoingDatagramTypeSmsFail * 2;
+        expected.countOfIncomingDatagramTypeSmsSuccess =
+                mSatelliteController1.countOfIncomingDatagramTypeSmsSuccess * 2;
+        expected.countOfIncomingDatagramTypeSmsFail =
+                mSatelliteController1.countOfIncomingDatagramTypeSmsFail * 2;
 
         // Service state and service switch should be added successfully
         verifyCurrentStateSavedToFileOnce();
@@ -4604,6 +4642,26 @@ public class PersistAtomsStorageTest extends TelephonyTest {
                 satelliteController1.countOfP2PSmsAvailableNotificationRemoved
                         + satelliteController2.countOfP2PSmsAvailableNotificationRemoved;
         expected.isNtnOnlyCarrier = false;
+        expected.versionOfSatelliteAccessConfig =
+                mSatelliteController2.versionOfSatelliteAccessConfig;
+        expected.countOfIncomingDatagramTypeSosSmsSuccess =
+                mSatelliteController1.countOfIncomingDatagramTypeSosSmsSuccess
+                        + mSatelliteController2.countOfIncomingDatagramTypeSosSmsSuccess;
+        expected.countOfIncomingDatagramTypeSosSmsFail =
+                mSatelliteController1.countOfIncomingDatagramTypeSosSmsFail
+                        + mSatelliteController2.countOfIncomingDatagramTypeSosSmsFail;
+        expected.countOfOutgoingDatagramTypeSmsSuccess =
+                mSatelliteController1.countOfOutgoingDatagramTypeSmsSuccess
+                        + mSatelliteController2.countOfOutgoingDatagramTypeSmsSuccess;
+        expected.countOfOutgoingDatagramTypeSmsFail =
+                mSatelliteController1.countOfOutgoingDatagramTypeSmsFail
+                        + mSatelliteController2.countOfOutgoingDatagramTypeSmsFail;
+        expected.countOfIncomingDatagramTypeSmsSuccess =
+                mSatelliteController1.countOfIncomingDatagramTypeSmsSuccess
+                        + mSatelliteController2.countOfIncomingDatagramTypeSmsSuccess;
+        expected.countOfIncomingDatagramTypeSmsFail =
+                mSatelliteController1.countOfIncomingDatagramTypeSmsFail
+                        + mSatelliteController2.countOfIncomingDatagramTypeSmsFail;
 
         // Service state and service switch should be added successfully
         verifyCurrentStateSavedToFileOnce();
@@ -5153,6 +5211,9 @@ public class PersistAtomsStorageTest extends TelephonyTest {
                 mCarrierRoamingSatelliteControllerStats1.satelliteSessionGapMaxSec;
         expected.carrierId = mCarrierRoamingSatelliteControllerStats1.carrierId;
         expected.isDeviceEntitled = mCarrierRoamingSatelliteControllerStats1.isDeviceEntitled;
+        expected.isMultiSim = mCarrierRoamingSatelliteControllerStats1.isMultiSim;
+        expected.countOfSatelliteSessions =
+                mCarrierRoamingSatelliteControllerStats1.countOfSatelliteSessions * 2;
         verifyCurrentStateSavedToFileOnce();
         CarrierRoamingSatelliteControllerStats[] output =
                 mPersistAtomsStorage.getCarrierRoamingSatelliteControllerStats(0L);
@@ -6049,6 +6110,20 @@ public class PersistAtomsStorageTest extends TelephonyTest {
                         stats.countOfP2PSmsAvailableNotificationShown);
                 assertEquals(expectedStats.countOfP2PSmsAvailableNotificationRemoved,
                         stats.countOfP2PSmsAvailableNotificationRemoved);
+                assertEquals(expectedStats.versionOfSatelliteAccessConfig,
+                        stats.versionOfSatelliteAccessConfig);
+                assertEquals(expectedStats.countOfIncomingDatagramTypeSosSmsSuccess,
+                        stats.countOfIncomingDatagramTypeSosSmsSuccess);
+                assertEquals(expectedStats.countOfIncomingDatagramTypeSosSmsFail,
+                        stats.countOfIncomingDatagramTypeSosSmsFail);
+                assertEquals(expectedStats.countOfOutgoingDatagramTypeSmsSuccess,
+                        stats.countOfOutgoingDatagramTypeSmsSuccess);
+                assertEquals(expectedStats.countOfOutgoingDatagramTypeSmsFail,
+                        stats.countOfOutgoingDatagramTypeSmsFail);
+                assertEquals(expectedStats.countOfIncomingDatagramTypeSmsSuccess,
+                        stats.countOfIncomingDatagramTypeSmsSuccess);
+                assertEquals(expectedStats.countOfIncomingDatagramTypeSmsFail,
+                        stats.countOfIncomingDatagramTypeSmsFail);
                 actualCount++;
             }
         }
@@ -6428,7 +6503,9 @@ public class PersistAtomsStorageTest extends TelephonyTest {
                     && stats.countOfIncomingSms == expectedStats.countOfIncomingSms
                     && stats.countOfOutgoingSms == expectedStats.countOfOutgoingSms
                     && stats.countOfIncomingMms == expectedStats.countOfIncomingMms
-                    && stats.countOfOutgoingMms == expectedStats.countOfOutgoingMms) {
+                    && stats.countOfOutgoingMms == expectedStats.countOfOutgoingMms
+                    && stats.isMultiSim == expectedStats.isMultiSim
+                    && stats.isNbIotNtn == expectedStats.isNbIotNtn) {
                 actualCount++;
             }
         }
@@ -6455,6 +6532,10 @@ public class PersistAtomsStorageTest extends TelephonyTest {
                 assertEquals(expectedStats.satelliteSessionGapMaxSec,
                         stats.satelliteSessionGapMaxSec);
                 assertEquals(expectedStats.isDeviceEntitled, stats.isDeviceEntitled);
+                assertEquals(expectedStats.isMultiSim, stats.isMultiSim);
+                assertEquals(expectedStats.countOfSatelliteSessions,
+                        stats.countOfSatelliteSessions);
+                assertEquals(expectedStats.isNbIotNtn, stats.isNbIotNtn);
                 count++;
             }
         }

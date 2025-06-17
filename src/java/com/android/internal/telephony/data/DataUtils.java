@@ -404,52 +404,24 @@ public class DataUtils {
     public static List<NetworkRequestList> getGroupedNetworkRequestList(
             @NonNull NetworkRequestList networkRequestList, @NonNull FeatureFlags featureFlags) {
         List<NetworkRequestList> requests = new ArrayList<>();
-        if (featureFlags.satelliteInternet()) {
-            record NetworkCapabilitiesKey(Set<Integer> caps, Set<Integer> enterpriseIds,
-                                          Set<Integer> transportTypes) { }
+        record NetworkCapabilitiesKey(Set<Integer> caps, Set<Integer> enterpriseIds,
+                                      Set<Integer> transportTypes) { }
 
-            // Key is the combination of capabilities, enterprise ids, and transport types.
-            Map<NetworkCapabilitiesKey, NetworkRequestList> requestsMap = new ArrayMap<>();
-            for (TelephonyNetworkRequest networkRequest : networkRequestList) {
-                requestsMap.computeIfAbsent(new NetworkCapabilitiesKey(
-                                Arrays.stream(networkRequest.getCapabilities())
-                                        .boxed().collect(Collectors.toSet()),
-                                Arrays.stream(networkRequest.getNativeNetworkRequest()
-                                                .getEnterpriseIds())
-                                        .boxed().collect(Collectors.toSet()),
-                                Arrays.stream(networkRequest.getTransportTypes())
-                                        .boxed().collect(Collectors.toSet())
-                                ),
-                        v -> new NetworkRequestList()).add(networkRequest);
-            }
-            requests.addAll(requestsMap.values());
-        } else {
-            // Key is the capabilities set.
-            Map<Set<Integer>, NetworkRequestList> requestsMap = new ArrayMap<>();
-            for (TelephonyNetworkRequest networkRequest : networkRequestList) {
-                requestsMap.computeIfAbsent(Arrays.stream(networkRequest.getCapabilities())
-                                .boxed().collect(Collectors.toSet()),
-                        v -> new NetworkRequestList()).add(networkRequest);
-            }
-            // Create separate groups for enterprise requests with different enterprise IDs.
-            for (NetworkRequestList requestList : requestsMap.values()) {
-                List<TelephonyNetworkRequest> enterpriseRequests = requestList.stream()
-                        .filter(request -> request.hasCapability(
-                                NetworkCapabilities.NET_CAPABILITY_ENTERPRISE))
-                        .toList();
-                if (enterpriseRequests.isEmpty()) {
-                    requests.add(requestList);
-                    continue;
-                }
-                // Key is the enterprise ID
-                Map<Integer, NetworkRequestList> enterpriseRequestsMap = new ArrayMap<>();
-                for (TelephonyNetworkRequest request : enterpriseRequests) {
-                    enterpriseRequestsMap.computeIfAbsent(request.getCapabilityDifferentiator(),
-                            v -> new NetworkRequestList()).add(request);
-                }
-                requests.addAll(enterpriseRequestsMap.values());
-            }
+        // Key is the combination of capabilities, enterprise ids, and transport types.
+        Map<NetworkCapabilitiesKey, NetworkRequestList> requestsMap = new ArrayMap<>();
+        for (TelephonyNetworkRequest networkRequest : networkRequestList) {
+            requestsMap.computeIfAbsent(new NetworkCapabilitiesKey(
+                            Arrays.stream(networkRequest.getCapabilities())
+                                    .boxed().collect(Collectors.toSet()),
+                            Arrays.stream(networkRequest.getNativeNetworkRequest()
+                                            .getEnterpriseIds())
+                                    .boxed().collect(Collectors.toSet()),
+                            Arrays.stream(networkRequest.getTransportTypes())
+                                    .boxed().collect(Collectors.toSet())
+                            ),
+                    v -> new NetworkRequestList()).add(networkRequest);
         }
+        requests.addAll(requestsMap.values());
         // Sort the requests so the network request list with higher priority will be at the front.
         return requests.stream()
                 .sorted((list1, list2) -> Integer.compare(

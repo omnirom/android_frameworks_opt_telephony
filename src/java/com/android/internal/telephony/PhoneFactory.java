@@ -20,6 +20,7 @@ import static android.telephony.TelephonyManager.HAL_SERVICE_RADIO;
 
 import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA;
 import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA_LTE;
+import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_GSM;
 
 import static java.util.Arrays.copyOf;
 
@@ -45,7 +46,6 @@ import android.util.LocalLog;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.data.CellularNetworkValidator;
 import com.android.internal.telephony.data.PhoneSwitcher;
-import com.android.internal.telephony.data.TelephonyNetworkFactory;
 import com.android.internal.telephony.data.TelephonyNetworkProvider;
 import com.android.internal.telephony.euicc.EuiccCardController;
 import com.android.internal.telephony.euicc.EuiccController;
@@ -78,7 +78,7 @@ public class PhoneFactory {
 
     //***** Class Variables
 
-    // lock sLockProxyPhones protects sPhones, sPhone and sTelephonyNetworkFactories
+    // lock sLockProxyPhones protects sPhones, sPhone
     final static Object sLockProxyPhones = new Object();
     static private Phone[] sPhones = null;
     static private Phone sPhone = null;
@@ -101,7 +101,6 @@ public class PhoneFactory {
     static private PhoneConfigurationManager sPhoneConfigurationManager;
     static private SimultaneousCallingTracker sSimultaneousCallingTracker;
     static private PhoneSwitcher sPhoneSwitcher;
-    static private TelephonyNetworkFactory[] sTelephonyNetworkFactories;
     private static TelephonyNetworkProvider sTelephonyNetworkProvider;
     static private NotificationChannelController sNotificationChannelController;
     static private CellularNetworkValidator sCellularNetworkValidator;
@@ -179,7 +178,6 @@ public class PhoneFactory {
                 int[] networkModes = new int[numPhones];
                 sPhones = new Phone[numPhones];
                 sCommandsInterfaces = new RIL[numPhones];
-                sTelephonyNetworkFactories = new TelephonyNetworkFactory[numPhones];
 
                 for (int i = 0; i < numPhones; i++) {
                     // reads the system properties and makes commandsinterface
@@ -271,7 +269,7 @@ public class PhoneFactory {
                             SimultaneousCallingTracker.init(sContext, featureFlags);
                 }
 
-                sCellularNetworkValidator = CellularNetworkValidator.make(sContext);
+                sCellularNetworkValidator = CellularNetworkValidator.make(sContext, sFeatureFlags);
 
                 int maxActivePhones = sPhoneConfigurationManager
                         .getNumberOfModemsWithSimultaneousDataConnections();
@@ -287,16 +285,9 @@ public class PhoneFactory {
 
                 sNotificationChannelController = new NotificationChannelController(context);
 
-                if (featureFlags.supportNetworkProvider()) {
-                    // Create the TelephonyNetworkProvider instance, which is a singleton.
-                    sTelephonyNetworkProvider = new TelephonyNetworkProvider(Looper.myLooper(),
-                            context, featureFlags);
-                } else {
-                    for (int i = 0; i < numPhones; i++) {
-                        sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
-                                Looper.myLooper(), sPhones[i], featureFlags);
-                    }
-                }
+                // Create the TelephonyNetworkProvider instance, which is a singleton.
+                sTelephonyNetworkProvider = new TelephonyNetworkProvider(Looper.myLooper(),
+                        context, featureFlags);
             }
         }
     }
@@ -313,17 +304,12 @@ public class PhoneFactory {
             int prevActiveModemCount = sPhones.length;
             if (prevActiveModemCount == activeModemCount) return;
 
-            // TODO: clean up sPhones, sCommandsInterfaces and sTelephonyNetworkFactories objects.
             // Currently we will not clean up the 2nd Phone object, so that it can be re-used if
             // user switches back.
             if (prevActiveModemCount > activeModemCount) return;
 
             sPhones = copyOf(sPhones, activeModemCount);
             sCommandsInterfaces = copyOf(sCommandsInterfaces, activeModemCount);
-
-            if (!sFeatureFlags.supportNetworkProvider()) {
-                sTelephonyNetworkFactories = copyOf(sTelephonyNetworkFactories, activeModemCount);
-            }
 
             int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
             for (int i = prevActiveModemCount; i < activeModemCount; i++) {
@@ -335,21 +321,22 @@ public class PhoneFactory {
                         PackageManager.FEATURE_TELEPHONY_IMS)) {
                     sPhones[i].createImsPhone();
                 }
-
-                if (!sFeatureFlags.supportNetworkProvider()) {
-                    sTelephonyNetworkFactories[i] = new TelephonyNetworkFactory(
-                            Looper.myLooper(), sPhones[i], sFeatureFlags);
-                }
             }
         }
     }
 
     private static Phone createPhone(Context context, int phoneId) {
-        int phoneType = TelephonyManager.getPhoneType(RILConstants.PREFERRED_NETWORK_MODE);
+        int phoneType;
+        if (sFeatureFlags.phoneTypeCleanup()) {
+            phoneType = PHONE_TYPE_GSM;
+        } else {
+            phoneType = TelephonyManager.getPhoneType(RILConstants.PREFERRED_NETWORK_MODE);
+            // We always use PHONE_TYPE_CDMA_LTE now.
+            if (phoneType == PHONE_TYPE_CDMA) phoneType = PHONE_TYPE_CDMA_LTE;
+        }
+
         Rlog.i(LOG_TAG, "Creating Phone with type = " + phoneType + " phoneId = " + phoneId);
 
-        // We always use PHONE_TYPE_CDMA_LTE now.
-        if (phoneType == PHONE_TYPE_CDMA) phoneType = PHONE_TYPE_CDMA_LTE;
         TelephonyComponentFactory injectedComponentFactory =
                 TelephonyComponentFactory.getInstance().inject(GsmCdmaPhone.class.getName());
 
@@ -409,36 +396,6 @@ public class PhoneFactory {
 
     public static TelephonyNetworkProvider getNetworkProvider() {
         return sTelephonyNetworkProvider;
-    }
-
-    /**
-     * Get the network factory associated with a given phone ID.
-     * @param phoneId the phone id
-     * @return a factory for this phone ID, or null if none.
-     */
-    public static TelephonyNetworkFactory getNetworkFactory(int phoneId) {
-        synchronized (sLockProxyPhones) {
-            if (!sMadeDefaults) {
-                throw new IllegalStateException("Default phones haven't been made yet!");
-            }
-            final String dbgInfo;
-            if (phoneId == SubscriptionManager.DEFAULT_PHONE_INDEX) {
-                dbgInfo = "getNetworkFactory with DEFAULT_PHONE_ID => factory for sPhone";
-                phoneId = sPhone.getSubId();
-            } else {
-                dbgInfo = "getNetworkFactory with non-default, return factory for passed id";
-            }
-            // sTelephonyNetworkFactories is null in tests because in tests makeDefaultPhones()
-            // is not called.
-            final TelephonyNetworkFactory factory = (sTelephonyNetworkFactories != null
-                            && (phoneId >= 0 && phoneId < sTelephonyNetworkFactories.length))
-                            ? sTelephonyNetworkFactories[phoneId] : null;
-            if (DBG) {
-                Rlog.d(LOG_TAG, "getNetworkFactory:-" + dbgInfo + " phoneId=" + phoneId
-                        + " factory=" + factory);
-            }
-            return factory;
-        }
     }
 
     /**
@@ -596,20 +553,10 @@ public class PhoneFactory {
 
             pw.flush();
             pw.println("++++++++++++++++++++++++++++++++");
-
-            if (!sFeatureFlags.supportNetworkProvider()) {
-                sTelephonyNetworkFactories[i].dump(fd, pw, args);
-            }
-
-            pw.flush();
-            pw.decreaseIndent();
-            pw.println("++++++++++++++++++++++++++++++++");
         }
 
         pw.increaseIndent();
-        if (sFeatureFlags.supportNetworkProvider()) {
-            sTelephonyNetworkProvider.dump(fd, pw, args);
-        }
+        sTelephonyNetworkProvider.dump(fd, pw, args);
         pw.decreaseIndent();
         pw.println("++++++++++++++++++++++++++++++++");
 

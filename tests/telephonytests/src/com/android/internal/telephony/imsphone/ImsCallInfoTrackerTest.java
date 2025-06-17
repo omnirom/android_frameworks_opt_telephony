@@ -16,6 +16,7 @@
 package com.android.internal.telephony.imsphone;
 
 import static android.telephony.AccessNetworkConstants.AccessNetworkType.EUTRAN;
+import static android.telephony.AccessNetworkConstants.AccessNetworkType.IWLAN;
 
 import static junit.framework.Assert.assertNotNull;
 
@@ -25,6 +26,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -66,8 +68,11 @@ public class ImsCallInfoTrackerTest extends TelephonyTest {
     public void testDialingNormalCall() throws Exception {
         ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
 
-        ImsPhoneConnection c = getConnection(Call.State.DIALING, false);
+        ImsPhoneConnection c = getConnection(Call.State.IDLE, false);
         mImsCallInfoTracker.addImsCallStatus(c);
+
+        doReturn(Call.State.DIALING).when(c).getState();
+        mImsCallInfoTracker.updateImsCallStatus(c);
 
         verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
 
@@ -91,8 +96,11 @@ public class ImsCallInfoTrackerTest extends TelephonyTest {
     public void testDialingEmergencyCall() throws Exception {
         ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
 
-        ImsPhoneConnection c = getConnection(Call.State.DIALING, true);
+        ImsPhoneConnection c = getConnection(Call.State.IDLE, true);
         mImsCallInfoTracker.addImsCallStatus(c);
+
+        doReturn(Call.State.DIALING).when(c).getState();
+        mImsCallInfoTracker.updateImsCallStatus(c);
 
         verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
 
@@ -367,8 +375,11 @@ public class ImsCallInfoTrackerTest extends TelephonyTest {
     public void testSrvccCompleted() throws Exception {
         ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
 
-        ImsPhoneConnection c = getConnection(Call.State.DIALING, false);
+        ImsPhoneConnection c = getConnection(Call.State.IDLE, false);
         mImsCallInfoTracker.addImsCallStatus(c);
+
+        doReturn(Call.State.DIALING).when(c).getState();
+        mImsCallInfoTracker.updateImsCallStatus(c);
 
         verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
 
@@ -388,11 +399,42 @@ public class ImsCallInfoTrackerTest extends TelephonyTest {
     }
 
     @Test
+    public void testNetworkChanged() throws Exception {
+        ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
+        ImsPhoneConnection c = getConnection(Call.State.IDLE, false);
+        mImsCallInfoTracker.addImsCallStatus(c);
+
+        doReturn(Call.State.DIALING).when(c).getState();
+        mImsCallInfoTracker.updateImsCallStatus(c);
+
+        verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
+
+        List<ImsCallInfo> imsCallInfos = captor.getValue();
+        assertNotNull(imsCallInfos);
+        assertEquals(1, imsCallInfos.size());
+
+        ImsCallInfo info = imsCallInfos.get(0);
+        assertNotNull(info);
+        assertEquals(1, info.getIndex());
+        assertEquals(EUTRAN, info.getCallRadioTech());
+
+        // The network type is changed from EUTRAN to IWLAN.
+        doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_IWLAN).when(c).getCallRadioTech();
+        mImsCallInfoTracker.updateImsCallStatus(c);
+
+        verify(mImsPhone, times(2)).updateImsCallStatus(captor.capture(), any());
+        assertEquals(IWLAN, info.getCallRadioTech());
+    }
+
+    @Test
     public void testClearAllOrphanedConnections() throws Exception {
         ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
 
-        ImsPhoneConnection c = getConnection(Call.State.DIALING, false);
+        ImsPhoneConnection c = getConnection(Call.State.IDLE, false);
         mImsCallInfoTracker.addImsCallStatus(c);
+
+        doReturn(Call.State.DIALING).when(c).getState();
+        mImsCallInfoTracker.updateImsCallStatus(c);
 
         verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
 
@@ -417,10 +459,32 @@ public class ImsCallInfoTrackerTest extends TelephonyTest {
         assertEquals(Call.State.IDLE, info.getCallState());
     }
 
+    @Test
+    public void testAddImsCallStatus() throws Exception {
+        ArgumentCaptor<List<ImsCallInfo>> captor = ArgumentCaptor.forClass(List.class);
+
+        ImsPhoneConnection c = getConnection(Call.State.DIALING, false);
+        mImsCallInfoTracker.addImsCallStatus(c);
+        verify(mImsPhone, never()).updateImsCallStatus(any(), any());
+
+        c = getConnection(Call.State.INCOMING, false);
+        mImsCallInfoTracker.addImsCallStatus(c);
+        verify(mImsPhone, times(1)).updateImsCallStatus(captor.capture(), any());
+
+        List<ImsCallInfo> imsCallInfos = captor.getValue();
+        assertNotNull(imsCallInfos);
+        assertEquals(1, imsCallInfos.size());
+
+        ImsCallInfo info = imsCallInfos.get(0);
+        assertNotNull(info);
+        assertEquals(Call.State.INCOMING, info.getCallState());
+    }
+
     private ImsPhoneConnection getConnection(Call.State state, boolean isEmergency) {
         ImsPhoneConnection c = mock(ImsPhoneConnection.class);
         doReturn(isEmergency).when(c).isEmergencyCall();
         doReturn(state).when(c).getState();
+        doReturn(true).when(c).isAlive();
         doReturn(ServiceState.RIL_RADIO_TECHNOLOGY_LTE).when(c).getCallRadioTech();
         switch (state) {
             case INCOMING:

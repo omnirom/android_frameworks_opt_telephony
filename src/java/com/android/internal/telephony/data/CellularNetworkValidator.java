@@ -41,15 +41,15 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConfigurationManager;
 import com.android.internal.telephony.PhoneFactory;
+import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 
-import java.util.Comparator;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -77,7 +77,7 @@ public class CellularNetworkValidator {
 
     private int mState = STATE_IDLE;
     private int mSubId;
-    private boolean mReleaseAfterValidation;
+    private boolean mRequireTestPass;
 
     private ValidationCallback mValidationCallback;
     private final Context mContext;
@@ -88,12 +88,13 @@ public class CellularNetworkValidator {
     public ConnectivityNetworkCallback mNetworkCallback;
     private final ValidatedNetworkCache mValidatedNetworkCache = new ValidatedNetworkCache();
 
+    @NonNull
+    private final FeatureFlags mFlags;
     private class ValidatedNetworkCache {
         // A cache with fixed size. It remembers 10 most recently successfully validated networks.
         private static final int VALIDATED_NETWORK_CACHE_SIZE = 10;
-        private final PriorityQueue<ValidatedNetwork> mValidatedNetworkPQ =
-                new PriorityQueue<>((Comparator<ValidatedNetwork>) Comparator.comparingLong(
-                        (ValidatedNetwork n) -> n.mValidationTimeStamp));
+
+        private final ArrayDeque<ValidatedNetwork> mValidatedNetworkAQ = new ArrayDeque<>();
         private final Map<String, ValidatedNetwork> mValidatedNetworkMap = new HashMap<>();
 
         private static final class ValidatedNetwork {
@@ -128,7 +129,7 @@ public class CellularNetworkValidator {
 
             if (!validated) {
                 // If validation failed, clear it from the cache.
-                mValidatedNetworkPQ.remove(mValidatedNetworkMap.get(networkIdentity));
+                mValidatedNetworkAQ.remove(mValidatedNetworkMap.get(networkIdentity));
                 mValidatedNetworkMap.remove(networkIdentity);
                 return;
             }
@@ -138,16 +139,16 @@ public class CellularNetworkValidator {
                 // Already existed in cache, update.
                 network.update(time);
                 // Re-add to re-sort.
-                mValidatedNetworkPQ.remove(network);
-                mValidatedNetworkPQ.add(network);
+                mValidatedNetworkAQ.remove(network);
+                mValidatedNetworkAQ.add(network);
             } else {
                 network = new ValidatedNetwork(networkIdentity, time);
                 mValidatedNetworkMap.put(networkIdentity, network);
-                mValidatedNetworkPQ.add(network);
+                mValidatedNetworkAQ.add(network);
             }
             // If exceeded max size, remove the one with smallest validation timestamp.
-            if (mValidatedNetworkPQ.size() > VALIDATED_NETWORK_CACHE_SIZE) {
-                ValidatedNetwork networkToRemove = mValidatedNetworkPQ.poll();
+            if (mValidatedNetworkAQ.size() > VALIDATED_NETWORK_CACHE_SIZE) {
+                ValidatedNetwork networkToRemove = mValidatedNetworkAQ.poll();
                 mValidatedNetworkMap.remove(networkToRemove.mValidationIdentity);
             }
         }
@@ -206,11 +207,12 @@ public class CellularNetworkValidator {
     /**
      * Create instance.
      */
-    public static CellularNetworkValidator make(Context context) {
+    public static CellularNetworkValidator make(Context context,
+            @NonNull FeatureFlags featureFlags) {
         if (sInstance != null) {
             logd("createCellularNetworkValidator failed. Instance already exists.");
         } else {
-            sInstance = new CellularNetworkValidator(context);
+            sInstance = new CellularNetworkValidator(context, featureFlags);
         }
 
         return sInstance;
@@ -232,8 +234,9 @@ public class CellularNetworkValidator {
     }
 
     @VisibleForTesting
-    public CellularNetworkValidator(Context context) {
+    public CellularNetworkValidator(Context context, @NonNull FeatureFlags featureFlags) {
         mContext = context;
+        mFlags = featureFlags;
         mConnectivityManager = (ConnectivityManager)
                 mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
     }
@@ -242,7 +245,7 @@ public class CellularNetworkValidator {
      * API to start a validation
      */
     public synchronized void validate(int subId, long timeoutInMs,
-            boolean releaseAfterValidation, ValidationCallback callback) {
+            boolean requireTestPass, ValidationCallback callback) {
         // If it's already validating the same subscription, do nothing.
         if (subId == mSubId) return;
 
@@ -261,10 +264,10 @@ public class CellularNetworkValidator {
         mState = STATE_VALIDATING;
         mSubId = subId;
         mValidationCallback = callback;
-        mReleaseAfterValidation = releaseAfterValidation;
+        mRequireTestPass = requireTestPass;
 
         logd("Start validating subId " + mSubId + " timeoutInMs " + timeoutInMs
-                + " mReleaseAfterValidation " + mReleaseAfterValidation);
+                + " mRequireTestPass " + mRequireTestPass);
 
         mNetworkCallback = new ConnectivityNetworkCallback(subId);
 
@@ -339,9 +342,10 @@ public class CellularNetworkValidator {
         if (mState == STATE_VALIDATING) {
             mValidationCallback.onValidationDone(passed, mSubId);
             mState = STATE_VALIDATED;
+            boolean keepRequest = passed || !mRequireTestPass;
             // If validation passed and per request to NOT release after validation, delay cleanup.
-            if (!mReleaseAfterValidation && passed) {
-                mHandler.postDelayed(this::stopValidation, 500);
+            if (keepRequest) {
+                mHandler.postDelayed(this::stopValidation, 5000);
             } else {
                 stopValidation();
             }

@@ -101,6 +101,7 @@ import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.metrics.SmsStats;
 import com.android.internal.telephony.metrics.VoiceCallSessionStats;
+import com.android.internal.telephony.satellite.metrics.ControllerMetricsStats;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.test.SimulatedRadioControl;
@@ -390,6 +391,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private int mPreferredUsageSetting = SubscriptionManager.USAGE_SETTING_UNKNOWN;
     private int mUsageSettingFromModem = SubscriptionManager.USAGE_SETTING_UNKNOWN;
     private boolean mIsUsageSettingSupported = true;
+    private boolean mIsNetworkScanStarted = false;
 
     //IMS
     /**
@@ -671,9 +673,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             mCi.registerForSrvccStateChanged(this, EVENT_SRVCC_STATE_CHANGED, null);
         }
         //Initialize Telephony Analytics
-        if (mFeatureFlags.enableTelephonyAnalytics()) {
-            mTelephonyAnalytics = new TelephonyAnalytics(this);
-        }
+        mTelephonyAnalytics = new TelephonyAnalytics(this);
     }
 
     /**
@@ -1060,26 +1060,20 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Notify the phone that an SMS has been sent. This will be used determine if the SMS was sent
-     * to an emergency address.
+     * Notify the phone that an SMS has been sent. This will be used to determine if the SMS was
+     * sent to an emergency address.
+     *
      * @param destinationAddress the address that the SMS was sent to.
      */
     public void notifySmsSent(String destinationAddress) {
-        TelephonyManager m = (TelephonyManager) getContext().getSystemService(
-                Context.TELEPHONY_SERVICE);
-        if (!mFeatureFlags.enforceTelephonyFeatureMappingForPublicApis()) {
+        TelephonyManager m =
+                (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
+        if (mContext.getPackageManager() != null
+                && mContext.getPackageManager()
+                                .hasSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING)) {
             if (m != null && m.isEmergencyNumber(destinationAddress)) {
                 mLocalLog.log("Emergency SMS detected, recording time.");
                 mTimeLastEmergencySmsSentMs = SystemClock.elapsedRealtime();
-            }
-        } else {
-            if (mContext.getPackageManager() != null
-                    && mContext.getPackageManager().hasSystemFeature(
-                            PackageManager.FEATURE_TELEPHONY_CALLING)) {
-                if (m != null && m.isEmergencyNumber(destinationAddress)) {
-                    mLocalLog.log("Emergency SMS detected, recording time.");
-                    mTimeLastEmergencySmsSentMs = SystemClock.elapsedRealtime();
-                }
             }
         }
     }
@@ -1971,6 +1965,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public boolean hasCalling() {
         return TelephonyCapabilities.supportsTelephonyCalling(mFeatureFlags, mContext);
+    }
+
+    /**
+     * @return true if this device supports messaging, false otherwise.
+     */
+    public boolean hasMessaging() {
+        return TelephonyCapabilities.supportsTelephonyMessaging(mFeatureFlags, mContext);
     }
 
     /**
@@ -4166,6 +4167,24 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
+     * Sets the network scan started status.
+     *
+     * @param started {@code true} if the network scan has started, {@code false} otherwise.
+     */
+    public void setNetworkScanStarted(boolean started) {
+        mIsNetworkScanStarted = started;
+    }
+
+    /**
+     * Gets the network scan started status.
+     *
+     * @return {@code true} if the network scan has started, {@code false} otherwise.
+     */
+    public boolean getNetworkScanStarted() {
+        return mIsNetworkScanStarted;
+    }
+
+    /**
      * Override the roaming indicator for the current ICCID.
      */
     public boolean setRoamingOverride(List<String> gsmRoamingList,
@@ -5407,6 +5426,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public void notifyCarrierRoamingNtnEligibleStateChanged(boolean eligible) {
         logd("notifyCarrierRoamingNtnEligibleStateChanged eligible:" + eligible);
         mNotifier.notifyCarrierRoamingNtnEligibleStateChanged(this, eligible);
+        ControllerMetricsStats.getInstance().reportP2PSmsEligibilityNotificationsCount(eligible);
     }
 
     /**
@@ -5430,6 +5450,52 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         logd("notifyCarrierRoamingNtnSignalStrengthChanged: ntnSignalStrength="
                 + ntnSignalStrength.getLevel());
         mNotifier.notifyCarrierRoamingNtnSignalStrengthChanged(this, ntnSignalStrength);
+    }
+
+    /**
+     * Set the non-terrestrial PLMN with lower priority than terrestrial networks.
+     *
+     * @param simSlot Indicates the SIM slot to which this API will be applied. The modem will use
+     *                this information to determine the relevant carrier.
+     * @param carrierPlmnList The list of roaming PLMN used for connecting to satellite networks
+     *                        supported by user subscription.
+     * @param allSatellitePlmnList Modem should use the allSatellitePlmnList to identify satellite
+     *                             PLMNs that are not supported by the carrier and make sure not to
+     *                             attach to them.
+     * @param result Callback message to receive the result.
+     */
+    public void setSatellitePlmn(int simSlot,
+            @NonNull List<String> carrierPlmnList, @NonNull List<String> allSatellitePlmnList,
+            Message result) {
+        logd("setSatellitePlmn: simSlot=" + simSlot
+                + " carrierPlmnList=" + carrierPlmnList.toString()
+                + " allSatellitePlmnList=" + allSatellitePlmnList.toString());
+        mCi.setSatellitePlmn(simSlot, carrierPlmnList, allSatellitePlmnList, result);
+    }
+
+    /**
+     * Enable or disable satellite in the cellular modem associated with a carrier.
+     *
+     * @param simSlot Indicates the SIM slot to which this API will be applied. The modem will use
+     *                this information to determine the relevant carrier.
+     * @param satelliteEnabled {@code true} to enable satellite, {@code false} to disable satellite.
+     * @param result Callback message to receive the result.
+     */
+    public void setSatelliteEnabledForCarrier(int simSlot, boolean satelliteEnabled,
+            Message result) {
+        logd("setSatelliteEnabledForCarrier: simSlot=" + simSlot
+                + " satelliteEnabled=" + satelliteEnabled);
+        mCi.setSatelliteEnabledForCarrier(simSlot, satelliteEnabled, result);
+    }
+
+    /**
+     * Check whether satellite is enabled in the cellular modem associated with a carrier.
+     *
+     * @param simSlot Indicates the SIM slot to which this API will be applied.
+     * @param result Callback message to receive the result.
+     */
+    public void isSatelliteEnabledForCarrier(int simSlot, Message result) {
+        mCi.isSatelliteEnabledForCarrier(simSlot, result);
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {

@@ -40,6 +40,7 @@ import android.telephony.emergency.EmergencyNumber;
 
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
+import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.gsm.SsData;
 
 import java.util.ArrayList;
@@ -106,6 +107,7 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      */
     public void cdmaCallWaiting(int indicationType,
             android.hardware.radio.voice.CdmaCallWaiting callWaitingRecord) {
+        if (Flags.phoneTypeCleanup()) return;
         mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
 
         // TODO: create a CdmaCallWaitingNotification constructor that takes in these fields to make
@@ -136,6 +138,7 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      */
     public void cdmaInfoRec(int indicationType,
             android.hardware.radio.voice.CdmaInformationRecord[] records) {
+        if (Flags.phoneTypeCleanup()) return;
         mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
 
         for (int i = 0; i < records.length; i++) {
@@ -235,6 +238,7 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      * @param status CDMA OTA provision status
      */
     public void cdmaOtaProvisionStatus(int indicationType, int status) {
+        if (Flags.phoneTypeCleanup()) return;
         mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
 
         int[] response = new int[] {status};

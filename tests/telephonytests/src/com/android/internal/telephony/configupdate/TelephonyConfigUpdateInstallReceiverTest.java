@@ -29,12 +29,14 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import android.content.Intent;
 import android.util.ArraySet;
@@ -64,6 +66,7 @@ import java.util.concurrent.Executors;
 public class TelephonyConfigUpdateInstallReceiverTest extends TelephonyTest {
 
     public static final String DOMAIN_SATELLITE = "satellite";
+    private static final int[] ACTIVE_SUB_LIST = {1};
     @Mock
     private Executor mExecutor;
     @Mock
@@ -73,6 +76,8 @@ public class TelephonyConfigUpdateInstallReceiverTest extends TelephonyTest {
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
         MockitoAnnotations.initMocks(this);
+        when(mSubscriptionManagerService.getActiveSubIdList(anyBoolean())).thenReturn(
+                ACTIVE_SUB_LIST);
         logd(TAG + " Setup!");
     }
 

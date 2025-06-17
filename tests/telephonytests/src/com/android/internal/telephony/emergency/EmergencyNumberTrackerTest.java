@@ -26,15 +26,11 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.IntentFilter;
-import android.content.res.AssetManager;
-import android.content.res.Resources;
 import android.os.AsyncResult;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
@@ -129,30 +125,18 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
 
     private File mLocalDownloadDirectory;
     private ShortNumberInfo mShortNumberInfo;
-    private Context mMockContext;
-    private Resources mResources;
 
     @Before
     public void setUp() throws Exception {
-        logd("EmergencyNumberTrackerTest +Setup!");
         super.setUp(getClass().getSimpleName());
         mShortNumberInfo = mock(ShortNumberInfo.class);
-        mCarrierConfigManagerMock = mock(CarrierConfigManager.class);
+        mCarrierConfigManagerMock = (CarrierConfigManager) mContext.getSystemService(
+                Context.CARRIER_CONFIG_SERVICE);
 
-        mContext = spy(new ContextWrapper(InstrumentationRegistry.getTargetContext()));
-        mMockContext = mock(Context.class);
-        mResources = mock(Resources.class);
+        doReturn(InstrumentationRegistry.getTargetContext().getAssets()).when(mContext).getAssets();
 
-        doReturn(mContext).when(mPhone).getContext();
-        doReturn(0).when(mPhone).getPhoneId();
         doReturn(SUB_ID_PHONE_1).when(mPhone).getSubId();
-
-        doReturn(mContext).when(mPhone2).getContext();
-        doReturn(1).when(mPhone2).getPhoneId();
         doReturn(SUB_ID_PHONE_2).when(mPhone2).getSubId();
-
-        doReturn(mPackageManager).when(mContext).getPackageManager();
-        doReturn(mPackageManager).when(mMockContext).getPackageManager();
 
         initializeEmergencyNumberListTestSamples();
         mEmergencyNumberTrackerMock = new EmergencyNumberTracker(mPhone, mSimulatedCommands,
@@ -165,11 +149,7 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
         // Copy an OTA file to the test directory to similate the OTA mechanism
         simulateOtaEmergencyNumberDb(mPhone);
 
-        AssetManager am = new AssetManager.Builder().build();
-        doReturn(am).when(mMockContext).getAssets();
-
         processAllMessages();
-        logd("EmergencyNumberTrackerTest -Setup!");
     }
 
     @After
@@ -251,20 +231,16 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
     }
 
     private void setOtaEmergencyNumberDbFileFolderForTesting(
-            EmergencyNumberTracker emergencyNumberTrackerMock, Phone phone) {
+            EmergencyNumberTracker emergencyNumberTrackerMock, Phone phone)
+            throws FileNotFoundException {
         // Override the OTA emergency number database file path for testing
         File file = new File(Environment.getExternalStorageDirectory(), LOCAL_DOWNLOAD_DIRECTORY
                 + "/" + EMERGENCY_NUMBER_DB_OTA_FILE);
-        try {
-            mOtaParcelFileDescriptor = ParcelFileDescriptor.open(
-                    file, ParcelFileDescriptor.MODE_READ_ONLY);
-            emergencyNumberTrackerMock.obtainMessage(
-                EmergencyNumberTracker.EVENT_OVERRIDE_OTA_EMERGENCY_NUMBER_DB_FILE_PATH,
-                    mOtaParcelFileDescriptor).sendToTarget();
-            logd("Changed emergency number db file folder for testing ");
-        } catch (FileNotFoundException e) {
-            logd("Failed to open emergency number db file folder for testing " + e.toString());
-        }
+        mOtaParcelFileDescriptor = ParcelFileDescriptor.open(
+                file, ParcelFileDescriptor.MODE_READ_ONLY);
+        emergencyNumberTrackerMock.obtainMessage(
+            EmergencyNumberTracker.EVENT_OVERRIDE_OTA_EMERGENCY_NUMBER_DB_FILE_PATH,
+                mOtaParcelFileDescriptor).sendToTarget();
         processAllMessages();
     }
 
@@ -544,11 +520,8 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
      */
     @Test
     public void testUsingEmergencyNumberDatabaseWheneverHal_1_4() {
-        doReturn(mMockContext).when(mPhone).getContext();
-        doReturn(mContext.getAssets()).when(mMockContext).getAssets();
-        doReturn(mResources).when(mMockContext).getResources();
-        doReturn(true).when(mResources).getBoolean(
-                com.android.internal.R.bool.ignore_emergency_number_routing_from_db);
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.ignore_emergency_number_routing_from_db, true);
 
         EmergencyNumberTracker emergencyNumberTrackerMock = new EmergencyNumberTracker(
                 mPhone, mSimulatedCommands, mFeatureFlags);
@@ -616,12 +589,9 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
 
     @Test
     public void testUsingEmergencyNumberDatabaseWithRouting() {
-        doReturn(mMockContext).when(mPhone).getContext();
-        doReturn(mContext.getAssets()).when(mMockContext).getAssets();
-        doReturn(mResources).when(mMockContext).getResources();
         doReturn("05").when(mCellIdentity).getMncString();
-        doReturn(false).when(mResources).getBoolean(
-                com.android.internal.R.bool.ignore_emergency_number_routing_from_db);
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.ignore_emergency_number_routing_from_db, false);
 
         EmergencyNumberTracker emergencyNumberTrackerMock = new EmergencyNumberTracker(
                 mPhone, mSimulatedCommands, mFeatureFlags);
@@ -721,11 +691,8 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
 
     @Test
     public void testUsingEmergencyNumberDatabaseWithRoutingInOOS() {
-        doReturn(mMockContext).when(mPhone).getContext();
-        doReturn(mContext.getAssets()).when(mMockContext).getAssets();
-        doReturn(mResources).when(mMockContext).getResources();
-        doReturn(false).when(mResources).getBoolean(
-                com.android.internal.R.bool.ignore_emergency_number_routing_from_db);
+        mContextFixture.putBooleanResource(
+                com.android.internal.R.bool.ignore_emergency_number_routing_from_db, false);
 
         EmergencyNumberTracker emergencyNumberTrackerMock = new EmergencyNumberTracker(
                 mPhone, mSimulatedCommands, mFeatureFlags);
@@ -776,7 +743,7 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
      * Test OTA Emergency Number Database Update Status.
      */
     @Test
-    public void testOtaEmergencyNumberDatabase() {
+    public void testOtaEmergencyNumberDatabase() throws Exception {
         sendEmergencyNumberPrefix(mEmergencyNumberTrackerMock);
         mEmergencyNumberTrackerMock.updateEmergencyCountryIsoAllPhones("");
         processAllMessages();
@@ -841,13 +808,7 @@ public class EmergencyNumberTrackerTest extends TelephonyTest {
     @Test
     public void testOverridingEmergencyNumberPrefixCarrierConfig() throws Exception {
         // Capture CarrierConfigChangeListener to emulate the carrier config change notification
-        doReturn(mMockContext).when(mPhone).getContext();
-        doReturn(Context.CARRIER_CONFIG_SERVICE)
-                .when(mMockContext)
-                .getSystemService(CarrierConfigManager.class);
-        doReturn(mCarrierConfigManagerMock)
-                .when(mMockContext)
-                .getSystemService(eq(Context.CARRIER_CONFIG_SERVICE));
+        Mockito.clearInvocations(mCarrierConfigManagerMock);
         ArgumentCaptor<CarrierConfigManager.CarrierConfigChangeListener> listenerArgumentCaptor =
                 ArgumentCaptor.forClass(CarrierConfigManager.CarrierConfigChangeListener.class);
         EmergencyNumberTracker localEmergencyNumberTracker =

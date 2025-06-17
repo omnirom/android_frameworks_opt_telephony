@@ -408,4 +408,50 @@ public class DataCallSessionStatsTest extends TelephonyTest {
 
         assertFalse(stats.isProvisioningProfile);
     }
+
+    @Test
+    public void testIsNbIotNtn() {
+        when(mSatelliteController.isInSatelliteModeForCarrierRoaming(any())).thenReturn(true);
+        when(mSatelliteController.isInCarrierRoamingNbIotNtn(any())).thenReturn(true);
+
+        mDataCallSessionStats.onSetupDataCall(ApnSetting.TYPE_IMS, false);
+        mDataCallSessionStats.onSetupDataCallResponse(
+                mDefaultImsResponse,
+                TelephonyManager.NETWORK_TYPE_LTE,
+                ApnSetting.TYPE_IMS,
+                ApnSetting.PROTOCOL_IP,
+                DataFailCause.NONE);
+
+        mDataCallSessionStats.setTimeMillis(60000L);
+        mDataCallSessionStats.conclude();
+
+        ArgumentCaptor<DataCallSession> callCaptor =
+                ArgumentCaptor.forClass(DataCallSession.class);
+        verify(mPersistAtomsStorage).addDataCallSession(callCaptor.capture());
+        DataCallSession stats = callCaptor.getValue();
+
+        assertTrue(stats.isNbIotNtn);
+
+        reset(mPersistAtomsStorage);
+
+        when(mSatelliteController.isInSatelliteModeForCarrierRoaming(any())).thenReturn(false);
+        when(mSatelliteController.isInCarrierRoamingNbIotNtn(any())).thenReturn(false);
+
+        mDataCallSessionStats.onSetupDataCall(ApnSetting.TYPE_IMS, false);
+        mDataCallSessionStats.onSetupDataCallResponse(
+                mDefaultImsResponse,
+                TelephonyManager.NETWORK_TYPE_LTE,
+                ApnSetting.TYPE_IMS,
+                ApnSetting.PROTOCOL_IP,
+                DataFailCause.NONE);
+
+        mDataCallSessionStats.setTimeMillis(60000L);
+        mDataCallSessionStats.conclude();
+
+
+        verify(mPersistAtomsStorage).addDataCallSession(callCaptor.capture());
+        stats = callCaptor.getValue();
+
+        assertFalse(stats.isNbIotNtn);
+    }
 }

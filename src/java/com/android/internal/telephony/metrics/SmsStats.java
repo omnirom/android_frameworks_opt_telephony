@@ -57,10 +57,10 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.ServiceStateTracker;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.nano.PersistAtomsProto.IncomingSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.OutgoingShortCodeSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.OutgoingSms;
+import com.android.internal.telephony.satellite.SatelliteController;
 import com.android.internal.telephony.satellite.metrics.CarrierRoamingSatelliteSessionStats;
 import com.android.telephony.Rlog;
 
@@ -160,18 +160,19 @@ public class SmsStats {
     /** Create a new atom when an outgoing SMS is sent. */
     public void onOutgoingSms(boolean isOverIms, boolean is3gpp2, boolean fallbackToCs,
             @SmsManager.Result int sendErrorCode, long messageId, boolean isFromDefaultApp,
-            long intervalMillis, boolean isEmergency) {
+            long intervalMillis, boolean isEmergency, boolean isMtSmsPolling) {
         onOutgoingSms(isOverIms, is3gpp2, fallbackToCs, sendErrorCode, NO_ERROR_CODE,
-                messageId, isFromDefaultApp, intervalMillis, isEmergency);
+                messageId, isFromDefaultApp, intervalMillis, isEmergency, isMtSmsPolling);
     }
 
     /** Create a new atom when an outgoing SMS is sent. */
     public void onOutgoingSms(boolean isOverIms, boolean is3gpp2, boolean fallbackToCs,
             @SmsManager.Result int sendErrorCode, int networkErrorCode, long messageId,
-            boolean isFromDefaultApp, long intervalMillis, boolean isEmergency) {
+            boolean isFromDefaultApp, long intervalMillis, boolean isEmergency,
+            boolean isMtSmsPolling) {
         OutgoingSms proto =
                 getOutgoingDefaultProto(is3gpp2, isOverIms, messageId, isFromDefaultApp,
-                        intervalMillis, isEmergency);
+                        intervalMillis, isEmergency, isMtSmsPolling);
 
         // The field errorCode is used for up-to-Android-13 devices. From Android 14, sendErrorCode
         // and networkErrorCode will be used. The field errorCode will be deprecated when most
@@ -242,12 +243,14 @@ public class SmsStats {
         proto.isManagedProfile = mPhone.isManagedProfile();
         proto.isNtn = isNonTerrestrialNetwork();
         proto.isEmergency = isEmergency;
+        proto.isNbIotNtn = isNbIotNtn(mPhone);
         return proto;
     }
 
     /** Create a proto for a normal {@code OutgoingSms} with default values. */
     private OutgoingSms getOutgoingDefaultProto(boolean is3gpp2, boolean isOverIms,
-            long messageId, boolean isFromDefaultApp, long intervalMillis, boolean isEmergency) {
+            long messageId, boolean isFromDefaultApp, long intervalMillis, boolean isEmergency,
+            boolean isMtSmsPolling) {
         OutgoingSms proto = new OutgoingSms();
         proto.smsFormat = getSmsFormat(is3gpp2);
         proto.smsTech = getSmsTech(isOverIms, is3gpp2);
@@ -270,6 +273,8 @@ public class SmsStats {
         proto.isManagedProfile = mPhone.isManagedProfile();
         proto.isEmergency = isEmergency;
         proto.isNtn = isNonTerrestrialNetwork();
+        proto.isMtSmsPolling = isMtSmsPolling;
+        proto.isNbIotNtn = isNbIotNtn(mPhone);
         return proto;
     }
 
@@ -342,8 +347,8 @@ public class SmsStats {
      */
     static int getSmsHashCode(OutgoingSms sms) {
         return Objects.hash(sms.smsFormat, sms.smsTech, sms.rat, sms.sendResult, sms.errorCode,
-                    sms.isRoaming, sms.isFromDefaultApp, sms.simSlotIndex, sms.isMultiSim,
-                    sms.isEsim, sms.carrierId);
+                sms.isRoaming, sms.isFromDefaultApp, sms.simSlotIndex, sms.isMultiSim, sms.isEsim,
+                sms.carrierId, sms.isEmergency, sms.isNtn, sms.isMtSmsPolling, sms.isNbIotNtn);
     }
 
     /**
@@ -353,7 +358,8 @@ public class SmsStats {
     static int getSmsHashCode(IncomingSms sms) {
         return Objects.hash(sms.smsFormat, sms.smsTech, sms.rat, sms.smsType,
             sms.totalParts, sms.receivedParts, sms.blocked, sms.error,
-            sms.isRoaming, sms.simSlotIndex, sms.isMultiSim, sms.isEsim, sms.carrierId);
+                sms.isRoaming, sms.simSlotIndex, sms.isMultiSim, sms.isEsim, sms.carrierId,
+                sms.isNtn, sms.isNbIotNtn);
     }
 
     private int getPhoneId() {
@@ -408,10 +414,6 @@ public class SmsStats {
     }
 
     private boolean isNonTerrestrialNetwork() {
-        if (!Flags.carrierEnabledSatelliteFlag()) {
-            return false;
-        }
-
         ServiceState ss = getServiceState();
         if (ss != null) {
             return ss.isUsingNonTerrestrialNetwork();
@@ -419,6 +421,10 @@ public class SmsStats {
             Rlog.e(TAG, "isNonTerrestrialNetwork(), ServiceState is null");
             return false;
         }
+    }
+
+    private boolean isNbIotNtn(Phone phone) {
+        return SatelliteController.getInstance().isInCarrierRoamingNbIotNtn(phone);
     }
 
     private void loge(String format, Object... args) {

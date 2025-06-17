@@ -16,15 +16,13 @@
 
 package com.android.internal.telephony.data;
 
-import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -64,6 +62,7 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
             new PhoneCapability(1, 1, null, true, new int[0]);
     private static final PhoneCapability CAPABILITY_WITHOUT_VALIDATION_SUPPORTED =
             new PhoneCapability(1, 1, null, false, new int[0]);
+    private static final int CLEANUP_VALIDATION_TIMEOUT = 5010;
     private final CellIdentityLte mCellIdentityLte1 = new CellIdentityLte(123, 456, 0, 0, 111);
     private final CellIdentityLte mCellIdentityLte2 = new CellIdentityLte(321, 654, 0, 0, 222);
 
@@ -77,7 +76,7 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
 
         doReturn(CAPABILITY_WITH_VALIDATION_SUPPORTED).when(mPhoneConfigurationManager)
                 .getCurrentPhoneCapability();
-        mValidatorUT = new CellularNetworkValidator(mContext);
+        mValidatorUT = new CellularNetworkValidator(mContext, mFeatureFlags);
         doReturn(new SubscriptionInfoInternal.Builder().setSimSlotIndex(0).setId(1).build())
                 .when(mSubscriptionManagerService).getSubscriptionInfoInternal(anyInt());
         processAllMessages();
@@ -226,7 +225,7 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
 
         // Mark mValidationCacheTtl to only 1 second.
         setCacheTtlInCarrierConfig(1000);
-        waitForMs(1100);
+        moveTimeForward(1100);
 
         resetStates();
         mValidatorUT.validate(subId, timeout, true, mCallback);
@@ -309,6 +308,8 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
         mValidatorUT.validate(1, timeout, true, mCallback);
         mValidatorUT.mNetworkCallback.onCapabilitiesChanged(null, new NetworkCapabilities()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+        moveTimeForward(CLEANUP_VALIDATION_TIMEOUT);
+        processAllMessages();
         assertNetworkRecentlyValidated(1, true);
 
         // Change reg state to a different network.
@@ -340,6 +341,9 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
             mValidatorUT.validate(subId, timeout, true, mCallback);
             mValidatorUT.mNetworkCallback.onCapabilitiesChanged(null, new NetworkCapabilities()
                     .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+            // release the request
+            moveTimeForward(CLEANUP_VALIDATION_TIMEOUT);
+            processAllMessages();
             assertNetworkRecentlyValidated(subId, true);
         }
 
@@ -457,6 +461,9 @@ public class CellularNetworkValidatorTest extends TelephonyTest {
     }
 
     private void assertValidationResult(int subId, boolean shouldPass) {
+        // release the request
+        moveTimeForward(CLEANUP_VALIDATION_TIMEOUT);
+        processAllMessages();
         // Verify that validation is over.
         verify(mConnectivityManager).unregisterNetworkCallback(eq(mValidatorUT.mNetworkCallback));
         assertFalse(mValidatorUT.mHandler.hasMessagesOrCallbacks());

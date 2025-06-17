@@ -1,17 +1,6 @@
 package: "com.android.internal.telephony.flags"
 container: "system"
 
-# OWNER=linggm TARGET=24Q3
-flag {
-    name: "combine_ril_death_handle"
-    namespace: "telephony"
-    description: "Upon radio service death, combine its handling to prevent race condition"
-    bug:"319612362"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
 # OWNER=tjstuart TARGET=24Q3
 flag {
   name: "do_not_override_precise_label"
@@ -54,30 +43,6 @@ flag {
   bug: "309655251"
 }
 
-# OWNER=sangyun TARGET=24Q2
-flag {
-  name: "reorganize_roaming_notification"
-  namespace: "telephony"
-  description: "Reorganize conditions to show and dismiss roaming notifications."
-  bug: "310594087"
-}
-
-# OWNER=sangyun TARGET=24Q2
-flag {
-  name: "dismiss_network_selection_notification_on_sim_disable"
-  namespace: "telephony"
-  description: "Fix to dismiss network selection notification when disable sim."
-  bug: "310594186"
-}
-
-# OWNER=nagendranb TARGET=24Q3
-flag {
-  name: "enable_telephony_analytics"
-  namespace: "telephony"
-  description: "Enable Telephony Analytics information of Service State , Sms and Call scenarios"
-  bug: "309896524"
-}
-
 # OWNER=rambowang TARGET=24Q3
 flag {
     name: "reset_mobile_network_settings"
@@ -85,33 +50,6 @@ flag {
     namespace: "telephony"
     description: "Allows applications to launch Reset Mobile Network Settings page in Settings app."
     bug:"271921464"
-}
-
-# OWNER=sangyun TARGET=24Q3
-flag {
-    name: "roaming_notification_for_single_data_network"
-    namespace: "telephony"
-    description: "Fix bug where roaming notification was not shown on a single data network."
-    bug:"249908996"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "enforce_telephony_feature_mapping"
-    namespace: "telephony"
-    description: "This flag controls telephony feature flags mapping."
-    bug:"297989574"
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "enforce_telephony_feature_mapping_for_public_apis"
-    namespace: "telephony"
-    description: "This flag controls telephony feature flags mapping for public APIs and CTS."
-    bug:"297989574"
 }
 
 # OWNER=stevestatia TARGET=24Q3
@@ -128,22 +66,6 @@ flag {
     namespace: "telephony"
     description: "This flag prevents repeat invocation of call related APIs in RIL when the device is not voice capable"
     bug: "290833783"
-}
-
-# OWNER=jackyu TARGET=24Q3
-flag {
-    name: "minimal_telephony_cdm_check"
-    namespace: "telephony"
-    description: "This flag disables Calling/Data/Messaging features if their respective feature is missing"
-    bug: "310710841"
-}
-
-# OWNER=jackyu TARGET=24Q3
-flag {
-    name: "minimal_telephony_managers_conditional_on_features"
-    namespace: "telephony"
-    description: "This flag enables checking for telephony features before initializing corresponding managers"
-    bug: "310710841"
 }
 
 # OWNER=joonhunshin TARGET=24Q3
@@ -245,4 +167,56 @@ flag {
     namespace: "telephony"
     description: "Disable CDMA and NV backing code"
     bug: "379356026"
+}
+
+# OWNER=jackyu TARGET=25Q2
+flag {
+    name: "phone_type_cleanup"
+    namespace: "telephony"
+    description: "As CDMA deprecated, there is no need to switch phone type between CDMA and GSM"
+    bug: "379356026"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=tjstuart TARGET=25Q2
+flag {
+    name: "dynamic_do_not_ask_again_text"
+    namespace: "telephony"
+    description: "Make No Emergency Wifi Calling Do Not Ask Again text translatable"
+    bug:"382006472"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=jackyu,boullanger TARGET=25Q3
+flag {
+    name: "use_i18n_for_mcc_mapping"
+    namespace: "telephony"
+    description: "Use the newly introduced MCC to country table, from the time zone mainline module"
+    bug:"381070025"
+}
+
+# OWNER=nharold TARGET=25Q4
+flag {
+    name: "thread_shred"
+    namespace: "telephony"
+    description: "Consolidate a bunch of unneeded worker threads to save resources"
+    bug:"390244513"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=jackyu TARGET=25Q2
+flag {
+    name: "carrier_config_changed_callback_fix"
+    namespace: "telephony"
+    description: "Carrier config callback race condition fix"
+    bug:"375526692"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

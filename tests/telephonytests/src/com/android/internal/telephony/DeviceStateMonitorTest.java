@@ -20,19 +20,17 @@ import static android.hardware.radio.V1_0.DeviceStateType.LOW_DATA_EXPECTED;
 import static android.hardware.radio.V1_0.DeviceStateType.POWER_SAVE_MODE;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Matchers.nullable;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import static java.util.Arrays.asList;
 
@@ -476,7 +474,6 @@ public class DeviceStateMonitorTest extends TelephonyTest {
     @Test
     public void testRegisterForSignalStrengthReportDecisionWithFeatureEnabled() {
         logd("testRegisterForSignalStrengthReportDecisionWithFeatureEnabled()");
-        when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(true);
         mSatelliteControllerUT = new TestSatelliteController(Looper.myLooper(), mDSM);
 
         updateState(STATE_TYPE_RADIO_OFF_OR_NOT_AVAILABLE, 0);
@@ -513,45 +510,6 @@ public class DeviceStateMonitorTest extends TelephonyTest {
         assertTrue(waitForEventDeviceStatusChanged());
         assertEquals(0, mSatelliteControllerUT.getStartEventCount());
         assertEquals(1, mSatelliteControllerUT.getStopEventCount());
-    }
-
-    @Test
-    public void testRegisterForSignalStrengthReportDecisionWithFeatureDisabled() {
-        logd("testRegisterForSignalStrengthReportDecisionWithFeatureDisabled()");
-        when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(false);
-        mSatelliteControllerUT = new TestSatelliteController(Looper.myLooper(), mDSM);
-
-        updateState(STATE_TYPE_RADIO_OFF_OR_NOT_AVAILABLE, 0);
-        updateState(STATE_TYPE_SCREEN, STATE_OFF);
-        mSatelliteControllerUT.resetCount();
-        sEventDeviceStatusChanged.drainPermits();
-
-
-        /* Sending stop ntn signal strength as radio is off */
-        updateState(STATE_TYPE_SCREEN, STATE_ON);
-        assertFalse(waitForEventDeviceStatusChanged());
-        assertEquals(0, mSatelliteControllerUT.getStartEventCount());
-        assertEquals(0, mSatelliteControllerUT.getStopEventCount());
-
-        updateState(STATE_TYPE_SCREEN, STATE_OFF);
-        assertFalse(waitForEventDeviceStatusChanged());
-        assertEquals(0, mSatelliteControllerUT.getStartEventCount());
-        assertEquals(0, mSatelliteControllerUT.getStopEventCount());
-
-        updateState(STATE_TYPE_RADIO_ON, 0);
-        assertFalse(waitForEventDeviceStatusChanged());
-        assertEquals(0, mSatelliteControllerUT.getStartEventCount());
-        assertEquals(0, mSatelliteControllerUT.getStopEventCount());
-
-        updateState(STATE_TYPE_SCREEN, STATE_ON);
-        assertFalse(waitForEventDeviceStatusChanged());
-        assertEquals(0, mSatelliteControllerUT.getStartEventCount());
-        assertEquals(0, mSatelliteControllerUT.getStopEventCount());
-
-        updateState(STATE_TYPE_RADIO_OFF_OR_NOT_AVAILABLE, 0);
-        assertFalse(waitForEventDeviceStatusChanged());
-        assertEquals(0, mSatelliteControllerUT.getStartEventCount());
-        assertEquals(0, mSatelliteControllerUT.getStopEventCount());
     }
 
     private static Semaphore sEventDeviceStatusChanged = new Semaphore(0);

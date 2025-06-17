@@ -18,6 +18,7 @@ package com.android.internal.telephony;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
@@ -25,18 +26,30 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.content.pm.ServiceInfo;
+import android.os.Bundle;
 import android.os.Message;
+import android.service.carrier.CarrierService;
+import android.service.carrier.ICarrierService;
 import android.telephony.TelephonyManager.CarrierPrivilegesCallback;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
 
 import androidx.test.filters.SmallTest;
 
+import com.android.internal.telephony.flags.Flags;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 @RunWith(AndroidTestingRunner.class)
 @TestableLooper.RunWithLooper
@@ -101,6 +114,16 @@ public class CarrierServiceBindHelperTest extends TelephonyTest {
                         new Integer(0)));
     }
 
+    // Verify a CarrierPrivilegesCallback is registered and return the callback object. May return
+    // null if no callback is captured.
+    private CarrierPrivilegesCallback expectRegisterCarrierPrivilegesCallback(int phoneId) {
+        ArgumentCaptor<CarrierPrivilegesCallback> callbackCaptor =
+                ArgumentCaptor.forClass(CarrierPrivilegesCallback.class);
+        verify(mTelephonyManager)
+                .registerCarrierPrivilegesCallback(eq(phoneId), any(), callbackCaptor.capture());
+        return callbackCaptor.getAllValues().get(0);
+    }
+
     @Test
     public void testCarrierPrivilegesCallbackRegistration() {
         // Device starts with DSDS mode
@@ -110,18 +133,11 @@ public class CarrierServiceBindHelperTest extends TelephonyTest {
 
         // Verify that CarrierPrivilegesCallbacks are registered on both phones.
         // Capture the callbacks for further verification
-        ArgumentCaptor<CarrierPrivilegesCallback> phone0CallbackCaptor = ArgumentCaptor.forClass(
-                CarrierPrivilegesCallback.class);
-        verify(mTelephonyManager).registerCarrierPrivilegesCallback(eq(PHONE_ID_0), any(),
-                phone0CallbackCaptor.capture());
-        CarrierPrivilegesCallback phone0Callback = phone0CallbackCaptor.getAllValues().get(0);
+        CarrierPrivilegesCallback phone0Callback =
+                expectRegisterCarrierPrivilegesCallback(PHONE_ID_0);
         assertNotNull(phone0Callback);
-
-        ArgumentCaptor<CarrierPrivilegesCallback> phone1CallbackCaptor = ArgumentCaptor.forClass(
-                CarrierPrivilegesCallback.class);
-        verify(mTelephonyManager).registerCarrierPrivilegesCallback(eq(PHONE_ID_1), any(),
-                phone1CallbackCaptor.capture());
-        CarrierPrivilegesCallback phone1Callback = phone1CallbackCaptor.getAllValues().get(0);
+        CarrierPrivilegesCallback phone1Callback =
+                expectRegisterCarrierPrivilegesCallback(PHONE_ID_1);
         assertNotNull(phone1Callback);
 
         // Switch back to single SIM.
@@ -132,6 +148,116 @@ public class CarrierServiceBindHelperTest extends TelephonyTest {
         // Verify the callback for phone1 had been unregistered while phone0 didn't.
         verify(mTelephonyManager).unregisterCarrierPrivilegesCallback(eq(phone1Callback));
         verify(mTelephonyManager, never()).unregisterCarrierPrivilegesCallback(eq(phone0Callback));
+    }
+
+    @Test
+    public void testCarrierAppConnectionLost_resetsCarrierNetworkChange() {
+        if (!Flags.disableCarrierNetworkChangeOnCarrierAppLost()) {
+            return;
+        }
+        // Static test data
+        String carrierServicePackageName = "android.test.package.carrier";
+        ComponentName carrierServiceComponentName =
+                new ComponentName("android.test.package", "carrier");
+        ArgumentCaptor<ServiceConnection> serviceConnectionCaptor =
+                ArgumentCaptor.forClass(ServiceConnection.class);
+        ResolveInfo resolveInfo = new ResolveInfo();
+        ServiceInfo serviceInfo = new ServiceInfo();
+        serviceInfo.packageName = carrierServicePackageName;
+        serviceInfo.name = "carrier";
+        serviceInfo.metaData = new Bundle();
+        serviceInfo.metaData.putBoolean("android.service.carrier.LONG_LIVED_BINDING", true);
+        resolveInfo.serviceInfo = serviceInfo;
+
+        // Set up expectations for construction/initialization.
+        doReturn(carrierServicePackageName)
+                .when(mTelephonyManager)
+                .getCarrierServicePackageNameForLogicalSlot(PHONE_ID_0);
+        doReturn(1).when(mTelephonyManager).getActiveModemCount();
+        doReturn(resolveInfo)
+                .when(mPackageManager)
+                .resolveService(any(), eq(PackageManager.GET_META_DATA));
+        ICarrierService carrierServiceInterface = Mockito.mock(ICarrierService.class);
+        mContextFixture.addService(
+                CarrierService.CARRIER_SERVICE_INTERFACE,
+                carrierServiceComponentName,
+                carrierServicePackageName,
+                carrierServiceInterface,
+                serviceInfo);
+
+        mCarrierServiceBindHelper = new CarrierServiceBindHelper(mContext);
+        processAllMessages();
+
+        CarrierPrivilegesCallback phoneCallback =
+                expectRegisterCarrierPrivilegesCallback(PHONE_ID_0);
+        assertNotNull(phoneCallback);
+        phoneCallback.onCarrierServiceChanged(null, 0);
+        processAllMessages();
+
+        // Grab the ServiceConnection for CarrierService
+        verify(mContext)
+                .bindService(any(Intent.class), anyInt(), any(), serviceConnectionCaptor.capture());
+        ServiceConnection serviceConnection = serviceConnectionCaptor.getAllValues().get(0);
+        assertNotNull(serviceConnection);
+
+        // Test CarrierService disconnection
+        serviceConnection.onServiceDisconnected(carrierServiceComponentName);
+        verify(mTelephonyRegistryManager).notifyCarrierNetworkChange(PHONE_ID_0, false);
+    }
+
+    @Test
+    public void testCarrierAppBindingLost_resetsCarrierNetworkChange() {
+        if (!Flags.disableCarrierNetworkChangeOnCarrierAppLost()) {
+            return;
+        }
+        // Static test data
+        String carrierServicePackageName = "android.test.package.carrier";
+        ComponentName carrierServiceComponentName =
+                new ComponentName("android.test.package", "carrier");
+        ArgumentCaptor<ServiceConnection> serviceConnectionCaptor =
+                ArgumentCaptor.forClass(ServiceConnection.class);
+        ResolveInfo resolveInfo = new ResolveInfo();
+        ServiceInfo serviceInfo = new ServiceInfo();
+        serviceInfo.packageName = carrierServicePackageName;
+        serviceInfo.name = "carrier";
+        serviceInfo.metaData = new Bundle();
+        serviceInfo.metaData.putBoolean("android.service.carrier.LONG_LIVED_BINDING", true);
+        resolveInfo.serviceInfo = serviceInfo;
+
+        // Set up expectations for construction/initialization.
+        doReturn(carrierServicePackageName)
+                .when(mTelephonyManager)
+                .getCarrierServicePackageNameForLogicalSlot(PHONE_ID_0);
+        doReturn(1).when(mTelephonyManager).getActiveModemCount();
+        doReturn(resolveInfo)
+                .when(mPackageManager)
+                .resolveService(any(), eq(PackageManager.GET_META_DATA));
+        ICarrierService carrierServiceInterface = Mockito.mock(ICarrierService.class);
+        mContextFixture.addService(
+                CarrierService.CARRIER_SERVICE_INTERFACE,
+                carrierServiceComponentName,
+                carrierServicePackageName,
+                carrierServiceInterface,
+                serviceInfo);
+
+        mCarrierServiceBindHelper = new CarrierServiceBindHelper(mContext);
+        processAllMessages();
+
+        CarrierPrivilegesCallback phoneCallback =
+                expectRegisterCarrierPrivilegesCallback(PHONE_ID_0);
+        assertNotNull(phoneCallback);
+        phoneCallback.onCarrierServiceChanged(null, 0);
+        processAllMessages();
+
+        // Grab the ServiceConnection for CarrierService
+        verify(mContext)
+                .bindService(any(Intent.class), anyInt(), any(), serviceConnectionCaptor.capture());
+        ServiceConnection serviceConnection = serviceConnectionCaptor.getAllValues().get(0);
+        assertNotNull(serviceConnection);
+
+        // Test CarrierService disconnection
+        serviceConnection.onBindingDied(carrierServiceComponentName);
+        verify(mTelephonyRegistryManager).notifyCarrierNetworkChange(PHONE_ID_0, false);
     }
     // TODO (b/232461097): Add UT cases to cover more scenarios (user unlock, SIM state change...)
 }

@@ -53,7 +53,6 @@ public class VonrHelperTest extends TelephonyTest {
         doReturn(SUBID).when(mPhone).getSubId();
         doReturn(false).when(mTelephonyManager).isVoNrEnabled();
         mVonrHelper = new TestableVonrHelper(mFeatureFlags);
-        doReturn(true).when(mFeatureFlags).vonrEnabledMetric();
     }
 
     @After

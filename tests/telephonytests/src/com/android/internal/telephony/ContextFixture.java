@@ -20,9 +20,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
@@ -105,6 +105,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executor;
 
 /**
  * Controls a test {@link Context} as would be provided by the Android framework to an
@@ -226,18 +227,34 @@ public class ContextFixture implements TestFixture<Context> {
             if (mServiceByServiceConnection.containsKey(connection)) {
                 throw new RuntimeException("ServiceConnection already bound: " + connection);
             }
-            IInterface service = mServiceByComponentName.get(serviceIntent.getComponent());
+            IInterface service = null;
+            if (serviceIntent.getComponent() != null) {
+                service = mServiceByComponentName.get(serviceIntent.getComponent());
+            }
             if (service == null) {
                 service = mServiceByPackageName.get(serviceIntent.getPackage());
             }
             if (service == null) {
                 throw new RuntimeException(
-                        String.format("ServiceConnection not found for component: %s, package: %s",
+                        String.format(
+                                "ServiceConnection not found for component: %s, package: %s",
                                 serviceIntent.getComponent(), serviceIntent.getPackage()));
             }
             mServiceByServiceConnection.put(connection, service);
-            connection.onServiceConnected(serviceIntent.getComponent(), service.asBinder());
+            ComponentName componentName = null;
+            if (mComponentNameByService.containsKey(service)) {
+                componentName = mComponentNameByService.get(service);
+            } else {
+                componentName = serviceIntent.getComponent();
+            }
+            connection.onServiceConnected(componentName, service.asBinder());
             return true;
+        }
+
+        @Override
+        public boolean bindService(
+                Intent serviceIntent, int flags, Executor executor, ServiceConnection connection) {
+            return bindService(serviceIntent, connection, flags);
         }
 
         @Override
@@ -774,14 +791,14 @@ public class ContextFixture implements TestFixture<Context> {
     public ContextFixture() {
         MockitoAnnotations.initMocks(this);
 
-        doAnswer(new Answer<List<ResolveInfo>>() {
+        lenient().doAnswer(new Answer<List<ResolveInfo>>() {
             @Override
             public List<ResolveInfo> answer(InvocationOnMock invocation) throws Throwable {
                 return doQueryIntentServices((Intent) invocation.getArguments()[0]);
             }
         }).when(mPackageManager).queryIntentServices((Intent) any(), anyInt());
 
-        doAnswer(new Answer<List<ResolveInfo>>() {
+        lenient().doAnswer(new Answer<List<ResolveInfo>>() {
             @Override
             public List<ResolveInfo> answer(InvocationOnMock invocation) throws Throwable {
                 return doQueryIntentServices((Intent) invocation.getArguments()[0]);
@@ -795,30 +812,34 @@ public class ContextFixture implements TestFixture<Context> {
             Log.d(TAG, "NameNotFoundException: e=" + e);
         }
 
-        doAnswer((Answer<Boolean>)
+        lenient().doAnswer((Answer<Boolean>)
                 invocation -> mSystemFeatures.contains((String) invocation.getArgument(0)))
                 .when(mPackageManager).hasSystemFeature(any());
 
         try {
-            doReturn(mResources).when(mPackageManager).getResourcesForApplication(anyString());
+            lenient().doReturn(mResources).when(mPackageManager)
+                    .getResourcesForApplication(anyString());
         } catch (NameNotFoundException ex) {
             Log.d(TAG, "NameNotFoundException: ex=" + ex);
         }
 
-        doReturn(mBundle).when(mCarrierConfigManager).getConfigForSubId(anyInt());
-        doReturn(mBundle).when(mCarrierConfigManager).getConfig();
-        doReturn(mBundle).when(mCarrierConfigManager).getConfigForSubId(anyInt(), anyString());
-        doAnswer(invocation -> mNetworkId++).when(mNetwork).getNetId();
-        doReturn(mNetwork).when(mConnectivityManager).registerNetworkAgent(
-                any(), any(), any(), any(), any(), any(), anyInt());
+        lenient().doReturn(mBundle).when(mCarrierConfigManager).getConfigForSubId(anyInt());
+        lenient().doReturn(mBundle).when(mCarrierConfigManager).getConfig();
+        lenient().doReturn(mBundle).when(mCarrierConfigManager).getConfigForSubId(anyInt(),
+                anyString());
+        lenient().doAnswer(invocation -> mNetworkId++).when(mNetwork).getNetId();
+        lenient().doReturn(
+                ConnectivityManager.MockHelpers.registerNetworkAgentResult(mNetwork, null))
+                        .when(mConnectivityManager).registerNetworkAgent(
+                                any(), any(), any(), any(), any(), any(), anyInt());
 
-        doReturn(true).when(mEuiccManager).isEnabled();
+        lenient().doReturn(true).when(mEuiccManager).isEnabled();
 
         mConfiguration.locale = Locale.US;
-        doReturn(mConfiguration).when(mResources).getConfiguration();
+        lenient().doReturn(mConfiguration).when(mResources).getConfiguration();
 
         mDisplayMetrics.density = 2.25f;
-        doReturn(mDisplayMetrics).when(mResources).getDisplayMetrics();
+        lenient().doReturn(mDisplayMetrics).when(mResources).getDisplayMetrics();
         mPermissionTable.add(PERMISSION_ENABLE_ALL);
     }
 

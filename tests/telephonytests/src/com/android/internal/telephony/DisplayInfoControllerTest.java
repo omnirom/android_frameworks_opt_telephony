@@ -108,6 +108,7 @@ public class DisplayInfoControllerTest extends TelephonyTest {
         mFeatureFlags = Mockito.mock(FeatureFlags.class);
         doReturn((Executor) Runnable::run).when(mContext).getMainExecutor();
         mBundle = mContextFixture.getCarrierConfigBundle();
+        mBundle.putBoolean(CarrierConfigManager.KEY_SHOW_ROAMING_INDICATOR_BOOL, true);
         mSstHandler = new ServiceStateTrackerTestHandler(getClass().getSimpleName());
         mSstHandler.start();
         waitUntilReady();
@@ -293,7 +294,6 @@ public class DisplayInfoControllerTest extends TelephonyTest {
         mBundle.putStringArray(
                 CarrierConfigManager.KEY_GSM_ROAMING_NETWORKS_STRING_ARRAY, new String[] {NUMERIC});
         mBundle.putBoolean(CarrierConfigManager.KEY_SHOW_ROAMING_INDICATOR_BOOL, false);
-        doReturn(true).when(mFeatureFlags).hideRoamingIcon();
         sendCarrierConfigUpdate();
 
         changeRegState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME);

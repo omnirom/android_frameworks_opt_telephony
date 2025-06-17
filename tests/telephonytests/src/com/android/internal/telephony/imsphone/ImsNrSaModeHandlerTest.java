@@ -36,6 +36,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.os.Handler;
+import android.os.Message;
 import android.telephony.CarrierConfigManager;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
@@ -79,12 +80,29 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
     private int mAnyInt = 0;
     private final Set<String> mFeatureTags = new ArraySet<String>();
 
+    private class N1ModeHandlerCaptor implements ImsNrSaModeHandler.N1ModeSetter {
+        private boolean mIsN1ModeEnabled = false;
+
+        public void setN1ModeEnabled(boolean enabled, Message message) {
+            mIsN1ModeEnabled = enabled;
+            mSimulatedCommands.setN1ModeEnabled(enabled, message);
+        }
+
+        public boolean isN1ModeEnabled() {
+            return mIsN1ModeEnabled;
+        };
+    };
+
+    private N1ModeHandlerCaptor mN1ModeCaptor;
+
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
         MockitoAnnotations.initMocks(this);
 
         mTestImsNrSaModeHandler = new ImsNrSaModeHandler(mImsPhone, mTestableLooper.getLooper());
+        mN1ModeCaptor = new N1ModeHandlerCaptor();
+        mTestImsNrSaModeHandler.setN1ModeSetter(mN1ModeCaptor);
 
         verify(mCarrierConfigManager).registerCarrierConfigChangeListener(
                 any(), mCarrierConfigChangeListenerCaptor.capture());
@@ -128,14 +146,13 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
                 mPreciseCallStateHandlerCaptor.capture(), anyInt(), any());
         mPreciseCallStateHandler = mPreciseCallStateHandlerCaptor.getValue();
 
-        mSimulatedCommands.setN1ModeEnabled(false, null);
         mTestImsNrSaModeHandler.setNrSaDisabledForWfc(true);
 
         mTestImsNrSaModeHandler.tearDown();
 
         verify(mCarrierConfigManager).unregisterCarrierConfigChangeListener(any());
         verify(mImsPhone).unregisterForPreciseCallStateChanged(mPreciseCallStateHandler);
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
     }
 
     @Test
@@ -166,19 +183,19 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         verify(mImsPhone).registerForPreciseCallStateChanged(any(), anyInt(), any());
 
-        mSimulatedCommands.setN1ModeEnabled(false, null);
+        mN1ModeCaptor.setN1ModeEnabled(false, null);
         mTestImsNrSaModeHandler.setNrSaDisabledForWfc(true);
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
         mTestImsNrSaModeHandler.setImsCallStatus(true);
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_NONE, mFeatureTags);
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertFalse(mTestImsNrSaModeHandler.isWifiRegistered());
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
 
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
         assertTrue(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -195,7 +212,7 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         verify(mImsPhone).registerForPreciseCallStateChanged(any(), anyInt(), any());
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
         mTestImsNrSaModeHandler.setImsCallStatus(true);
         mSimulatedCommands.setVonrEnabled(true);
@@ -203,10 +220,10 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
         processAllMessages();
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertTrue(mTestImsNrSaModeHandler.isWifiRegistered());
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
         mTestImsNrSaModeHandler.setImsCallStatus(true);
         mSimulatedCommands.setVonrEnabled(false);
@@ -214,10 +231,10 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
         processAllMessages();
 
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
         assertTrue(mTestImsNrSaModeHandler.isWifiRegistered());
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
         mTestImsNrSaModeHandler.setImsCallStatus(true);
         mSimulatedCommands.setVonrEnabled(true);
@@ -225,7 +242,7 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_NONE, mFeatureTags);
         processAllMessages();
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertFalse(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -241,20 +258,20 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         verify(mImsPhone).unregisterForPreciseCallStateChanged(mTestImsNrSaModeHandler);
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
 
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
         assertTrue(mTestImsNrSaModeHandler.isWifiRegistered());
 
-        mSimulatedCommands.setN1ModeEnabled(false, null);
+        mN1ModeCaptor.setN1ModeEnabled(false, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_NONE, mFeatureTags);
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertFalse(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -270,12 +287,12 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         verify(mImsPhone, times(0)).unregisterForPreciseCallStateChanged(mTestImsNrSaModeHandler);
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertFalse(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -290,12 +307,12 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         verify(mImsPhone).unregisterForPreciseCallStateChanged(mTestImsNrSaModeHandler);
 
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mTestImsNrSaModeHandler.setWifiRegStatus(false);
 
         mTestImsNrSaModeHandler.onImsRegistered(REGISTRATION_TECH_IWLAN, mFeatureTags);
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertTrue(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -374,13 +391,13 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mCarrierConfigChangeListener.onCarrierConfigChanged(mAnyInt, mAnyInt, mAnyInt, mAnyInt);
         mTestImsNrSaModeHandler.updateImsCapability(CAPABILITY_TYPE_VOICE);
 
-        mSimulatedCommands.setN1ModeEnabled(false, null);
+        mN1ModeCaptor.setN1ModeEnabled(false, null);
         mTestImsNrSaModeHandler.setNrSaDisabledForWfc(true);
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
 
         mTestImsNrSaModeHandler.onImsUnregistered(REGISTRATION_TECH_IWLAN);
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
         assertFalse(mTestImsNrSaModeHandler.isWifiRegistered());
     }
 
@@ -399,19 +416,19 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mPreciseCallStateHandler = mPreciseCallStateHandlerCaptor.getValue();
 
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
 
         mPreciseCallStateHandler.handleMessage(mPreciseCallStateHandler.obtainMessage(101));
 
         assertTrue(mTestImsNrSaModeHandler.isImsCallOngoing());
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
 
         doReturn(mIdleState).when(mForegroundCall).getState();
         doReturn(mIdleState).when(mBackgroundCall).getState();
         mPreciseCallStateHandler.handleMessage(mPreciseCallStateHandler.obtainMessage(101));
 
         assertFalse(mTestImsNrSaModeHandler.isImsCallOngoing());
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
     }
 
     @Test
@@ -430,19 +447,19 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mPreciseCallStateHandler = mPreciseCallStateHandlerCaptor.getValue();
 
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
-        mSimulatedCommands.setN1ModeEnabled(true, null);
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         mSimulatedCommands.setVonrEnabled(false);
 
         mPreciseCallStateHandler.handleMessage(mPreciseCallStateHandler.obtainMessage(101));
         processAllMessages();
 
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
 
         doReturn(mIdleState).when(mForegroundCall).getState();
         doReturn(mIdleState).when(mBackgroundCall).getState();
         mPreciseCallStateHandler.handleMessage(mPreciseCallStateHandler.obtainMessage(101));
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
 
         doReturn(mActiveState).when(mForegroundCall).getState();
         doReturn(mActiveState).when(mBackgroundCall).getState();
@@ -450,7 +467,7 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
         mTestImsNrSaModeHandler.setImsCallStatus(false);
         processAllMessages();
 
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
     }
 
     @Test
@@ -483,21 +500,21 @@ public final class ImsNrSaModeHandlerTest extends TelephonyTest{
 
         mCarrierConfigChangeListener.onCarrierConfigChanged(mAnyInt, mAnyInt, mAnyInt, mAnyInt);
 
+        mN1ModeCaptor.setN1ModeEnabled(true, null);
         verify(mImsPhone).registerForPreciseCallStateChanged(
                 mPreciseCallStateHandlerCaptor.capture(), anyInt(), any());
         mPreciseCallStateHandler = mPreciseCallStateHandlerCaptor.getValue();
 
         mTestImsNrSaModeHandler.setWifiRegStatus(true);
-        mSimulatedCommands.setN1ModeEnabled(true, null);
         mPreciseCallStateHandler.handleMessage(mPreciseCallStateHandler.obtainMessage(101));
 
         assertTrue(mTestImsNrSaModeHandler.isImsCallOngoing());
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
 
         mTestImsNrSaModeHandler.updateImsCapability(CAPABILITY_TYPE_VOICE);
-        assertFalse(mSimulatedCommands.isN1ModeEnabled());
+        assertFalse(mN1ModeCaptor.isN1ModeEnabled());
 
         mTestImsNrSaModeHandler.updateImsCapability(0);
-        assertTrue(mSimulatedCommands.isN1ModeEnabled());
+        assertTrue(mN1ModeCaptor.isN1ModeEnabled());
     }
 }

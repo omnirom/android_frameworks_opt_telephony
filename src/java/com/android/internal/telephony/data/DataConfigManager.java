@@ -892,6 +892,17 @@ public class DataConfigManager extends Handler {
     }
 
     /**
+     * Returns whether the data roaming setting for satellite connection is ignored.
+     *
+     * @return {@code true} if data roaming setting for satellite connection is ignored,
+     * {@code false} otherwise.
+     */
+    public boolean isIgnoringDataRoamingSettingForSatellite() {
+        return mCarrierConfig.getBoolean(
+            CarrierConfigManager.KEY_SATELLITE_IGNORE_DATA_ROAMING_SETTING_BOOL);
+    }
+
+    /**
      * @return Whether data throttling should be reset when the TAC changes from the carrier config.
      */
     public boolean shouldResetDataThrottlingWhenTacChanges() {
@@ -1114,15 +1125,6 @@ public class DataConfigManager extends Handler {
     }
 
     /**
-     * TODO: remove after V.
-     * @return To indicate whether allow using roaming nDDS if user enabled its roaming when the DDS
-     * is not usable(OOS or disabled roaming)
-     */
-    public boolean doesAutoDataSwitchAllowRoaming() {
-        return mResources.getBoolean(com.android.internal.R.bool.auto_data_switch_allow_roaming);
-    }
-
-    /**
      * @return The maximum number of retries when a validation for switching failed.
      */
     public int getAutoDataSwitchValidationMaxRetry() {
@@ -1273,6 +1275,20 @@ public class DataConfigManager extends Handler {
         }
     }
 
+    /**
+     * @return The unsupported network capabilities. The unsupported capabilities will be removed
+     * from the default network capabilities that {@link TelephonyNetworkProvider} use to inform
+     * connectivity service what network capabilities are supported by telephony.
+     */
+    @NonNull
+    @NetCapability
+    public Set<Integer> getUnsupportedNetworkCapabilities() {
+        return Arrays.stream(mResources.getStringArray(com.android.internal.R.array
+                        .config_unsupported_network_capabilities))
+                .map(DataUtils::getNetworkCapabilityFromString)
+                .collect(Collectors.toSet());
+    }
+
     /** Update handover rules from carrier config. */
     private void updateHandoverRules() {
         synchronized (this) {
@@ -1282,7 +1298,7 @@ public class DataConfigManager extends Handler {
             if (handoverRulesStrings != null) {
                 for (String ruleString : handoverRulesStrings) {
                     try {
-                        mHandoverRuleList.add(new HandoverRule(ruleString));
+                        mHandoverRuleList.add(new HandoverRule(ruleString, mFeatureFlags));
                     } catch (IllegalArgumentException e) {
                         loge("updateHandoverRules: " + e.getMessage());
                     }

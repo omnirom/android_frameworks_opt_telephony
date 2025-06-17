@@ -116,6 +116,44 @@ public class CellularIdentifierDisclosureNotifierTest {
     }
 
     @Test
+    public void testAddDisclosureBenignNop() {
+        CellularIdentifierDisclosureNotifier notifier = getNotifier();
+
+        CellularIdentifierDisclosure emergencyDisclosure =
+                new CellularIdentifierDisclosure(
+                        CellularIdentifierDisclosure.NAS_PROTOCOL_MESSAGE_THREAT_IDENTIFIER_FALSE,
+                        CellularIdentifierDisclosure.CELLULAR_IDENTIFIER_IMSI,
+                        "001001",
+                        false);
+
+        notifier.enable(mContext);
+        notifier.addDisclosure(mContext, SUB_ID_1, emergencyDisclosure);
+
+        assertEquals(0, notifier.getCurrentDisclosureCount(SUB_ID_1));
+        verify(mSafetySource, never())
+                .setIdentifierDisclosure(any(), anyInt(), anyInt(), any(), any());
+    }
+
+    @Test
+    public void testAddDisclosureHarmful() {
+        CellularIdentifierDisclosureNotifier notifier = getNotifier();
+
+        CellularIdentifierDisclosure emergencyDisclosure =
+                new CellularIdentifierDisclosure(
+                        CellularIdentifierDisclosure.NAS_PROTOCOL_MESSAGE_THREAT_IDENTIFIER_TRUE,
+                        CellularIdentifierDisclosure.CELLULAR_IDENTIFIER_IMSI,
+                        "001001",
+                        false);
+
+        notifier.enable(mContext);
+        notifier.addDisclosure(mContext, SUB_ID_1, emergencyDisclosure);
+
+        assertEquals(1, notifier.getCurrentDisclosureCount(SUB_ID_1));
+        verify(mSafetySource, times(1))
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+    }
+
+    @Test
     public void testAddDisclosureCountIncrements() {
         CellularIdentifierDisclosureNotifier notifier = getNotifier();
         notifier.enable(mContext);

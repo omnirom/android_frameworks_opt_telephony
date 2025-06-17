@@ -41,3 +41,44 @@ flag {
     description: "This flag controls the behavior of terminating an emergency call for cross SIM redialing."
     bug:"336398541"
 }
+
+# OWNER=avinashmp TARGET=25Q1
+flag {
+    name: "add_ims_redial_codes_for_emergency_calls"
+    namespace: "telephony"
+    description: "This flag controls the addition of EMERGENCY_REDIAL_ON_IMS and EMERGENCY_REDIAL_ON_VOWIFI redial codes for normal routed emergency calls."
+    bug:"357980439"
+}
+
+# OWNER=jaesikkong TARGET=25Q2
+flag {
+    name: "disable_ecbm_based_on_rat"
+    namespace: "telephony"
+    description: "Fix bug entering the emergency callback mode in GSM or UMTS network."
+    bug:"389010789"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=hwangoo TARGET=25Q2
+flag {
+    name: "hangup_active_call_based_on_emergency_call_domain"
+    namespace: "telephony"
+    description: "This flag disconnects an active call if the domain selected for the emergency call is different from the domain of the currently active call."
+    bug:"391287237"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=hwangoo TARGET=25Q2
+flag {
+    name: "perform_cross_stack_redial_check_for_emergency_call"
+    namespace: "telephony"
+    description: "This flag performs a quick cross stack redial if the subscription is being invalid and an exception occurs, while an emergency call is in progress."
+    bug:"389190613"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}

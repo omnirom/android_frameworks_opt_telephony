@@ -352,6 +352,7 @@ message IncomingSms {
     optional bool is_managed_profile = 16;
     optional bool is_ntn = 17;
     optional bool is_emergency = 18;
+    optional bool is_nb_iot_ntn = 19;
 
     // Internal use only
     optional int32 hashCode = 10001;
@@ -378,6 +379,8 @@ message OutgoingSms {
     optional bool is_managed_profile = 18;
     optional bool is_emergency = 19;
     optional bool is_ntn = 20;
+    optional bool is_mt_sms_polling = 21;
+    optional bool is_nb_iot_ntn = 22;
 
     // Internal use only
     optional int32 hashCode = 10001;
@@ -417,6 +420,7 @@ message DataCallSession {
     optional bool is_ntn = 24;
     optional bool is_satellite_transport = 25;
     optional bool is_provisioning_profile = 26;
+    optional bool is_nb_iot_ntn = 27;
 }
 
 message CellularServiceState {
@@ -436,6 +440,8 @@ message CellularServiceState {
     optional bool isDataEnabled = 14;
     optional bool is_iwlan_cross_sim = 15;
     optional bool is_ntn = 16;
+    optional bool is_nb_iot_ntn = 17;
+    optional bool is_opportunistic = 18;
 
     // Internal use only
     optional int64 last_used_millis = 10001;
@@ -448,6 +454,7 @@ message CellularDataServiceSwitch {
     optional bool is_multi_sim = 4;
     optional int32 carrier_id = 5;
     optional int32 switch_count = 6;
+    optional bool is_opportunistic = 7;
 
     // Internal use only
     optional int64 last_used_millis = 10001;
@@ -726,6 +733,13 @@ message SatelliteController {
     optional int32 count_of_p2p_sms_available_notification_shown = 34;
     optional int32 count_of_p2p_sms_available_notification_removed = 35;
     optional bool is_ntn_only_carrier = 36;
+    optional int32 version_of_satellite_access_config = 37;
+    optional int32 count_of_incoming_datagram_type_sos_sms_success = 38;
+    optional int32 count_of_incoming_datagram_type_sos_sms_fail = 39;
+    optional int32 count_of_outgoing_datagram_type_sms_success = 40;
+    optional int32 count_of_outgoing_datagram_type_sms_fail = 41;
+    optional int32 count_of_incoming_datagram_type_sms_success = 42;
+    optional int32 count_of_incoming_datagram_type_sms_fail = 43;
 }
 
 message SatelliteSession {
@@ -820,6 +834,11 @@ message CarrierRoamingSatelliteSession {
     optional int32 count_of_outgoing_sms = 14;
     optional int32 count_of_incoming_mms = 15;
     optional int32 count_of_outgoing_mms = 16;
+    repeated int32 supported_satellite_services = 17;
+    optional int32 service_data_policy = 18;
+    optional int64 satellite_data_consumed_bytes = 19;
+    optional bool is_multi_sim = 20;
+    optional bool is_nb_iot_ntn = 21;
 }
 
 message CarrierRoamingSatelliteControllerStats {
@@ -832,6 +851,9 @@ message CarrierRoamingSatelliteControllerStats {
     optional int32 satellite_session_gap_max_sec = 7;
     optional int32 carrier_id = 8;
     optional bool is_device_entitled = 9;
+    optional bool is_multi_sim = 10;
+    optional int32 count_of_satellite_sessions = 11;
+    optional bool is_nb_iot_ntn = 12;
 }
 
 message SatelliteEntitlement {
@@ -840,6 +862,9 @@ message SatelliteEntitlement {
     optional int32 entitlement_status = 3;
     optional bool is_retry = 4;
     optional int32 count = 5;
+    optional bool is_allowed_service_entitlement = 6;
+    repeated int32 entitlement_service_type = 7;
+    optional int32 entitlement_data_policy = 8;
 }
 
 message SatelliteConfigUpdater {

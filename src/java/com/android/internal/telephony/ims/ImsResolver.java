@@ -63,6 +63,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.SomeArgs;
 import com.android.internal.telephony.PhoneConfigurationManager;
 import com.android.internal.telephony.flags.FeatureFlags;
+import com.android.internal.telephony.util.WorkerThread;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.FileDescriptor;
@@ -138,7 +139,8 @@ public class ImsResolver implements ImsServiceController.ImsServiceControllerCal
 
     // Delay between dynamic ImsService queries.
     private static final int DELAY_DYNAMIC_QUERY_MS = 5000;
-    private static final HandlerThread sHandlerThread = new HandlerThread(TAG);
+
+    private static HandlerThread sHandlerThread;
 
     private static ImsResolver sInstance;
 
@@ -149,9 +151,15 @@ public class ImsResolver implements ImsServiceController.ImsServiceControllerCal
             String defaultRcsPackageName, int numSlots, ImsFeatureBinderRepository repo,
             FeatureFlags featureFlags) {
         if (sInstance == null) {
-            sHandlerThread.start();
-            sInstance = new ImsResolver(context, defaultMmTelPackageName, defaultRcsPackageName,
-                    numSlots, repo, sHandlerThread.getLooper(), featureFlags);
+            if (featureFlags.threadShred()) {
+                sInstance = new ImsResolver(context, defaultMmTelPackageName, defaultRcsPackageName,
+                        numSlots, repo, WorkerThread.get().getLooper(), featureFlags);
+            } else {
+                sHandlerThread = new HandlerThread(TAG);
+                sHandlerThread.start();
+                sInstance = new ImsResolver(context, defaultMmTelPackageName, defaultRcsPackageName,
+                        numSlots, repo, sHandlerThread.getLooper(), featureFlags);
+            }
         }
     }
 

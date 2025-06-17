@@ -23,14 +23,20 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
+import android.content.Context;
 import android.testing.AndroidTestingRunner;
 
+import androidx.test.InstrumentationRegistry;
+
 import com.android.internal.telephony.TelephonyTest;
+
+import com.google.protobuf.ByteString;
 
 import org.junit.After;
 import org.junit.Before;
@@ -39,8 +45,10 @@ import org.junit.runner.RunWith;
 import org.mockito.MockitoAnnotations;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,38 +57,68 @@ import java.util.Map;
 import java.util.Set;
 
 @RunWith(AndroidTestingRunner.class)
-
 public class SatelliteConfigParserTest extends TelephonyTest {
-
-    /**
-     * satelliteConfigBuilder.setVersion(4);
-     *
-     * carrierSupportedSatelliteServiceBuilder.setCarrierId(1);
-     *
-     * satelliteProviderCapabilityBuilder.setCarrierPlmn("310160");
-     * satelliteProviderCapabilityBuilder.addAllowedServices(1);
-     * satelliteProviderCapabilityBuilder.addAllowedServices(2);
-     * satelliteProviderCapabilityBuilder.addAllowedServices(3);
-     *
-     * satelliteProviderCapabilityBuilder.setCarrierPlmn("310220");
-     * satelliteProviderCapabilityBuilder.addAllowedServices(3);
-     *
-     * String test = "0123456789";
-     * bigString.append(test.repeat(1));
-     * satelliteRegionBuilder.setS2CellFile(ByteString.copyFrom(bigString.toString().getBytes()));
-     * satelliteRegionBuilder.addCountryCodes("US");
-     * satelliteRegionBuilder.setIsAllowed(true);
-     */
-    private String mBase64StrForPBByteArray =
-            "CjYIBBIeCAESDgoGMzEwMTYwEAEQAhADEgoKBjMxMDIyMBADGhIKCjAxMjM0NTY3ODkSAlVTGAE=";
-    private byte[] mBytesProtoBuffer = Base64.getDecoder().decode(mBase64StrForPBByteArray);
-
+    private byte[] mBytesProtoBuffer;
 
     @Before
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
         MockitoAnnotations.initMocks(this);
         logd(TAG + " Setup!");
+
+        SatelliteConfigData.TelephonyConfigProto.Builder telephonyConfigBuilder =
+                SatelliteConfigData.TelephonyConfigProto.newBuilder();
+        SatelliteConfigData.SatelliteConfigProto.Builder satelliteConfigBuilder =
+                SatelliteConfigData.SatelliteConfigProto.newBuilder();
+
+        // version
+        satelliteConfigBuilder.setVersion(4);
+
+        // carriersupportedservices
+        SatelliteConfigData.CarrierSupportedSatelliteServicesProto.Builder
+                carrierSupportedSatelliteServiceBuilder =
+                        SatelliteConfigData.CarrierSupportedSatelliteServicesProto.newBuilder();
+
+        // carriersupportedservices#carrier_id
+        carrierSupportedSatelliteServiceBuilder.setCarrierId(1);
+
+        // carriersupportedservices#providercapability
+        SatelliteConfigData.SatelliteProviderCapabilityProto.Builder
+                satelliteProviderCapabilityBuilder =
+                        SatelliteConfigData.SatelliteProviderCapabilityProto.newBuilder();
+        satelliteProviderCapabilityBuilder.setCarrierPlmn("310160");
+        satelliteProviderCapabilityBuilder.addAllowedServices(1);
+        satelliteProviderCapabilityBuilder.addAllowedServices(2);
+        satelliteProviderCapabilityBuilder.addAllowedServices(3);
+        carrierSupportedSatelliteServiceBuilder.addSupportedSatelliteProviderCapabilities(
+                satelliteProviderCapabilityBuilder);
+        satelliteProviderCapabilityBuilder.clear();
+
+        satelliteProviderCapabilityBuilder.setCarrierPlmn("310220");
+        satelliteProviderCapabilityBuilder.addAllowedServices(3);
+        carrierSupportedSatelliteServiceBuilder.addSupportedSatelliteProviderCapabilities(
+                satelliteProviderCapabilityBuilder);
+        satelliteProviderCapabilityBuilder.clear();
+
+        satelliteConfigBuilder.addCarrierSupportedSatelliteServices(
+                carrierSupportedSatelliteServiceBuilder);
+
+        // satelliteregion
+        SatelliteConfigData.SatelliteRegionProto.Builder satelliteRegionBuilder =
+                SatelliteConfigData.SatelliteRegionProto.newBuilder();
+        String testS2Content = "0123456789", testSatelliteAccessConfigContent = "sac";
+        satelliteRegionBuilder.setS2CellFile(ByteString.copyFrom(testS2Content.getBytes()));
+        satelliteRegionBuilder.setSatelliteAccessConfigFile(
+                ByteString.copyFrom(testSatelliteAccessConfigContent.getBytes()));
+        satelliteRegionBuilder.addCountryCodes("US");
+        satelliteRegionBuilder.setIsAllowed(true);
+        satelliteConfigBuilder.setDeviceSatelliteRegion(satelliteRegionBuilder);
+
+        telephonyConfigBuilder.setSatellite(satelliteConfigBuilder);
+
+        SatelliteConfigData.TelephonyConfigProto telephonyConfigData =
+                telephonyConfigBuilder.build();
+        mBytesProtoBuffer = telephonyConfigData.toByteArray();
     }
 
     @After
@@ -187,22 +225,58 @@ public class SatelliteConfigParserTest extends TelephonyTest {
         assertNotNull(spySatelliteConfigParserNull);
         assertNull(spySatelliteConfigParserNull.getConfig());
 
-        SatelliteConfigParser spySatelliteConfigParserPlaceholder = spy(
-                new SatelliteConfigParser("test".getBytes()));
+        SatelliteConfigParser spySatelliteConfigParserPlaceholder =
+                spy(new SatelliteConfigParser("test".getBytes()));
         assertNotNull(spySatelliteConfigParserPlaceholder);
         assertNull(spySatelliteConfigParserPlaceholder.getConfig());
 
         SatelliteConfigParser spySatelliteConfigParser =
                 spy(new SatelliteConfigParser(mBytesProtoBuffer));
         assertNotNull(spySatelliteConfigParser.getConfig());
-        assertFalse(spySatelliteConfigParser.getConfig().isFileExist(null));
 
         SatelliteConfig mockedSatelliteConfig = mock(SatelliteConfig.class);
         File mMockSatS2File = mock(File.class);
         doReturn(mMockSatS2File).when(mockedSatelliteConfig).getSatelliteS2CellFile(any());
         doReturn(mockedSatelliteConfig).when(spySatelliteConfigParser).getConfig();
-        assertEquals(mMockSatS2File,
+        assertEquals(
+                mMockSatS2File,
                 spySatelliteConfigParser.getConfig().getSatelliteS2CellFile(mContext));
+    }
+
+    @Test
+    public void testSatelliteS2FileParsing() {
+        SatelliteConfigParser satelliteConfigParser = new SatelliteConfigParser(mBytesProtoBuffer);
+        assertNotNull(satelliteConfigParser);
+        assertNotNull(satelliteConfigParser.getConfig());
+
+        Context instrumentationContext = InstrumentationRegistry.getContext();
+        File actualS2File =
+                satelliteConfigParser.getConfig().getSatelliteS2CellFile(instrumentationContext);
+        logd("actualS2File's path: " + actualS2File.getAbsolutePath());
+        assertNotNull(actualS2File);
+        assertTrue(actualS2File.exists());
+
+        // Verify the content of actualS2File
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(actualS2File);
+            byte[] buffer = new byte[inputStream.available()];
+            inputStream.read(buffer);
+            String actualS2FileContent = new String(buffer);
+            assertNotNull(actualS2FileContent);
+            assertFalse(actualS2FileContent.isEmpty());
+            assertEquals("0123456789", actualS2FileContent);
+        } catch (IOException e) {
+            fail("Failed to read file content: " + e.getMessage());
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                fail("Failed to close input stream: " + e.getMessage());
+            }
+        }
     }
 
     @Test
@@ -220,5 +294,89 @@ public class SatelliteConfigParserTest extends TelephonyTest {
         assertNotNull(satelliteConfigParser);
         assertNotNull(satelliteConfigParser.getConfig());
         assertTrue(satelliteConfigParser.getConfig().isSatelliteDataForAllowedRegion());
+    }
+
+    @Test
+    public void testGetSatelliteAccessConfigJsonFile() {
+        SatelliteConfigParser spySatelliteConfigParserNull =
+                spy(new SatelliteConfigParser((byte[]) null));
+        assertNotNull(spySatelliteConfigParserNull);
+        assertNull(spySatelliteConfigParserNull.getConfig());
+
+        SatelliteConfigParser spySatelliteConfigParserPlaceholder =
+                spy(new SatelliteConfigParser("test".getBytes()));
+        assertNotNull(spySatelliteConfigParserPlaceholder);
+        assertNull(spySatelliteConfigParserPlaceholder.getConfig());
+
+        SatelliteConfigParser spySatelliteConfigParser =
+                spy(new SatelliteConfigParser(mBytesProtoBuffer));
+        assertNotNull(spySatelliteConfigParser.getConfig());
+
+        SatelliteConfig mockedSatelliteConfig = mock(SatelliteConfig.class);
+        File mMockSatelliteAccessConfigFile = mock(File.class);
+        doReturn(mMockSatelliteAccessConfigFile)
+                .when(mockedSatelliteConfig)
+                .getSatelliteAccessConfigJsonFile(any());
+        doReturn(mockedSatelliteConfig).when(spySatelliteConfigParser).getConfig();
+        assertEquals(
+                mMockSatelliteAccessConfigFile,
+                spySatelliteConfigParser.getConfig().getSatelliteAccessConfigJsonFile(mContext));
+    }
+
+    @Test
+    public void testSatelliteAccessConfigJsonFileParsing() {
+        SatelliteConfigParser satelliteConfigParser = new SatelliteConfigParser(mBytesProtoBuffer);
+        assertNotNull(satelliteConfigParser);
+        assertNotNull(satelliteConfigParser.getConfig());
+
+        Context instrumentationContext = InstrumentationRegistry.getContext();
+        File actualSatelliteAccessConfigFile =
+                satelliteConfigParser
+                        .getConfig()
+                        .getSatelliteAccessConfigJsonFile(instrumentationContext);
+        logd(
+                "actualSatelliteAccessConfigFile's path: "
+                        + actualSatelliteAccessConfigFile.getAbsolutePath());
+        assertNotNull(actualSatelliteAccessConfigFile);
+        assertTrue(actualSatelliteAccessConfigFile.exists());
+
+        // Verify the content of actualSatelliteAccessConfigFile
+        InputStream inputStream = null;
+        try {
+            inputStream = new FileInputStream(actualSatelliteAccessConfigFile);
+            byte[] buffer = new byte[inputStream.available()];
+            inputStream.read(buffer);
+            String actualSatelliteAccessConfigFileContent = new String(buffer);
+            assertNotNull(actualSatelliteAccessConfigFileContent);
+            assertFalse(actualSatelliteAccessConfigFileContent.isEmpty());
+            assertEquals("sac", actualSatelliteAccessConfigFileContent);
+        } catch (IOException e) {
+            fail("Failed to read file content: " + e.getMessage());
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                fail("Failed to close input stream: " + e.getMessage());
+            }
+        }
+    }
+
+    @Test
+    public void testGetSatelliteConfigVersion() {
+        SatelliteConfigParser satelliteConfigParserNull = new SatelliteConfigParser((byte[]) null);
+        assertNotNull(satelliteConfigParserNull);
+        assertNull(satelliteConfigParserNull.getConfig());
+
+        SatelliteConfigParser satelliteConfigParserPlaceholder =
+                new SatelliteConfigParser("test".getBytes());
+        assertNotNull(satelliteConfigParserPlaceholder);
+        assertNull(satelliteConfigParserPlaceholder.getConfig());
+
+        SatelliteConfigParser satelliteConfigParser = new SatelliteConfigParser(mBytesProtoBuffer);
+        assertNotNull(satelliteConfigParser);
+        assertNotNull(satelliteConfigParser.getConfig());
+        assertEquals(4, satelliteConfigParser.getConfig().getSatelliteConfigDataVersion());
     }
 }

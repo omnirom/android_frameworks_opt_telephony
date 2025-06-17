@@ -249,8 +249,6 @@ public class MultiSimSettingControllerTest extends TelephonyTest {
         bundle.putBoolean(CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL, true);
         doReturn(bundle).when(mCarrierConfigManager).getConfigForSubId(anyInt());
 
-        doReturn(true).when(mFeatureFlags).resetPrimarySimDefaultValues();
-
         replaceInstance(PhoneFactory.class, "sPhones", null, mPhones);
         // Capture listener to emulate the carrier config change notification used later
         ArgumentCaptor<CarrierConfigManager.CarrierConfigChangeListener> listenerArgumentCaptor =

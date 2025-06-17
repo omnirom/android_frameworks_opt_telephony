@@ -360,6 +360,9 @@ public class ServiceStateTracker extends Handler {
     private Pattern mOperatorNameStringPattern;
     private PersistableBundle mCarrierConfig;
 
+    @NonNull
+    private final FeatureFlags mFeatureFlags;
+
     private class SstSubscriptionsChangedListener extends OnSubscriptionsChangedListener {
 
         /**
@@ -705,13 +708,15 @@ public class ServiceStateTracker extends Handler {
                 .makeNitzStateMachine(phone);
         mPhone = phone;
         mCi = ci;
+        mFeatureFlags = featureFlags;
 
         mServiceStateStats = new ServiceStateStats(mPhone);
 
         mCdnr = new CarrierDisplayNameResolver(mPhone);
 
         // Create EriManager only if phone supports CDMA
-        if (UiccController.isCdmaSupported(mPhone.getContext())) {
+        if (!mFeatureFlags.phoneTypeCleanup()
+                && UiccController.isCdmaSupported(mPhone.getContext())) {
             mEriManager = TelephonyComponentFactory.getInstance().inject(EriManager.class.getName())
                     .makeEriManager(mPhone, EriManager.ERI_FROM_XML);
         } else {
@@ -891,19 +896,24 @@ public class ServiceStateTracker extends Handler {
                 mCdmaSSM.dispose(this);
             }
 
-            mCi.unregisterForCdmaPrlChanged(this);
-            mCi.unregisterForCdmaOtaProvision(this);
+            if (!mFeatureFlags.phoneTypeCleanup()) {
+                mCi.unregisterForCdmaPrlChanged(this);
+                mCi.unregisterForCdmaOtaProvision(this);
+            }
             mPhone.unregisterForSimRecordsLoaded(this);
 
         } else {
             mPhone.registerForSimRecordsLoaded(this, EVENT_SIM_RECORDS_LOADED, null);
-            mCdmaSSM = CdmaSubscriptionSourceManager.getInstance(mPhone.getContext(), mCi, this,
-                    EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED, null);
-            mIsSubscriptionFromRuim = (mCdmaSSM.getCdmaSubscriptionSource() ==
-                    CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM);
+            if (!mFeatureFlags.phoneTypeCleanup()) {
+                mCdmaSSM = CdmaSubscriptionSourceManager.getInstance(mPhone.getContext(), mCi, this,
+                        EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED, null);
 
-            mCi.registerForCdmaPrlChanged(this, EVENT_CDMA_PRL_VERSION_CHANGED, null);
-            mCi.registerForCdmaOtaProvision(this, EVENT_OTA_PROVISION_STATUS_CHANGE, null);
+                mIsSubscriptionFromRuim = mCdmaSSM.getCdmaSubscriptionSource()
+                        == CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM;
+
+                mCi.registerForCdmaPrlChanged(this, EVENT_CDMA_PRL_VERSION_CHANGED, null);
+                mCi.registerForCdmaOtaProvision(this, EVENT_OTA_PROVISION_STATUS_CHANGE, null);
+            }
 
             mHbpcdUtils = new HbpcdUtils(mPhone.getContext());
             // update OTASP state in case previously set by another service
@@ -1309,7 +1319,9 @@ public class ServiceStateTracker extends Handler {
                     mIsMinInfoReady = false;
 
                     // Remove the EF records that come from UICC.
-                    mCdnr.updateEfFromRuim(null /* ruim */);
+                    if (!mFeatureFlags.phoneTypeCleanup()) {
+                        mCdnr.updateEfFromRuim(null /* ruim */);
+                    }
                     mCdnr.updateEfFromUsim(null /* Usim */);
                 }
                 onUpdateIccAvailability();
@@ -1993,6 +2005,7 @@ public class ServiceStateTracker extends Handler {
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     protected void updateOtaspState() {
+        if (mFeatureFlags.phoneTypeCleanup()) return;
         int otaspMode = getOtasp();
         int oldOtaspMode = mCurrentOtaspMode;
         mCurrentOtaspMode = otaspMode;
@@ -3798,7 +3811,11 @@ public class ServiceStateTracker extends Handler {
         mNewSS.setOutOfService(false);
 
         mCellIdentity = primaryCellIdentity;
-        if (mSS.getState() == ServiceState.STATE_IN_SERVICE && primaryCellIdentity != null) {
+        boolean isCsRegistered = mSS.getNetworkRegistrationInfo(NetworkRegistrationInfo.DOMAIN_CS,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN).isNetworkRegistered();
+        boolean isPsRegistered = mSS.getNetworkRegistrationInfo(NetworkRegistrationInfo.DOMAIN_PS,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN).isNetworkRegistered();
+        if (isCsRegistered || isPsRegistered) {
             mLastKnownCellIdentity = mCellIdentity;
             removeMessages(EVENT_RESET_LAST_KNOWN_CELL_IDENTITY);
         }
@@ -3870,23 +3887,26 @@ public class ServiceStateTracker extends Handler {
 
             tm.setNetworkOperatorNumericForPhone(mPhone.getPhoneId(), operatorNumeric);
 
-            // If the OPERATOR command hasn't returned a valid operator or the device is on IWLAN (
-            // because operatorNumeric would be SIM's mcc/mnc when device is on IWLAN), but if the
-            // device has camped on a cell either to attempt registration or for emergency services,
-            // then for purposes of setting the locale, we don't care if registration fails or is
-            // incomplete. Additionally, if there is no cellular service and ims is registered over
-            // the IWLAN, the locale will not be updated.
-            // CellIdentity can return a null MCC and MNC in CDMA
-            String localeOperator = operatorNumeric;
-            int dataNetworkType = mSS.getDataNetworkType();
-            if (dataNetworkType == TelephonyManager.NETWORK_TYPE_IWLAN
-                    || (dataNetworkType == TelephonyManager.NETWORK_TYPE_UNKNOWN
-                            && getImsRegistrationTech()
-                                    == ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN)) {
-                // TODO(b/333346537#comment10): Complete solution would be ignore mcc/mnc reported
-                //  by the unsolicited indication OPERATOR from RIL, but only relies on MCC/MNC from
-                //  data registration or voice registration.
-                localeOperator = null;
+            String localeOperator = null;
+            if (!mFeatureFlags.ignoreMccMncFromOperatorForLocale()) {
+                // If the OPERATOR command hasn't returned a valid operator or the device is on
+                // IWLAN (because operatorNumeric would be SIM's mcc/mnc when device is on IWLAN),
+                // but if the device has camped on a cell either to attempt registration or for
+                // emergency services, then for purposes of setting the locale, we don't care if
+                // registration fails or is incomplete. Additionally, if there is no cellular
+                // service and ims is registered over the IWLAN, the locale will not be updated.
+                // CellIdentity can return a null MCC and MNC in CDMA
+                localeOperator = operatorNumeric;
+                int dataNetworkType = mSS.getDataNetworkType();
+                if (dataNetworkType == TelephonyManager.NETWORK_TYPE_IWLAN
+                        || (dataNetworkType == TelephonyManager.NETWORK_TYPE_UNKNOWN
+                        && getImsRegistrationTech()
+                        == ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN)) {
+                    // TODO(b/333346537#comment10): Complete solution would be ignore mcc/mnc
+                    //  reported by the unsolicited indication OPERATOR from RIL, but only relies on
+                    //  MCC/MNC from data registration or voice registration.
+                    localeOperator = null;
+                }
             }
             if (isInvalidOperatorNumeric(localeOperator)) {
                 for (CellIdentity cid : prioritizedCids) {
@@ -5352,6 +5372,7 @@ public class ServiceStateTracker extends Handler {
     }
 
     private void handleCdmaSubscriptionSource(int newSubscriptionSource) {
+        if (mFeatureFlags.phoneTypeCleanup()) return;
         log("Subscription Source : " + newSubscriptionSource);
         mIsSubscriptionFromRuim =
                 (newSubscriptionSource == CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM);
@@ -5684,6 +5705,7 @@ public class ServiceStateTracker extends Handler {
                         .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
                         .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_IWLAN)
                         .setRegistrationState(NetworkRegistrationInfo.REGISTRATION_STATE_HOME)
+                        .setAvailableServices(List.of(NetworkRegistrationInfo.SERVICE_TYPE_DATA))
                         .build();
                 mNewSS.addNetworkRegistrationInfo(nri);
                 mNewSS.setOperatorAlphaLong(operator);

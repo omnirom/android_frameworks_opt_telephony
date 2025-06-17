@@ -1254,8 +1254,7 @@ public class SmsController extends ISmsImplBase {
             return;
         }
 
-        if (!mFlags.enforceTelephonyFeatureMappingForPublicApis()
-                || !CompatChanges.isChangeEnabled(ENABLE_FEATURE_MAPPING, callingPackage,
+        if (!CompatChanges.isChangeEnabled(ENABLE_FEATURE_MAPPING, callingPackage,
                 Binder.getCallingUserHandle())
                 || mVendorApiLevel < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             // Skip to check associated telephony feature,

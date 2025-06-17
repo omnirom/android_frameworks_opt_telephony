@@ -23,7 +23,6 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.telephony.CarrierConfigManager;
-import android.telephony.TelephonyManager;
 import android.test.mock.MockContentProvider;
 import android.test.mock.MockContentResolver;
 
@@ -140,15 +139,6 @@ public class SmsNumberUtilsTest extends TelephonyTest {
     @SmallTest
     public void testInvalidNumberConversion() {
         assertEquals("123", SmsNumberUtils.filterDestAddr(mContext, mPhone.getSubId(), "123"));
-    }
-
-    @Test
-    @SmallTest
-    public void testNaPcCountryCodeAreaLocalNumberConversion() {
-        // NP_NANP_NBPCD_CC_AREA_LOCAL tests
-        doReturn(TelephonyManager.PHONE_TYPE_CDMA).when(mTelephonyManager).getPhoneType();
-        assertEquals("18583420022", SmsNumberUtils.filterDestAddr(mContext, mPhone.getSubId(),
-                "+1-858-342-0022"));
     }
 
     @Test

@@ -38,10 +38,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.ConnectivityManager;
-import android.net.MatchAllNetworkSpecifier;
 import android.net.Network;
 import android.net.NetworkCapabilities;
-import android.net.NetworkFactory;
 import android.net.NetworkRequest;
 import android.net.NetworkSpecifier;
 import android.net.TelephonyNetworkSpecifier;
@@ -50,7 +48,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PersistableBundle;
-import android.os.Registrant;
 import android.os.RegistrantList;
 import android.os.RemoteException;
 import android.telephony.CarrierConfigManager;
@@ -88,7 +85,6 @@ import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.DataSwitch;
-import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.OnDemandDataSwitch;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.subscription.SubscriptionManagerService.SubscriptionManagerServiceCallback;
@@ -267,7 +263,7 @@ public class PhoneSwitcher extends Handler {
     @VisibleForTesting
     // It decides:
     // 1. In modem layer, which modem is DDS (preferred to have data traffic on)
-    // 2. In TelephonyNetworkFactory, which subscription will apply default network requests, which
+    // 2. In TelephonyNetworkProvider, which subscription will apply default network requests, which
     //    are requests without specifying a subId.
     // Corresponding phoneId after considering mOpptDataSubId, mPrimaryDataSubId and
     // mPhoneIdInVoiceCall above.
@@ -290,8 +286,6 @@ public class PhoneSwitcher extends Handler {
 
     private static final int EVENT_PRIMARY_DATA_SUB_CHANGED       = 101;
     protected static final int EVENT_SUBSCRIPTION_CHANGED         = 102;
-    private static final int EVENT_REQUEST_NETWORK                = 103;
-    private static final int EVENT_RELEASE_NETWORK                = 104;
     // ECBM has started/ended. If we just ended an emergency call and mEmergencyOverride is not
     // null, we will wait for EVENT_EMERGENCY_TOGGLE again with ECBM ending to send the message
     // EVENT_REMOVE_DDS_EMERGENCY_OVERRIDE to remove the override after the mEmergencyOverride
@@ -651,37 +645,6 @@ public class PhoneSwitcher extends Handler {
                 this, EVENT_MULTI_SIM_CONFIG_CHANGED, null);
 
         mConnectivityManager.registerDefaultNetworkCallback(mDefaultNetworkCallback, this);
-
-        if (!mFlags.supportNetworkProvider()) {
-            final NetworkCapabilities.Builder builder = new NetworkCapabilities.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_IA)
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_MMTEL)
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-                    .addEnterpriseId(NetworkCapabilities.NET_ENTERPRISE_ID_1)
-                    .addEnterpriseId(NetworkCapabilities.NET_ENTERPRISE_ID_2)
-                    .addEnterpriseId(NetworkCapabilities.NET_ENTERPRISE_ID_3)
-                    .addEnterpriseId(NetworkCapabilities.NET_ENTERPRISE_ID_4)
-                    .addEnterpriseId(NetworkCapabilities.NET_ENTERPRISE_ID_5)
-                    .setNetworkSpecifier(new MatchAllNetworkSpecifier());
-            TelephonyNetworkRequest.getAllSupportedNetworkCapabilities()
-                    .forEach(builder::addCapability);
-
-            if (mFlags.satelliteInternet()) {
-                // TODO: b/328622096 remove the try/catch
-                try {
-                    builder.addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE);
-                } catch (IllegalArgumentException exception) {
-                    loge("TRANSPORT_SATELLITE is not supported.");
-                }
-            }
-
-            NetworkFactory networkFactory = new PhoneSwitcherNetworkRequestListener(looper, context,
-                    builder.build(), this);
-            // we want to see all requests
-            networkFactory.registerIgnoringScore();
-        }
-
         updateHalCommandToUse();
 
         logl("PhoneSwitcher started");
@@ -748,14 +711,6 @@ public class PhoneSwitcher extends Handler {
             case EVENT_PRIMARY_DATA_SUB_CHANGED: {
                 evaluateIfImmediateDataSwitchIsNeeded("primary data sub changed",
                         DataSwitch.Reason.DATA_SWITCH_REASON_MANUAL);
-                break;
-            }
-            case EVENT_REQUEST_NETWORK: {
-                onRequestNetwork((NetworkRequest)msg.obj);
-                break;
-            }
-            case EVENT_RELEASE_NETWORK: {
-                onReleaseNetwork((NetworkRequest)msg.obj);
                 break;
             }
             case EVENT_EMERGENCY_TOGGLE: {
@@ -1100,43 +1055,15 @@ public class PhoneSwitcher extends Handler {
         return false;
     }
 
-    // TODO: Remove after removing TelephonyNetworkFactory
-    private static class PhoneSwitcherNetworkRequestListener extends NetworkFactory {
-        private final PhoneSwitcher mPhoneSwitcher;
-        public PhoneSwitcherNetworkRequestListener (Looper l, Context c,
-                NetworkCapabilities nc, PhoneSwitcher ps) {
-            super(l, c, "PhoneSwitcherNetworkRequestListener", nc);
-            mPhoneSwitcher = ps;
-        }
-
-        @Override
-        protected void needNetworkFor(@NonNull NetworkRequest networkRequest) {
-            if (VDBG) log("needNetworkFor " + networkRequest);
-            Message msg = mPhoneSwitcher.obtainMessage(EVENT_REQUEST_NETWORK);
-            msg.obj = networkRequest;
-            msg.sendToTarget();
-        }
-
-        @Override
-        protected void releaseNetworkFor(@NonNull NetworkRequest networkRequest) {
-            if (VDBG) log("releaseNetworkFor " + networkRequest);
-            Message msg = mPhoneSwitcher.obtainMessage(EVENT_RELEASE_NETWORK);
-            msg.obj = networkRequest;
-            msg.sendToTarget();
-        }
-    }
-
     /**
      * Called when receiving a network request.
      *
      * @param networkRequest The network request.
      */
     // TODO: Transform to TelephonyNetworkRequest after removing TelephonyNetworkFactory
-    public void onRequestNetwork(@NonNull NetworkRequest networkRequest) {
-        TelephonyNetworkRequest telephonyNetworkRequest = new TelephonyNetworkRequest(
-                networkRequest, PhoneFactory.getDefaultPhone(), mFlags);
-        if (!mNetworkRequestList.contains(telephonyNetworkRequest)) {
-            mNetworkRequestList.add(telephonyNetworkRequest);
+    public void onRequestNetwork(@NonNull TelephonyNetworkRequest networkRequest) {
+        if (!mNetworkRequestList.contains(networkRequest)) {
+            mNetworkRequestList.add(networkRequest);
             onEvaluate(REQUESTS_CHANGED, "netRequest");
         }
     }
@@ -1146,31 +1073,15 @@ public class PhoneSwitcher extends Handler {
      *
      * @param networkRequest The network request to release.
      */
-    // TODO: Transform to TelephonyNetworkRequest after removing TelephonyNetworkFactory
-    public void onReleaseNetwork(@NonNull NetworkRequest networkRequest) {
-        TelephonyNetworkRequest telephonyNetworkRequest = new TelephonyNetworkRequest(
-                networkRequest, PhoneFactory.getDefaultPhone(), mFlags);
-        if (mNetworkRequestList.remove(telephonyNetworkRequest)) {
+    public void onReleaseNetwork(@NonNull TelephonyNetworkRequest networkRequest) {
+        if (mNetworkRequestList.remove(networkRequest)) {
             onEvaluate(REQUESTS_CHANGED, "netReleased");
-            collectReleaseNetworkMetrics(networkRequest);
         }
     }
 
     private void registerDefaultNetworkChangeCallback(int expectedSubId, int reason) {
         mDefaultNetworkCallback.mExpectedSubId = expectedSubId;
         mDefaultNetworkCallback.mSwitchReason = reason;
-    }
-
-    private void collectReleaseNetworkMetrics(NetworkRequest networkRequest) {
-        // Release network for MMS will recover the network on default data subscription, this only
-        // happen on multi-sim device.
-        if (mActiveModemCount > 1 && networkRequest.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_MMS)) {
-            OnDemandDataSwitch onDemandDataSwitch = new OnDemandDataSwitch();
-            onDemandDataSwitch.apn = TelephonyEvent.ApnType.APN_TYPE_MMS;
-            onDemandDataSwitch.state = TelephonyEvent.EventState.EVENT_STATE_END;
-            TelephonyMetrics.getInstance().writeOnDemandDataSwitch(onDemandDataSwitch);
-        }
     }
 
     /**
@@ -1610,17 +1521,6 @@ public class PhoneSwitcher extends Handler {
     }
 
     /**
-     * If preferred phone changes, or phone activation status changes, registrants
-     * will be notified.
-     */
-    // TODO: Remove after removing TelephonyNetworkFactory
-    public void registerForActivePhoneSwitch(Handler h, int what, Object o) {
-        Registrant r = new Registrant(h, what, o);
-        mActivePhoneRegistrants.add(r);
-        r.notifyRegistrant();
-    }
-
-    /**
      * Set opportunistic data subscription. It's an indication to switch Internet data to this
      * subscription. It has to be an active subscription, and PhoneSwitcher will try to validate
      * it first if needed. If subId is DEFAULT_SUBSCRIPTION_ID, it means we are un-setting
@@ -1717,7 +1617,8 @@ public class PhoneSwitcher extends Handler {
         mPendingSwitchNeedValidation = needValidation;
         mSetOpptSubCallback = callback;
         long validationTimeout = getValidationTimeout(subIdToValidate, needValidation);
-        mValidator.validate(subIdToValidate, validationTimeout, false, mValidationCallback);
+        mValidator.validate(subIdToValidate, validationTimeout,
+                mPendingSwitchNeedValidation, mValidationCallback);
     }
 
     private long getValidationTimeout(int subId, boolean needValidation) {
@@ -2037,10 +1938,8 @@ public class PhoneSwitcher extends Handler {
         // Notify all registrants
         mActivePhoneRegistrants.notifyRegistrants();
         notifyPreferredDataSubIdChanged();
-        if (mFlags.supportNetworkProvider()) {
-            mPhoneSwitcherCallbacks.forEach(callback -> callback.invokeFromExecutor(
-                    () -> callback.onPreferredDataPhoneIdChanged(phoneId)));
-        }
+        mPhoneSwitcherCallbacks.forEach(callback -> callback.invokeFromExecutor(
+                () -> callback.onPreferredDataPhoneIdChanged(phoneId)));
     }
 
     private boolean isPhoneIdValidForRetry(int phoneId) {

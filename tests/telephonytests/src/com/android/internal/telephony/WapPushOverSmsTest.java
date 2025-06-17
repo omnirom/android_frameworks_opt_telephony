@@ -17,8 +17,8 @@
 package com.android.internal.telephony;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.nullable;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doReturn;
@@ -107,7 +107,7 @@ public class WapPushOverSmsTest extends TelephonyTest {
                 eq(android.Manifest.permission.RECEIVE_WAP_PUSH),
                 eq(AppOpsManager.OPSTR_RECEIVE_WAP_PUSH),
                 nullable(Bundle.class),
-                isNull(InboundSmsHandler.SmsBroadcastReceiver.class),
+                isNull(),
                 eq(MOCKED_MAIN_USER),
                 anyInt());
         Intent intent = intentArgumentCaptor.getValue();

@@ -584,14 +584,14 @@ public class ControllerMetricsStatsTest extends TelephonyTest {
         doReturn(false).when(mSpyControllerMetricsStats).isSatelliteModemOn();
 
         doNothing().when(mSpyControllerMetricsStats).startCaptureBatteryLevel();
-        doReturn(MODEM_ENABLED_TIME).when(mSpyControllerMetricsStats).getCurrentTime();
+        doReturn(MODEM_ENABLED_TIME).when(mSpyControllerMetricsStats).getElapsedRealtime();
 
         // test object
         mSpyControllerMetricsStats.onSatelliteEnabled();
 
         // verification
         verify(mSpyControllerMetricsStats).startCaptureBatteryLevel();
-        verify(mSpyControllerMetricsStats).getCurrentTime();
+        verify(mSpyControllerMetricsStats).getElapsedRealtime();
     }
 
     @Test

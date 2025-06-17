@@ -74,6 +74,8 @@ import com.android.internal.telephony.data.PhoneSwitcher;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.imsphone.ImsPhoneConnection;
 import com.android.internal.telephony.satellite.SatelliteController;
+import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
+import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.telephony.Rlog;
 
 import java.lang.annotation.Retention;
@@ -141,6 +143,8 @@ public class EmergencyStateTracker {
     private final Handler mHandler;
     private final boolean mIsSuplDdsSwitchRequiredForEmergencyCall;
     private final int mWaitForInServiceTimeoutMs;
+    private final boolean mTurnOffOemEnabledSatelliteDuringEmergencyCall;
+    private final boolean mTurnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall;
     private final PowerManager.WakeLock mWakeLock;
     private RadioOnHelper mRadioOnHelper;
     @EmergencyConstants.EmergencyMode
@@ -163,6 +167,8 @@ public class EmergencyStateTracker {
     private android.telecom.Connection mOngoingConnection;
     // Domain of the active emergency call. Assuming here that there will only be one domain active.
     private int mEmergencyCallDomain = NetworkRegistrationInfo.DOMAIN_UNKNOWN;
+    // Phone type of the active emergency call. Assuming that there will only be one phone active.
+    private int mEmergencyCallPhoneType = PhoneConstants.PHONE_TYPE_NONE;
     private CompletableFuture<Integer> mCallEmergencyModeFuture;
     private boolean mIsInEmergencyCall;
     private boolean mIsInEcm;
@@ -310,8 +316,24 @@ public class EmergencyStateTracker {
                     maybeNotifyTransportChangeCompleted(emergencyType, false);
 
                     if (emergencyType == EMERGENCY_TYPE_CALL) {
-                        setIsInEmergencyCall(true);
-                        completeEmergencyMode(emergencyType);
+                        // If the emergency registration result(mLastEmergencyRegistrationResult) is
+                        // null, it means that the emergency mode is not set properly on the modem.
+                        // Therefore, based on the emergency registration result and current
+                        // subscription status, the current phone is not available for an emergency
+                        // call, so we check if an emergency call is possible through cross stack.
+                        if (mFeatureFlags.performCrossStackRedialCheckForEmergencyCall()
+                                && mLastEmergencyRegistrationResult == null
+                                && mPhone != null
+                                && !SubscriptionManager.isValidSubscriptionId(mPhone.getSubId())
+                                && needToSwitchPhone(mPhone)) {
+                            Rlog.i(TAG, "setEmergencyMode failed: need to switch stacks.");
+                            mEmergencyMode = MODE_EMERGENCY_NONE;
+                            completeEmergencyMode(emergencyType,
+                                    DisconnectCause.EMERGENCY_PERM_FAILURE);
+                        } else {
+                            setIsInEmergencyCall(true);
+                            completeEmergencyMode(emergencyType);
+                        }
 
                         // Case 1) When the emergency call is setting the emergency mode and
                         // the emergency SMS is being sent, completes the SMS future also.
@@ -470,13 +492,24 @@ public class EmergencyStateTracker {
      * @param context                                 The context of the application.
      * @param isSuplDdsSwitchRequiredForEmergencyCall Whether gnss supl requires default data for
      *                                                emergency call.
+     * @param turnOffOemEnabledSatelliteDuringEmergencyCall Specifying whether OEM enabled satellite
+     *                                                      should be turned off during emergency
+     *                                                      call.
+     * @param turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall Specifying whether non-emergency
+     *                                                             NB-IOT NTN satellite should be
+     *                                                             turned off for emergency call.
      * @param featureFlags                            The telephony feature flags.
      */
     public static void make(Context context, boolean isSuplDdsSwitchRequiredForEmergencyCall,
-            int waitForInServiceTimeout, @NonNull FeatureFlags featureFlags) {
+            int waitForInServiceTimeout, boolean turnOffOemEnabledSatelliteDuringEmergencyCall,
+            boolean turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall,
+            @NonNull FeatureFlags featureFlags) {
         if (INSTANCE == null) {
             INSTANCE = new EmergencyStateTracker(context, Looper.myLooper(),
-                    isSuplDdsSwitchRequiredForEmergencyCall, waitForInServiceTimeout, featureFlags);
+                    isSuplDdsSwitchRequiredForEmergencyCall, waitForInServiceTimeout,
+                    turnOffOemEnabledSatelliteDuringEmergencyCall,
+                    turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall,
+                    featureFlags);
         }
     }
 
@@ -497,12 +530,18 @@ public class EmergencyStateTracker {
      */
     private EmergencyStateTracker(Context context, Looper looper,
             boolean isSuplDdsSwitchRequiredForEmergencyCall, int waitForInServiceTimeout,
+            boolean turnOffOemEnabledSatelliteDuringEmergencyCall,
+            boolean turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall,
             @NonNull FeatureFlags featureFlags) {
         mEcmExitTimeoutMs = DEFAULT_ECM_EXIT_TIMEOUT_MS;
         mContext = context;
         mHandler = new MyHandler(looper);
         mIsSuplDdsSwitchRequiredForEmergencyCall = isSuplDdsSwitchRequiredForEmergencyCall;
         mWaitForInServiceTimeoutMs = waitForInServiceTimeout;
+        mTurnOffOemEnabledSatelliteDuringEmergencyCall =
+                turnOffOemEnabledSatelliteDuringEmergencyCall;
+        mTurnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall =
+                turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall;
         mFeatureFlags = featureFlags;
         PowerManager pm = context.getSystemService(PowerManager.class);
         mWakeLock = (pm != null) ? pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
@@ -539,6 +578,12 @@ public class EmergencyStateTracker {
      *                                                modem to get in-service state when emergency
      *                                                call is dialed in airplane mode before
      *                                                starting the emergency call.
+     * @param turnOffOemEnabledSatelliteDuringEmergencyCall Specifying whether OEM enabled satellite
+     *                                                      should be turned off during emergency
+     *                                                      call.
+     * @param turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall Specifying whether non-emergency
+     *                                                             NB-IOT NTN satellite should be
+     *                                                             turned off for emergency call.
      * @param phoneFactoryProxy                       The {@link PhoneFactoryProxy} to be injected.
      * @param phoneSwitcherProxy                      The {@link PhoneSwitcherProxy} to be injected.
      * @param telephonyManagerProxy                   The {@link TelephonyManagerProxy} to be
@@ -549,6 +594,8 @@ public class EmergencyStateTracker {
     @VisibleForTesting
     public EmergencyStateTracker(Context context, Looper looper,
             boolean isSuplDdsSwitchRequiredForEmergencyCall, int waitForInServiceTimeout,
+            boolean turnOffOemEnabledSatelliteDuringEmergencyCall,
+            boolean turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall,
             PhoneFactoryProxy phoneFactoryProxy, PhoneSwitcherProxy phoneSwitcherProxy,
             TelephonyManagerProxy telephonyManagerProxy, RadioOnHelper radioOnHelper,
             long ecmExitTimeoutMs, FeatureFlags featureFlags) {
@@ -556,6 +603,10 @@ public class EmergencyStateTracker {
         mHandler = new MyHandler(looper);
         mIsSuplDdsSwitchRequiredForEmergencyCall = isSuplDdsSwitchRequiredForEmergencyCall;
         mWaitForInServiceTimeoutMs = waitForInServiceTimeout;
+        mTurnOffOemEnabledSatelliteDuringEmergencyCall =
+                turnOffOemEnabledSatelliteDuringEmergencyCall;
+        mTurnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall =
+                turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall;
         mPhoneFactoryProxy = phoneFactoryProxy;
         mPhoneSwitcherProxy = phoneSwitcherProxy;
         mTelephonyManagerProxy = telephonyManagerProxy;
@@ -702,7 +753,7 @@ public class EmergencyStateTracker {
         }
 
         if (wasActive && mActiveEmergencyCalls.isEmpty()
-                && isEmergencyCallbackModeSupported(mPhone)) {
+                && isEmergencyCallbackModeSupported(mPhone, true)) {
             enterEmergencyCallbackMode();
 
             if (mOngoingConnection == null) {
@@ -713,10 +764,17 @@ public class EmergencyStateTracker {
             if (isInEcm()) {
                 mIsEmergencyCallStartedDuringEmergencySms = false;
                 mCallEmergencyModeFuture = null;
-                // If the emergency call was initiated during the emergency callback mode,
-                // the emergency callback mode should be restored when the emergency call is ended.
+
                 if (mActiveEmergencyCalls.isEmpty()) {
-                    enterEmergencyCallbackMode();
+                    // If the emergency call was initiated during the emergency callback mode,
+                    // the emergency callback mode should be restored when the emergency call is
+                    // ended.
+                    if (isEmergencyCallbackModeSupported(mPhone, true)) {
+                        enterEmergencyCallbackMode();
+                    } else {
+                        exitEmergencyCallbackMode();
+                        clearEmergencyCallInfo();
+                    }
                 }
             } else {
                 if (isInScbm()) {
@@ -735,6 +793,7 @@ public class EmergencyStateTracker {
 
     private void clearEmergencyCallInfo() {
         mEmergencyCallDomain = NetworkRegistrationInfo.DOMAIN_UNKNOWN;
+        mEmergencyCallPhoneType = PhoneConstants.PHONE_TYPE_NONE;
         mIsTestEmergencyNumber = false;
         mIsEmergencyCallStartedDuringEmergencySms = false;
         mCallEmergencyModeFuture = null;
@@ -851,22 +910,24 @@ public class EmergencyStateTracker {
 
     private void completeEmergencyMode(@EmergencyType int emergencyType,
             @DisconnectCauses int result) {
+        CompletableFuture<Integer> emergencyModeFuture = null;
+
         if (emergencyType == EMERGENCY_TYPE_CALL) {
-            if (mCallEmergencyModeFuture != null && !mCallEmergencyModeFuture.isDone()) {
-                mCallEmergencyModeFuture.complete(result);
-            }
+            emergencyModeFuture = mCallEmergencyModeFuture;
 
             if (result != DisconnectCause.NOT_DISCONNECTED) {
                 clearEmergencyCallInfo();
             }
         } else if (emergencyType == EMERGENCY_TYPE_SMS) {
-            if (mSmsEmergencyModeFuture != null && !mSmsEmergencyModeFuture.isDone()) {
-                mSmsEmergencyModeFuture.complete(result);
-            }
+            emergencyModeFuture = mSmsEmergencyModeFuture;
 
             if (result != DisconnectCause.NOT_DISCONNECTED) {
                 clearEmergencySmsInfo();
             }
+        }
+
+        if (emergencyModeFuture != null && !emergencyModeFuture.isDone()) {
+            emergencyModeFuture.complete(result);
         }
     }
 
@@ -1075,9 +1136,16 @@ public class EmergencyStateTracker {
                 Rlog.w(TAG, "domain updated: Unexpected phoneType:" + phoneType);
             }
         }
-        if (mEmergencyCallDomain == domain) return;
-        Rlog.i(TAG, "domain updated: from " + mEmergencyCallDomain + " to " + domain);
-        mEmergencyCallDomain = domain;
+
+        if (mEmergencyCallPhoneType != phoneType) {
+            Rlog.i(TAG, "phoneType updated: from " + mEmergencyCallPhoneType + " to " + phoneType);
+            mEmergencyCallPhoneType = phoneType;
+        }
+
+        if (mEmergencyCallDomain != domain) {
+            Rlog.i(TAG, "domain updated: from " + mEmergencyCallDomain + " to " + domain);
+            mEmergencyCallDomain = domain;
+        }
     }
 
     /**
@@ -1127,12 +1195,27 @@ public class EmergencyStateTracker {
     }
 
     /**
-     * Returns {@code true} if device and carrier support emergency callback mode.
+     * Returns {@code true} if device and carrier support emergency callback mode. If
+     * {@code forEcbm} is {@code true}, it also checks RAT used when the emergency call ended.
      *
      * @param phone The {@link Phone} instance to be checked.
+     * @param forEcbm {@code true} if it's for the ECBM. {@code false} if it's for the SCBM.
      */
     @VisibleForTesting
-    public boolean isEmergencyCallbackModeSupported(Phone phone) {
+    public boolean isEmergencyCallbackModeSupported(Phone phone, boolean forEcbm) {
+        // TODO(b/399787802): Remove the forEcbm parameter and related logic when the CDMA-related
+        // APIs are deprecated. Replace this logic with a check that utilizes the domain parameter
+        // to determine ECBM and SCBM support.
+        if (forEcbm) {
+            if (mFeatureFlags.disableEcbmBasedOnRat()) {
+                if ((mEmergencyCallPhoneType == PhoneConstants.PHONE_TYPE_GSM)
+                        || (mEmergencyCallPhoneType == PhoneConstants.PHONE_TYPE_NONE)) {
+                    Rlog.d(TAG, "ecbmUnavailableRat");
+                    return false;
+                }
+            }
+        }
+
         if (phone == null) {
             return false;
         }
@@ -1251,9 +1334,15 @@ public class EmergencyStateTracker {
             exitEmergencyMode(gsmCdmaPhone, EMERGENCY_TYPE_CALL);
         }
 
-        mEmergencyCallDomain = NetworkRegistrationInfo.DOMAIN_UNKNOWN;
-        mIsTestEmergencyNumber = false;
-        mPhone = null;
+        // If an emergency call is in progress, even if this method is called for any reason,
+        // we should not initialize the Phone object so that the application can normally end
+        // the emergency call.
+        if (mOngoingConnection == null) {
+            mEmergencyCallDomain = NetworkRegistrationInfo.DOMAIN_UNKNOWN;
+            mEmergencyCallPhoneType = PhoneConstants.PHONE_TYPE_NONE;
+            mIsTestEmergencyNumber = false;
+            mPhone = null;
+        }
     }
 
     private void releaseWakeLock() {
@@ -1470,7 +1559,7 @@ public class EmergencyStateTracker {
 
             // If SCBM supports, SCBM will be entered here regardless of ECBM state.
             if (success && domain == NetworkRegistrationInfo.DOMAIN_PS
-                    && (isInScbm() || isEmergencyCallbackModeSupported(mSmsPhone))) {
+                    && (isInScbm() || isEmergencyCallbackModeSupported(mSmsPhone, false))) {
                 enterEmergencySmsCallbackMode();
             } else if (isInScbm()) {
                 // Sets the emergency mode to CALLBACK without re-initiating SCBM timer.
@@ -1676,8 +1765,7 @@ public class EmergencyStateTracker {
             boolean isTestEmergencyNumber) {
         final boolean isAirplaneModeOn = isAirplaneModeOn(mContext);
         boolean needToTurnOnRadio = !isRadioOn() || isAirplaneModeOn;
-        final SatelliteController satelliteController = SatelliteController.getInstance();
-        boolean needToTurnOffSatellite = satelliteController.isSatelliteEnabledOrBeingEnabled();
+        boolean needToTurnOffSatellite = shouldExitSatelliteMode();
 
         if (isAirplaneModeOn && !isPowerOff()
                 && !phone.getServiceStateTracker().getDesiredPowerState()) {
@@ -1713,7 +1801,7 @@ public class EmergencyStateTracker {
                         return;
                     }
                     if (!isRadioReady) {
-                        if (satelliteController.isSatelliteEnabledOrBeingEnabled()) {
+                        if (shouldExitSatelliteMode()) {
                             // Could not turn satellite off
                             Rlog.e(TAG, "Failed to turn off satellite modem.");
                             completeEmergencyMode(emergencyType, DisconnectCause.SATELLITE_ENABLED);
@@ -1746,7 +1834,7 @@ public class EmergencyStateTracker {
                         return false;
                     }
                     return phone.getServiceStateTracker().isRadioOn()
-                            && !satelliteController.isSatelliteEnabledOrBeingEnabled();
+                            && !shouldExitSatelliteMode();
                 }
 
                 @Override
@@ -1758,7 +1846,7 @@ public class EmergencyStateTracker {
                     }
                     // onTimeout shall be called only with the Phone for emergency
                     return phone.getServiceStateTracker().isRadioOn()
-                            && !satelliteController.isSatelliteEnabledOrBeingEnabled();
+                            && !shouldExitSatelliteMode();
                 }
             }, !isTestEmergencyNumber, phone, isTestEmergencyNumber, waitForInServiceTimeout);
         } else {
@@ -2267,5 +2355,56 @@ public class EmergencyStateTracker {
         }
 
         return false;
+    }
+
+    /**
+     * Checks whether the satellite mode should be turned off to proceed with an emergency call
+     * when satellite mode is enabled or an NTN(Non Terrestrial Network) session is in progress.
+     *
+     * @return {@code true} if satellite mode should be exited before an emergency call is being
+     *         processed, {@code false} otherwise.
+     */
+    @VisibleForTesting
+    public boolean shouldExitSatelliteMode() {
+        final SatelliteController satelliteController = SatelliteController.getInstance();
+
+        if (!satelliteController.isSatelliteEnabledOrBeingEnabled()) {
+            return false;
+        }
+
+        if (!mTurnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall) {
+            // Carrier
+            return false;
+        }
+
+        if (satelliteController.isDemoModeEnabled()) {
+            // If user makes emergency call in demo mode, end the satellite session
+            return true;
+        } else if (mFeatureFlags.carrierRoamingNbIotNtn()
+                && !satelliteController.getRequestIsEmergency()) {
+            // If satellite is not for emergency, end the satellite session
+            return true;
+        } else { // satellite is for emergency
+            if (mFeatureFlags.carrierRoamingNbIotNtn()) {
+                int subId = satelliteController.getSelectedSatelliteSubId();
+                SubscriptionInfoInternal info = SubscriptionManagerService.getInstance()
+                        .getSubscriptionInfoInternal(subId);
+                if (info == null) {
+                    Rlog.e(TAG, "satellite is/being enabled, but satellite sub "
+                            + subId + " is null");
+                    return false;
+                }
+
+                if (info.getOnlyNonTerrestrialNetwork() == 1) {
+                    // OEM
+                    return mTurnOffOemEnabledSatelliteDuringEmergencyCall;
+                } else {
+                    // Carrier
+                    return satelliteController.shouldTurnOffCarrierSatelliteForEmergencyCall();
+                }
+            } else {
+                return mTurnOffOemEnabledSatelliteDuringEmergencyCall;
+            }
+        }
     }
 }

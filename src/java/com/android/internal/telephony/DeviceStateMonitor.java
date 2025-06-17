@@ -619,12 +619,10 @@ public class DeviceStateMonitor extends Handler {
         }
 
         // Determine whether to notify registrants about the non-terrestrial signal strength change.
-        if (mFeatureFlags.oemEnabledSatelliteFlag()) {
-            if (shouldEnableSignalStrengthReports()) {
-                mSignalStrengthReportDecisionCallbackRegistrants.notifyResult(true);
-            } else {
-                mSignalStrengthReportDecisionCallbackRegistrants.notifyResult(false);
-            }
+        if (shouldEnableSignalStrengthReports()) {
+            mSignalStrengthReportDecisionCallbackRegistrants.notifyResult(true);
+        } else {
+            mSignalStrengthReportDecisionCallbackRegistrants.notifyResult(false);
         }
 
         if (mFeatureFlags.carrierRoamingNbIotNtn()) {
@@ -815,10 +813,6 @@ public class DeviceStateMonitor extends Handler {
      * @param obj AsyncResult.userObj when the message is delivered
      */
     public void registerForSignalStrengthReportDecision(Handler h, int what, Object obj) {
-        if (!mFeatureFlags.oemEnabledSatelliteFlag()) {
-            Rlog.d(TAG, "oemEnabledSatelliteFlag is disabled");
-            return;
-        }
         Registrant r = new Registrant(h, what, obj);
         mSignalStrengthReportDecisionCallbackRegistrants.add(r);
     }
@@ -859,10 +853,6 @@ public class DeviceStateMonitor extends Handler {
      * @param h Handler to notify
      */
     public void unregisterForSignalStrengthReportDecision(Handler h) {
-        if (!mFeatureFlags.oemEnabledSatelliteFlag()) {
-            Rlog.d(TAG, "oemEnabledSatelliteFlag is disabled");
-            return;
-        }
         mSignalStrengthReportDecisionCallbackRegistrants.remove(h);
     }
 

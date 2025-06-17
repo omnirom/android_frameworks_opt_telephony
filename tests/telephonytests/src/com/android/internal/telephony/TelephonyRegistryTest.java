@@ -224,7 +224,7 @@ public class TelephonyRegistryTest extends TelephonyTest {
             TelephonyCallback.DataActivityListener,
             TelephonyCallback.SimultaneousCellularCallingSupportListener,
             TelephonyCallback.EmergencyCallbackModeListener,
-            TelephonyCallback.CarrierRoamingNtnModeListener,
+            TelephonyCallback.CarrierRoamingNtnListener,
             TelephonyCallback.SecurityAlgorithmsListener,
             TelephonyCallback.CellularIdentifierDisclosedListener,
             TelephonyCallback.CallAttributesListener {

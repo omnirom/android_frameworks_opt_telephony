@@ -79,13 +79,16 @@ public final class NetworkScanRequestTracker {
         @Override
         public void handleMessage(Message msg) {
             Log.d(TAG, "Received Event :" + msg.what);
+            AsyncResult ar;
             switch (msg.what) {
                 case CMD_START_NETWORK_SCAN:
                     mScheduler.doStartScan((NetworkScanRequestInfo) msg.obj);
                     break;
 
                 case EVENT_START_NETWORK_SCAN_DONE:
-                    mScheduler.startScanDone((AsyncResult) msg.obj);
+                    ar = (AsyncResult) msg.obj;
+                    mScheduler.startScanDone(ar);
+                    ((NetworkScanRequestInfo) ar.userObj).mPhone.setNetworkScanStarted(true);
                     break;
 
                 case EVENT_RECEIVE_NETWORK_SCAN_RESULT:
@@ -97,7 +100,9 @@ public final class NetworkScanRequestTracker {
                     break;
 
                 case EVENT_STOP_NETWORK_SCAN_DONE:
-                    mScheduler.stopScanDone((AsyncResult) msg.obj);
+                    ar = (AsyncResult) msg.obj;
+                    mScheduler.stopScanDone(ar);
+                    ((NetworkScanRequestInfo) ar.userObj).mPhone.setNetworkScanStarted(false);
                     break;
 
                 case CMD_INTERRUPT_NETWORK_SCAN:
@@ -105,17 +110,20 @@ public final class NetworkScanRequestTracker {
                     break;
 
                 case EVENT_INTERRUPT_NETWORK_SCAN_DONE:
-                    mScheduler.interruptScanDone((AsyncResult) msg.obj);
+                    ar = (AsyncResult) msg.obj;
+                    mScheduler.interruptScanDone(ar);
+                    ((NetworkScanRequestInfo) ar.userObj).mPhone.setNetworkScanStarted(false);
                     break;
 
                 case EVENT_RADIO_UNAVAILABLE:
                     // Fallthrough
                 case EVENT_MODEM_RESET:
-                    AsyncResult ar = (AsyncResult) msg.obj;
+                    ar = (AsyncResult) msg.obj;
                     mScheduler.deleteScanAndMayNotify(
                             (NetworkScanRequestInfo) ar.userObj,
                             NetworkScan.ERROR_MODEM_ERROR,
                             true);
+                    ((NetworkScanRequestInfo) ar.userObj).mPhone.setNetworkScanStarted(false);
                     break;
             }
         }

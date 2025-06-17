@@ -2554,10 +2554,14 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         // Dialing
         ImsPhoneConnection connection = placeCall();
 
+        ImsCall imsCall = connection.getImsCall();
+        imsCall.getImsCallSessionListenerProxy().callSessionInitiating(imsCall.getSession(),
+                new ImsCallProfile());
+
         verify(mImsPhone, times(1)).updateImsCallStatus(any(), any());
 
         // Alerting
-        ImsCall imsCall = connection.getImsCall();
+        imsCall = connection.getImsCall();
         imsCall.getImsCallSessionListenerProxy().callSessionProgressing(imsCall.getSession(),
                 new ImsStreamMediaProfile());
 

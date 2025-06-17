@@ -48,6 +48,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
 public class SatelliteStatsTest extends TelephonyTest {
@@ -110,6 +111,13 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setCountOfP2PSmsAvailableNotificationShown(3)
                         .setCountOfP2PSmsAvailableNotificationRemoved(3)
                         .setIsNtnOnlyCarrier(false)
+                        .setVersionOfSatelliteAccessControl(10)
+                        .setCountOfIncomingDatagramTypeSosSmsSuccess(1)
+                        .setCountOfIncomingDatagramTypeSmsFail(2)
+                        .setCountOfOutgoingDatagramTypeSmsSuccess(3)
+                        .setCountOfOutgoingDatagramTypeSmsFail(4)
+                        .setCountOfIncomingDatagramTypeSmsSuccess(5)
+                        .setCountOfIncomingDatagramTypeSmsFail(6)
                         .build();
 
         mSatelliteStats.onSatelliteControllerMetrics(param);
@@ -181,6 +189,20 @@ public class SatelliteStatsTest extends TelephonyTest {
                 stats.countOfP2PSmsAvailableNotificationRemoved);
         assertEquals(SatelliteStats.SatelliteControllerParams.isNtnOnlyCarrier(),
                 stats.isNtnOnlyCarrier);
+        assertEquals(SatelliteStats.SatelliteControllerParams.getVersionSatelliteAccessConfig(),
+                stats.versionOfSatelliteAccessConfig);
+        assertEquals(param.getCountOfIncomingDatagramTypeSosSmsSuccess(),
+                stats.countOfIncomingDatagramTypeSosSmsSuccess);
+        assertEquals(param.getCountOfIncomingDatagramTypeSosSmsFail(),
+                stats.countOfIncomingDatagramTypeSosSmsFail);
+        assertEquals(param.getCountOfOutgoingDatagramTypeSmsSuccess(),
+                stats.countOfOutgoingDatagramTypeSmsSuccess);
+        assertEquals(param.getCountOfOutgoingDatagramTypeSmsFail(),
+                stats.countOfOutgoingDatagramTypeSmsFail);
+        assertEquals(param.getCountOfIncomingDatagramTypeSmsSuccess(),
+                stats.countOfIncomingDatagramTypeSmsSuccess);
+        assertEquals(param.getCountOfIncomingDatagramTypeSmsSuccess(),
+                stats.countOfIncomingDatagramTypeSmsSuccess);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -417,6 +439,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setCountOfOutgoingSms(11)
                         .setCountOfIncomingMms(9)
                         .setCountOfOutgoingMms(14)
+                        .setIsMultiSim(false)
+                        .setIsNbIotNtn(false)
                         .build();
 
         mSatelliteStats.onCarrierRoamingSatelliteSessionMetrics(param);
@@ -442,6 +466,8 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getCountOfOutgoingSms(), stats.countOfOutgoingSms);
         assertEquals(param.getCountOfIncomingMms(), stats.countOfIncomingMms);
         assertEquals(param.getCountOfOutgoingMms(), stats.countOfOutgoingMms);
+        assertEquals(param.isMultiSim(), stats.isMultiSim);
+        assertEquals(param.isNbIotNtn(), stats.isNbIotNtn);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -459,6 +485,9 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setSatelliteSessionGapMaxSec(45)
                         .setCarrierId(10)
                         .setIsDeviceEntitled(true)
+                        .setIsMultiSim(true)
+                        .increaseCountOfSatelliteSessions()
+                        .setIsNbIotNtn(true)
                         .build();
 
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
@@ -479,6 +508,9 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getSatelliteSessionGapMaxSec(), stats.satelliteSessionGapMaxSec);
         assertEquals(param.getCarrierId(), stats.carrierId);
         assertEquals(param.isDeviceEntitled(), stats.isDeviceEntitled);
+        assertEquals(param.isMultiSim(), stats.isMultiSim);
+        assertEquals(param.getCountOfSatelliteSessions(), stats.countOfSatelliteSessions);
+        assertEquals(param.isNbIotNtn(), stats.isNbIotNtn);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -497,6 +529,9 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setSatelliteSessionGapMaxSec(45)
                         .setCarrierId(10)
                         .setIsDeviceEntitled(true)
+                        .setIsMultiSim(true)
+                        .increaseCountOfSatelliteSessions()
+                        .setIsNbIotNtn(true)
                         .build();
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
 
@@ -541,6 +576,8 @@ public class SatelliteStatsTest extends TelephonyTest {
         // static values should be updated
         assertEquals(20, stats.carrierId);
         assertEquals(false, stats.isDeviceEntitled);
+        assertEquals(param.isMultiSim(), stats.isMultiSim);
+        assertEquals(param.getCountOfSatelliteSessions(), stats.countOfSatelliteSessions);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -626,6 +663,40 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getResultCode(), stats.resultCode);
         assertEquals(param.getCountryCodes(), stats.countryCodes);
         assertEquals(param.getConfigDataSource(), stats.configDataSource);
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+    }
+
+    @Test
+    public void testReportRepeatedDataWithAscendingOrder() {
+        int[] supportedSatelliteServicesArray = {3, 2, 1};
+        SatelliteStats.CarrierRoamingSatelliteSessionParams sessionParams =
+                new SatelliteStats.CarrierRoamingSatelliteSessionParams.Builder()
+                        .setSupportedSatelliteServices(supportedSatelliteServicesArray)
+                        .build();
+        mSatelliteStats.onCarrierRoamingSatelliteSessionMetrics(sessionParams);
+        ArgumentCaptor<CarrierRoamingSatelliteSession> sessionArgumentCaptor =
+                ArgumentCaptor.forClass(CarrierRoamingSatelliteSession.class);
+        verify(mPersistAtomsStorage).addCarrierRoamingSatelliteSessionStats(
+                sessionArgumentCaptor.capture());
+        CarrierRoamingSatelliteSession sessionStats = sessionArgumentCaptor.getValue();
+
+        Arrays.sort(supportedSatelliteServicesArray);
+        assertEquals(supportedSatelliteServicesArray, sessionStats.supportedSatelliteServices);
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+
+        int[] entitlementServiceTypeArray = {2, 3, 1};
+        SatelliteStats.SatelliteEntitlementParams entitlementParams =
+                new SatelliteStats.SatelliteEntitlementParams.Builder()
+                        .setEntitlementServiceType(entitlementServiceTypeArray)
+                        .build();
+        mSatelliteStats.onSatelliteEntitlementMetrics(entitlementParams);
+        ArgumentCaptor<SatelliteEntitlement> entitlementArgumentCaptor =
+                ArgumentCaptor.forClass(SatelliteEntitlement.class);
+        verify(mPersistAtomsStorage).addSatelliteEntitlementStats(
+                entitlementArgumentCaptor.capture());
+        SatelliteEntitlement entitlementStats = entitlementArgumentCaptor.getValue();
+        Arrays.sort(entitlementServiceTypeArray);
+        assertEquals(entitlementServiceTypeArray, entitlementStats.entitlementServiceType);
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
 }

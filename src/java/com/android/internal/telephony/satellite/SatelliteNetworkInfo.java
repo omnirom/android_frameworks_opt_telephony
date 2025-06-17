@@ -42,10 +42,7 @@ public class SatelliteNetworkInfo {
             Map<String,String> allowedServicesInfo) {
         mPlmn = plmn;
         mDataPlanType = dataPlanType;
-        if (allowedServicesInfo != null) {
-            mAllowedServicesInfo = new HashMap<>(allowedServicesInfo);
-        } else {
-            mAllowedServicesInfo = new HashMap<>();
-        }
+        mAllowedServicesInfo = allowedServicesInfo != null
+                ? new HashMap<>(allowedServicesInfo) : null;
     }
 }

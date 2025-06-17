@@ -19,13 +19,12 @@ package com.android.internal.telephony;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import android.content.Intent;
 import android.os.AsyncResult;
@@ -346,19 +345,8 @@ public class LocaleTrackerTest extends TelephonyTest {
     }
 
     @Test
-    public void testNotifyCountryCodeChangedToTelephonyCountryDetector_featureFlagEnabled() {
-        testNotifyCountryCodeChangedToTelephonyCountryDetector(true);
-    }
-
-    @Test
-    public void testNotifyCountryCodeChangedToTelephonyCountryDetector_featureFlagDisabled() {
-        testNotifyCountryCodeChangedToTelephonyCountryDetector(false);
-    }
-
-    private void testNotifyCountryCodeChangedToTelephonyCountryDetector(
-            boolean oemEnabledSatelliteFlag) {
+    public void testNotifyCountryCodeChangedToTelephonyCountryDetector() {
         reset(mCountryDetector);
-        when(mFeatureFlags.oemEnabledSatelliteFlag()).thenReturn(oemEnabledSatelliteFlag);
         doReturn(true).when(mPhone).isRadioOn();
         sendServiceState(ServiceState.STATE_IN_SERVICE);
         mLocaleTracker.updateOperatorNumeric(US_MCC + FAKE_MNC);
@@ -367,8 +355,6 @@ public class LocaleTrackerTest extends TelephonyTest {
         verifyCountryCodeNotified(new String[]{COUNTRY_CODE_UNAVAILABLE, US_COUNTRY_CODE});
         assertFalse(mLocaleTracker.isTracking());
 
-        int notifiedCount = oemEnabledSatelliteFlag ? 1 : 0;
-        verify(mCountryDetector, times(notifiedCount))
-                .onNetworkCountryCodeChanged(mPhone, US_COUNTRY_CODE);
+        verify(mCountryDetector, times(1)).onNetworkCountryCodeChanged(mPhone, US_COUNTRY_CODE);
     }
 }

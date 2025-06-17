@@ -18,8 +18,6 @@ package com.android.internal.telephony.data;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import static org.mockito.Mockito.doReturn;
-
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 
@@ -43,7 +41,6 @@ public class DataUtilsTest extends TelephonyTest {
         logd("DataUtilsTest +Setup!");
         super.setUp(getClass().getSimpleName());
         mFeatureFlags = Mockito.mock(FeatureFlags.class);
-        doReturn(true).when(mFeatureFlags).satelliteInternet();
         logd("DataUtilsTest -Setup!");
     }
 

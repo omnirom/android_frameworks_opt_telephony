@@ -37,8 +37,6 @@ import android.telephony.SignalStrength;
 
 import androidx.test.filters.SmallTest;
 
-import com.android.internal.telephony.flags.Flags;
-
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -111,7 +109,6 @@ public class SignalStrengthTest {
 
     @Before
     public void setUp() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_CARRIER_ENABLED_SATELLITE_FLAG);
     }
 
     @Test
@@ -137,7 +134,7 @@ public class SignalStrengthTest {
         ArrayList<Byte> NrCqiReport = new ArrayList<>(
                 Arrays.asList((byte) 3, (byte) 2 , (byte) 1));
         SignalStrength s = new SignalStrength(
-                new CellSignalStrengthCdma(-93, -132, -89, -125, 5),
+                new CellSignalStrengthCdma(),
                 new CellSignalStrengthGsm(-79, 2, 5),
                 new CellSignalStrengthWcdma(-94, 4, -102, -5),
                 new CellSignalStrengthTdscdma(-95, 2, -103),
@@ -175,7 +172,6 @@ public class SignalStrengthTest {
     public void testGetCellSignalStrengths() throws Exception {
         CellSignalStrengthLte lte = new CellSignalStrengthLte(-85, -91, -6, -10, 1, 12, 1);
         CellSignalStrengthGsm gsm = new CellSignalStrengthGsm(-79, 2, 5);
-        CellSignalStrengthCdma cdma = new CellSignalStrengthCdma(-93, -132, -89, -125, 5);
         CellSignalStrengthWcdma wcdma = new CellSignalStrengthWcdma(-94, 4, -102, -5);
         CellSignalStrengthTdscdma tdscdma = new CellSignalStrengthTdscdma(-95, 2, -103);
 
@@ -194,16 +190,16 @@ public class SignalStrengthTest {
 
         // Test that a multiple objects are properly stored and returned by getCellSignalStrengths()
         s = new SignalStrength(
-                cdma,
+                new CellSignalStrengthCdma(),
                 new CellSignalStrengthGsm(),
-                new CellSignalStrengthWcdma(),
+                wcdma,
                 new CellSignalStrengthTdscdma(),
                 lte,
                 new CellSignalStrengthNr());
 
         css = s.getCellSignalStrengths();
         assertEquals(2, css.size());
-        assertTrue(css.contains(cdma));
+        assertTrue(css.contains(wcdma));
         assertTrue(css.contains(lte));
     }
 

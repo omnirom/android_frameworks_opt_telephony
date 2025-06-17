@@ -478,9 +478,7 @@ public class VoiceCallSessionStats {
         @VideoState int videoState = conn.getVideoState();
         VoiceCallSession proto = new VoiceCallSession();
 
-        if (mFlags.vonrEnabledMetric()) {
-            mVonrHelper.updateVonrEnabledState();
-        }
+        mVonrHelper.updateVonrEnabledState();
 
         proto.bearerAtStart = bearer;
         proto.bearerAtEnd = bearer;
@@ -582,9 +580,7 @@ public class VoiceCallSessionStats {
         // Set device fold state
         proto.foldState = mDeviceStateHelper.getFoldState();
 
-        if (mFlags.vonrEnabledMetric()) {
-            proto.vonrEnabled = mVonrHelper.getVonrEnabled(mPhone.getSubId());
-        }
+        proto.vonrEnabled = mVonrHelper.getVonrEnabled(mPhone.getSubId());
 
         proto.supportsBusinessCallComposer = isBusinessCallSupported();
         // 0 is defined as UNKNOWN in Enum

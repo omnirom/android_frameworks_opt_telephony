@@ -211,7 +211,7 @@ public class CATServiceTest extends TelephonyTest {
         mCatService.sendStkSms("test", "12345", 1, cmdPrms, mProxyController);
         verify(mSmsController, Mockito.times(1)).sendTextForSubscriber(anyInt(),
                 anyString(), nullable(String.class), anyString(), nullable(String.class),
-                anyString(), Mockito.anyObject(), any(), eq(false), anyLong(), eq(true), eq(true));
+                anyString(), Mockito.any(), any(), eq(false), anyLong(), eq(true), eq(true));
     }
 
     @Test

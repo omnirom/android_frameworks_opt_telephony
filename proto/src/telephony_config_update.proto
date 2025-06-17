@@ -43,4 +43,5 @@ message SatelliteRegionProto {
   optional bytes s2_cell_file = 1;
   repeated string country_codes = 2;
   optional bool is_allowed = 3;
+  optional bytes satellite_access_config_file = 4;
 }

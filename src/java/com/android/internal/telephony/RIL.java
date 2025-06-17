@@ -94,6 +94,7 @@ import com.android.internal.telephony.imsphone.ImsCallInfo;
 import com.android.internal.telephony.metrics.ModemRestartStats;
 import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.SmsSession;
+import com.android.internal.telephony.satellite.SatelliteModemInterface;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus.PersoSubState;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.SimPhonebookRecord;
@@ -393,27 +394,17 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 case EVENT_AIDL_PROXY_DEAD:
                     int aidlService = msg.arg1;
                     long msgCookie = (long) msg.obj;
-                    if (mFeatureFlags.combineRilDeathHandle()) {
-                        if (msgCookie == mServiceCookies.get(aidlService).get()) {
-                            riljLog("handleMessage: EVENT_AIDL_PROXY_DEAD cookie = " + msgCookie
-                                    + ", service = " + serviceToString(aidlService) + ", cookie = "
-                                    + mServiceCookies.get(aidlService));
-                            mIsRadioProxyInitialized = false;
-                            resetProxyAndRequestList(aidlService);
-                            // Remove duplicate death message to avoid duplicate reset.
-                            mRilHandler.removeMessages(EVENT_AIDL_PROXY_DEAD);
-                        } else {
-                            riljLog("Ignore stale EVENT_AIDL_PROXY_DEAD for service "
-                                    + serviceToString(aidlService));
-                        }
-                    } else {
+                    if (msgCookie == mServiceCookies.get(aidlService).get()) {
                         riljLog("handleMessage: EVENT_AIDL_PROXY_DEAD cookie = " + msgCookie
                                 + ", service = " + serviceToString(aidlService) + ", cookie = "
                                 + mServiceCookies.get(aidlService));
-                        if (msgCookie == mServiceCookies.get(aidlService).get()) {
-                            mIsRadioProxyInitialized = false;
-                            resetProxyAndRequestList(aidlService);
-                        }
+                        mIsRadioProxyInitialized = false;
+                        resetProxyAndRequestList(aidlService);
+                        // Remove duplicate death message to avoid duplicate reset.
+                        mRilHandler.removeMessages(EVENT_AIDL_PROXY_DEAD);
+                    } else {
+                        riljLog("Ignore stale EVENT_AIDL_PROXY_DEAD for service "
+                                + serviceToString(aidlService));
                     }
                     break;
             }
@@ -458,14 +449,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
         public void serviceDied(long cookie) {
             // Deal with service going away
             riljLog("serviceDied");
-            if (mFeatureFlags.combineRilDeathHandle()) {
-                mRilHandler.sendMessageAtFrontOfQueue(mRilHandler.obtainMessage(
-                        EVENT_RADIO_PROXY_DEAD,
-                        HAL_SERVICE_RADIO, 0 /* ignored arg2 */, cookie));
-            } else {
-                mRilHandler.sendMessage(mRilHandler.obtainMessage(EVENT_RADIO_PROXY_DEAD,
-                        HAL_SERVICE_RADIO, 0 /* ignored arg2 */, cookie));
-            }
+            mRilHandler.sendMessageAtFrontOfQueue(mRilHandler.obtainMessage(
+                    EVENT_RADIO_PROXY_DEAD,
+                    HAL_SERVICE_RADIO, 0 /* ignored arg2 */, cookie));
         }
     }
 
@@ -501,14 +487,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
         @Override
         public void binderDied() {
             riljLog("Service " + serviceToString(mService) + " has died.");
-            if (mFeatureFlags.combineRilDeathHandle()) {
-                mRilHandler.sendMessageAtFrontOfQueue(mRilHandler.obtainMessage(
-                        EVENT_AIDL_PROXY_DEAD, mService, 0 /* ignored arg2 */,
-                        mLinkedFlags));
-            } else {
-                mRilHandler.sendMessage(mRilHandler.obtainMessage(EVENT_AIDL_PROXY_DEAD, mService,
-                        0 /* ignored arg2 */, mLinkedFlags));
-            }
+            mRilHandler.sendMessageAtFrontOfQueue(mRilHandler.obtainMessage(
+                    EVENT_AIDL_PROXY_DEAD, mService, 0 /* ignored arg2 */,
+                    mLinkedFlags));
             unlinkToDeath();
         }
     }
@@ -524,23 +505,17 @@ public class RIL extends BaseCommands implements CommandsInterface {
             // Increment the cookie so that death notification can be ignored
             mServiceCookies.get(service).incrementAndGet();
         } else {
-            if (mFeatureFlags.combineRilDeathHandle()) {
-                // Reset all aidl services.
-                for (int i = MIN_SERVICE_IDX; i <= MAX_SERVICE_IDX; i++) {
-                    if (i == HAL_SERVICE_RADIO) continue;
-                    if (mServiceProxies.get(i) == null) {
-                        // This should only happen in tests
-                        riljLoge("Null service proxy for service " + serviceToString(i));
-                        continue;
-                    }
-                    mServiceProxies.get(i).clear();
-                    // Increment the cookie so that death notification can be ignored
-                    mServiceCookies.get(i).incrementAndGet();
+            // Reset all aidl services.
+            for (int i = MIN_SERVICE_IDX; i <= MAX_SERVICE_IDX; i++) {
+                if (i == HAL_SERVICE_RADIO) continue;
+                if (mServiceProxies.get(i) == null) {
+                    // This should only happen in tests
+                    riljLoge("Null service proxy for service " + serviceToString(i));
+                    continue;
                 }
-            } else {
-                mServiceProxies.get(service).clear();
+                mServiceProxies.get(i).clear();
                 // Increment the cookie so that death notification can be ignored
-                mServiceCookies.get(service).incrementAndGet();
+                mServiceCookies.get(i).incrementAndGet();
             }
         }
 
@@ -553,19 +528,15 @@ public class RIL extends BaseCommands implements CommandsInterface {
         if (service == HAL_SERVICE_RADIO) {
             getRadioProxy();
         } else {
-            if (mFeatureFlags.combineRilDeathHandle()) {
-                // Reset all aidl services.
-                for (int i = MIN_SERVICE_IDX; i <= MAX_SERVICE_IDX; i++) {
-                    if (i == HAL_SERVICE_RADIO) continue;
-                    if (mServiceProxies.get(i) == null) {
-                        // This should only happen in tests
-                        riljLoge("Null service proxy for service " + serviceToString(i));
-                        continue;
-                    }
-                    getRadioServiceProxy(i);
+            // Reset all aidl services.
+            for (int i = MIN_SERVICE_IDX; i <= MAX_SERVICE_IDX; i++) {
+                if (i == HAL_SERVICE_RADIO) continue;
+                if (mServiceProxies.get(i) == null) {
+                    // This should only happen in tests
+                    riljLoge("Null service proxy for service " + serviceToString(i));
+                    continue;
                 }
-            } else {
-                getRadioServiceProxy(service);
+                getRadioServiceProxy(i);
             }
         }
     }
@@ -620,15 +591,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
             if (serviceBound) {
                 mIsRadioProxyInitialized = false;
-                if (mFeatureFlags.combineRilDeathHandle()) {
-                    // Reset both hidl and aidl proxies.
-                    resetProxyAndRequestList(HAL_SERVICE_RADIO);
-                    resetProxyAndRequestList(HAL_SERVICE_DATA);
-                } else {
-                    for (int service = MIN_SERVICE_IDX; service <= MAX_SERVICE_IDX; service++) {
-                        resetProxyAndRequestList(service);
-                    }
-                }
+                // Reset both hidl and aidl proxies.
+                resetProxyAndRequestList(HAL_SERVICE_RADIO);
+                resetProxyAndRequestList(HAL_SERVICE_DATA);
             }
         }
 
@@ -655,16 +620,11 @@ public class RIL extends BaseCommands implements CommandsInterface {
                             mHalVersion.put(service, RADIO_HAL_VERSION_UNSUPPORTED);
                         }
                     }
-                    if (!mFeatureFlags.combineRilDeathHandle()) {
-                        resetProxyAndRequestList(service);
-                    }
                 }
-                if (mFeatureFlags.combineRilDeathHandle()) {
-                    // Reset both hidl and aidl proxies. Must be after cleaning mocked halVersion,
-                    // otherwise an aidl service will be incorrectly considered as disabled.
-                    resetProxyAndRequestList(HAL_SERVICE_RADIO);
-                    resetProxyAndRequestList(HAL_SERVICE_DATA);
-                }
+                // Reset both hidl and aidl proxies. Must be after cleaning mocked halVersion,
+                // otherwise an aidl service will be incorrectly considered as disabled.
+                resetProxyAndRequestList(HAL_SERVICE_RADIO);
+                resetProxyAndRequestList(HAL_SERVICE_DATA);
             }
         }
 
@@ -1081,34 +1041,19 @@ public class RIL extends BaseCommands implements CommandsInterface {
     @Override
     public synchronized void onSlotActiveStatusChange(boolean active) {
         mIsRadioProxyInitialized = false;
-        if (mFeatureFlags.combineRilDeathHandle()) {
-            if (active) {
-                for (int service = MIN_SERVICE_IDX; service <= MAX_SERVICE_IDX; service++) {
-                    // Try to connect to RIL services and set response functions.
-                    if (service == HAL_SERVICE_RADIO) {
-                        getRadioProxy();
-                    } else {
-                        getRadioServiceProxy(service);
-                    }
+        if (active) {
+            for (int service = MIN_SERVICE_IDX; service <= MAX_SERVICE_IDX; service++) {
+                // Try to connect to RIL services and set response functions.
+                if (service == HAL_SERVICE_RADIO) {
+                    getRadioProxy();
+                } else {
+                    getRadioServiceProxy(service);
                 }
-            } else {
-                // Reset both hidl and aidl proxies
-                resetProxyAndRequestList(HAL_SERVICE_RADIO);
-                resetProxyAndRequestList(HAL_SERVICE_DATA);
             }
         } else {
-            for (int service = MIN_SERVICE_IDX; service <= MAX_SERVICE_IDX; service++) {
-                if (active) {
-                    // Try to connect to RIL services and set response functions.
-                    if (service == HAL_SERVICE_RADIO) {
-                        getRadioProxy();
-                    } else {
-                        getRadioServiceProxy(service);
-                    }
-                } else {
-                    resetProxyAndRequestList(service);
-                }
-            }
+            // Reset both hidl and aidl proxies
+            resetProxyAndRequestList(HAL_SERVICE_RADIO);
+            resetProxyAndRequestList(HAL_SERVICE_DATA);
         }
     }
 
@@ -1386,7 +1331,12 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     private boolean canMakeRequest(String request, RadioServiceProxy proxy, Message result,
-            HalVersion version) {
+            HalVersion minVersion) {
+        return canMakeRequest(request, proxy, result, minVersion, null /* maxVersion */);
+    }
+
+    private boolean canMakeRequest(String request, RadioServiceProxy proxy, Message result,
+            HalVersion minVersion, @Nullable HalVersion maxVersion) {
         int service = HAL_SERVICE_RADIO;
         if (proxy instanceof RadioDataProxy) {
             service = HAL_SERVICE_DATA;
@@ -1413,9 +1363,20 @@ public class RIL extends BaseCommands implements CommandsInterface {
             }
             return false;
         }
-        if (mHalVersion.get(service).less(version)) {
+        if (mHalVersion.get(service).less(minVersion)) {
             riljLoge(String.format("%s not supported on service %s < %s.",
-                    request, serviceToString(service), version));
+                    request, serviceToString(service), minVersion));
+            if (result != null) {
+                AsyncResult.forMessage(result, null,
+                        CommandException.fromRilErrno(REQUEST_NOT_SUPPORTED));
+                result.sendToTarget();
+            }
+            return false;
+        }
+
+        if (maxVersion != null && mHalVersion.get(service).greater(maxVersion)) {
+            riljLoge(String.format("%s not supported on service %s > %s.",
+                    request, serviceToString(service), maxVersion));
             if (result != null) {
                 AsyncResult.forMessage(result, null,
                         CommandException.fromRilErrno(REQUEST_NOT_SUPPORTED));
@@ -3682,7 +3643,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
     @Override
     public void getDeviceIdentity(Message result) {
         RadioModemProxy modemProxy = getRadioServiceProxy(RadioModemProxy.class);
-        if (!canMakeRequest("getDeviceIdentity", modemProxy, result, RADIO_HAL_VERSION_1_4)) {
+        if (!canMakeRequest("getDeviceIdentity", modemProxy, result, RADIO_HAL_VERSION_1_4,
+                RADIO_HAL_VERSION_2_2)) {
             return;
         }
 
@@ -3937,7 +3899,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     public void getImsRegistrationState(Message result) {
         RadioNetworkProxy networkProxy = getRadioServiceProxy(RadioNetworkProxy.class);
         if (!canMakeRequest("getImsRegistrationState", networkProxy, result,
-                RADIO_HAL_VERSION_1_4)) {
+                RADIO_HAL_VERSION_1_4, RADIO_HAL_VERSION_2_2)) {
             return;
         }
 
@@ -4170,7 +4132,8 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     @Override
     public void nvResetConfig(int resetType, Message result) {
-        if (mFeatureFlags.cleanupCdma()) return;
+        // Disable all NV reset functions except modem restart.
+        if (mFeatureFlags.cleanupCdma() && resetType != 1) return;
 
         RadioModemProxy modemProxy = getRadioServiceProxy(RadioModemProxy.class);
         if (!canMakeRequest("nvResetConfig", modemProxy, result, RADIO_HAL_VERSION_1_4)) {
@@ -5399,11 +5362,10 @@ public class RIL extends BaseCommands implements CommandsInterface {
     public void setSatellitePlmn(int simSlot, @NonNull List<String> carrierPlmnList,
             @NonNull List<String> allSatellitePlmnList, Message result) {
         RadioNetworkProxy networkProxy = getRadioServiceProxy(RadioNetworkProxy.class);
-        if (!canMakeRequest(
-                "setSatellitePlmn",
-                networkProxy,
-                result,
-                RADIO_HAL_VERSION_2_4)) {
+        if (getHalVersion(HAL_SERVICE_NETWORK).less(RADIO_HAL_VERSION_2_3)) {
+            riljLog("setSatellitePlmn: SatelliteModemInterface is used.");
+            SatelliteModemInterface.getInstance().setSatellitePlmn(
+                    simSlot, carrierPlmnList, allSatellitePlmnList, result);
             return;
         }
 
@@ -5421,7 +5383,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 rr,
                 "setSatellitePlmn",
                 () -> {
-                    networkProxy.setSatellitePlmn(rr.mSerial, simSlot, carrierPlmnList,
+                    networkProxy.setSatellitePlmn(rr.mSerial, carrierPlmnList,
                             allSatellitePlmnList);
                 });
     }
@@ -5433,11 +5395,10 @@ public class RIL extends BaseCommands implements CommandsInterface {
     public void setSatelliteEnabledForCarrier(int simSlot, boolean satelliteEnabled,
             Message result) {
         RadioNetworkProxy networkProxy = getRadioServiceProxy(RadioNetworkProxy.class);
-        if (!canMakeRequest(
-                "setSatelliteEnabledForCarrier",
-                networkProxy,
-                result,
-                RADIO_HAL_VERSION_2_4)) {
+        if (getHalVersion(HAL_SERVICE_NETWORK).less(RADIO_HAL_VERSION_2_3)) {
+            riljLog("setSatelliteEnabledForCarrier: SatelliteModemInterface is used.");
+            SatelliteModemInterface.getInstance().requestSetSatelliteEnabledForCarrier(
+                    simSlot, satelliteEnabled, result);
             return;
         }
 
@@ -5454,8 +5415,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 rr,
                 "setSatelliteEnabledForCarrier",
                 () -> {
-                    networkProxy.setSatelliteEnabledForCarrier(rr.mSerial, simSlot,
-                            satelliteEnabled);
+                    networkProxy.setSatelliteEnabledForCarrier(rr.mSerial, satelliteEnabled);
                 });
     }
 
@@ -5465,11 +5425,10 @@ public class RIL extends BaseCommands implements CommandsInterface {
     @Override
     public void isSatelliteEnabledForCarrier(int simSlot, Message result) {
         RadioNetworkProxy networkProxy = getRadioServiceProxy(RadioNetworkProxy.class);
-        if (!canMakeRequest(
-                "isSatelliteEnabledForCarrier",
-                networkProxy,
-                result,
-                RADIO_HAL_VERSION_2_4)) {
+        if (getHalVersion(HAL_SERVICE_NETWORK).less(RADIO_HAL_VERSION_2_3)) {
+            riljLog("isSatelliteEnabledForCarrier: SatelliteModemInterface is used.");
+            SatelliteModemInterface.getInstance().requestIsSatelliteEnabledForCarrier(
+                    simSlot, result);
             return;
         }
 
@@ -5483,7 +5442,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         radioServiceInvokeHelper(
                 HAL_SERVICE_NETWORK, rr, "isSatelliteEnabledForCarrier", () -> {
-                    networkProxy.isSatelliteEnabledForCarrier(rr.mSerial, simSlot);
+                    networkProxy.isSatelliteEnabledForCarrier(rr.mSerial);
                 });
     }
 
@@ -6010,7 +5969,6 @@ public class RIL extends BaseCommands implements CommandsInterface {
             case RIL_REQUEST_GET_IMEISV:
             case RIL_REQUEST_SIM_OPEN_CHANNEL:
             case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL:
-            case RIL_REQUEST_DEVICE_IMEI:
 
                 if (!RILJ_LOGV) {
                     // If not versbose logging just return and don't display IMSI and IMEI, IMEISV
@@ -6049,6 +6007,16 @@ public class RIL extends BaseCommands implements CommandsInterface {
                 while (i < length) {
                     sb.append(", ").append(strings[i++]);
                 }
+            }
+            sb.append("}");
+            s = sb.toString();
+        } else if (req == RIL_REQUEST_DEVICE_IMEI) {
+            sb = new StringBuilder("{");
+            ImeiInfo imeiInfo = (ImeiInfo) ret;
+            if (imeiInfo != null) {
+                sb.append(Rlog.pii(RILJ_LOG_TAG, imeiInfo.imei)).append(", ");
+                sb.append(imeiInfo.type).append(", ");
+                sb.append(imeiInfo.svn);
             }
             sb.append("}");
             s = sb.toString();

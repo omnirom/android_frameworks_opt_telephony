@@ -19,7 +19,6 @@ package com.android.internal.telephony.uicc;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyObject;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -99,7 +98,7 @@ public class UiccStateChangedLauncherTest extends TelephonyTest {
         ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
         verify(UiccController.getInstance(), times(1)).registerForIccChanged(eq(uiccLauncher),
                 integerArgumentCaptor.capture(),
-                anyObject());
+                any());
         Message msg = Message.obtain();
         msg.what = integerArgumentCaptor.getValue();
 
@@ -163,6 +162,6 @@ public class UiccStateChangedLauncherTest extends TelephonyTest {
         UiccStateChangedLauncher uiccLauncher =
                 new UiccStateChangedLauncher(mContext, UiccController.getInstance(), mFeatureFlags);
         verify(UiccController.getInstance(), never()).registerForIccChanged(eq(uiccLauncher),
-                anyInt(), anyObject());
+                anyInt(), any());
     }
 }

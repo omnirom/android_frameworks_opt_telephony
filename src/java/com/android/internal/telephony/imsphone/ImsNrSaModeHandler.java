@@ -51,7 +51,7 @@ import java.util.Set;
  * IMS is registered over WiFi in order to improve the delay or voice mute issue when the handover
  * from ePDG to NR is not supported in UE or network.
  */
-public class ImsNrSaModeHandler extends Handler{
+public class ImsNrSaModeHandler extends Handler {
 
     public static final String TAG = "ImsNrSaModeHandler";
 
@@ -60,6 +60,14 @@ public class ImsNrSaModeHandler extends Handler{
 
     private final @NonNull ImsPhone mPhone;
     private @Nullable CarrierConfigManager mCarrierConfigManager;
+
+    @FunctionalInterface
+    public interface N1ModeSetter {
+        /** Override-able for testing */
+        void setN1ModeEnabled(boolean enabled, @Nullable Message message);
+    }
+
+    private N1ModeSetter mN1ModeSetter;
 
     private @NrSaDisablePolicy int mNrSaDisablePolicy;
     private boolean mIsNrSaDisabledForWfc;
@@ -73,7 +81,10 @@ public class ImsNrSaModeHandler extends Handler{
 
     public ImsNrSaModeHandler(@NonNull ImsPhone phone, Looper looper) {
         super(looper);
+
         mPhone = phone;
+        mN1ModeSetter = mPhone.getDefaultPhone()::setN1ModeEnabled;
+
         mCarrierConfigManager = (CarrierConfigManager) mPhone.getContext()
                 .getSystemService(Context.CARRIER_CONFIG_SERVICE);
 
@@ -257,8 +268,13 @@ public class ImsNrSaModeHandler extends Handler{
         }
     }
 
+    @VisibleForTesting
+    public void setN1ModeSetter(N1ModeSetter setter) {
+        mN1ModeSetter = setter;
+    }
+
     private void setNrSaMode(boolean onOrOff) {
-        mPhone.getDefaultPhone().setN1ModeEnabled(onOrOff, null);
+        mN1ModeSetter.setN1ModeEnabled(onOrOff, null);
         Log.i(TAG, "setNrSaMode : " + onOrOff);
 
         setNrSaDisabledForWfc(!onOrOff);

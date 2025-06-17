@@ -34,6 +34,7 @@ import com.android.server.updates.ConfigUpdateInstallReceiver;
 
 import libcore.io.IoUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
@@ -51,16 +52,21 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     protected static final String NEW_CONFIG_CONTENT_PATH = "new_telephony_config.pb";
     protected static final String VALID_CONFIG_CONTENT_PATH = "valid_telephony_config.pb";
+    private static final String BACKUP_CONTENT_PATH = "backup_telephony_config.pb";
+
     protected static final String UPDATE_METADATA_PATH = "metadata/";
     public static final String VERSION = "version";
+    public static final String BACKUP_VERSION = "backup_version";
 
     private ConcurrentHashMap<Executor, Callback> mCallbackHashMap = new ConcurrentHashMap<>();
     @NonNull
     private final Object mConfigParserLock = new Object();
     @GuardedBy("mConfigParserLock")
     private ConfigParser mConfigParser;
-    @NonNull private final ConfigUpdaterMetricsStats mConfigUpdaterMetricsStats;
+    @NonNull
+    private final ConfigUpdaterMetricsStats mConfigUpdaterMetricsStats;
 
+    private int mOriginalVersion;
 
     public static TelephonyConfigUpdateInstallReceiver sReceiverAdaptorInstance =
             new TelephonyConfigUpdateInstallReceiver();
@@ -138,6 +144,10 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
     @Override
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PROTECTED)
     public void postInstall(Context context, Intent intent) {
+        postInstall();
+    }
+
+    private void postInstall() {
         Log.d(TAG, "Telephony config is updated in file partition");
 
         ConfigParser newConfigParser = getNewConfigParser(DOMAIN_SATELLITE,
@@ -157,17 +167,19 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
             if (getInstance().mConfigParser != null) {
                 int updatedVersion = newConfigParser.mVersion;
                 int previousVersion = getInstance().mConfigParser.mVersion;
-                Log.d(TAG, "previous version is " + previousVersion + " | updated version is "
-                        + updatedVersion);
-                mConfigUpdaterMetricsStats.setConfigVersion(updatedVersion);
+                Log.d(TAG, "previous proto version is " + previousVersion
+                        + " | updated proto version is " + updatedVersion);
+
                 if (updatedVersion <= previousVersion) {
-                    Log.e(TAG, "updatedVersion is smaller than previousVersion");
+                    Log.e(TAG, "updated proto Version [" + updatedVersion
+                            + "] is smaller than previous proto Version [" + previousVersion + "]");
                     mConfigUpdaterMetricsStats.reportOemAndCarrierConfigError(
                             SatelliteConstants.CONFIG_UPDATE_RESULT_INVALID_VERSION);
                     return;
                 }
             }
             getInstance().mConfigParser = newConfigParser;
+            mConfigUpdaterMetricsStats.setConfigVersion(getInstance().mConfigParser.getVersion());
         }
 
         if (!getInstance().mCallbackHashMap.keySet().isEmpty()) {
@@ -246,8 +258,6 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
     public ConfigParser getNewConfigParser(String domain, @Nullable byte[] data) {
         if (data == null) {
             Log.d(TAG, "content data is null");
-            mConfigUpdaterMetricsStats.reportOemAndCarrierConfigError(
-                    SatelliteConstants.CONFIG_UPDATE_RESULT_NO_DATA);
             return null;
         }
         switch (domain) {
@@ -290,5 +300,126 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
         }
         Log.d(TAG, "source file is not exist, no file to copy");
         return false;
+    }
+
+    /**
+     * This API should be used by only CTS/unit tests to reset the telephony configs set through
+     * config updater
+     */
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    public boolean cleanUpTelephonyConfigs() {
+        Log.d(TAG, "cleanTelephonyConfigs: resetting the telephony configs");
+        try {
+            // metadata/version
+            File updateMetadataDir = new File(updateDir, UPDATE_METADATA_PATH);
+            writeUpdate(
+                    updateMetadataDir,
+                    updateVersion,
+                    new ByteArrayInputStream(Integer.toString(-1).getBytes()));
+
+            // new_telephony_config.pb
+            writeUpdate(updateDir, updateContent, new ByteArrayInputStream(new byte[]{}));
+
+            // valid_telephony_config.pb
+            File validConfigContentPath = new File(updateDir, VALID_CONFIG_CONTENT_PATH);
+            writeUpdate(updateDir, validConfigContentPath, new ByteArrayInputStream(new byte[]{}));
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to clean telephony config files: " + e);
+            return false;
+        }
+
+        Log.d(TAG, "cleanTelephonyConfigs: resetting the config parser");
+        synchronized (getInstance().mConfigParserLock) {
+            getInstance().mConfigParser = null;
+        }
+        return true;
+    }
+
+
+    /**
+     * This API is used by CTS to override the version of the config data
+     *
+     * @param reset   Whether to restore the original version
+     * @param version The overriding version
+     * @return {@code true} if successful, {@code false} otherwise
+     */
+    public boolean overrideVersion(boolean reset, int version) {
+        Log.d(TAG, "overrideVersion: reset=" + reset + ", version=" + version);
+        if (reset) {
+            version = mOriginalVersion;
+            if (!restoreContentData()) {
+                return false;
+            }
+        } else {
+            mOriginalVersion = version;
+            if (!backupContentData()) {
+                return false;
+            }
+        }
+        return overrideVersion(version);
+    }
+
+    private boolean overrideVersion(int version) {
+        synchronized (getInstance().mConfigParserLock) {
+            try {
+                writeUpdate(updateDir, updateVersion,
+                        new ByteArrayInputStream(Long.toString(version).getBytes()));
+                if (getInstance().mConfigParser != null) {
+                    getInstance().mConfigParser.overrideVersion(version);
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "overrideVersion: e=" + e);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private boolean isFileExists(@NonNull String fileName) {
+        Log.d(TAG, "isFileExists");
+        if (fileName == null) {
+            Log.d(TAG, "fileName cannot be null");
+            return false;
+        }
+        File sourceFile = new File(UPDATE_DIR, fileName);
+        return sourceFile.exists() && sourceFile.isFile();
+    }
+
+    private boolean backupContentData() {
+        if (!isFileExists(VALID_CONFIG_CONTENT_PATH)) {
+            Log.d(TAG, VALID_CONFIG_CONTENT_PATH + " is not exit, no need to backup");
+            return true;
+        }
+        if (!copySourceFileToTargetFile(VALID_CONFIG_CONTENT_PATH, BACKUP_CONTENT_PATH)) {
+            Log.e(TAG, "backupContentData: fail to backup the config data");
+            return false;
+        }
+        if (!copySourceFileToTargetFile(UPDATE_METADATA_PATH + VERSION,
+                UPDATE_METADATA_PATH + BACKUP_VERSION)) {
+            Log.e(TAG, "bakpuackupContentData: fail to backup the version");
+            return false;
+        }
+        Log.d(TAG, "backupContentData: backup success");
+        return true;
+    }
+
+    private boolean restoreContentData() {
+        if (!isFileExists(BACKUP_CONTENT_PATH)) {
+            Log.d(TAG, BACKUP_CONTENT_PATH + " is not exit, no need to restore");
+            return true;
+        }
+        if (!copySourceFileToTargetFile(BACKUP_CONTENT_PATH, NEW_CONFIG_CONTENT_PATH)) {
+            Log.e(TAG, "restoreContentData: fail to restore the config data");
+            return false;
+        }
+        if (!copySourceFileToTargetFile(UPDATE_METADATA_PATH + BACKUP_VERSION,
+                UPDATE_METADATA_PATH + VERSION)) {
+            Log.e(TAG, "restoreContentData: fail to restore the version");
+            return false;
+        }
+        Log.d(TAG, "restoreContentData: populate the data to SatelliteController");
+        postInstall();
+        Log.d(TAG, "restoreContentData: success");
+        return true;
     }
 }

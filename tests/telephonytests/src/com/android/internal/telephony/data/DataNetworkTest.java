@@ -21,9 +21,11 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Matchers.argThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
@@ -32,7 +34,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import android.net.ConnectivityManager;
 import android.net.InetAddresses;
@@ -382,6 +383,7 @@ public class DataNetworkTest extends TelephonyTest {
     public void setUp() throws Exception {
         super.setUp(getClass().getSimpleName());
         doReturn(1).when(mPhone).getSubId();
+        doReturn("12345").when(mServiceState).getOperatorNumeric();
         doReturn(mImsPhone).when(mPhone).getImsPhone();
         doReturn(mImsCT).when(mImsPhone).getCallTracker();
         doReturn(PhoneConstants.State.IDLE).when(mImsCT).getState();
@@ -430,9 +432,8 @@ public class DataNetworkTest extends TelephonyTest {
                 NetworkCapabilities.NET_CAPABILITY_EIMS, NetworkCapabilities.NET_CAPABILITY_XCAP))
                 .when(mDataConfigManager).getForcedCellularTransportCapabilities();
         doReturn(CarrierConfigManager.SATELLITE_DATA_SUPPORT_ONLY_RESTRICTED)
-                .when(mDataConfigManager).getSatelliteDataSupportMode();
-        doReturn(true).when(mFeatureFlags).carrierEnabledSatelliteFlag();
-        doReturn(true).when(mFeatureFlags).satelliteInternet();
+                .when(mSatelliteController)
+                .getSatelliteDataServicePolicyForPlmn(anyInt(), anyString());
 
         serviceStateChanged(TelephonyManager.NETWORK_TYPE_LTE,
                 NetworkRegistrationInfo.REGISTRATION_STATE_HOME, false/*isNtn*/);
@@ -1264,7 +1265,6 @@ public class DataNetworkTest extends TelephonyTest {
 
     @Test
     public void testNetworkRequestDetachedBeforeConnected() throws Exception {
-        doReturn(true).when(mFeatureFlags).keepEmptyRequestsNetwork();
         NetworkRequestList networkRequestList = new NetworkRequestList(new TelephonyNetworkRequest(
                 new NetworkRequest.Builder()
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_IMS)
@@ -1547,6 +1547,78 @@ public class DataNetworkTest extends TelephonyTest {
 
         verify(mDataNetworkCallback).onDisconnected(eq(mDataNetworkUT), eq(
                 DataFailCause.RADIO_NOT_AVAILABLE), eq(DataNetwork.TEAR_DOWN_REASON_NONE));
+        assertThat(mDataNetworkUT.isConnected()).isFalse();
+    }
+
+    @Test
+    public void testSetupDataCallOnRadioNotAvailable() throws Exception {
+        NetworkRequestList networkRequestList = new NetworkRequestList();
+        networkRequestList.add(new TelephonyNetworkRequest(new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build(), mPhone, mFeatureFlags));
+
+        mDataNetworkUT = new DataNetwork(mPhone, mFeatureFlags, Looper.myLooper(),
+        mDataServiceManagers, mInternetDataProfile, networkRequestList,
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
+                DataAllowedReason.NORMAL, mDataNetworkCallback);
+        assertThat(mDataNetworkUT.isConnecting()).isTrue();
+
+        mDataNetworkUT.sendMessage(4/*EVENT_RADIO_NOT_AVAILABLE*/);
+        processAllMessages();
+
+        assertThat(mDataNetworkUT.isConnected()).isFalse();
+        verify(mDataNetworkCallback).onSetupDataFailed(eq(mDataNetworkUT), eq(
+                networkRequestList), eq(DataFailCause.RADIO_NOT_AVAILABLE), anyLong());
+    }
+
+    @Test
+    public void testHandoverToIwlanSuccessWithRadioNotAvailable() throws Exception {
+        setupDataNetwork();
+
+        setSuccessfulSetupDataResponse(mMockedWlanDataServiceManager, 456);
+        TelephonyNetworkAgent mockNetworkAgent = Mockito.mock(TelephonyNetworkAgent.class);
+        replaceInstance(DataNetwork.class, "mNetworkAgent",
+                mDataNetworkUT, mockNetworkAgent);
+        // Now handover to IWLAN
+        mDataNetworkUT.startHandover(AccessNetworkConstants.TRANSPORT_TYPE_WLAN, null);
+        mDataNetworkUT.sendMessage(4/*EVENT_RADIO_NOT_AVAILABLE*/);
+        processAllMessages();
+
+        assertThat(mDataNetworkUT.isConnected()).isTrue();
+        assertThat(mDataNetworkUT.getTransport()).isEqualTo(
+                AccessNetworkConstants.TRANSPORT_TYPE_WLAN);
+    }
+
+    @Test
+    public void testHandoverToIwlanFailedWithRadioNotAvailable() throws Exception {
+        setupDataNetwork();
+
+        setFailedSetupDataResponse(mMockedWlanDataServiceManager,
+                DataServiceCallback.RESULT_ERROR_TEMPORARILY_UNAVAILABLE);
+
+        TelephonyNetworkAgent mockNetworkAgent = Mockito.mock(TelephonyNetworkAgent.class);
+        replaceInstance(DataNetwork.class, "mNetworkAgent",
+                mDataNetworkUT, mockNetworkAgent);
+        // Now handover to IWLAN
+        mDataNetworkUT.startHandover(AccessNetworkConstants.TRANSPORT_TYPE_WLAN, null);
+        mDataNetworkUT.sendMessage(4/*EVENT_RADIO_NOT_AVAILABLE*/);
+        processAllMessages();
+
+        assertThat(mDataNetworkUT.isConnected()).isFalse();
+    }
+
+    @Test
+    public void testHandoverToCellularWithRadioNotAvailable() throws Exception {
+        testCreateDataNetworkOnIwlan();
+
+        TelephonyNetworkAgent mockNetworkAgent = Mockito.mock(TelephonyNetworkAgent.class);
+        replaceInstance(DataNetwork.class, "mNetworkAgent",
+                mDataNetworkUT, mockNetworkAgent);
+        // Now handover to IWLAN
+        mDataNetworkUT.startHandover(AccessNetworkConstants.TRANSPORT_TYPE_WWAN, null);
+        mDataNetworkUT.sendMessage(4/*EVENT_RADIO_NOT_AVAILABLE*/);
+        processAllMessages();
+
         assertThat(mDataNetworkUT.isConnected()).isFalse();
     }
 
@@ -2221,8 +2293,7 @@ public class DataNetworkTest extends TelephonyTest {
     }
 
     @Test
-    public void testValidationStatusOnPreciseDataConnectionState_FlagEnabled() throws Exception {
-        when(mFeatureFlags.networkValidation()).thenReturn(true);
+    public void testValidationStatusOnPreciseDataConnectionState() throws Exception {
         setupIwlanDataNetwork();
 
         ArgumentCaptor<PreciseDataConnectionState> pdcsCaptor =
@@ -2271,37 +2342,7 @@ public class DataNetworkTest extends TelephonyTest {
     }
 
     @Test
-    public void testValidationStatus_FlagDisabled() throws Exception {
-        // network validation flag disabled
-        when(mFeatureFlags.networkValidation()).thenReturn(false);
-        setupIwlanDataNetwork();
-
-        // precise data connection state posted for setup data call response
-        ArgumentCaptor<PreciseDataConnectionState> pdcsCaptor =
-                ArgumentCaptor.forClass(PreciseDataConnectionState.class);
-        verify(mPhone, times(2)).notifyDataConnection(pdcsCaptor.capture());
-
-        // data state updated with network validation status
-        DataCallResponse response = createDataCallResponse(123,
-                DataCallResponse.LINK_STATUS_ACTIVE, Collections.emptyList(), null,
-                PreciseDataConnectionState.NETWORK_VALIDATION_SUCCESS);
-        mDataNetworkUT.sendMessage(8 /*EVENT_DATA_STATE_CHANGED*/, new AsyncResult(
-                AccessNetworkConstants.TRANSPORT_TYPE_WLAN, List.of(response), null));
-        processAllMessages();
-
-        // Verify updated validation status at precise data connection state not posted due to flag
-        // disabled
-        pdcsCaptor = ArgumentCaptor.forClass(PreciseDataConnectionState.class);
-        verify(mPhone, times(2)).notifyDataConnection(pdcsCaptor.capture());
-        List<PreciseDataConnectionState> pdcsList = pdcsCaptor.getAllValues();
-        assertThat(pdcsList.get(1).getNetworkValidationStatus())
-                .isEqualTo(PreciseDataConnectionState.NETWORK_VALIDATION_UNSUPPORTED);
-    }
-
-    @Test
-    public void testHandoverWithSuccessNetworkValidation_FlagEnabled() throws Exception {
-        when(mFeatureFlags.networkValidation()).thenReturn(true);
-
+    public void testHandoverWithSuccessNetworkValidation() throws Exception {
         setupDataNetwork();
 
         setSuccessfulSetupDataResponse(
@@ -2529,6 +2570,45 @@ public class DataNetworkTest extends TelephonyTest {
 
     @Test
     public void testUnrestrictedSatelliteNetworkCapabilities() {
+        setupNonTerrestrialDataNetwork();
+        assertThat(mDataNetworkUT.isSatellite()).isTrue();
+
+        assertThat(mDataNetworkUT.getNetworkCapabilities()
+                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)).isFalse();
+
+        // Test constrained traffic
+        doReturn(CarrierConfigManager.SATELLITE_DATA_SUPPORT_BANDWIDTH_CONSTRAINED)
+                .when(mSatelliteController)
+                .getSatelliteDataServicePolicyForPlmn(anyInt(), anyString());
+        mDataNetworkUT.sendMessage(22/*EVENT_VOICE_CALL_STARTED*/); // update network capabilities
+        processAllMessages();
+
+        assertThat(mDataNetworkUT.getNetworkCapabilities()
+                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)).isTrue();
+        try {
+            assertThat(mDataNetworkUT.getNetworkCapabilities()
+                    .hasCapability(DataUtils.NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED)).isFalse();
+        } catch (Exception ignored) { }
+
+        // Test unconstrained traffic
+        doReturn(CarrierConfigManager.SATELLITE_DATA_SUPPORT_ALL)
+                .when(mSatelliteController)
+                .getSatelliteDataServicePolicyForPlmn(anyInt(), anyString());
+        mDataNetworkUT.sendMessage(22/*EVENT_VOICE_CALL_STARTED*/); // update network capabilities
+        processAllMessages();
+
+        assertThat(mDataNetworkUT.getNetworkCapabilities()
+                .hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)).isTrue();
+        // TODO(enable after NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED become a default cap)
+//        try {
+//            assertThat(mDataNetworkUT.getNetworkCapabilities()
+//                    .hasCapability(DataUtils.NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED)).isTrue();
+//        } catch (Exception ignored) {}
+    }
+
+    @Test
+    public void testUnrestrictedSatelliteNetworkCapabilities_WithDataServiceCheckFlagDisabled() {
+        doReturn(false).when(mFeatureFlags).dataServiceCheck();
         setupNonTerrestrialDataNetwork();
         assertThat(mDataNetworkUT.isSatellite()).isTrue();
 

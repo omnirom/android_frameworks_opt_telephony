@@ -66,6 +66,7 @@ public class SatelliteConstants {
     public static final int CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_COUNTRY_CODE = 9;
     public static final int CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_S2_CELL_FILE = 10;
     public static final int CONFIG_UPDATE_RESULT_IO_ERROR = 11;
+    public static final int CONFIG_UPDATE_RESULT_INVALID_SATELLITE_ACCESS_CONFIG_FILE = 12;
 
     @IntDef(prefix = {"CONFIG_UPDATE_RESULT_"}, value = {
             CONFIG_UPDATE_RESULT_UNKNOWN,
@@ -79,7 +80,8 @@ public class SatelliteConstants {
             CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_SUPPORTED_SERVICES,
             CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_COUNTRY_CODE,
             CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_S2_CELL_FILE,
-            CONFIG_UPDATE_RESULT_IO_ERROR
+            CONFIG_UPDATE_RESULT_IO_ERROR,
+            CONFIG_UPDATE_RESULT_INVALID_SATELLITE_ACCESS_CONFIG_FILE
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface ConfigUpdateResult {}
@@ -111,15 +113,35 @@ public class SatelliteConstants {
     public static final int TRIGGERING_EVENT_EXTERNAL_REQUEST = 1;
     // Satellite Access Controller has been triggered by an MCC change event.
     public static final int TRIGGERING_EVENT_MCC_CHANGED = 2;
-    //Satellite Access Controller has been triggered due to the location setting being enabled.
+    // Satellite Access Controller has been triggered due to the location setting being enabled.
     public static final int TRIGGERING_EVENT_LOCATION_SETTINGS_ENABLED = 3;
+    // Satellite Access Controller has been triggered due to the location setting being disabled.
+    public static final int TRIGGERING_EVENT_LOCATION_SETTINGS_DISABLED = 4;
+    // Satellite Access Controller has been triggered due to the config data updated.
+    public static final int TRIGGERING_EVENT_CONFIG_DATA_UPDATED = 5;
 
     @IntDef(prefix = {"TRIGGERING_EVENT_"}, value = {
             TRIGGERING_EVENT_UNKNOWN,
             TRIGGERING_EVENT_EXTERNAL_REQUEST,
             TRIGGERING_EVENT_MCC_CHANGED,
-            TRIGGERING_EVENT_LOCATION_SETTINGS_ENABLED
+            TRIGGERING_EVENT_LOCATION_SETTINGS_ENABLED,
+            TRIGGERING_EVENT_LOCATION_SETTINGS_DISABLED,
+            TRIGGERING_EVENT_CONFIG_DATA_UPDATED
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface TriggeringEvent {}
+
+    public static final int SATELLITE_ENTITLEMENT_SERVICE_POLICY_UNKNOWN = 0;
+    public static final int SATELLITE_ENTITLEMENT_SERVICE_POLICY_RESTRICTED = 1;
+    public static final int SATELLITE_ENTITLEMENT_SERVICE_POLICY_CONSTRAINED = 2;
+    public static final int SATELLITE_ENTITLEMENT_SERVICE_POLICY_UNCONSTRAINED = 3;
+
+    @IntDef(prefix = {"SATELLITE_ENTITLEMENT_SERVICE_POLICY_"}, value = {
+            SATELLITE_ENTITLEMENT_SERVICE_POLICY_UNKNOWN,
+            SATELLITE_ENTITLEMENT_SERVICE_POLICY_RESTRICTED,
+            SATELLITE_ENTITLEMENT_SERVICE_POLICY_CONSTRAINED,
+            SATELLITE_ENTITLEMENT_SERVICE_POLICY_UNCONSTRAINED,
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SatelliteEntitlementServicePolicy {}
 }

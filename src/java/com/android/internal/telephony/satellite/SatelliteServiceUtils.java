@@ -30,8 +30,9 @@ import android.os.PersistableBundle;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellIdentity;
+import android.telephony.DropBoxManagerLoggerBackend;
 import android.telephony.NetworkRegistrationInfo;
-import android.telephony.Rlog;
+import android.telephony.PersistentLogger;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -50,12 +51,16 @@ import android.telephony.satellite.stub.NTRadioTechnology;
 import android.telephony.satellite.stub.SatelliteModemState;
 import android.telephony.satellite.stub.SatelliteResult;
 import android.text.TextUtils;
+import android.util.Log;
 
+import com.android.internal.R;
+import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.util.TelephonyUtils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -290,8 +295,8 @@ public class SatelliteServiceUtils {
         android.telephony.satellite.stub.SatelliteModemEnableRequestAttributes converted =
                 new android.telephony.satellite.stub.SatelliteModemEnableRequestAttributes();
         converted.isEnabled = attributes.isEnabled();
-        converted.isDemoMode = attributes.isDemoMode();
-        converted.isEmergencyMode = attributes.isEmergencyMode();
+        converted.isDemoMode = attributes.isForDemoMode();
+        converted.isEmergencyMode = attributes.isForEmergencyMode();
         converted.satelliteSubscriptionInfo = toSatelliteSubscriptionInfo(
                 attributes.getSatelliteSubscriptionInfo());
         return converted;
@@ -315,12 +320,37 @@ public class SatelliteServiceUtils {
             if (ar.exception instanceof SatelliteManager.SatelliteException) {
                 errorCode = ((SatelliteManager.SatelliteException) ar.exception).getErrorCode();
                 loge(caller + " SatelliteException: " + ar.exception);
+            } else if (ar.exception instanceof CommandException) {
+                errorCode = convertCommandExceptionErrorToSatelliteError(
+                        ((CommandException) ar.exception).getCommandError());
+                loge(caller + " CommandException: "  + ar.exception);
             } else {
                 loge(caller + " unknown exception: " + ar.exception);
             }
         }
         logd(caller + " error: " + errorCode);
         return errorCode;
+    }
+
+    private static int convertCommandExceptionErrorToSatelliteError(
+            CommandException.Error commandExceptionError) {
+        logd("convertCommandExceptionErrorToSatelliteError: commandExceptionError="
+                + commandExceptionError.toString());
+
+        switch(commandExceptionError) {
+            case REQUEST_NOT_SUPPORTED:
+                return SatelliteManager.SATELLITE_RESULT_REQUEST_NOT_SUPPORTED;
+            case RADIO_NOT_AVAILABLE:
+                return SatelliteManager.SATELLITE_RESULT_RADIO_NOT_AVAILABLE;
+            case INTERNAL_ERR:
+            case INVALID_STATE:
+            case INVALID_MODEM_STATE:
+                return SatelliteManager.SATELLITE_RESULT_INVALID_MODEM_STATE;
+            case MODEM_ERR:
+                return SatelliteManager.SATELLITE_RESULT_MODEM_ERROR;
+            default:
+                return SatelliteManager.SATELLITE_RESULT_ERROR;
+        }
     }
 
     /**
@@ -504,8 +534,17 @@ public class SatelliteServiceUtils {
             ServiceState serviceState = phone.getServiceState();
             if (serviceState != null) {
                 int state = serviceState.getState();
+                NetworkRegistrationInfo dataNri = serviceState.getNetworkRegistrationInfo(
+                        NetworkRegistrationInfo.DOMAIN_PS,
+                        AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
+                boolean isCellularDataInService = dataNri != null && dataNri.isInService();
+                logd("isCellularAvailable: phoneId=" + phone.getPhoneId() + " state=" + state
+                        + " isEmergencyOnly=" + serviceState.isEmergencyOnly()
+                        + " isCellularDataInService=" + isCellularDataInService);
+
                 if ((state == STATE_IN_SERVICE || state == STATE_EMERGENCY_ONLY
-                        || serviceState.isEmergencyOnly())
+                        || serviceState.isEmergencyOnly()
+                        || isCellularDataInService)
                         && !isSatellitePlmn(phone.getSubId(), serviceState)) {
                     logd("isCellularAvailable true");
                     return true;
@@ -518,8 +557,8 @@ public class SatelliteServiceUtils {
 
     /** Check whether device is connected to satellite PLMN */
     public static boolean isSatellitePlmn(int subId, @NonNull ServiceState serviceState) {
-        List<String> satellitePlmnList =
-                SatelliteController.getInstance().getSatellitePlmnsForCarrier(subId);
+        List<String> satellitePlmnList = new ArrayList<>(
+                SatelliteController.getInstance().getAllPlmnSet());
         if (satellitePlmnList.isEmpty()) {
             logd("isSatellitePlmn: satellitePlmnList is empty");
             return false;
@@ -529,12 +568,12 @@ public class SatelliteServiceUtils {
                 serviceState.getNetworkRegistrationInfoListForTransportType(
                         AccessNetworkConstants.TRANSPORT_TYPE_WWAN)) {
             String registeredPlmn = nri.getRegisteredPlmn();
-            if (TextUtils.isEmpty(registeredPlmn)) {
-                logd("isSatellitePlmn: registeredPlmn is empty");
+            String mccmnc = getMccMnc(nri);
+            if (TextUtils.isEmpty(registeredPlmn) && TextUtils.isEmpty(mccmnc)) {
+                logd("isSatellitePlmn: registeredPlmn and cell plmn are empty");
                 continue;
             }
 
-            String mccmnc = getMccMnc(nri);
             for (String satellitePlmn : satellitePlmnList) {
                 if (TextUtils.equals(satellitePlmn, registeredPlmn)
                         || TextUtils.equals(satellitePlmn, mccmnc)) {
@@ -662,15 +701,52 @@ public class SatelliteServiceUtils {
         return earfcnsMap;
     }
 
+    /**
+     * Returns a persistent logger to persist important log because logcat logs may not be
+     * retained long enough.
+     *
+     * @return a PersistentLogger, return {@code null} if it is not supported or encounters
+     * exception.
+     */
+    @Nullable
+    public static PersistentLogger getPersistentLogger(@NonNull Context context) {
+        try {
+            if (context.getResources().getBoolean(
+                    R.bool.config_dropboxmanager_persistent_logging_enabled)) {
+                return new PersistentLogger(DropBoxManagerLoggerBackend.getInstance(context));
+            }
+        } catch (RuntimeException ex) {
+            loge("getPersistentLogger: RuntimeException ex=" + ex);
+        }
+        return null;
+    }
+
+    /** Determines whether the subscription is in carrier roaming NB-IoT NTN or not. */
+    public static boolean isNbIotNtn(int subId) {
+        Phone phone = PhoneFactory.getPhone(SubscriptionManager.getPhoneId(subId));
+        if (phone == null) {
+            logd("isNbIotNtn(): phone is null");
+            return false;
+        }
+
+        SatelliteController satelliteController = SatelliteController.getInstance();
+        if (satelliteController == null) {
+            logd("isNbIotNtn(): satelliteController is null");
+            return false;
+        }
+
+        return satelliteController.isInCarrierRoamingNbIotNtn(phone);
+    }
+
     private static void logd(@NonNull String log) {
-        Rlog.d(TAG, log);
+        Log.d(TAG, log);
     }
 
     private static void loge(@NonNull String log) {
-        Rlog.e(TAG, log);
+        Log.e(TAG, log);
     }
 
     private static void logv(@NonNull String log) {
-        Rlog.v(TAG, log);
+        Log.v(TAG, log);
     }
 }

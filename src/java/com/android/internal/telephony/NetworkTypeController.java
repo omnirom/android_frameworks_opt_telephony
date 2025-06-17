@@ -213,8 +213,8 @@ public class NetworkTypeController extends StateMachine {
     @NonNull private final Set<Integer> mAdditionalNrAdvancedBands = new HashSet<>();
     @NonNull private String mPrimaryTimerState;
     @NonNull private String mSecondaryTimerState;
-    // TODO(b/316425811 remove the workaround)
     private int mNrAdvancedBandsSecondaryTimer;
+    private int mNrAdvancedPciChangeSecondaryTimer;
     @NonNull private String mPreviousState;
     @LinkStatus private int mPhysicalLinkStatus;
     private boolean mIsPhysicalChannelConfig16Supported;
@@ -224,6 +224,7 @@ public class NetworkTypeController extends StateMachine {
     private boolean mEnableNrAdvancedWhileRoaming = true;
     private boolean mIsDeviceIdleMode = false;
     private boolean mPrimaryCellChangedWhileIdle = false;
+    private boolean mPciChangedDuringPrimaryTimer = false;
 
     // Cached copies below to prevent race conditions
     @NonNull private ServiceState mServiceState;
@@ -485,6 +486,8 @@ public class NetworkTypeController extends StateMachine {
                 CarrierConfigManager.KEY_LTE_ENDC_USING_USER_DATA_FOR_RRC_DETECTION_BOOL);
         mNrAdvancedBandsSecondaryTimer = config.getInt(
                 CarrierConfigManager.KEY_NR_ADVANCED_BANDS_SECONDARY_TIMER_SECONDS_INT);
+        mNrAdvancedPciChangeSecondaryTimer = config.getInt(
+                CarrierConfigManager.KEY_NR_ADVANCED_PCI_CHANGE_SECONDARY_TIMER_SECONDS_INT);
         String nrIconConfiguration = config.getString(
                 CarrierConfigManager.KEY_5G_ICON_CONFIGURATION_STRING);
         String overrideTimerRule = config.getString(
@@ -507,9 +510,6 @@ public class NetworkTypeController extends StateMachine {
                 String[] kv = (pair.trim().toLowerCase(Locale.ROOT)).split(":");
                 if (kv.length != 2) {
                     if (DBG) loge("Invalid 5G icon configuration, config = " + pair);
-                    continue;
-                }
-                if (!mFeatureFlags.supportNrSaRrcIdle() && kv[0].equals(STATE_CONNECTED_RRC_IDLE)) {
                     continue;
                 }
                 int icon = TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE;
@@ -539,9 +539,6 @@ public class NetworkTypeController extends StateMachine {
                     if (DBG) loge("Invalid 5G icon timer configuration, config = " + triple);
                     continue;
                 }
-                if (!mFeatureFlags.supportNrSaRrcIdle() && kv[0].equals(STATE_CONNECTED_RRC_IDLE)) {
-                    continue;
-                }
                 int duration;
                 try {
                     duration = Integer.parseInt(kv[2]);
@@ -550,10 +547,6 @@ public class NetworkTypeController extends StateMachine {
                 }
                 if (kv[0].equals(STATE_ANY)) {
                     for (String state : ALL_STATES) {
-                        if (!mFeatureFlags.supportNrSaRrcIdle()
-                                && state.equals(STATE_CONNECTED_RRC_IDLE)) {
-                            continue;
-                        }
                         OverrideTimerRule node = tempRules.get(state);
                         node.addTimer(kv[1], duration);
                     }
@@ -574,9 +567,6 @@ public class NetworkTypeController extends StateMachine {
                     }
                     continue;
                 }
-                if (kv[0].equals(STATE_CONNECTED_RRC_IDLE) && !mFeatureFlags.supportNrSaRrcIdle()) {
-                    continue;
-                }
                 int duration;
                 try {
                     duration = Integer.parseInt(kv[2]);
@@ -585,10 +575,6 @@ public class NetworkTypeController extends StateMachine {
                 }
                 if (kv[0].equals(STATE_ANY)) {
                     for (String state : ALL_STATES) {
-                        if (state.equals(STATE_CONNECTED_RRC_IDLE)
-                                && !mFeatureFlags.supportNrSaRrcIdle()) {
-                            continue;
-                        }
                         OverrideTimerRule node = tempRules.get(state);
                         node.addSecondaryTimer(kv[1], duration);
                     }
@@ -601,19 +587,17 @@ public class NetworkTypeController extends StateMachine {
 
         // TODO: Remove this workaround to make STATE_CONNECTED_RRC_IDLE backwards compatible with
         //  STATE_CONNECTED once carrier configs are updated.
-        if (mFeatureFlags.supportNrSaRrcIdle()) {
-            OverrideTimerRule nrRules = tempRules.get(STATE_CONNECTED);
-            if (!tempRules.get(STATE_CONNECTED_RRC_IDLE).isDefined() && nrRules.isDefined()) {
-                OverrideTimerRule nrIdleRules =
-                        new OverrideTimerRule(STATE_CONNECTED_RRC_IDLE, nrRules.mOverrideType);
-                for (Map.Entry<String, Integer> entry : nrIdleRules.mPrimaryTimers.entrySet()) {
-                    nrIdleRules.addTimer(entry.getKey(), entry.getValue());
-                }
-                for (Map.Entry<String, Integer> entry : nrIdleRules.mSecondaryTimers.entrySet()) {
-                    nrIdleRules.addSecondaryTimer(entry.getKey(), entry.getValue());
-                }
-                tempRules.put(STATE_CONNECTED_RRC_IDLE, nrIdleRules);
+        OverrideTimerRule nrRules = tempRules.get(STATE_CONNECTED);
+        if (!tempRules.get(STATE_CONNECTED_RRC_IDLE).isDefined() && nrRules.isDefined()) {
+            OverrideTimerRule nrIdleRules =
+                    new OverrideTimerRule(STATE_CONNECTED_RRC_IDLE, nrRules.mOverrideType);
+            for (Map.Entry<String, Integer> entry : nrIdleRules.mPrimaryTimers.entrySet()) {
+                nrIdleRules.addTimer(entry.getKey(), entry.getValue());
             }
+            for (Map.Entry<String, Integer> entry : nrIdleRules.mSecondaryTimers.entrySet()) {
+                nrIdleRules.addSecondaryTimer(entry.getKey(), entry.getValue());
+            }
+            tempRules.put(STATE_CONNECTED_RRC_IDLE, nrIdleRules);
         }
 
         mOverrideTimerRules = tempRules;
@@ -795,6 +779,8 @@ public class NetworkTypeController extends StateMachine {
                     mRatchetedNrBandwidths = 0;
                     mLastAnchorNrCellId = PhysicalChannelConfig.PHYSICAL_CELL_ID_UNKNOWN;
                     mDoesPccListIndicateIdle = false;
+                    mIsNrAdvancedAllowedByPco = false;
+                    mInVoiceCall = false;
                     mPhysicalChannelConfigs = null;
                     transitionTo(mLegacyState);
                     break;
@@ -888,7 +874,6 @@ public class NetworkTypeController extends StateMachine {
                             transitionTo(mNrConnectedAdvancedState);
                         } else {
                             transitionTo(isPhysicalLinkActive()
-                                    || !mFeatureFlags.supportNrSaRrcIdle()
                                     ? mNrConnectedState : mNrIdleState);
                         }
                     } else if (isLte(rat) && isNrNotRestricted()) {
@@ -971,7 +956,6 @@ public class NetworkTypeController extends StateMachine {
                             transitionTo(mNrConnectedAdvancedState);
                         } else {
                             transitionTo(isPhysicalLinkActive()
-                                    || !mFeatureFlags.supportNrSaRrcIdle()
                                     ? mNrConnectedState : mNrIdleState);
                         }
                     } else if (!isLte(rat) || !isNrNotRestricted()) {
@@ -1055,7 +1039,6 @@ public class NetworkTypeController extends StateMachine {
                             transitionTo(mNrConnectedAdvancedState);
                         } else {
                             transitionTo(isPhysicalLinkActive()
-                                    || !mFeatureFlags.supportNrSaRrcIdle()
                                     ? mNrConnectedState : mNrIdleState);
                         }
                     } else if (!isLte(rat) || !isNrNotRestricted()) {
@@ -1187,7 +1170,7 @@ public class NetworkTypeController extends StateMachine {
 
         @Override
         public String getName() {
-            return mFeatureFlags.supportNrSaRrcIdle() ? STATE_CONNECTED_RRC_IDLE : STATE_CONNECTED;
+            return STATE_CONNECTED_RRC_IDLE;
         }
     }
 
@@ -1222,7 +1205,7 @@ public class NetworkTypeController extends StateMachine {
                             || (isLte(rat) && isNrConnected())) {
                         if (isNrAdvanced()) {
                             transitionTo(mNrConnectedAdvancedState);
-                        } else if (!isPhysicalLinkActive() && mFeatureFlags.supportNrSaRrcIdle()) {
+                        } else if (!isPhysicalLinkActive()) {
                             transitionWithTimerTo(mNrIdleState);
                         } else {
                             // Update in case the override network type changed
@@ -1241,7 +1224,7 @@ public class NetworkTypeController extends StateMachine {
                     if (isUsingPhysicalChannelConfigForRrcDetection()) {
                         mPhysicalLinkStatus = getPhysicalLinkStatusFromPhysicalChannelConfig();
                     }
-                    if (!isPhysicalLinkActive() && mFeatureFlags.supportNrSaRrcIdle()) {
+                    if (!isPhysicalLinkActive()) {
                         transitionWithTimerTo(mNrIdleState);
                     } else if (isNrAdvanced()) {
                         transitionTo(mNrConnectedAdvancedState);
@@ -1249,7 +1232,7 @@ public class NetworkTypeController extends StateMachine {
                     break;
                 case EVENT_PHYSICAL_LINK_STATUS_CHANGED:
                     mPhysicalLinkStatus = msg.arg1;
-                    if (!isPhysicalLinkActive() && mFeatureFlags.supportNrSaRrcIdle()) {
+                    if (!isPhysicalLinkActive()) {
                         transitionWithTimerTo(mNrIdleState);
                     }
                     break;
@@ -1314,7 +1297,6 @@ public class NetworkTypeController extends StateMachine {
                                         TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE;
                             }
                             transitionWithTimerTo(isPhysicalLinkActive()
-                                    || !mFeatureFlags.supportNrSaRrcIdle()
                                     ? mNrConnectedState : mNrIdleState);
                         }
                     } else if (isLte(rat) && isNrNotRestricted()) {
@@ -1330,7 +1312,7 @@ public class NetworkTypeController extends StateMachine {
                     if (isUsingPhysicalChannelConfigForRrcDetection()) {
                         mPhysicalLinkStatus = getPhysicalLinkStatusFromPhysicalChannelConfig();
                     }
-                    if (!isPhysicalLinkActive() && mFeatureFlags.supportNrSaRrcIdle()) {
+                    if (!isPhysicalLinkActive()) {
                         transitionWithTimerTo(mNrIdleState);
                     } else if (!isNrAdvanced()) {
                         transitionWithTimerTo(mNrConnectedState);
@@ -1425,7 +1407,9 @@ public class NetworkTypeController extends StateMachine {
             mRatchetedNrBandwidths = Math.max(mRatchetedNrBandwidths, nrBandwidths);
             mRatchetedNrBands.addAll(nrBands);
         } else {
-            if (mFeatureFlags.supportNrSaRrcIdle() && mDoesPccListIndicateIdle
+            mRatchetedNrBandwidths = nrBandwidths;
+            mRatchetedNrBands = nrBands;
+            if (mDoesPccListIndicateIdle
                     && anchorNrCellId != mLastAnchorNrCellId
                     && isUsingPhysicalChannelConfigForRrcDetection()
                     && !mPrimaryCellChangedWhileIdle
@@ -1441,13 +1425,12 @@ public class NetworkTypeController extends StateMachine {
                 log("Not ratcheting physical channel config fields since anchor NR cell changed: "
                         + mLastAnchorNrCellId + " -> " + anchorNrCellId);
             }
-            mRatchetedNrBandwidths = nrBandwidths;
-            mRatchetedNrBands = nrBands;
         }
 
         mLastAnchorNrCellId = anchorNrCellId;
         mPhysicalChannelConfigs = physicalChannelConfigs;
         mDoesPccListIndicateIdle = false;
+        mPciChangedDuringPrimaryTimer = mIsPrimaryTimerActive;
         if (DBG) {
             log("Physical channel configs updated: anchorNrCell=" + mLastAnchorNrCellId
                     + ", nrBandwidths=" + mRatchetedNrBandwidths + ", nrBands=" +  mRatchetedNrBands
@@ -1505,6 +1488,7 @@ public class NetworkTypeController extends StateMachine {
     private void transitionWithSecondaryTimerTo(IState destState) {
         String currentName = getCurrentState().getName();
         OverrideTimerRule rule = mOverrideTimerRules.get(mPrimaryTimerState);
+        int duration = -1;
         if (DBG) {
             log("Transition with secondary timer from " + currentName + " to "
                     + destState.getName());
@@ -1513,12 +1497,19 @@ public class NetworkTypeController extends StateMachine {
             log("Skip secondary timer from " + currentName + " to "
                     + destState.getName() + " due to in call");
         } else if (!mIsDeviceIdleMode && rule != null && rule.getSecondaryTimer(currentName) > 0) {
-            int duration = rule.getSecondaryTimer(currentName);
+            duration = rule.getSecondaryTimer(currentName);
             if (mLastShownNrDueToAdvancedBand && mNrAdvancedBandsSecondaryTimer > 0) {
                 duration = mNrAdvancedBandsSecondaryTimer;
                 if (DBG) log("timer adjusted by nr_advanced_bands_secondary_timer_seconds_int");
             }
             if (DBG) log(duration + "s secondary timer started for state: " + currentName);
+        } else if (mNrAdvancedPciChangeSecondaryTimer > 0
+                && mPciChangedDuringPrimaryTimer) {
+            duration = mNrAdvancedPciChangeSecondaryTimer;
+            if (DBG) log(duration + "s secondary timer started for PCI changed");
+        }
+
+        if (duration > 0) {
             mSecondaryTimerState = currentName;
             mPreviousState = currentName;
             mIsSecondaryTimerActive = true;
@@ -1526,7 +1517,9 @@ public class NetworkTypeController extends StateMachine {
             mSecondaryTimerExpireTimestamp = SystemClock.uptimeMillis() + durationMillis;
             sendMessageDelayed(EVENT_SECONDARY_TIMER_EXPIRED, destState, durationMillis);
         }
+
         mIsPrimaryTimerActive = false;
+        mPciChangedDuringPrimaryTimer = false;
         transitionTo(getCurrentState());
     }
 
@@ -1534,7 +1527,7 @@ public class NetworkTypeController extends StateMachine {
         int dataRat = getDataNetworkType();
         IState transitionState;
         if (dataRat == TelephonyManager.NETWORK_TYPE_NR || (isLte(dataRat) && isNrConnected())) {
-            if (!isPhysicalLinkActive() && mFeatureFlags.supportNrSaRrcIdle()) {
+            if (!isPhysicalLinkActive()) {
                 transitionState = mNrIdleState;
             } else if (isNrAdvanced()) {
                 transitionState = mNrConnectedAdvancedState;
@@ -1576,6 +1569,7 @@ public class NetworkTypeController extends StateMachine {
             }
             removeMessages(EVENT_PRIMARY_TIMER_EXPIRED);
             mIsPrimaryTimerActive = false;
+            mPciChangedDuringPrimaryTimer = false;
             mPrimaryTimerState = "";
             transitionToCurrentState();
             return;
@@ -1619,6 +1613,7 @@ public class NetworkTypeController extends StateMachine {
         removeMessages(EVENT_PRIMARY_TIMER_EXPIRED);
         removeMessages(EVENT_SECONDARY_TIMER_EXPIRED);
         mIsPrimaryTimerActive = false;
+        mPciChangedDuringPrimaryTimer = false;
         mIsSecondaryTimerActive = false;
         mSecondaryTimerExpireTimestamp = 0;
         mPrimaryTimerState = "";
@@ -1842,11 +1837,11 @@ public class NetworkTypeController extends StateMachine {
         pw.flush();
         pw.increaseIndent();
         pw.println("mSubId=" + mPhone.getSubId());
-        pw.println("supportNrSaRrcIdle=" + mFeatureFlags.supportNrSaRrcIdle());
-        pw.println("mOverrideTimerRules=" + mOverrideTimerRules.toString());
+        pw.println("mOverrideTimerRules=" + mOverrideTimerRules);
         pw.println("mLteEnhancedPattern=" + mLteEnhancedPattern);
         pw.println("mIsPhysicalChannelConfigOn=" + mIsPhysicalChannelConfigOn);
         pw.println("mIsPrimaryTimerActive=" + mIsPrimaryTimerActive);
+        pw.println("mPciChangedDuringPrimaryTimer=" + mPciChangedDuringPrimaryTimer);
         pw.println("mIsSecondaryTimerActive=" + mIsSecondaryTimerActive);
         pw.println("mIsTimerResetEnabledForLegacyStateRrcIdle="
                 + mIsTimerResetEnabledForLegacyStateRrcIdle);

@@ -71,6 +71,7 @@ import com.android.internal.annotations.GuardedBy;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.uicc.UiccPort;
 import com.android.internal.telephony.uicc.UiccProfile;
+import com.android.internal.telephony.util.WorkerThread;
 import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
@@ -369,48 +370,72 @@ public class CarrierPrivilegesTracker extends Handler {
 
         if (mFeatureFlags.asyncInitCarrierPrivilegesTracker()) {
             final Object localLock = new Object();
-            HandlerThread initializerThread =
-                    new HandlerThread("CarrierPrivilegesTracker Initializer") {
-                        @Override
-                        protected void onLooperPrepared() {
-                            synchronized (localLock) {
-                                localLock.notifyAll();
-                            }
+            if (mFeatureFlags.threadShred()) {
+                mCurrentHandler = new Handler(WorkerThread.get().getLooper()) {
+                    @Override
+                    public void handleMessage(Message msg) {
+                        switch(msg.what) {
+                            case ACTION_INITIALIZE_TRACKER:
+                                handleInitializeTracker();
+                                if (!hasMessagesOrCallbacks()) {
+                                    mCurrentHandler = CarrierPrivilegesTracker.this;
+                                }
+                                break;
+                            default:
+                                Message m = CarrierPrivilegesTracker.this.obtainMessage();
+                                m.copyFrom(msg);
+                                m.sendToTarget();
+                                if (!hasMessagesOrCallbacks()) {
+                                    mCurrentHandler = CarrierPrivilegesTracker.this;
+                                }
+                                break;
                         }
-                    };
-            synchronized (localLock) {
-                initializerThread.start();
-                while (true) {
-                    try {
-                        localLock.wait();
-                        break;
-                    } catch (InterruptedException ie) {
+                    }
+                };
+            } else {
+                HandlerThread initializerThread =
+                        new HandlerThread("CarrierPrivilegesTracker Initializer") {
+                            @Override
+                            protected void onLooperPrepared() {
+                                synchronized (localLock) {
+                                    localLock.notifyAll();
+                                }
+                            }
+                        };
+                synchronized (localLock) {
+                    initializerThread.start();
+                    while (true) {
+                        try {
+                            localLock.wait();
+                            break;
+                        } catch (InterruptedException ie) {
+                        }
                     }
                 }
+                mCurrentHandler = new Handler(initializerThread.getLooper()) {
+                    @Override
+                    public void handleMessage(Message msg) {
+                        switch(msg.what) {
+                            case ACTION_INITIALIZE_TRACKER:
+                                handleInitializeTracker();
+                                if (!hasMessagesOrCallbacks()) {
+                                    mCurrentHandler = CarrierPrivilegesTracker.this;
+                                    initializerThread.quitSafely();
+                                }
+                                break;
+                            default:
+                                Message m = CarrierPrivilegesTracker.this.obtainMessage();
+                                m.copyFrom(msg);
+                                m.sendToTarget();
+                                if (!hasMessagesOrCallbacks()) {
+                                    mCurrentHandler = CarrierPrivilegesTracker.this;
+                                    initializerThread.quitSafely();
+                                }
+                                break;
+                        }
+                    }
+                };
             }
-            mCurrentHandler = new Handler(initializerThread.getLooper()) {
-                @Override
-                public void handleMessage(Message msg) {
-                    switch(msg.what) {
-                        case ACTION_INITIALIZE_TRACKER:
-                            handleInitializeTracker();
-                            if (!hasMessagesOrCallbacks()) {
-                                mCurrentHandler = CarrierPrivilegesTracker.this;
-                                initializerThread.quitSafely();
-                            }
-                            break;
-                        default:
-                            Message m = CarrierPrivilegesTracker.this.obtainMessage();
-                            m.copyFrom(msg);
-                            m.sendToTarget();
-                            if (!hasMessagesOrCallbacks()) {
-                                mCurrentHandler = CarrierPrivilegesTracker.this;
-                                initializerThread.quitSafely();
-                            }
-                            break;
-                    }
-                }
-            };
         } else {
             mCurrentHandler = this;
         }
@@ -534,6 +559,9 @@ public class CarrierPrivilegesTracker extends Handler {
     private void handleSimStateChanged(int slotId, int simState) {
         if (slotId != mPhone.getPhoneId()) return;
 
+        // TODO(b/398737967): remove or silence down when diagnosed
+        Rlog.d(TAG, "handleSimStateChanged: slotId=" + slotId + " simState=" + simState);
+
         List<UiccAccessRule> updatedUiccRules = Collections.EMPTY_LIST;
 
         mPrivilegedPackageInfoLock.writeLock().lock();
@@ -545,7 +573,7 @@ public class CarrierPrivilegesTracker extends Handler {
 
         // Only include the UICC rules if the SIM is fully loaded
         if (simState == SIM_STATE_LOADED) {
-            mLocalLog.log("SIM fully loaded, handleUiccAccessRulesLoaded.");
+            Rlog.d(TAG, "handleSimStateChanged: SIM fully loaded.");
             handleUiccAccessRulesLoaded();
         } else {
             if (!mUiccRules.isEmpty()
@@ -554,12 +582,13 @@ public class CarrierPrivilegesTracker extends Handler {
                         SystemClock.uptimeMillis() + CLEAR_UICC_RULES_DELAY_MILLIS;
                 mCurrentHandler.sendMessageAtTime(obtainMessage(ACTION_CLEAR_UICC_RULES),
                         mClearUiccRulesUptimeMillis);
-                mLocalLog.log("SIM is gone, simState=" + TelephonyManager.simStateToString(simState)
+                Rlog.d(TAG, "handleSimStateChanged: SIM is gone, simState="
+                        + TelephonyManager.simStateToString(simState)
                         + ". Delay " + TimeUnit.MILLISECONDS.toSeconds(
                         CLEAR_UICC_RULES_DELAY_MILLIS) + " seconds to clear UICC rules.");
             } else {
-                mLocalLog.log(
-                        "Ignore SIM gone event while UiccRules is empty or waiting to be emptied.");
+                Rlog.d(TAG, "handleSimStateChanged: Ignore SIM gone event while"
+                        + " UiccRules is empty or waiting to be emptied.");
             }
         }
     }

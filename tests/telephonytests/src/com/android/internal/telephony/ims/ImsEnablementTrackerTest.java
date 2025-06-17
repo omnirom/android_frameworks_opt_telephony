@@ -23,11 +23,11 @@ import static com.android.internal.telephony.ims.ImsEnablementTracker.COMMAND_RE
 import static junit.framework.Assert.assertTrue;
 
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -224,7 +224,7 @@ public class ImsEnablementTrackerTest extends ImsTestBase {
         mTracker.disableIms(SLOT_1, SUB_1);
         waitForHandler(mHandler);
 
-        verifyZeroInteractions(mMockServiceControllerBinder);
+        verifyNoMoreInteractions(mMockServiceControllerBinder);
         assertTrue(mTracker.isState(SLOT_1, mTracker.STATE_IMS_DISABLED));
     }
 
@@ -299,7 +299,7 @@ public class ImsEnablementTrackerTest extends ImsTestBase {
         mTracker.enableIms(SLOT_1, SUB_1);
         waitForHandler(mHandler);
 
-        verifyZeroInteractions(mMockServiceControllerBinder);
+        verifyNoMoreInteractions(mMockServiceControllerBinder);
         assertTrue(mTracker.isState(SLOT_1, mTracker.STATE_IMS_ENABLED));
     }
 
@@ -417,7 +417,7 @@ public class ImsEnablementTrackerTest extends ImsTestBase {
         mTracker.enableIms(SLOT_1, SUB_1);
         waitForHandler(mHandler);
 
-        verifyZeroInteractions(mMockServiceControllerBinder);
+        verifyNoMoreInteractions(mMockServiceControllerBinder);
         assertTrue(mTracker.isState(SLOT_1, mTracker.STATE_IMS_RESETTING));
     }
 
@@ -435,7 +435,7 @@ public class ImsEnablementTrackerTest extends ImsTestBase {
         mTracker.disableIms(SLOT_1, SUB_1);
         waitForHandler(mHandler);
 
-        verifyZeroInteractions(mMockServiceControllerBinder);
+        verifyNoMoreInteractions(mMockServiceControllerBinder);
         assertTrue(mTracker.isState(SLOT_1, mTracker.STATE_IMS_RESETTING));
     }
 

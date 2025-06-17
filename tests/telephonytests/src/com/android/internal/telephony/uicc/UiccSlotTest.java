@@ -21,7 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyObject;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -428,8 +428,8 @@ public class UiccSlotTest extends TelephonyTest {
         mIccCardStatus.mSlotPortMapping.mPortIndex = 0;
         mUiccSlot.update(mSimulatedCommands, mIccCardStatus, phoneId, slotIndex);
         verify(mTelephonyComponentFactory).makeUiccProfile(
-                anyObject(), eq(mSimulatedCommands), eq(mIccCardStatus), anyInt(), anyObject(),
-                anyObject(), anyObject());
+                any(), eq(mSimulatedCommands), eq(mIccCardStatus), anyInt(), any(),
+                any(), any());
         assertEquals(IccCardStatus.CardState.CARDSTATE_PRESENT, mUiccSlot.getCardState());
         assertNotNull(mUiccSlot.getUiccCard());
 
@@ -451,8 +451,8 @@ public class UiccSlotTest extends TelephonyTest {
         mIccCardStatus.mCardState = IccCardStatus.CardState.CARDSTATE_PRESENT;
         mUiccSlot.update(mSimulatedCommands, mIccCardStatus, phoneId, slotIndex);
         verify(mTelephonyComponentFactory).makeUiccProfile(
-                anyObject(), eq(mSimulatedCommands), eq(mIccCardStatus), anyInt(), anyObject(),
-                anyObject(), anyObject());
+                any(), eq(mSimulatedCommands), eq(mIccCardStatus), anyInt(), any(),
+                any(), any());
         assertEquals(IccCardStatus.CardState.CARDSTATE_PRESENT, mUiccSlot.getCardState());
         assertNotNull(mUiccSlot.getUiccCard());
 

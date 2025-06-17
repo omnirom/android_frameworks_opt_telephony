@@ -18,6 +18,7 @@ package com.android.internal.telephony.configupdate;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.util.Log;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 public abstract class ConfigParser<T> {
+    private static final String TAG = "ConfigParser";
 
     public static final int VERSION_UNKNOWN = -1;
 
@@ -97,4 +99,13 @@ public abstract class ConfigParser<T> {
      * @param data the config data
      */
     protected abstract void parseData(@Nullable byte[] data);
+
+
+    /**
+     * This API is used by CTS to override the version
+     */
+    protected void overrideVersion(int version) {
+        mVersion = version;
+        Log.d(TAG, "overrideVersion: mVersion=" + mVersion);
+    }
 }

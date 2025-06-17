@@ -187,10 +187,14 @@ public class EmergencyNumberTracker extends Handler {
         mFeatureFlags = featureFlags;
         mResources = ctx.getResources();
 
-        if (TelephonyCapabilities.minimalTelephonyCdmCheck(mFeatureFlags)
-                && !ctx.getPackageManager().hasSystemFeature(
-                    PackageManager.FEATURE_TELEPHONY_CALLING)) {
-            throw new UnsupportedOperationException("EmergencyNumberTracker requires calling");
+        if (TelephonyCapabilities.minimalTelephonyCdmCheck(mFeatureFlags)) {
+            if (!ctx.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY_CALLING)
+                    && !ctx.getPackageManager()
+                            .hasSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING)) {
+                throw new UnsupportedOperationException(
+                        "EmergencyNumberTracker requires telephony calling or messaging feature to"
+                                + " be enabled");
+            }
         }
 
         if (mPhone != null) {

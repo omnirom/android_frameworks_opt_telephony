@@ -124,6 +124,21 @@ public class SubscriptionInfoInternalTest {
                             SubscriptionDatabaseManagerTest.FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED)
                     .setIsSatelliteProvisionedForNonIpDatagram(
                             SubscriptionDatabaseManagerTest.FAKE_SATELLITE_PROVISIONED)
+                    .setSatelliteEntitlementBarredPlmnsList(
+                            SubscriptionDatabaseManagerTest
+                                    .FAKE_SATELLITE_ENTITLEMENT_BARRED_PLMNS1)
+                    .setSatelliteEntitlementDataPlanForPlmns(
+                            SubscriptionDatabaseManagerTest
+                                    .FAKE_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS1)
+                    .setSatelliteEntitlementPlmnServiceTypes(
+                            SubscriptionDatabaseManagerTest
+                                    .FAKE_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP1)
+                    .setSatellitePlmnsDataServicePolicy(
+                            SubscriptionDatabaseManagerTest
+                                    .FAKE_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY1)
+                    .setSatellitePlmnsVoiceServicePolicy(
+                            SubscriptionDatabaseManagerTest
+                                    .FAKE_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY1)
                     .build();
 
     private final SubscriptionInfoInternal mSubInfoNull =
@@ -257,6 +272,21 @@ public class SubscriptionInfoInternalTest {
                 .isEqualTo(SubscriptionDatabaseManagerTest.FAKE_SATELLITE_ESOS_SUPPORTED_ENABLED);
         assertThat(mSubInfo.getIsSatelliteProvisionedForNonIpDatagram())
                 .isEqualTo(SubscriptionDatabaseManagerTest.FAKE_SATELLITE_PROVISIONED);
+        assertThat(mSubInfo.getSatelliteEntitlementBarredPlmnsList())
+                .isEqualTo(SubscriptionDatabaseManagerTest
+                        .FAKE_SATELLITE_ENTITLEMENT_BARRED_PLMNS1);
+        assertThat(mSubInfo.getSatelliteEntitlementDataPlanForPlmns())
+                .isEqualTo(SubscriptionDatabaseManagerTest
+                        .FAKE_SATELLITE_ENTITLEMENT_DATA_PLAN_PLMNS1);
+        assertThat(mSubInfo.getSatelliteEntitlementPlmnsServiceTypes())
+                .isEqualTo(SubscriptionDatabaseManagerTest
+                        .FAKE_SATELLITE_ENTITLEMENT_SERVICE_TYPE_MAP1);
+        assertThat(mSubInfo.getSatellitePlmnsDataServicePolicy())
+                .isEqualTo(SubscriptionDatabaseManagerTest
+                        .FAKE_SATELLITE_ENTITLEMENT_DATA_SERVICE_POLICY1);
+        assertThat(mSubInfo.getSatellitePlmnsVoiceServicePolicy())
+                .isEqualTo(SubscriptionDatabaseManagerTest
+                        .FAKE_SATELLITE_ENTITLEMENT_VOICE_SERVICE_POLICY1);
     }
 
     @Test

@@ -18,8 +18,8 @@ package com.android.internal.telephony.satellite;
 
 import android.annotation.NonNull;
 import android.telephony.NetworkRegistrationInfo;
-import android.telephony.Rlog;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.util.List;
 
@@ -60,6 +60,6 @@ public class NtnCapabilityResolver {
     }
 
     private static void logd(@NonNull String log) {
-        Rlog.d(TAG, log);
+        Log.d(TAG, log);
     }
 }

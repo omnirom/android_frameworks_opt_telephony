@@ -132,6 +132,7 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void getAvailableBandModes(int serial) throws RemoteException {
+        if (Flags.cleanupCdma()) return;
         if (isEmpty()) return;
         if (isAidl()) {
             mNetworkProxy.getAvailableBandModes(serial);
@@ -401,6 +402,7 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setBandMode(int serial, int bandMode) throws RemoteException {
+        if (Flags.cleanupCdma()) return;
         if (isEmpty()) return;
         if (isAidl()) {
             mNetworkProxy.setBandMode(serial, bandMode);
@@ -525,6 +527,7 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setLocationUpdates(int serial, boolean enable) throws RemoteException {
+        if (Flags.cleanupCdma()) return;
         if (isEmpty()) return;
         if (isAidl()) {
             mNetworkProxy.setLocationUpdates(serial, enable);
@@ -629,6 +632,7 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setSuppServiceNotifications(int serial, boolean enable) throws RemoteException {
+        if (Flags.cleanupCdma()) return;
         if (isEmpty()) return;
         if (isAidl()) {
             mNetworkProxy.setSuppServiceNotifications(serial, enable);
@@ -988,22 +992,19 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * Set the non-terrestrial PLMN with lower priority than terrestrial networks.
      *
      * @param serial Serial number of request.
-     * @param simSlot Indicates the SIM slot to which this API will be applied. The modem will use
-     *                this information to determine the relevant carrier.
      * @param carrierPlmnList The list of roaming PLMN used for connecting to satellite networks
      *                        supported by user subscription.
      * @param allSatellitePlmnList Modem should use the allSatellitePlmnList to identify satellite
      *                             PLMNs that are not supported by the carrier and make sure not to
      *                             attach to them.
      */
-    public void setSatellitePlmn(int serial, int simSlot, List<String> carrierPlmnList,
+    public void setSatellitePlmn(int serial, List<String> carrierPlmnList,
             List<String> allSatellitePlmnList) throws RemoteException {
         if (isEmpty()) return;
         if (isAidl()) {
             String[] carrierPlmnArray = carrierPlmnList.toArray(new String[0]);
             String[] allSatellitePlmnArray = allSatellitePlmnList.toArray(new String[0]);
-            mNetworkProxy.setSatellitePlmn(serial, simSlot, carrierPlmnArray,
-                    allSatellitePlmnArray);
+            mNetworkProxy.setSatellitePlmn(serial, carrierPlmnArray, allSatellitePlmnArray);
         }
         // Only supported on AIDL.
     }
@@ -1012,15 +1013,13 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * Enable or disable satellite in the cellular modem associated with a carrier.
      *
      * @param serial Serial number of request.
-     * @param simSlot Indicates the SIM slot to which this API will be applied. The modem will use
-     *                this information to determine the relevant carrier.
      * @param satelliteEnabled {@code true} to enable satellite, {@code false} to disable satellite.
      */
-    public void setSatelliteEnabledForCarrier(int serial, int simSlot,
-            boolean satelliteEnabled) throws RemoteException {
+    public void setSatelliteEnabledForCarrier(
+            int serial, boolean satelliteEnabled) throws RemoteException {
         if (isEmpty()) return;
         if (isAidl()) {
-            mNetworkProxy.setSatelliteEnabledForCarrier(serial, simSlot, satelliteEnabled);
+            mNetworkProxy.setSatelliteEnabledForCarrier(serial, satelliteEnabled);
         }
         // Only supported on AIDL.
     }
@@ -1029,13 +1028,12 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * Check whether satellite is enabled in the cellular modem associated with a carrier.
      *
      * @param serial Serial number of request.
-     * @param simSlot Indicates the SIM slot to which this API will be applied.
      */
-    public void isSatelliteEnabledForCarrier(int serial, int simSlot)
+    public void isSatelliteEnabledForCarrier(int serial)
             throws RemoteException {
         if (isEmpty()) return;
         if (isAidl()) {
-            mNetworkProxy.isSatelliteEnabledForCarrier(serial, simSlot);
+            mNetworkProxy.isSatelliteEnabledForCarrier(serial);
         }
         // Only supported on AIDL.
     }

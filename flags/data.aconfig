@@ -1,39 +1,16 @@
 package: "com.android.internal.telephony.flags"
 container: "system"
 
-# OWNER=linggm TARGET=24Q4
+# OWNER=linggm TARGET=25Q2
 flag {
-  name: "keep_empty_requests_network"
+  name: "auto_data_switch_enhanced"
   namespace: "telephony"
-  description: "Don't tear down network even if no requests attached to it."
-  bug: "331301784"
-  metadata {
-    purpose: PURPOSE_BUGFIX
-  }
-}
-
-# OWNER=linggm TARGET=24Q3
-flag {
-  name: "auto_data_switch_allow_roaming"
-  namespace: "telephony"
-  description: "Allow using roaming network as target if user allows it from settings."
+  description: "Ramp up RAT signal strength based auto data switch"
   bug: "287132491"
   metadata {
     purpose: PURPOSE_BUGFIX
   }
 }
-
-# OWNER=linggm TARGET=24Q3
-flag {
-  name: "auto_data_switch_uses_data_enabled"
-  namespace: "telephony"
-  description: "Separately consider the backup phone's data allowed and data enabled."
-  bug: "338552223"
-  metadata {
-    purpose: PURPOSE_BUGFIX
-  }
-}
-
 
 # OWNER=sarahchin TARGET=24Q3
 flag {
@@ -42,15 +19,6 @@ flag {
   namespace: "telephony"
   description: "Support additional slicing error codes and functionality."
   bug: "307378699"
-}
-
-# OWNER=nagendranb TARGET=24Q3
-flag {
-  name: "apn_setting_field_support_flag"
-  is_exported: true
-  namespace: "telephony"
-  description: "Expose apn setting supporting field"
-  bug: "307038091"
 }
 
 # OWNER=sangyun TARGET=24Q3
@@ -62,63 +30,12 @@ flag {
   bug:"286171724"
 }
 
-# OWNER=qingqi TARGET=24Q3
-flag {
-  name: "vonr_enabled_metric"
-  namespace: "telephony"
-  description: "Collect vonr status in voice call metric"
-  bug:"288449751"
-}
-
-# OWNER=apsankar TARGET=24Q3
-flag {
-  name: "data_call_session_stats_captures_cross_sim_calling"
-  namespace: "telephony"
-  description: "The DataCallSessionStats metrics will capture whether the IWLAN PDN is set up on cross-SIM calling."
-  bug: "313956117"
-}
-
-# OWNER=sewook TARGET=24Q3
-flag {
-  name: "reconnect_qualified_network"
-  namespace: "telephony"
-  description: "This flag is for internal implementation to handle reconnect request from QNS in telephony FWK."
-  bug: "319520561"
-}
-
-# OWNER=jackyu TARGET=24Q3
-flag {
-  name: "dsrs_diagnostics_enabled"
-  namespace: "telephony"
-  description: "Enable DSRS diagnostics."
-  bug: "319601607"
-}
-
-# OWNER=jackyu TARGET=24Q3
-flag {
-  name: "data_rat_metric_enabled"
-  namespace: "telephony"
-  description: "Write DataRatStateChanged atom"
-  bug:"318519337"
-}
-
 # OWNER=jackyu TARGET=24Q4
 flag {
   name: "dds_callback"
   namespace: "telephony"
   description: "Adding new callback when DDS changed"
   bug:"353723350"
-}
-
-# OWNER=jackyu TARGET=25Q1
-flag {
-  name: "support_network_provider"
-  namespace: "telephony"
-  description: "Deprecate network factory and adapt the new network provider model from connectivity service"
-  bug: "343370895"
-  metadata {
-    purpose: PURPOSE_BUGFIX
-  }
 }
 
 # OWNER=jackyu TARGET=25Q2
@@ -128,4 +45,26 @@ flag {
   description: "Support OEM_PAID and OEM_PRIVATE networks"
   bug: "366194627"
   is_exported: true
+}
+
+# OWNER=gwenlin TARGET=25Q2
+flag {
+  name: "incall_handover_policy"
+  namespace: "telephony"
+  description: "Support IWLAN handover policy based on incall."
+  bug:"376765521"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=nagendranb TARGET=25Q2
+flag {
+  name: "data_service_check"
+  namespace: "telephony"
+  description: "Support data service check based on nri available services."
+  bug:"381338283"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
 }

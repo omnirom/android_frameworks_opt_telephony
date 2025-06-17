@@ -1361,6 +1361,35 @@ public class ServiceStateStatsTest extends TelephonyTest {
         assertTrue(state.isNtn);
     }
 
+    @Test
+    public void testIsNbIotNtn() {
+        // Using default service state for LTE
+        mServiceStateStats.onServiceStateChanged(mServiceState);
+        mServiceStateStats.incTimeMillis(100L);
+        mServiceStateStats.conclude();
+
+        ArgumentCaptor<CellularServiceState> captor =
+                ArgumentCaptor.forClass(CellularServiceState.class);
+        verify(mPersistAtomsStorage)
+                .addCellularServiceStateAndCellularDataServiceSwitch(captor.capture(), eq(null));
+        CellularServiceState state = captor.getValue();
+        assertFalse(state.isNtn);
+
+        reset(mPersistAtomsStorage);
+        reset(mServiceState);
+
+        when(mSatelliteController.isInSatelliteModeForCarrierRoaming(any())).thenReturn(true);
+        when(mSatelliteController.isInCarrierRoamingNbIotNtn(any())).thenReturn(true);
+        mServiceStateStats.onServiceStateChanged(mServiceState);
+        mServiceStateStats.incTimeMillis(100L);
+        mServiceStateStats.conclude();
+
+        verify(mPersistAtomsStorage)
+                .addCellularServiceStateAndCellularDataServiceSwitch(captor.capture(), eq(null));
+        state = captor.getValue();
+        assertTrue(state.isNbIotNtn);
+    }
+
     private void mockWwanPsRat(@NetworkType int rat) {
         mockWwanRat(
                 NetworkRegistrationInfo.DOMAIN_PS,

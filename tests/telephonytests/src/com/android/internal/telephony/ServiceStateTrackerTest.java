@@ -27,9 +27,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.nullable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.atLeast;
@@ -49,7 +48,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
@@ -99,7 +97,6 @@ import androidx.test.filters.MediumTest;
 import androidx.test.filters.SmallTest;
 
 import com.android.internal.R;
-import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.data.AccessNetworksManager;
 import com.android.internal.telephony.data.DataNetworkController;
 import com.android.internal.telephony.emergency.EmergencyStateTracker;
@@ -122,7 +119,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
@@ -307,9 +303,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
         int dds = SubscriptionManager.getDefaultDataSubscriptionId();
         doReturn(dds).when(mPhone).getSubId();
-
-        doReturn(true).when(mPackageManager)
-                .hasSystemFeature(PackageManager.FEATURE_TELEPHONY_CDMA);
 
         // Set cellular radio on after boot by default
         mContextFixture.putBooleanResource(
@@ -1010,52 +1003,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
         hasLocationChanged = (cellIdentity == null ? newCellIdentity != null
                 : !cellIdentity.isSameCell(newCellIdentity));
         assertFalse(hasLocationChanged);
-    }
-
-    @Test
-    @MediumTest
-    public void testUpdatePhoneType() {
-        String brandOverride = "spn from brand override";
-        doReturn(brandOverride).when(mUiccProfile).getOperatorBrandOverride();
-        doReturn(false).when(mPhone).isPhoneTypeGsm();
-        doReturn(true).when(mPhone).isPhoneTypeCdmaLte();
-        doReturn(CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM).when(mCdmaSSM).
-                getCdmaSubscriptionSource();
-
-        // switch to CDMA
-        logd("Calling updatePhoneType");
-        sst.updatePhoneType();
-
-        ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(mRuimRecords).registerForRecordsLoaded(eq(sst), integerArgumentCaptor.capture(),
-                nullable(Object.class));
-
-        // response for mRuimRecords.registerForRecordsLoaded()
-        Message msg = Message.obtain();
-        msg.what = integerArgumentCaptor.getValue();
-        msg.obj = new AsyncResult(null, null, null);
-        sst.sendMessage(msg);
-        waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
-
-        // on RUIM_RECORDS_LOADED, sst is expected to call following apis
-        verify(mRuimRecords, times(1)).isProvisioned();
-
-        // switch back to GSM
-        doReturn(true).when(mPhone).isPhoneTypeGsm();
-        doReturn(false).when(mPhone).isPhoneTypeCdmaLte();
-
-        // response for mRuimRecords.registerForRecordsLoaded() can be sent after switching to GSM
-        msg = Message.obtain();
-        msg.what = integerArgumentCaptor.getValue();
-        msg.obj = new AsyncResult(null, null, null);
-        sst.sendMessage(msg);
-
-        // There's no easy way to check if the msg was handled or discarded. Wait to make sure sst
-        // did not crash, and then verify that the functions called records loaded are not called
-        // again
-        waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
-
-        verify(mRuimRecords, times(1)).isProvisioned();
     }
 
     @Test
@@ -1804,59 +1751,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     }
 
     @Test
-    @MediumTest
-    public void testRegisterForSubscriptionInfoReady() {
-        sst.registerForSubscriptionInfoReady(mTestHandler, EVENT_SUBSCRIPTION_INFO_READY, null);
-
-        // Call functions which would trigger posting of message on test handler
-        doReturn(false).when(mPhone).isPhoneTypeGsm();
-        sst.updatePhoneType();
-        mSimulatedCommands.notifyOtaProvisionStatusChanged();
-
-        waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
-
-        // verify posted message
-        ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(mTestHandler).sendMessageAtTime(messageArgumentCaptor.capture(), anyLong());
-        assertEquals(EVENT_SUBSCRIPTION_INFO_READY, messageArgumentCaptor.getValue().what);
-    }
-
-    @Test
-    @MediumTest
-    public void testRoamingPhoneTypeSwitch() {
-        // Enable roaming
-        doReturn(true).when(mPhone).isPhoneTypeGsm();
-
-        mSimulatedCommands.setVoiceRegState(NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
-        mSimulatedCommands.setDataRegState(NetworkRegistrationInfo.REGISTRATION_STATE_ROAMING);
-        mSimulatedCommands.notifyNetworkStateChanged();
-
-        waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
-
-        sst.registerForDataRoamingOff(mTestHandler, EVENT_DATA_ROAMING_OFF, null, true);
-        sst.registerForVoiceRoamingOff(mTestHandler, EVENT_VOICE_ROAMING_OFF, null);
-        sst.registerForDataConnectionDetached(AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
-                mTestHandler, EVENT_DATA_CONNECTION_DETACHED, null);
-
-        // Call functions which would trigger posting of message on test handler
-        doReturn(false).when(mPhone).isPhoneTypeGsm();
-        sst.updatePhoneType();
-
-        // verify if registered handler has message posted to it
-        ArgumentCaptor<Message> messageArgumentCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(mTestHandler, atLeast(3)).sendMessageAtTime(
-                messageArgumentCaptor.capture(), anyLong());
-        HashSet<Integer> messageSet = new HashSet<>();
-        for (Message m : messageArgumentCaptor.getAllValues()) {
-            messageSet.add(m.what);
-        }
-
-        assertTrue(messageSet.contains(EVENT_DATA_ROAMING_OFF));
-        assertTrue(messageSet.contains(EVENT_VOICE_ROAMING_OFF));
-        assertTrue(messageSet.contains(EVENT_DATA_CONNECTION_DETACHED));
-    }
-
-    @Test
     @SmallTest
     public void testGetDesiredPowerState() {
         sst.setRadioPower(true);
@@ -1868,34 +1762,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
     public void testGetCurrentDataRegState() throws Exception {
         sst.mSS.setDataRegState(ServiceState.STATE_OUT_OF_SERVICE);
         assertEquals(sst.getCurrentDataConnectionState(), ServiceState.STATE_OUT_OF_SERVICE);
-    }
-
-    @Test
-    @SmallTest
-    public void testIsConcurrentVoiceAndDataAllowed() {
-        doReturn(false).when(mPhone).isPhoneTypeGsm();
-        sst.mSS.setCssIndicator(1);
-        assertEquals(true, sst.isConcurrentVoiceAndDataAllowed());
-        sst.mSS.setCssIndicator(0);
-        assertEquals(false, sst.isConcurrentVoiceAndDataAllowed());
-
-        doReturn(true).when(mPhone).isPhoneTypeGsm();
-        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
-                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
-                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_HSPA)
-                .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
-                .build();
-        sst.mSS.addNetworkRegistrationInfo(nri);
-        assertEquals(true, sst.isConcurrentVoiceAndDataAllowed());
-        nri = new NetworkRegistrationInfo.Builder()
-                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
-                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_GPRS)
-                .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
-                .build();
-        sst.mSS.addNetworkRegistrationInfo(nri);
-        assertEquals(false, sst.isConcurrentVoiceAndDataAllowed());
-        sst.mSS.setCssIndicator(1);
-        assertEquals(true, sst.isConcurrentVoiceAndDataAllowed());
     }
 
     @Test
@@ -2767,59 +2633,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
 
     @Test
     @SmallTest
-    public void testGetMdn() {
-        doReturn(false).when(mPhone).isPhoneTypeGsm();
-        doReturn(false).when(mPhone).isPhoneTypeCdma();
-        doReturn(true).when(mPhone).isPhoneTypeCdmaLte();
-        doReturn(CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_RUIM).when(mCdmaSSM)
-                .getCdmaSubscriptionSource();
-        doReturn(PHONE_ID).when(mPhone).getPhoneId();
-
-        logd("Calling updatePhoneType");
-        // switch to CDMA
-        sst.updatePhoneType();
-
-        // trigger RUIM_RECORDS_LOADED
-        ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(mRuimRecords).registerForRecordsLoaded(eq(sst), integerArgumentCaptor.capture(),
-                nullable(Object.class));
-
-        // response for mRuimRecords.registerForRecordsLoaded()
-        Message msg = Message.obtain();
-        msg.what = integerArgumentCaptor.getValue();
-        msg.obj = new AsyncResult(null, null, null);
-        sst.sendMessage(msg);
-
-        // wait for RUIM_RECORDS_LOADED to be handled
-        waitForHandlerAction(sst, 5000);
-
-        // mdn should be null as nothing populated it
-        assertEquals(null, sst.getMdnNumber());
-
-        // if ruim is provisioned, mdn should still be null
-        doReturn(true).when(mRuimRecords).isProvisioned();
-        assertEquals(null, sst.getMdnNumber());
-
-        // if ruim is not provisioned, and mdn is non null, sst should still return the correct
-        // value
-        doReturn(false).when(mRuimRecords).isProvisioned();
-        String mockMdn = "mockMdn";
-        doReturn(mockMdn).when(mRuimRecords).getMdn();
-
-        // trigger RUIM_RECORDS_LOADED
-        Message msg1 = Message.obtain();
-        msg1.what = integerArgumentCaptor.getValue();
-        msg1.obj = new AsyncResult(null, null, null);
-        sst.sendMessage(msg1);
-
-        // wait for RUIM_RECORDS_LOADED to be handled
-        waitForHandlerAction(sst, 5000);
-
-        assertEquals(mockMdn, sst.getMdnNumber());
-    }
-
-    @Test
-    @SmallTest
     public void testOnLteVopsInfoChanged() {
         ServiceState ss = new ServiceState();
         ss.setVoiceRegState(ServiceState.STATE_IN_SERVICE);
@@ -2940,15 +2753,6 @@ public class ServiceStateTrackerTest extends TelephonyTest {
                 sst.mSS.getNetworkRegistrationInfo(2, 1);
         assertEquals(nrVopsSupportInfo,
                 sSnetworkRegistrationInfo.getDataSpecificInfo().getVopsSupportInfo());
-    }
-
-
-    @Test
-    @SmallTest
-    public void testEriLoading() {
-        sst.obtainMessage(GsmCdmaPhone.EVENT_CARRIER_CONFIG_CHANGED, null).sendToTarget();
-        waitForLastHandlerAction(mSSTTestHandler.getThreadHandler());
-        verify(mEriManager, times(1)).loadEriFile();
     }
 
     @Test

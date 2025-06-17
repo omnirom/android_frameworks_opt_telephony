@@ -62,6 +62,7 @@ import com.android.internal.telephony.uicc.UiccCard;
 import com.android.internal.telephony.uicc.UiccCardApplication;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.uicc.UiccProfile;
+import com.android.internal.telephony.util.WorkerThread;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -228,9 +229,11 @@ public class CatService extends Handler implements AppInterface {
      */
     public static CatService getInstance(CommandsInterface ci,
             Context context, UiccProfile uiccProfile, int slotId) {
-        if (sCatServiceThread == null) {
-            sCatServiceThread = new HandlerThread("CatServiceThread");
-            sCatServiceThread.start();
+        if (!sFlags.threadShred()) {
+            if (sCatServiceThread == null) {
+                sCatServiceThread = new HandlerThread("CatServiceThread");
+                sCatServiceThread.start();
+            }
         }
         UiccCardApplication ca = null;
         IccFileHandler fh = null;
@@ -259,8 +262,13 @@ public class CatService extends Handler implements AppInterface {
                         || uiccProfile == null) {
                     return null;
                 }
-                sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
-                        sCatServiceThread.getLooper());
+                if (sFlags.threadShred()) {
+                    sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
+                            WorkerThread.get().getLooper());
+                } else {
+                    sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
+                            sCatServiceThread.getLooper());
+                }
             } else if ((ir != null) && (mIccRecords != ir)) {
                 if (mIccRecords != null) {
                     mIccRecords.unregisterForRecordsLoaded(sInstance[slotId]);
