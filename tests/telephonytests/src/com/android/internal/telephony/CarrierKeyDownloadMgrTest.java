@@ -192,7 +192,7 @@ public class CarrierKeyDownloadMgrTest extends TelephonyTest {
         String mccMnc = "310270";
         mCarrierKeyDM.parseJsonAndPersistKey(mJsonStr, mccMnc, 1);
         verify(mPhone, times(2)).setCarrierInfoForImsiEncryption(
-                (ArgumentMatchers.refEq(imsiEncryptionInfo)));
+                (ArgumentMatchers.refEq(imsiEncryptionInfo)), anyBoolean());
     }
 
     /**
@@ -214,7 +214,7 @@ public class CarrierKeyDownloadMgrTest extends TelephonyTest {
         String mccMnc = "310270";
         mCarrierKeyDM.parseJsonAndPersistKey(mJsonStr1, mccMnc, 1);
         verify(mPhone, times(2)).setCarrierInfoForImsiEncryption(
-                (ArgumentMatchers.refEq(imsiEncryptionInfo)));
+                (ArgumentMatchers.refEq(imsiEncryptionInfo)), anyBoolean());
     }
 
     public void testParseJsonPublicKey(String mcc, String mnc, int carrierId) {
@@ -229,7 +229,7 @@ public class CarrierKeyDownloadMgrTest extends TelephonyTest {
         String mccMnc = mcc + mnc;
         mCarrierKeyDM.parseJsonAndPersistKey(mJsonStr1, mccMnc, carrierId);
         verify(mPhone, times(2)).setCarrierInfoForImsiEncryption(
-                (ArgumentMatchers.refEq(imsiEncryptionInfo)));
+                (ArgumentMatchers.refEq(imsiEncryptionInfo)), anyBoolean());
     }
 
     @Test
@@ -252,7 +252,7 @@ public class CarrierKeyDownloadMgrTest extends TelephonyTest {
         String mccMnc = "310290";
         String badJsonStr = "{badJsonString}";
         mCarrierKeyDM.parseJsonAndPersistKey(badJsonStr, mccMnc, 1);
-        verify(mPhone, times(0)).setCarrierInfoForImsiEncryption(any());
+        verify(mPhone, times(0)).setCarrierInfoForImsiEncryption(any(), anyBoolean());
     }
 
     /**
@@ -490,7 +490,7 @@ public class CarrierKeyDownloadMgrTest extends TelephonyTest {
         int carrierId = 1;
         mCarrierKeyDM.parseJsonAndPersistKey(mJsonStr3GppSpec, mccMnc, carrierId);
         verify(mPhone).setCarrierInfoForImsiEncryption(
-                (ArgumentMatchers.refEq(imsiEncryptionInfo)));
+                (ArgumentMatchers.refEq(imsiEncryptionInfo)), anyBoolean());
     }
 
     /**

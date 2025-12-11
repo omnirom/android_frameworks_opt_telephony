@@ -30,7 +30,7 @@ import junit.framework.TestCase;
 import java.util.Arrays;
 
 /**
- * {@hide}
+ * @hide
  */
 public class AdnRecordTest extends TestCase {
 

@@ -18,6 +18,7 @@ package com.android.internal.telephony.imsphone;
 
 import static android.telephony.ims.RegistrationManager.SUGGESTED_ACTION_NONE;
 import static android.telephony.ims.RegistrationManager.SUGGESTED_ACTION_TRIGGER_PLMN_BLOCK;
+import static android.telephony.ims.RegistrationManager.SUGGESTED_ACTION_TRIGGER_THROTTLE_TIME;
 import static android.telephony.ims.stub.ImsRegistrationImplBase.REGISTRATION_TECH_LTE;
 import static android.telephony.ims.stub.ImsRegistrationImplBase.REGISTRATION_TECH_NONE;
 
@@ -188,6 +189,25 @@ public class ImsRegistrationCallbackHelperTest extends TelephonyTest {
                 mRegistrationCallbackHelper.getImsRegistrationState());
         verify(mMockRegistrationUpdate).handleImsUnregistered(eq(reasonInfo),
                 eq(SUGGESTED_ACTION_TRIGGER_PLMN_BLOCK), eq(REGISTRATION_TECH_LTE));
+    }
+
+    @Test
+    @SmallTest
+    public void testImsUnRegisteredWithThrottlingTime() {
+        // Verify the RegistrationCallback should not be null
+        RegistrationCallback callback = mRegistrationCallbackHelper.getCallback();
+        assertNotNull(callback);
+
+        ImsReasonInfo reasonInfo = new ImsReasonInfo(ImsReasonInfo.CODE_REGISTRATION_ERROR, 0);
+        int testThrottleTimeSec = 30;
+        callback.onUnregistered(reasonInfo, SUGGESTED_ACTION_TRIGGER_THROTTLE_TIME,
+                REGISTRATION_TECH_LTE, testThrottleTimeSec);
+
+        assertEquals(RegistrationManager.REGISTRATION_STATE_NOT_REGISTERED,
+                mRegistrationCallbackHelper.getImsRegistrationState());
+        verify(mMockRegistrationUpdate).handleImsUnregistered(eq(reasonInfo),
+                eq(SUGGESTED_ACTION_TRIGGER_THROTTLE_TIME), eq(REGISTRATION_TECH_LTE),
+                eq(testThrottleTimeSec));
     }
 
     @Test

@@ -22,6 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -33,6 +34,7 @@ import android.compat.testing.PlatformCompatChangeRule;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Process;
 import android.telephony.TelephonyManager;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
@@ -202,7 +204,7 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendVisualVoicemailSmsForSubscriber(mCallingPackage, mCallingUserId,
                 null , subId, null, 0, null, null);
         verify(mIccSmsInterfaceManager).sendTextWithSelfPermissions(any(), eq(mCallingUserId),
-                any(), any(), any(), any(), any(), any(), eq(false), eq(true));
+                any(), any(), any(), any(), any(), any(), eq(false), eq(true), anyInt());
     }
 
     @Test
@@ -213,7 +215,7 @@ public class SmsControllerTest extends TelephonyTest {
                 null , 1, null, 0, null, null);
         verify(mIccSmsInterfaceManager, never()).sendTextWithSelfPermissions(any(),
                 eq(mCallingUserId), any(), any(), any(), any(), any(), any(),
-                eq(false), eq(true));
+                eq(false), eq(true), anyInt());
 
         doReturn(false).when(mPhone).isInEcm();
     }
@@ -228,8 +230,9 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, mCallingUserId,
-                        "1234", null, "text", null, null, false, 0L, true);
+                .sendText(eq(mCallingPackage), eq(mCallingUserId),
+                        eq("1234"), isNull(), eq("text"), isNull(), isNull(), eq(false), eq(0L),
+                        eq(true), anyInt());
     }
 
     @Test
@@ -246,8 +249,9 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, mCallingUserId,
-                        "1234", null, "text", null, null, false, 0L, true);
+                .sendText(eq(mCallingPackage), eq(mCallingUserId),
+                        eq("1234"), isNull(), eq("text"), isNull(), isNull(), eq(false), eq(0L),
+                        eq(true), anyInt());
     }
 
     @Test
@@ -264,7 +268,7 @@ public class SmsControllerTest extends TelephonyTest {
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(0))
                 .sendText(mCallingPackage, mCallingUserId,
-                        "1234", null, "text", null, null, false, 0L, true);
+                        "1234", null, "text", null, null, false, 0L, true, Process.INVALID_UID);
     }
 
     @Test
@@ -328,7 +332,8 @@ public class SmsControllerTest extends TelephonyTest {
         mSmsControllerUT.sendTextForSubscriber(subId, mCallingPackage, null, "1234",
                 null, "text", null, null, false, 0L, true, true);
         verify(mIccSmsInterfaceManager, Mockito.times(1))
-                .sendText(mCallingPackage, mCallingUserId,
-                        "1234", null, "text", null, null, false, 0L, true);
+                .sendText(eq(mCallingPackage), eq(mCallingUserId),
+                        eq("1234"), isNull(), eq("text"), isNull(), isNull(), eq(false), eq(0L),
+                        eq(true), anyInt());
     }
 }

@@ -23,7 +23,7 @@ import android.os.Build;
  * SIM Tag-Length-Value record
  * TS 102 223 Annex C
  *
- * {@hide}
+ * @hide
  *
  */
 public class SimTlv

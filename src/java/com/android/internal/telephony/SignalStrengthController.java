@@ -1356,6 +1356,7 @@ public class SignalStrengthController extends Handler {
 
     private void onServiceStateChanged(ServiceState state) {
         if (state.getState() != ServiceState.STATE_IN_SERVICE) {
+            mNTNConnected.set(false);
             return;
         }
 

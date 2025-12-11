@@ -48,6 +48,8 @@ public class AccessControllerMetricsStats {
     private int mCarrierId;
     private @SatelliteConstants.TriggeringEvent int mTriggeringEvent;
     private boolean mIsNtnOnlyCarrier;
+    private @SatelliteConstants.SatelliteGlobalConnectType int mSupportedConnectionMode;
+    private @SatelliteConstants.SatelliteSessionConnectType int mSessionConnectionMode;
 
     private AccessControllerMetricsStats() {
         initializeAccessControllerMetricsParam();
@@ -80,6 +82,8 @@ public class AccessControllerMetricsStats {
         mCarrierId = UNKNOWN_CARRIER_ID;
         mTriggeringEvent = TRIGGERING_EVENT_UNKNOWN;
         mIsNtnOnlyCarrier = false;
+        mSupportedConnectionMode = SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN;
+        mSessionConnectionMode = SatelliteConstants.SESSION_NTN_CONNECT_TYPE_UNKNOWN;
     }
     /**
      * Sets the Access Control Type for current satellite enablement.
@@ -201,6 +205,20 @@ public class AccessControllerMetricsStats {
         return this;
     }
 
+    /** Capture the global connect type of the satellite service */
+    public AccessControllerMetricsStats setSupportedConnectionMode(int supportedConnectionMode) {
+        mSupportedConnectionMode = supportedConnectionMode;
+        logd("setSupportedConnectionMode: supportedConnectionMode = " + mSupportedConnectionMode);
+        return this;
+    }
+
+    /** Capture the session connect type of the satellite service */
+    public AccessControllerMetricsStats setSessionConnectionMode(int sessionConnectionMode) {
+        mSessionConnectionMode = sessionConnectionMode;
+        logd("setSessionConnectionMode: sessionConnectionMode = " + mSessionConnectionMode);
+        return this;
+    }
+
     /** Report the access controller metrics atoms to PersistAtomsStorage in telephony. */
     public void reportAccessControllerMetrics() {
         SatelliteStats.SatelliteAccessControllerParams accessControllerParams =
@@ -217,6 +235,8 @@ public class AccessControllerMetricsStats {
                         .setCarrierId(mCarrierId)
                         .setTriggeringEvent(mTriggeringEvent)
                         .setIsNtnOnlyCarrier(mIsNtnOnlyCarrier)
+                        .setSupportedConnectionMode(mSupportedConnectionMode)
+                        .setSessionConnectionMode(mSessionConnectionMode)
                         .build();
         logd("reportAccessControllerMetrics: " + accessControllerParams.toString());
         SatelliteStats.getInstance().onSatelliteAccessControllerMetrics(accessControllerParams);

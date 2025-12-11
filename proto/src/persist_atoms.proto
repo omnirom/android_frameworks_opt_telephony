@@ -267,6 +267,14 @@ message PersistAtoms {
 
     /* Timestamp of last satellite access controller pull. */
     optional int64 satellite_access_controller_pull_timestamp_millis = 81;
+
+    repeated OtpEvaluationEvent otp_evaluation_event = 82;
+
+    optional int64 otp_evaluation_event_pull_timestamp_millis = 83;
+
+    repeated OtpRedactionEvent otp_redaction_event = 84;
+
+    optional int64 otp_redaction_event_pull_timestamp_millis = 85;
 }
 
 // The canonical versions of the following enums live in:
@@ -353,6 +361,7 @@ message IncomingSms {
     optional bool is_ntn = 17;
     optional bool is_emergency = 18;
     optional bool is_nb_iot_ntn = 19;
+    optional int32 pdu_length = 20;
 
     // Internal use only
     optional int32 hashCode = 10001;
@@ -381,6 +390,9 @@ message OutgoingSms {
     optional bool is_ntn = 20;
     optional bool is_mt_sms_polling = 21;
     optional bool is_nb_iot_ntn = 22;
+    optional int32 pdu_length = 23;
+    optional string calling_package_name = 24;
+    optional int32 app_uid = 25;
 
     // Internal use only
     optional int32 hashCode = 10001;
@@ -740,6 +752,9 @@ message SatelliteController {
     optional int32 count_of_outgoing_datagram_type_sms_fail = 41;
     optional int32 count_of_incoming_datagram_type_sms_success = 42;
     optional int32 count_of_incoming_datagram_type_sms_fail = 43;
+    optional int32 carrier_roaming_satellite_config_version = 44;
+    optional int32 max_allowed_data_mode = 45;
+    optional int32 supported_connection_mode = 46;
 }
 
 message SatelliteSession {
@@ -763,6 +778,8 @@ message SatelliteSession {
     optional bool is_emergency = 18;
     optional bool is_ntn_only_carrier = 19;
     optional int32 max_inactivity_duration_sec = 20;
+    optional int32 supported_connection_mode = 21;
+    optional int32 session_connection_mode = 22;
 }
 
 message SatelliteIncomingDatagram {
@@ -772,6 +789,8 @@ message SatelliteIncomingDatagram {
     optional bool is_demo_mode = 4;
     optional int32 carrier_id = 5;
     optional bool is_ntn_only_carrier = 6;
+    optional int32 supported_connection_mode = 7;
+    optional int32 session_connection_mode = 8;
 }
 
 message SatelliteOutgoingDatagram {
@@ -782,6 +801,8 @@ message SatelliteOutgoingDatagram {
     optional bool is_demo_mode = 5;
     optional int32 carrier_id = 6;
     optional bool is_ntn_only_carrier = 7;
+    optional int32 supported_connection_mode = 8;
+    optional int32 session_connection_mode = 9;
 }
 
 message SatelliteProvision {
@@ -791,6 +812,7 @@ message SatelliteProvision {
     optional bool is_canceled = 4;
     optional int32 carrier_id = 5;
     optional bool is_ntn_only_carrier = 6;
+    optional int32 supported_connection_mode = 7;
 }
 
 message SatelliteSosMessageRecommender {
@@ -805,6 +827,8 @@ message SatelliteSosMessageRecommender {
     optional bool is_wifi_connected = 9;
     optional int32 carrier_id = 10;
     optional bool is_ntn_only_carrier = 11;
+    optional int32 supported_connection_mode = 12;
+    optional int32 session_connection_mode = 13;
 }
 
 message DataNetworkValidation {
@@ -839,6 +863,21 @@ message CarrierRoamingSatelliteSession {
     optional int64 satellite_data_consumed_bytes = 19;
     optional bool is_multi_sim = 20;
     optional bool is_nb_iot_ntn = 21;
+    optional int32 count_of_data_connections = 22;
+    repeated int32 last_fail_causes = 23;
+    optional int32 count_of_data_disconnections = 24;
+    optional int32 count_of_data_stalls = 25;
+    optional int32 average_uplink_bandwidth_kbps = 26;
+    optional int32 average_downlink_bandwidth_kbps = 27;
+    optional int32 min_uplink_bandwidth_kbps = 28;
+    optional int32 max_uplink_bandwidth_kbps = 29;
+    optional int32 min_downlink_bandwidth_kbps = 30;
+    optional int32 max_downlink_bandwidth_kbps = 31;
+    repeated string satellite_supported_apps = 32;
+    repeated int32 satellite_supported_uids = 33;
+    repeated int64 per_app_satellite_data_consumed_bytes = 34;
+    optional int32 supported_connection_mode = 35;
+    optional int32 session_connection_mode = 36;
 }
 
 message CarrierRoamingSatelliteControllerStats {
@@ -854,6 +893,10 @@ message CarrierRoamingSatelliteControllerStats {
     optional bool is_multi_sim = 10;
     optional int32 count_of_satellite_sessions = 11;
     optional bool is_nb_iot_ntn = 12;
+    optional int32 supported_connection_mode = 13;
+    optional int32 count_of_session_connection_mode_automatic = 14;
+    optional int32 count_of_session_connection_mode_manual = 15;
+    optional int32 service_data_policy = 16;
 }
 
 message SatelliteEntitlement {
@@ -865,6 +908,8 @@ message SatelliteEntitlement {
     optional bool is_allowed_service_entitlement = 6;
     repeated int32 entitlement_service_type = 7;
     optional int32 entitlement_data_policy = 8;
+    optional int32 supported_connection_mode = 9;
+    optional int32 http_status_code = 10;
 }
 
 message SatelliteConfigUpdater {
@@ -887,4 +932,16 @@ message SatelliteAccessController {
     optional int32 carrier_id = 10;
     optional int32 triggering_event = 11;
     optional bool is_ntn_only_carrier = 12;
+    optional int32 supported_connection_mode = 13;
+    optional int32 session_connection_mode = 14;
+}
+
+message OtpEvaluationEvent {
+    optional int32 redaction_time_ms = 1;
+    optional int32 result = 2;
+}
+
+message OtpRedactionEvent {
+    optional int32 uid = 1;
+    optional int32 count = 4;
 }

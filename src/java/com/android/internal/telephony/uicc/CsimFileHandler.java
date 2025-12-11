@@ -20,7 +20,7 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.telephony.Rlog;
 
 /**
- * {@hide}
+ * @hide
  * This class should be used to access files in CSIM ADF
  */
 public final class CsimFileHandler extends IccFileHandler implements IccConstants {

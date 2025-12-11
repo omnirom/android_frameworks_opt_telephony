@@ -27,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Intent;
+import android.os.Looper;
 import android.os.PersistableBundle;
 import android.os.WorkSource;
 import android.preference.PreferenceManager;
@@ -38,7 +39,6 @@ import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
 
 import androidx.test.InstrumentationRegistry;
-import androidx.test.filters.SmallTest;
 
 import com.android.internal.R;
 import com.android.internal.telephony.PhoneConstants;
@@ -69,7 +69,7 @@ public class PinStorageTest extends TelephonyTest {
     // mocks
     private CarrierConfigManager.CarrierConfigChangeListener mCarrierConfigChangeListener;
 
-    private void simulateReboot() {
+    private void simulateReboot() throws Exception {
         mSimulatedRebootsCount++;
         Settings.Global.putInt(mContext.getContentResolver(),
                 Settings.Global.BOOT_COUNT, mBootCount + mSimulatedRebootsCount);
@@ -77,11 +77,12 @@ public class PinStorageTest extends TelephonyTest {
         createPinStorageAndCaptureListener();
     }
 
-    private void createPinStorageAndCaptureListener() {
+    private void createPinStorageAndCaptureListener() throws Exception {
         // Capture listener to emulate the carrier config change notification used later
         ArgumentCaptor<CarrierConfigManager.CarrierConfigChangeListener> listenerArgumentCaptor =
                 ArgumentCaptor.forClass(CarrierConfigManager.CarrierConfigChangeListener.class);
-        mPinStorage = new PinStorage(mContext);
+        mPinStorage = new PinStorage(mContext, Looper.myLooper(), mFeatureFlags);
+        processAllMessages();
         mPinStorage.mShortTermSecretKeyDurationMinutes = 0;
         verify(mCarrierConfigManager, atLeastOnce()).registerCarrierConfigChangeListener(any(),
                 listenerArgumentCaptor.capture());
@@ -132,7 +133,6 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
     public void storePin_withoutReboot_pinCannotBeRetrieved() {
         mPinStorage.storePin("1234", 0);
 
@@ -140,8 +140,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_normalReboot_pinCannotBeRetrieved() {
+    public void storePin_normalReboot_pinCannotBeRetrieved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         simulateReboot();
@@ -150,23 +149,23 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_crash_pinCannotBeRetrieved() {
+    public void storePin_crash_pinCannotBeRetrieved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         // Simulate crash
-        mPinStorage = new PinStorage(mContext);
+        mPinStorage = new PinStorage(mContext, Looper.myLooper(), mFeatureFlags);
+        processAllMessages();
         mPinStorage.mShortTermSecretKeyDurationMinutes = 0;
 
         assertThat(mPinStorage.getPin(0, ICCID_1)).isEqualTo("");
     }
 
     @Test
-    @SmallTest
-    public void storePin_unattendedReboot_pinCanBeRetrievedOnce() {
+    public void storePin_unattendedReboot_pinCanBeRetrievedOnce() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
+        processAllMessages();
         assertThat(result).isEqualTo(TelephonyManager.PREPARE_UNATTENDED_REBOOT_SUCCESS);
 
         simulateReboot();
@@ -177,8 +176,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_unattendedReboot_deviceIsLocked() {
+    public void storePin_unattendedReboot_deviceIsLocked() throws Exception {
         // Simulate the device is still locked
         when(mKeyguardManager.isDeviceSecure()).thenReturn(true);
         when(mKeyguardManager.isDeviceLocked()).thenReturn(true);
@@ -196,8 +194,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_unattendedReboot_pinIsRemovedAfterDelay() {
+    public void storePin_unattendedReboot_pinIsRemovedAfterDelay() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
@@ -221,11 +218,11 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_unattendedRebootNotDone_pinCannotBeRetrieved() {
+    public void storePin_unattendedRebootNotDone_pinCannotBeRetrieved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
+        processAllMessages();
         assertThat(result).isEqualTo(TelephonyManager.PREPARE_UNATTENDED_REBOOT_SUCCESS);
 
         // Move time forward by 60 seconds before simulating reboot
@@ -237,8 +234,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_unattendedReboot_iccidChange() {
+    public void storePin_unattendedReboot_iccidChange() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
@@ -258,8 +254,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void clearPin_pinCannotBeRetrieved() {
+    public void clearPin_pinCannotBeRetrieved() throws Exception {
         mPinStorage.storePin("1234", 0);
         mPinStorage.clearPin(0);
 
@@ -272,12 +267,12 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_pinChanged_pinIsUpdated() {
+    public void storePin_pinChanged_pinIsUpdated() throws Exception {
         mPinStorage.storePin("1234", 0);
         mPinStorage.storePin("5678", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
+        processAllMessages();
         assertThat(result).isEqualTo(TelephonyManager.PREPARE_UNATTENDED_REBOOT_SUCCESS);
 
         simulateReboot();
@@ -286,8 +281,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_pinTooShort_pinIsNotStored() {
+    public void storePin_pinTooShort_pinIsNotStored() throws Exception {
         mPinStorage.storePin("12", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
@@ -299,8 +293,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_pinTooLong_pinIsNotStored() {
+    public void storePin_pinTooLong_pinIsNotStored() throws Exception {
         mPinStorage.storePin("123456789", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
@@ -312,8 +305,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_invalidIccid_pinIsNotStored() {
+    public void storePin_invalidIccid_pinIsNotStored() throws Exception {
         doReturn(ICCID_INVALID).when(mPhone).getFullIccSerialNumber();
 
         mPinStorage.storePin("1234", 0);
@@ -325,8 +317,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_disabledInResources_pinIsNotStored() {
+    public void storePin_disabledInResources_pinIsNotStored() throws Exception {
         mContextFixture.putBooleanResource(
                 R.bool.config_allow_pin_storage_for_unattended_reboot, false);
 
@@ -341,8 +332,8 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_disabledInResources_containsSimWithPinEnabledAndVerified() {
+    public void storePin_disabledInResources_containsSimWithPinEnabledAndVerified()
+            throws Exception {
         mContextFixture.putBooleanResource(
                 R.bool.config_allow_pin_storage_for_unattended_reboot, false);
 
@@ -360,8 +351,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_disabledInCarrierConfig_pinIsNotStored() {
+    public void storePin_disabledInCarrierConfig_pinIsNotStored() throws Exception {
         PersistableBundle carrierConfigs = new PersistableBundle();
         carrierConfigs.putBoolean(
                 CarrierConfigManager.KEY_STORE_SIM_PIN_FOR_UNATTENDED_REBOOT_BOOL, false);
@@ -378,8 +368,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_changeToDisabledInCarrierConfig_pinIsRemoved() {
+    public void storePin_changeToDisabledInCarrierConfig_pinIsRemoved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         // Simulate change in the carrier configuration
@@ -401,8 +390,7 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_simIsRemoved_pinIsRemoved() {
+    public void storePin_simIsRemoved_pinIsRemoved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         // SIM is removed
@@ -421,11 +409,11 @@ public class PinStorageTest extends TelephonyTest {
     }
 
     @Test
-    @SmallTest
-    public void storePin_simReadyAfterUnattendedReboot_pinIsRemoved() {
+    public void storePin_simReadyAfterUnattendedReboot_pinIsRemoved() throws Exception {
         mPinStorage.storePin("1234", 0);
 
         int result = mPinStorage.prepareUnattendedReboot(sWorkSource);
+        processAllMessages();
         assertThat(result).isEqualTo(TelephonyManager.PREPARE_UNATTENDED_REBOOT_SUCCESS);
 
         simulateReboot();

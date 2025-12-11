@@ -176,7 +176,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
             // As per 3GPP TS 23.040 9.2.3.9, Type Zero messages should not be
             // Displayed/Stored/Notified. They should only be acknowledged.
             log("Received short message type 0, Don't display or store it. Send Ack");
-            addSmsTypeZeroToMetrics(smsSource);
+            addSmsTypeZeroToMetrics(smsSource, getPduLength(sms));
             return Intents.RESULT_SMS_HANDLED;
         }
 
@@ -197,7 +197,7 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
             if (DBG) log("Received voice mail indicator clear SMS shouldStore=" + !handled);
         }
         if (handled) {
-            addVoicemailSmsToMetrics(smsSource);
+            addVoicemailSmsToMetrics(smsSource, getPduLength(sms));
             return Intents.RESULT_SMS_HANDLED;
         }
 
@@ -260,19 +260,15 @@ public class GsmInboundSmsHandler extends InboundSmsHandler {
     /**
      * Add SMS of type 0 to metrics.
      */
-    private void addSmsTypeZeroToMetrics(@SmsSource int smsSource) {
-        mMetrics.writeIncomingSmsTypeZero(mPhone.getPhoneId(),
-                android.telephony.SmsMessage.FORMAT_3GPP);
-        mPhone.getSmsStats().onIncomingSmsTypeZero(smsSource);
+    private void addSmsTypeZeroToMetrics(@SmsSource int smsSource, int pduLength) {
+        mPhone.getSmsStats().onIncomingSmsTypeZero(smsSource, pduLength);
     }
 
     /**
      * Add voicemail indication SMS 0 to metrics.
      */
-    private void addVoicemailSmsToMetrics(@SmsSource int smsSource) {
-        mMetrics.writeIncomingVoiceMailSms(mPhone.getPhoneId(),
-                android.telephony.SmsMessage.FORMAT_3GPP);
-        mPhone.getSmsStats().onIncomingSmsVoicemail(false /* is3gpp2 */, smsSource);
+    private void addVoicemailSmsToMetrics(@SmsSource int smsSource, int pduLength) {
+        mPhone.getSmsStats().onIncomingSmsVoicemail(false /* is3gpp2 */, smsSource, pduLength);
     }
 
     /**

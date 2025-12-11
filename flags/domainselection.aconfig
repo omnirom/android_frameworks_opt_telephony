@@ -3,14 +3,6 @@ container: "system"
 
 # OWNER=forestchoi TARGET=24Q3
 flag {
-    name: "ap_domain_selection_enabled"
-    namespace: "telephony"
-    description: "This flag controls AP domain selection feature."
-    bug:"258112541"
-}
-
-# OWNER=forestchoi TARGET=24Q3
-flag {
     name: "use_aosp_domain_selection_service"
     namespace: "telephony"
     description: "This flag controls AOSP's domain selection service supported."
@@ -34,31 +26,12 @@ flag {
     bug:"258112541"
 }
 
-# OWNER=jdyou TARGET=24Q4
-flag {
-    name: "hangup_emergency_call_for_cross_sim_redialing"
-    namespace: "telephony"
-    description: "This flag controls the behavior of terminating an emergency call for cross SIM redialing."
-    bug:"336398541"
-}
-
 # OWNER=avinashmp TARGET=25Q1
 flag {
     name: "add_ims_redial_codes_for_emergency_calls"
     namespace: "telephony"
     description: "This flag controls the addition of EMERGENCY_REDIAL_ON_IMS and EMERGENCY_REDIAL_ON_VOWIFI redial codes for normal routed emergency calls."
     bug:"357980439"
-}
-
-# OWNER=jaesikkong TARGET=25Q2
-flag {
-    name: "disable_ecbm_based_on_rat"
-    namespace: "telephony"
-    description: "Fix bug entering the emergency callback mode in GSM or UMTS network."
-    bug:"389010789"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
 }
 
 # OWNER=hwangoo TARGET=25Q2
@@ -78,6 +51,17 @@ flag {
     namespace: "telephony"
     description: "This flag performs a quick cross stack redial if the subscription is being invalid and an exception occurs, while an emergency call is in progress."
     bug:"389190613"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+#OWNER=hwangoo TARGET=25Q4
+flag {
+    name: "ignore_state_details_update_for_domain_reselection"
+    namespace: "telephony"
+    description: "This flag ignores the state details update of the connection while domain reselection is performing due to a call failure."
+    bug:"429443154"
     metadata {
         purpose: PURPOSE_BUGFIX
     }

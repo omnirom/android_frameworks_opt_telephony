@@ -27,6 +27,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.metrics.SatelliteStats;
 import com.android.internal.telephony.satellite.SatelliteConstants;
+import com.android.internal.telephony.satellite.SatelliteController;
 import com.android.internal.telephony.satellite.SatelliteServiceUtils;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 
@@ -74,6 +75,8 @@ public class CarrierRoamingSatelliteControllerStats {
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setConfigDataSource(configDataSource)
                         .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
                         .setIsMultiSim(isMultiSim())
                         .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
                         .build());
@@ -85,6 +88,8 @@ public class CarrierRoamingSatelliteControllerStats {
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setCountOfEntitlementStatusQueryRequest(ADD_COUNT)
                         .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
                         .setIsMultiSim(isMultiSim())
                         .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
                         .build());
@@ -105,16 +110,19 @@ public class CarrierRoamingSatelliteControllerStats {
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setCountOfSatelliteNotificationDisplayed(ADD_COUNT)
                         .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
                         .setIsMultiSim(isMultiSim())
                         .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
                         .build());
     }
 
     /** Capture the NB-IoT NTN carrier ID */
-    public void reportCarrierId(int carrierId) {
+    public void reportCarrierId(int carrierId, int supportedConnectionMode) {
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setCarrierId(carrierId)
+                        .setSupportedConnectionMode(supportedConnectionMode)
                         .setIsMultiSim(isMultiSim())
                         .build());
     }
@@ -124,6 +132,19 @@ public class CarrierRoamingSatelliteControllerStats {
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setIsDeviceEntitled(isDeviceEntitled)
+                        .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
+                        .setIsMultiSim(isMultiSim())
+                        .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
+                        .build());
+    }
+
+    /** Report satellite supported data mode */
+    public void reportServiceDataPolicy(int subId, int dataPolicy) {
+        mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(
+                new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
+                        .setServiceDataPolicy(dataPolicy)
                         .setCarrierId(getCarrierIdFromSubscription(subId))
                         .setIsMultiSim(isMultiSim())
                         .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
@@ -137,10 +158,21 @@ public class CarrierRoamingSatelliteControllerStats {
         sessionStartTimeListForSubscription.add(getElapsedRealtime());
         mSessionStartTimeMap.put(subId, sessionStartTimeListForSubscription);
 
+        int sessionConnectionMode = SatelliteController.getInstance()
+                .getSessionConnectTypeMetrics(subId);
+        boolean automatic =
+                (sessionConnectionMode == SatelliteConstants.SESSION_NTN_CONNECT_TYPE_AUTOMATIC);
+        boolean manual =
+                (sessionConnectionMode == SatelliteConstants.SESSION_NTN_CONNECT_TYPE_MANUAL);
+
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(
                 new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                         .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
                         .increaseCountOfSatelliteSessions()
+                        .increaseCountOfSessionConnectionModeAutomatic(automatic)
+                        .increaseCountOfSessionConnectionModeManual(manual)
                         .build());
     }
 
@@ -166,6 +198,8 @@ public class CarrierRoamingSatelliteControllerStats {
                         .setSatelliteSessionGapAvgSec(getAvg(sessionGapList))
                         .setSatelliteSessionGapMaxSec(satelliteSessionGapMaxSec)
                         .setCarrierId(getCarrierIdFromSubscription(subId))
+                        .setSupportedConnectionMode(SatelliteController.getInstance()
+                                .getSupportedConnectTypeMetrics(subId))
                         .setIsMultiSim(isMultiSim())
                         .setIsNbIotNtn(SatelliteServiceUtils.isNbIotNtn(subId))
                         .build());

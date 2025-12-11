@@ -82,7 +82,7 @@ public class ControllerMetricsStatsTest extends TelephonyTest {
     public void testReportServiceEnablementSuccessCount() {
         mTestStats.initializeParams();
         for (int i = 0; i < 10; i++) {
-            mControllerMetricsStatsUT.reportServiceEnablementSuccessCount();
+            mControllerMetricsStatsUT.reportServiceEnablementSuccessCount(false);
         }
         assertEquals(10, mTestStats.mCountOfSatelliteServiceEnablementsSuccess);
         assertEquals(0, mTestStats.mCountOfSatelliteServiceEnablementsFail);
@@ -108,7 +108,7 @@ public class ControllerMetricsStatsTest extends TelephonyTest {
     public void testReportServiceEnablementFailCount() {
         mTestStats.initializeParams();
         for (int i = 0; i < 10; i++) {
-            mControllerMetricsStatsUT.reportServiceEnablementFailCount();
+            mControllerMetricsStatsUT.reportServiceEnablementFailCount(false);
         }
         assertEquals(0, mTestStats.mCountOfSatelliteServiceEnablementsSuccess);
         assertEquals(10, mTestStats.mCountOfSatelliteServiceEnablementsFail);

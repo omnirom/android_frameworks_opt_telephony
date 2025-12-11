@@ -27,7 +27,7 @@ abstract class ValueObject {
 
 /**
  * Class for Command Details object of proactive commands from SIM.
- * {@hide}
+ * @hide
  */
 public class CommandDetails extends ValueObject implements Parcelable {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)

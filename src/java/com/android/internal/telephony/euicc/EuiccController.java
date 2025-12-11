@@ -71,7 +71,6 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.euicc.EuiccConnector.OtaStatusChangedCallback;
 import com.android.internal.telephony.flags.FeatureFlags;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UiccController;
@@ -625,6 +624,7 @@ public class EuiccController extends IEuiccController.Stub {
 
         boolean callerHasAdminPrivileges =
                 callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
+
         if (callerHasAdminPrivileges && (switchAfterDownload && !shouldAllowSwitchAfterDownload(
                 callingPackage))) {
             // Throw error if calling admin does not have privileges to enable
@@ -739,16 +739,24 @@ public class EuiccController extends IEuiccController.Stub {
                     super.onGetMetadataComplete(cardId, result);
                     return;
                 }
+                boolean callerHasAdminPrivileges =
+                callerCanManageDevicePolicyManagedSubscriptions(mCallingPackage, mCallingToken);
+                // At this point, we already have the user's consent.
+                // So the following operations can be done with maximum privileges.
 
-                if (checkCarrierPrivilegeInMetadata(subscription, mCallingPackage)) {
+                if (checkCarrierPrivilegeInMetadata(subscription, mCallingPackage)
+                        || callerHasAdminPrivileges) {
                     // Caller can download this profile. Since we already have the user's consent,
                     // proceed to download.
-                    downloadSubscriptionPrivileged(cardId, mPortIndex,
-                            mCallingToken, subscription, mSwitchAfterDownload,  mForceDeactivateSim,
-                            mCallingPackage, null /* resolvedBundle */,
-                            mCallbackIntent);
+                  downloadSubscriptionPrivileged(cardId, mPortIndex,
+                            mCallingToken, subscription, mSwitchAfterDownload,
+                            mForceDeactivateSim, mCallingPackage, null /* resolvedBundle */,
+                            mCallbackIntent, callerHasAdminPrivileges,
+                      getCurrentEmbeddedSubscriptionIds(cardId));
                 } else {
-                    Log.e(TAG, "Caller does not have carrier privilege in metadata.");
+                    Log.e(TAG,
+                            "Caller does not have carrier privilege in metadata and is does not "
+                                    + "have admin privileges, mCallingPackage=" + mCallingPackage);
                     sendResult(mCallbackIntent, ERROR, null /* extrasIntent */);
                 }
             } else { // !mWithUserConsent
@@ -1075,7 +1083,6 @@ public class EuiccController extends IEuiccController.Stub {
     public void deleteSubscription(int cardId, int subscriptionId, String callingPackage,
             PendingIntent callbackIntent) {
         boolean callerCanWriteEmbeddedSubscriptions = callerCanWriteEmbeddedSubscriptions();
-        boolean callerIsAdmin = callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
         mAppOpsManager.checkPackage(Binder.getCallingUid(), callingPackage);
 
         long token = Binder.clearCallingIdentity();
@@ -1086,14 +1093,17 @@ public class EuiccController extends IEuiccController.Stub {
                 sendResult(callbackIntent, ERROR, null /* extrasIntent */);
                 return;
             }
-            boolean adminOwned = callerIsAdmin && sub.getGroupOwner().equals(callingPackage);
+            boolean managedByCallingAdminPackage =
+                    callerCanManageDevicePolicyManagedSubscriptions(callingPackage)
+                            && isSubscriptionDevicePolicyManaged(
+                            sub, callingPackage);
             // For both single active SIM device and multi-active SIM device, if the caller is
             // system or the caller manage the target subscription, we let it continue. This is
             // because deleting subscription won't change status of any other subscriptions.
             if (!callerCanWriteEmbeddedSubscriptions
                     && !canManageSubscription(sub, callingPackage)
-                    && !adminOwned) {
-                Log.e(TAG, "No permissions: " + subscriptionId + " adminOwned=" + adminOwned);
+                    && !managedByCallingAdminPackage) {
+                Log.e(TAG, "No permissions to delete subscription: " + subscriptionId);
                 sendResult(callbackIntent, ERROR, null /* extrasIntent */);
                 return;
             }
@@ -1857,12 +1867,8 @@ public class EuiccController extends IEuiccController.Stub {
         if (bestComponent != null) {
             intent.setPackage(bestComponent.packageName);
         }
-        if (mFeatureFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
-                    permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
-        } else {
-            mContext.sendBroadcast(intent, permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
+                permission.WRITE_EMBEDDED_SUBSCRIPTIONS);
     }
 
     @Nullable
@@ -2197,6 +2203,13 @@ public class EuiccController extends IEuiccController.Stub {
         return userContext.getSystemService(DevicePolicyManager.class);
     }
 
+    private boolean isSubscriptionDevicePolicyManaged(@NonNull SubscriptionInfo info,
+            @NonNull String callingPackage) {
+        DevicePolicyManager devicePolicyManager = getDevicePolicyManager();
+        return devicePolicyManager != null && devicePolicyManager.isSubscriptionEnterpriseManaged(
+                info, callingPackage);
+    }
+
     private boolean callerCanManageDevicePolicyManagedSubscriptions(String callingPackage) {
         DevicePolicyManager devicePolicyManager = getDevicePolicyManager();
         boolean isAdmin =
@@ -2206,6 +2219,19 @@ public class EuiccController extends IEuiccController.Stub {
         return isAdmin || mContext.checkCallingOrSelfPermission(
                 Manifest.permission.MANAGE_DEVICE_POLICY_MANAGED_SUBSCRIPTIONS)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    // Does the same thing as callerCanManageDevicePolicyManagedSubscriptions
+    //but restores the calling identity before checking permissions.
+    private boolean callerCanManageDevicePolicyManagedSubscriptions(String callingPackage,
+      long callingToken) {
+        long previousCallingIdentity = Binder.clearCallingIdentity();
+        try {
+            Binder.restoreCallingIdentity(callingToken);
+            return callerCanManageDevicePolicyManagedSubscriptions(callingPackage);
+        } finally {
+            Binder.restoreCallingIdentity(previousCallingIdentity);
+        }
     }
 
     private boolean shouldAllowSwitchAfterDownload(String callingPackage) {
@@ -2393,7 +2419,7 @@ public class EuiccController extends IEuiccController.Stub {
     }
 
     private boolean canManageSubscription(SubscriptionInfo subInfo, String packageName) {
-        if (Flags.hsumPackageManager() && UserManager.isHeadlessSystemUserMode()) {
+        if (UserManager.isHeadlessSystemUserMode()) {
             return mSubscriptionManager.canManageSubscriptionAsUser(subInfo, packageName,
                     UserHandle.of(ActivityManager.getCurrentUser()));
         } else {

@@ -266,7 +266,11 @@ public class ImsServiceController {
     // Enable ImsServiceControllerTest and SipDelegateManagerTest cases if this is re-enabled.
     private static final boolean ENFORCE_SINGLE_SERVICE_FOR_SIP_TRANSPORT = false;
     private final ComponentName mComponentName;
+
+    // Compile-time debug flag for controlling worker thread behavior
+    private static final boolean USE_WORKER_THREAD = false;
     private final HandlerThread mHandlerThread;
+
     private final Handler mHandler;
     private final LegacyPermissionManager mPermissionManager;
     private final FeatureFlags mFeatureFlags;
@@ -365,7 +369,7 @@ public class ImsServiceController {
         mComponentName = componentName;
         mCallbacks = callbacks;
         Looper looper;
-        if (featureFlags.threadShred()) {
+        if (USE_WORKER_THREAD) {
             mHandlerThread = null;
             mHandler = new Handler(WorkerThread.get().getLooper());
             looper = WorkerThread.get().getLooper();
@@ -516,9 +520,7 @@ public class ImsServiceController {
                     Collectors.toCollection(HashSet::new));
 
             // Set the number of slot for IMS enable for each slot
-            if (mFeatureFlags.setNumberOfSimForImsEnable()) {
-                mImsEnablementTracker.setNumOfSlots(slotIDs.size());
-            }
+            mImsEnablementTracker.setNumOfSlots(slotIDs.size());
 
             // detect which subIds have changed on a per-slot basis
             SparseIntArray changedSubIds = new SparseIntArray(slotIDs.size());
@@ -1000,13 +1002,11 @@ public class ImsServiceController {
 
     @Override
     public String toString() {
-        synchronized (mLock) {
-            return "[ImsServiceController: componentName=" + getComponentName() + ", boundUser="
-                    + mBoundUser + ", features=" + mImsFeatures + ", isBinding=" + mIsBinding
-                    + ", isBound=" + mIsBound + ", serviceController=" + getImsServiceController()
-                    + ", rebindDelay=" + getRebindDelay() + ", slotToSubIdMap=" + mSlotIdToSubIdMap
-                    + "]";
-        }
+        return "[ImsServiceController: componentName=" + getComponentName() + ", boundUser="
+                + mBoundUser + ", features=" + mImsFeatures + ", isBinding=" + mIsBinding
+                + ", isBound=" + mIsBound + ", serviceController=" + getImsServiceController()
+                + ", rebindDelay=" + getRebindDelay() + ", slotToSubIdMap=" + mSlotIdToSubIdMap
+                + "]";
     }
 
     public void dump(PrintWriter printWriter) {

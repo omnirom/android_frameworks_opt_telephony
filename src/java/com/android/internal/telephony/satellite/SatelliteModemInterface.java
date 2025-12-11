@@ -57,6 +57,7 @@ import com.android.internal.telephony.flags.FeatureFlags;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Satellite modem interface to manage connections with the satellite service and HAL interface.
@@ -67,6 +68,7 @@ public class SatelliteModemInterface {
     private static final long REBIND_MAXIMUM_DELAY = 64 * 1000; // 1 minute
     private static final int REBIND_MULTIPLIER = 2;
 
+    /** All the variables initialized inside the constructor are declared here. */
     @NonNull private static SatelliteModemInterface sInstance;
     @NonNull private final Context mContext;
     @NonNull private final DemoSimulator mDemoSimulator;
@@ -74,18 +76,21 @@ public class SatelliteModemInterface {
     @NonNull private final SatelliteListener mDemoListener;
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     @NonNull protected final ExponentialBackoff mExponentialBackoff;
-    @NonNull private final Object mLock = new Object();
+
     @NonNull private final SatelliteController mSatelliteController;
-    /**
-     * {@code true} to use the vendor satellite service and {@code false} to use the HAL.
-     */
-    private boolean mIsSatelliteServiceSupported;
+
+    @Nullable private PersistentLogger mPersistentLogger = null;
+
+    /** All the atomic variables are declared here. */
+    private AtomicBoolean mIsBound = new AtomicBoolean(false);
+    private AtomicBoolean mIsBinding = new AtomicBoolean(false);
+    // {@code true} to use the vendor satellite service and {@code false} to use the HAL.
+    private AtomicBoolean mIsSatelliteServiceSupported = new AtomicBoolean(false);
+
+    @NonNull private final Object mLock = new Object();
     @Nullable private ISatellite mSatelliteService;
     @Nullable private SatelliteServiceConnection mSatelliteServiceConnection;
     @NonNull private String mVendorSatellitePackageName = "";
-    private boolean mIsBound;
-    private boolean mIsBinding;
-    @Nullable private PersistentLogger mPersistentLogger = null;
 
     @NonNull private final RegistrantList mSatellitePositionInfoChangedRegistrants =
             new RegistrantList();
@@ -259,20 +264,17 @@ public class SatelliteModemInterface {
         mDemoSimulator = DemoSimulator.make(context, satelliteController);
         mVendorListener = new SatelliteListener(false);
         mDemoListener = new SatelliteListener(true);
-        mIsSatelliteServiceSupported = getSatelliteServiceSupport();
+        mIsSatelliteServiceSupported.set(getSatelliteServiceSupport());
         mSatelliteController = satelliteController;
         mExponentialBackoff = new ExponentialBackoff(REBIND_INITIAL_DELAY, REBIND_MAXIMUM_DELAY,
                 REBIND_MULTIPLIER, looper, () -> {
-            synchronized (mLock) {
-                if ((mIsBound && mSatelliteService != null) || mIsBinding) {
-                    return;
-                }
+            if ((mIsBound.get() && mSatelliteService != null) || mIsBinding.get()) {
+                return;
             }
+
             if (mSatelliteServiceConnection != null) {
-                synchronized (mLock) {
-                    mIsBound = false;
-                    mIsBinding = false;
-                }
+                mIsBound.set(false);
+                mIsBinding.set(false);
                 unbindService();
             }
             bindService();
@@ -305,18 +307,15 @@ public class SatelliteModemInterface {
 
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
     protected void bindService() {
-        synchronized (mLock) {
-            if (mIsBinding || mIsBound) return;
-            mIsBinding = true;
-        }
+        if (mIsBinding.get() || mIsBound.get()) return;
+        mIsBinding.set(true);
+
         String packageName = getSatellitePackageName();
         if (TextUtils.isEmpty(packageName)) {
             ploge("Unable to bind to the satellite service because the package is undefined.");
             // Since the package name comes from static device configs, stop retry because
             // rebind will continue to fail without a valid package name.
-            synchronized (mLock) {
-                mIsBinding = false;
-            }
+            mIsBinding.set(false);
             mExponentialBackoff.stop();
             return;
         }
@@ -331,17 +330,13 @@ public class SatelliteModemInterface {
             if (success) {
                 plogd("Successfully bound to the satellite service.");
             } else {
-                synchronized (mLock) {
-                    mIsBinding = false;
-                }
+                mIsBinding.set(false);
                 mExponentialBackoff.notifyFailed();
                 ploge("Error binding to the satellite service. Retrying in "
                         + mExponentialBackoff.getCurrentDelay() + " ms.");
             }
         } catch (Exception e) {
-            synchronized (mLock) {
-                mIsBinding = false;
-            }
+            mIsBinding.set(false);
             mExponentialBackoff.notifyFailed();
             ploge("Exception binding to the satellite service. Retrying in "
                     + mExponentialBackoff.getCurrentDelay() + " ms. Exception: " + e);
@@ -364,10 +359,8 @@ public class SatelliteModemInterface {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             plogd("onServiceConnected: ComponentName=" + name);
-            synchronized (mLock) {
-                mIsBound = true;
-                mIsBinding = false;
-            }
+            mIsBound.set(true);
+            mIsBinding.set(false);
             mSatelliteService = ISatellite.Stub.asInterface(service);
             mExponentialBackoff.stop();
             try {
@@ -383,9 +376,7 @@ public class SatelliteModemInterface {
         @Override
         public void onServiceDisconnected(ComponentName name) {
             ploge("onServiceDisconnected: Waiting for reconnect.");
-            synchronized (mLock) {
-                mIsBinding = false;
-            }
+            mIsBinding.set(false);
             // Since we are still technically bound, clear the service and wait for reconnect.
             disconnectSatelliteService();
         }
@@ -393,10 +384,8 @@ public class SatelliteModemInterface {
         @Override
         public void onBindingDied(ComponentName name) {
             ploge("onBindingDied: Unbinding and rebinding service.");
-            synchronized (mLock) {
-                mIsBound = false;
-                mIsBinding = false;
-            }
+            mIsBound.set(false);
+            mIsBinding.set(false);
             unbindService();
             mExponentialBackoff.start();
         }
@@ -1308,7 +1297,7 @@ public class SatelliteModemInterface {
     }
 
     public boolean isSatelliteServiceSupported() {
-        return mIsSatelliteServiceSupported;
+        return mIsSatelliteServiceSupported.get();
     }
 
     /** Check if vendor satellite service is connected */
@@ -1359,10 +1348,8 @@ public class SatelliteModemInterface {
                 + "updated, new packageName=" + servicePackageName);
         mExponentialBackoff.stop();
         if (mSatelliteServiceConnection != null) {
-            synchronized (mLock) {
-                mIsBound = false;
-                mIsBinding = false;
-            }
+            mIsBound.set(false);
+            mIsBinding.set(false);
             unbindService();
         }
 
@@ -1371,7 +1358,7 @@ public class SatelliteModemInterface {
         } else {
             mVendorSatellitePackageName = servicePackageName;
         }
-        mIsSatelliteServiceSupported = getSatelliteServiceSupport();
+        mIsSatelliteServiceSupported.set(getSatelliteServiceSupport());
         bindService();
         mExponentialBackoff.start();
     }

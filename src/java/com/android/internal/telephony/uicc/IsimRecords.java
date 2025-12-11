@@ -20,7 +20,7 @@ import android.compat.annotation.UnsupportedAppUsage;
 import android.os.Build;
 
 /**
- * {@hide}
+ * @hide
  */
 public interface IsimRecords {
 

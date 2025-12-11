@@ -19,7 +19,7 @@ package com.android.internal.telephony;
 import java.util.BitSet;
 
 /**
- * {@hide}
+ * @hide
  *
  * hardware configuration information reported by the ril layer and for
  * use by the telephone framework.

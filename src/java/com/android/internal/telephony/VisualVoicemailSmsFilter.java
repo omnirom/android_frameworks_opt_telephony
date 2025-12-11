@@ -35,7 +35,6 @@ import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.VisualVoicemailSmsParser.WrappedMessageData;
-import com.android.internal.telephony.flags.Flags;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -287,11 +286,7 @@ public class VisualVoicemailSmsFilter {
         intent.putExtra(VoicemailContract.EXTRA_VOICEMAIL_SMS, builder.build());
         intent.putExtra(VoicemailContract.EXTRA_TARGET_PACKAGE, filterSettings.packageName);
         intent.setPackage(TELEPHONY_SERVICE_PACKAGE);
-        if (Flags.hsumBroadcast()) {
-            context.sendBroadcastAsUser(intent, UserHandle.ALL);
-        } else {
-            context.sendBroadcast(intent);
-        }
+        context.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
     /**

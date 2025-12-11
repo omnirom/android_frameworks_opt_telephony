@@ -32,6 +32,8 @@ import android.util.Pair;
 
 import androidx.test.filters.SmallTest;
 
+import com.android.internal.telephony.flags.Flags;
+
 import junit.framework.TestCase;
 
 import java.util.ArrayList;
@@ -43,19 +45,6 @@ public class ServiceStateTest extends TestCase {
     @SmallTest
     public void testRoaming() {
         ServiceState ss = new ServiceState();
-
-        ss.setCdmaDefaultRoamingIndicator(1);
-        assertEquals(1, ss.getCdmaDefaultRoamingIndicator());
-
-        ss.setCdmaEriIconIndex(2);
-        assertEquals(2, ss.getCdmaEriIconIndex());
-
-        ss.setCdmaEriIconMode(3);
-        assertEquals(3, ss.getCdmaEriIconMode());
-
-        ss.setCdmaRoamingIndicator(4);
-        assertEquals(4, ss.getCdmaRoamingIndicator());
-
         ss.setDataRoamingType(ServiceState.ROAMING_TYPE_DOMESTIC);
         assertTrue(ss.getDataRoaming());
         assertEquals(ServiceState.ROAMING_TYPE_DOMESTIC, ss.getDataRoamingType());
@@ -225,9 +214,8 @@ public class ServiceStateTest extends TestCase {
         ss.setIsManualSelection(true);
         assertTrue(ss.getIsManualSelection());
 
-        ss.setCdmaSystemAndNetworkId(123, 456);
-        assertEquals(123, ss.getCdmaSystemId());
-        assertEquals(456, ss.getCdmaNetworkId());
+        assertEquals(-1, ss.getCdmaSystemId());
+        assertEquals(-1, ss.getCdmaNetworkId());
 
         ss.setEmergencyOnly(true);
         assertTrue(ss.isEmergencyOnly());
@@ -245,11 +233,6 @@ public class ServiceStateTest extends TestCase {
         ss.setOperatorName("long", "short", "numeric");
         ss.setIsManualSelection(true);
         ss.setCssIndicator(1);
-        ss.setCdmaSystemAndNetworkId(2, 3);
-        ss.setCdmaRoamingIndicator(4);
-        ss.setCdmaDefaultRoamingIndicator(5);
-        ss.setCdmaEriIconIndex(6);
-        ss.setCdmaEriIconMode(7);
         ss.setEmergencyOnly(true);
         ss.setChannelNumber(2100);
         ss.setCellBandwidths(new int[]{1400, 5000, 10000});
@@ -290,11 +273,6 @@ public class ServiceStateTest extends TestCase {
         ss.setIsManualSelection(true);
 
         ss.setCssIndicator(1);
-        ss.setCdmaSystemAndNetworkId(2, 3);
-        ss.setCdmaRoamingIndicator(4);
-        ss.setCdmaDefaultRoamingIndicator(5);
-        ss.setCdmaEriIconIndex(6);
-        ss.setCdmaEriIconMode(7);
         ss.setEmergencyOnly(true);
         ss.setChannelNumber(2100);
         ss.setCellBandwidths(new int[]{3, 4, 10});
@@ -411,6 +389,63 @@ public class ServiceStateTest extends TestCase {
     }
 
     @SmallTest
+    public void testDuplexMode_SupplementalLinksNgran() {
+        ServiceState ss = new ServiceState();
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_NR)
+                .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
+                .build();
+        ss.addNetworkRegistrationInfo(nri);
+
+        if (!Flags.duplexModeForNgran()) {
+            // Even if AccessNetwork is NR, getDuplexMode will be return FDD if the band is
+            // set to the FDD LTE band because there was no duplex implementation for NR.
+            ss.setChannelNumber(2400); // lte band 5
+            assertEquals(ServiceState.DUPLEX_MODE_FDD, ss.getDuplexMode());
+        } else {
+            ss.setChannelNumber(144400); // band n29, SDL
+            assertEquals(ServiceState.DUPLEX_MODE_UNKNOWN, ss.getDuplexMode());
+        }
+    }
+
+    @SmallTest
+    public void testDuplexMode_FddChannelNgran() {
+        ServiceState ss = new ServiceState();
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_NR)
+                .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
+                .build();
+        ss.addNetworkRegistrationInfo(nri);
+        ss.setChannelNumber(432000); // band n1
+
+        if (!Flags.duplexModeForNgran()) {
+            assertEquals(ServiceState.DUPLEX_MODE_UNKNOWN, ss.getDuplexMode());
+        } else {
+            assertEquals(ServiceState.DUPLEX_MODE_FDD, ss.getDuplexMode());
+        }
+    }
+
+    @SmallTest
+    public void testDuplexMode_TddChannelNgran() {
+        ServiceState ss = new ServiceState();
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setAccessNetworkTechnology(TelephonyManager.NETWORK_TYPE_NR)
+                .setDomain(NetworkRegistrationInfo.DOMAIN_PS)
+                .build();
+        ss.addNetworkRegistrationInfo(nri);
+        ss.setChannelNumber(402000); // band n34
+
+        if (!Flags.duplexModeForNgran()) {
+            assertEquals(ServiceState.DUPLEX_MODE_UNKNOWN, ss.getDuplexMode());
+        } else {
+            assertEquals(ServiceState.DUPLEX_MODE_TDD, ss.getDuplexMode());
+        }
+    }
+
+    @SmallTest
     public void testCreateLocationInfoSanitizedCopy() {
         ServiceState ss = new ServiceState();
         NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
@@ -420,7 +455,6 @@ public class ServiceStateTest extends TestCase {
                 .setCellIdentity(new CellIdentityLte())
                 .build();
         ss.addNetworkRegistrationInfo(nri);
-        ss.setCdmaSystemAndNetworkId(12345, 6789);
         ss.setOperatorName(
                 /*longName=*/ "AwesomeTelecomm", /*shortName=*/ "AT", /*numeric=*/ "123456");
 
@@ -432,17 +466,14 @@ public class ServiceStateTest extends TestCase {
         assertEquals("AwesomeTelecomm", fineLocationSanitizedSs.getOperatorAlphaLong());
         assertEquals("AT", fineLocationSanitizedSs.getOperatorAlphaShort());
         assertEquals("123456", fineLocationSanitizedSs.getOperatorNumeric());
-        assertEquals(12345, fineLocationSanitizedSs.getCdmaSystemId());
-        assertEquals(6789, fineLocationSanitizedSs.getCdmaNetworkId());
+        assertEquals(-1, fineLocationSanitizedSs.getCdmaSystemId());
+        assertEquals(-1, fineLocationSanitizedSs.getCdmaNetworkId());
 
         ServiceState coarseLocationSanitizedSs =
                 ss.createLocationInfoSanitizedCopy(/*removeCoarseLocation=*/ true);
         // CellIdentities is fine location protected, it should be sanitized
         assertCellIdentitiesSanitized(coarseLocationSanitizedSs);
         // All other coarse location protected fields should be sanitized as well
-        assertEquals(null, coarseLocationSanitizedSs.getOperatorAlphaLong());
-        assertEquals(null, coarseLocationSanitizedSs.getOperatorAlphaShort());
-        assertEquals(null, coarseLocationSanitizedSs.getOperatorNumeric());
         assertEquals(UNKNOWN_ID, coarseLocationSanitizedSs.getCdmaSystemId());
         assertEquals(UNKNOWN_ID, coarseLocationSanitizedSs.getCdmaNetworkId());
     }
@@ -464,7 +495,7 @@ public class ServiceStateTest extends TestCase {
                 ss.getNetworkRegistrationInfoList();
         if (networkRegistrationInfoList == null) return;
         for (NetworkRegistrationInfo nri : networkRegistrationInfoList) {
-            assertNull(nri.getCellIdentity());
+            assertEquals(nri.getCellIdentity(), nri.getCellIdentity().sanitizeLocationInfo());
         }
     }
 }

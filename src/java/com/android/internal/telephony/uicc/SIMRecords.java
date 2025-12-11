@@ -47,13 +47,14 @@ import com.android.telephony.Rlog;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * {@hide}
+ * @hide
  */
 public class SIMRecords extends IccRecords {
     protected static final String LOG_TAG = "SIMRecords";
@@ -101,6 +102,8 @@ public class SIMRecords extends IccRecords {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     UsimServiceTable mUsimServiceTable;
 
+    private String[] mUsimIari;    // IMS Application Reference Identifier
+
     @Override
     public String toString() {
         return "SimRecords: " + super.toString()
@@ -115,6 +118,7 @@ public class SIMRecords extends IccRecords {
                 + " mEfCfis=" + IccUtils.bytesToHexString(mEfCfis)
                 + " getOperatorNumeric=" + getOperatorNumeric()
                 + " mPsiSmsc=" + mPsiSmsc
+                + " mUsimIari=" + Arrays.toString(mUsimIari)
                 + " TPMR=" + getSmssTpmrValue();
     }
 
@@ -132,6 +136,9 @@ public class SIMRecords extends IccRecords {
 
     // PLMN Additional Information tag from from TS 24.008
     static final int TAG_PLMN_ADDITIONAL_INFORMATION = 0x80;
+
+    // IARI TLV TAG from TS 31.102
+    static final int TAG_IARI_TLV = 0x80;
 
     // active CFF from CPHS 4.2 B.4.5
     static final int CFF_UNCONDITIONAL_ACTIVE = 0x0a;
@@ -193,6 +200,7 @@ public class SIMRecords extends IccRecords {
     private static final int EVENT_SET_FPLMN_DONE = 43 + SIM_RECORD_EVENT_BASE;
     protected static final int EVENT_GET_SMSS_RECORD_DONE = 46 + SIM_RECORD_EVENT_BASE;
     protected static final int EVENT_GET_PSISMSC_DONE = 47 + SIM_RECORD_EVENT_BASE;
+    protected static final int EVENT_GET_IARI_DONE = 48 + SIM_RECORD_EVENT_BASE;
 
     // ***** Constructor
 
@@ -252,6 +260,7 @@ public class SIMRecords extends IccRecords {
         mHplmnActRecords = null;
         mFplmns = null;
         mEhplmns = null;
+        mUsimIari = null;
 
         mAdnCache.reset();
 
@@ -280,6 +289,15 @@ public class SIMRecords extends IccRecords {
     @Override
     public UsimServiceTable getUsimServiceTable() {
         return mUsimServiceTable;
+    }
+
+    /**
+     * Returns the IMS Application Reference Identifier(IARI) that was loaded from the USIM.
+     * @return array of IARI or null if not loaded
+     */
+    @Override
+    public String[] getUiccIari() {
+        return (mUsimIari != null) ? mUsimIari.clone() : null;
     }
 
     /**
@@ -1368,6 +1386,19 @@ public class SIMRecords extends IccRecords {
                     }
                     break;
 
+                case EVENT_GET_IARI_DONE:
+                    isRecordLoadResponse = true;
+                    ar = (AsyncResult) msg.obj;
+                    if (ar.exception != null) {
+                        loge("Failed to read USIM EF_IARI field error=" + ar.exception);
+                    } else {
+                        List<byte[]> iariList = (List<byte[]>) ar.result;
+                        if (iariList != null && iariList.size() > 0) {
+                            parseEfIari(iariList);
+                        }
+                    }
+                    break;
+
                 default:
                     super.handleMessage(msg);   // IccRecords handles generic record load responses
             }
@@ -1769,6 +1800,9 @@ public class SIMRecords extends IccRecords {
         mFh.loadEFTransparent(EF_SMSS, obtainMessage(EVENT_GET_SMSS_RECORD_DONE));
         mRecordsToLoad++;
 
+        mFh.loadEFLinearFixedAll(EF_IARI, obtainMessage(EVENT_GET_IARI_DONE));
+        mRecordsToLoad++;
+
         if (CRASH_RIL) {
             String sms = "0107912160130310f20404d0110041007030208054832b0120"
                          + "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -2098,6 +2132,25 @@ public class SIMRecords extends IccRecords {
     }
 
     /**
+     * convert a byte array of packed IARIs to an array of strings
+     * Reference: 3GPP TS 31.102 Section 4.2.95 and TS 31.103 Section 4.2.16.
+     */
+    private void parseEfIari(List<byte[]> dataList) {
+        final int count = dataList.size();
+        mUsimIari = new String[count];
+        for (int i = 0; i < count; i++) {
+            byte[] data = dataList.get(i);
+            SimTlv tlv = new SimTlv(data, 0, data.length);
+            if (tlv.getTag() == TAG_IARI_TLV) {
+                mUsimIari[i] = new String(tlv.getData(), StandardCharsets.UTF_8);
+            } else {
+                mUsimIari[i] = null;
+            }
+        }
+        if (VDBG) logv("IARIs: " + Arrays.toString(mUsimIari));
+    }
+
+    /**
      * check to see if Mailbox Number is allocated and activated in CPHS SST
      */
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
@@ -2233,6 +2286,7 @@ public class SIMRecords extends IccRecords {
         pw.println(" mFplmns[]=" + Arrays.toString(mFplmns));
         pw.println(" mEhplmns[]=" + Arrays.toString(mEhplmns));
         pw.println(" mPsismsc=" + mPsiSmsc);
+        pw.println(" mUsimIari=" + Arrays.toString(mUsimIari));
         pw.println(" TPMR=" + getSmssTpmrValue());
         pw.flush();
     }

@@ -42,6 +42,7 @@ import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteOutgoingDa
 import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteProvision;
 import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteSession;
 import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteSosMessageRecommender;
+import com.android.internal.telephony.satellite.SatelliteConstants;
 
 import org.junit.After;
 import org.junit.Before;
@@ -118,6 +119,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setCountOfOutgoingDatagramTypeSmsFail(4)
                         .setCountOfIncomingDatagramTypeSmsSuccess(5)
                         .setCountOfIncomingDatagramTypeSmsFail(6)
+                        .setCarrierRoamingSatelliteConfigVersion(19)
+                        .setMaxAllowedDataMode(0)
                         .build();
 
         mSatelliteStats.onSatelliteControllerMetrics(param);
@@ -183,6 +186,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                 stats.countOfSatelliteAccessCheckFail);
         assertEquals(SatelliteStats.SatelliteControllerParams.isProvisioned(), stats.isProvisioned);
         assertEquals(SatelliteStats.SatelliteControllerParams.getCarrierId(), stats.carrierId);
+        assertEquals(SatelliteStats.SatelliteControllerParams.getSupportedConnectionMode(),
+                stats.supportedConnectionMode);
         assertEquals(param.getCountOfP2PSmsAvailableNotificationShown(),
                 stats.countOfP2PSmsAvailableNotificationShown);
         assertEquals(param.getCountOfP2PSmsAvailableNotificationRemoved(),
@@ -203,6 +208,11 @@ public class SatelliteStatsTest extends TelephonyTest {
                 stats.countOfIncomingDatagramTypeSmsSuccess);
         assertEquals(param.getCountOfIncomingDatagramTypeSmsSuccess(),
                 stats.countOfIncomingDatagramTypeSmsSuccess);
+        assertEquals(
+                SatelliteStats.SatelliteControllerParams.getCarrierRoamingSatelliteConfigVersion(),
+                stats.carrierRoamingSatelliteConfigVersion);
+        assertEquals(SatelliteStats.SatelliteControllerParams.getMaxAllowedDataMode(),
+                stats.maxAllowedDataMode);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -272,6 +282,10 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setIsDemoMode(false)
                         .setMaxNtnSignalStrengthLevel(NTN_SIGNAL_STRENGTH_GOOD)
                         .setCarrierId(1589)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
+                        .setSessionConnectionMode(
+                                SatelliteConstants.SESSION_NTN_CONNECT_TYPE_UNKNOWN)
                         .setCountOfSatelliteNotificationDisplayed(5)
                         .setCountOfAutoExitDueToScreenOff(7)
                         .setCountOfAutoExitDueToTnNetwork(3)
@@ -301,6 +315,8 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getIsDemoMode(), stats.isDemoMode);
         assertEquals(param.getMaxNtnSignalStrengthLevel(), stats.maxNtnSignalStrengthLevel);
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
+        assertEquals(param.getSessionConnectionMode(), stats.sessionConnectionMode);
         assertEquals(param.getCountOfSatelliteNotificationDisplayed(),
                 stats.countOfSatelliteNotificationDisplayed);
         assertEquals(param.getCountOfAutoExitDueToScreenOff(), stats.countOfAutoExitDueToScreenOff);
@@ -397,6 +413,10 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setIsSatelliteAllowedInCurrentLocation(true)
                         .setIsWifiConnected(true)
                         .setCarrierId(1)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
+                        .setSessionConnectionMode(
+                                SatelliteConstants.SESSION_NTN_CONNECT_TYPE_UNKNOWN)
                         .build();
 
         mSatelliteStats.onSatelliteSosMessageRecommender(param);
@@ -416,6 +436,8 @@ public class SatelliteStatsTest extends TelephonyTest {
                 stats.isSatelliteAllowedInCurrentLocation);
         assertEquals(param.isWifiConnected(), stats.isWifiConnected);
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
+        assertEquals(param.getSessionConnectionMode(), stats.sessionConnectionMode);
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
 
@@ -424,6 +446,10 @@ public class SatelliteStatsTest extends TelephonyTest {
         SatelliteStats.CarrierRoamingSatelliteSessionParams param =
                 new SatelliteStats.CarrierRoamingSatelliteSessionParams.Builder()
                         .setCarrierId(100)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
+                        .setSessionConnectionMode(
+                                SatelliteConstants.SESSION_NTN_CONNECT_TYPE_UNKNOWN)
                         .setIsNtnRoamingInHomeCountry(true)
                         .setTotalSatelliteModeTimeSec(10 * 60)
                         .setNumberOfSatelliteConnections(5)
@@ -450,6 +476,8 @@ public class SatelliteStatsTest extends TelephonyTest {
         verify(mPersistAtomsStorage).addCarrierRoamingSatelliteSessionStats(captor.capture());
         CarrierRoamingSatelliteSession stats = captor.getValue();
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
+        assertEquals(param.getSessionConnectionMode(), stats.sessionConnectionMode);
         assertEquals(param.getIsNtnRoamingInHomeCountry(), stats.isNtnRoamingInHomeCountry);
         assertEquals(param.getTotalSatelliteModeTimeSec(), stats.totalSatelliteModeTimeSec);
         assertEquals(param.getNumberOfSatelliteConnections(), stats.numberOfSatelliteConnections);
@@ -484,9 +512,13 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setSatelliteSessionGapAvgSec(30)
                         .setSatelliteSessionGapMaxSec(45)
                         .setCarrierId(10)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
                         .setIsDeviceEntitled(true)
                         .setIsMultiSim(true)
                         .increaseCountOfSatelliteSessions()
+                        .increaseCountOfSessionConnectionModeAutomatic(true)
+                        .increaseCountOfSessionConnectionModeManual(false)
                         .setIsNbIotNtn(true)
                         .build();
 
@@ -507,6 +539,11 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getSatelliteSessionGapAvgSec(), stats.satelliteSessionGapAvgSec);
         assertEquals(param.getSatelliteSessionGapMaxSec(), stats.satelliteSessionGapMaxSec);
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
+        assertEquals(param.getCountOfSessionConnectionModeAutomatic(),
+                stats.countOfSessionConnectionModeAutomatic);
+        assertEquals(param.getCountOfSessionConnectionModeManual(),
+                stats.countOfSessionConnectionModeManual);
         assertEquals(param.isDeviceEntitled(), stats.isDeviceEntitled);
         assertEquals(param.isMultiSim(), stats.isMultiSim);
         assertEquals(param.getCountOfSatelliteSessions(), stats.countOfSatelliteSessions);
@@ -528,9 +565,13 @@ public class SatelliteStatsTest extends TelephonyTest {
                         .setSatelliteSessionGapAvgSec(30)
                         .setSatelliteSessionGapMaxSec(45)
                         .setCarrierId(10)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
                         .setIsDeviceEntitled(true)
                         .setIsMultiSim(true)
                         .increaseCountOfSatelliteSessions()
+                        .increaseCountOfSessionConnectionModeAutomatic(true)
+                        .increaseCountOfSessionConnectionModeManual(false)
                         .setIsNbIotNtn(true)
                         .build();
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
@@ -543,6 +584,7 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(param.getCountOfEntitlementStatusQueryRequest(),
                 stats.countOfEntitlementStatusQueryRequest);
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
         assertEquals(param.isDeviceEntitled(), stats.isDeviceEntitled);
 
         param = new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
@@ -558,11 +600,14 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(2, stats.countOfSatelliteConfigUpdateRequest);
         // static values should not be updated
         assertEquals(10, stats.carrierId);
+        assertEquals(SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN,
+                stats.supportedConnectionMode);
         assertEquals(true, stats.isDeviceEntitled);
 
         param = new SatelliteStats.CarrierRoamingSatelliteControllerStatsParams.Builder()
                 .setCountOfSatelliteConfigUpdateRequest(2)
                 .setCarrierId(20)
+                .setSupportedConnectionMode(SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN)
                 .setIsDeviceEntitled(false)
                 .build();
         mSatelliteStats.onCarrierRoamingSatelliteControllerStatsMetrics(param);
@@ -575,9 +620,15 @@ public class SatelliteStatsTest extends TelephonyTest {
         assertEquals(2, stats.countOfSatelliteConfigUpdateRequest);
         // static values should be updated
         assertEquals(20, stats.carrierId);
+        assertEquals(SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_UNKNOWN,
+                stats.supportedConnectionMode);
         assertEquals(false, stats.isDeviceEntitled);
         assertEquals(param.isMultiSim(), stats.isMultiSim);
         assertEquals(param.getCountOfSatelliteSessions(), stats.countOfSatelliteSessions);
+        assertEquals(param.getCountOfSessionConnectionModeAutomatic(),
+                stats.countOfSessionConnectionModeAutomatic);
+        assertEquals(param.getCountOfSessionConnectionModeManual(),
+                stats.countOfSessionConnectionModeManual);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }
@@ -587,10 +638,13 @@ public class SatelliteStatsTest extends TelephonyTest {
         SatelliteStats.SatelliteEntitlementParams param =
                 new SatelliteStats.SatelliteEntitlementParams.Builder()
                         .setCarrierId(10)
+                        .setSupportedConnectionMode(
+                                SatelliteConstants.GLOBAL_NTN_CONNECT_TYPE_AUTOMATIC)
                         .setResult(500)
                         .setEntitlementStatus(2)
                         .setIsRetry(true)
                         .setCount(5)
+                        .setHttpStatusCode(404)
                         .build();
 
         mSatelliteStats.onSatelliteEntitlementMetrics(param);
@@ -600,10 +654,12 @@ public class SatelliteStatsTest extends TelephonyTest {
         verify(mPersistAtomsStorage).addSatelliteEntitlementStats(captor.capture());
         SatelliteEntitlement stats = captor.getValue();
         assertEquals(param.getCarrierId(), stats.carrierId);
+        assertEquals(param.getSupportedConnectionMode(), stats.supportedConnectionMode);
         assertEquals(param.getResult(), stats.result);
         assertEquals(param.getEntitlementStatus(), stats.entitlementStatus);
         assertEquals(param.getIsRetry(), stats.isRetry);
         assertEquals(param.getCount(), stats.count);
+        assertEquals(param.getHttpStatusCode(), stats.httpStatusCode);
 
         verifyNoMoreInteractions(mPersistAtomsStorage);
     }

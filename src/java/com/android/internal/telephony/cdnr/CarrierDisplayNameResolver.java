@@ -153,27 +153,6 @@ public class CarrierDisplayNameResolver {
     }
 
     /**
-     * Update the ef for CDMA eri text. The ef records from this source will be set all of the
-     * following situation are satisfied.
-     *
-     * 1. {@code eriText} is neither empty nor null.
-     * 2. Current network is CDMA or CdmaLte
-     * 3. ERI is allowed.
-     *
-     * @param eriText
-     */
-    public void updateEfForEri(String eriText) {
-        PersistableBundle config = getCarrierConfig();
-        int key = getSourcePriority(EF_SOURCE_ERI);
-        if (!TextUtils.isEmpty(eriText) && (mPhone.isPhoneTypeCdma() || mPhone.isPhoneTypeCdmaLte())
-                && config.getBoolean(CarrierConfigManager.KEY_ALLOW_ERI_BOOL)) {
-            mEf.put(key, new EriEfData(eriText));
-        } else {
-            mEf.remove(key);
-        }
-    }
-
-    /**
      * Update the ef for brandOverride. If {@code operatorName} is empty or null, the ef records
      * from this source will be removed.
      *
@@ -476,7 +455,14 @@ public class CarrierDisplayNameResolver {
 
     private void resolveCarrierDisplayName() {
         CarrierDisplayNameData data = getCarrierDisplayNameFromEf();
-        if (DBG) Rlog.d(TAG, "CarrierName from EF: " + data);
+        ServiceState ss = getServiceState();
+        int combinedRegState = mPhone.getServiceStateTracker().getCombinedRegState(ss);
+        boolean isWifiCallingEnabled = mPhone.isWifiCallingEnabled();
+        if (DBG) {
+            Rlog.d(TAG, "CarrierName from EF: " + data
+                    + " combinedRegState: " + ServiceState.rilServiceStateToString(combinedRegState)
+                    + " isWifiCallingEnabled: " + isWifiCallingEnabled + ss);
+        }
         if ((mPhone.getImsPhone() != null) && (mPhone.getImsPhone().getImsRegistrationTech()
                 == ImsRegistrationImplBase.REGISTRATION_TECH_CROSS_SIM
                 && mPhone.isImsRegistered())) {
@@ -484,9 +470,8 @@ public class CarrierDisplayNameResolver {
             if (DBG) {
                 Rlog.d(TAG, "CarrierName override by Cross-SIM Calling " + data);
             }
-        } else if (mPhone.getServiceStateTracker().getCombinedRegState(getServiceState())
-                == ServiceState.STATE_IN_SERVICE) {
-            if (mPhone.isWifiCallingEnabled() && mPhone.isImsRegistered()) {
+        } else if (combinedRegState == ServiceState.STATE_IN_SERVICE) {
+            if (isWifiCallingEnabled && mPhone.isImsRegistered()) {
                 data = getCarrierDisplayNameFromWifiCallingOverride(data);
                 if (DBG) {
                     Rlog.d(TAG, "CarrierName override by wifi-calling " + data);

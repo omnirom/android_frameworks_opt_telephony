@@ -25,7 +25,7 @@ import android.os.Parcelable;
 /**
  * Class for representing "Duration" object for CAT.
  *
- * {@hide}
+ * @hide
  */
 public class Duration implements Parcelable {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
@@ -72,6 +72,21 @@ public class Duration implements Parcelable {
     @Override
     public int describeContents() {
         return 0;
+    }
+
+    /**
+     * Calculates the total duration in milliseconds from {@code timeUnit}.
+     *
+     * @return Interval in milliseconds.
+     */
+    public long getIntervalInMillis() {
+        long multiplier = switch (timeUnit) {
+            case MINUTE ->  60 * 1000;
+            case SECOND -> 1000;
+            case TENTH_SECOND -> 100;
+            default -> 0;
+        };
+        return multiplier * timeInterval;
     }
 
     public static final Parcelable.Creator<Duration> CREATOR = new Parcelable.Creator<Duration>() {

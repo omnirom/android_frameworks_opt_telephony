@@ -29,7 +29,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.display.DisplayManager;
-import android.hardware.radio.V1_5.IndicationFilter;
+import android.hardware.radio.network.IndicationFilter;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -38,11 +38,13 @@ import android.net.TetheringManager;
 import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.Message;
+import android.os.PersistableBundle;
 import android.os.PowerManager;
 import android.os.Registrant;
 import android.os.RegistrantList;
 import android.provider.Settings;
 import android.telephony.AccessNetworkConstants.AccessNetworkType;
+import android.telephony.CarrierConfigManager;
 import android.telephony.NetworkRegistrationInfo;
 import android.util.LocalLog;
 import android.view.Display;
@@ -85,6 +87,7 @@ public class DeviceStateMonitor extends Handler {
     static final int EVENT_UPDATE_ALWAYS_REPORT_SIGNAL_STRENGTH = 8;
     static final int EVENT_RADIO_ON                     = 9;
     static final int EVENT_RADIO_OFF_OR_NOT_AVAILABLE   = 10;
+    static final int EVENT_DISPLAY_NETWORK_TYPE_CARRIER_CONFIG_CHANGED = 11;
 
     private static final int WIFI_UNAVAILABLE = 0;
     private static final int WIFI_AVAILABLE = 1;
@@ -106,40 +109,42 @@ public class DeviceStateMonitor extends Handler {
 
     private final NetworkRequest mWifiNetworkRequest =
             new NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-            .build();
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                    .build();
 
     private final ConnectivityManager.NetworkCallback mNetworkCallback =
             new ConnectivityManager.NetworkCallback() {
-        Set<Network> mWifiNetworks = new HashSet<>();
+                Set<Network> mWifiNetworks = new HashSet<>();
 
-        @Override
-        public void onAvailable(Network network) {
-            synchronized (mWifiNetworks) {
-                if (mWifiNetworks.size() == 0) {
-                    // We just connected to Wifi, so send an update.
-                    obtainMessage(EVENT_WIFI_CONNECTION_CHANGED, WIFI_AVAILABLE, 0).sendToTarget();
-                    log("Wifi (default) connected", true);
+                @Override
+                public void onAvailable(Network network) {
+                    synchronized (mWifiNetworks) {
+                        if (mWifiNetworks.isEmpty()) {
+                            // We just connected to Wifi, so send an update.
+                            obtainMessage(EVENT_WIFI_CONNECTION_CHANGED, WIFI_AVAILABLE, 0)
+                                    .sendToTarget();
+                            log("Wifi (default) connected", true);
+                        }
+                        mWifiNetworks.add(network);
+                    }
                 }
-                mWifiNetworks.add(network);
-            }
-        }
 
-        @Override
-        public void onLost(Network network) {
-            synchronized (mWifiNetworks) {
-                mWifiNetworks.remove(network);
-                if (mWifiNetworks.size() == 0) {
-                    // We just disconnected from the last connected wifi, so send an update.
-                    obtainMessage(
-                            EVENT_WIFI_CONNECTION_CHANGED, WIFI_UNAVAILABLE, 0).sendToTarget();
-                    log("Wifi (default) disconnected", true);
+                @Override
+                public void onLost(Network network) {
+                    synchronized (mWifiNetworks) {
+                        mWifiNetworks.remove(network);
+                        if (mWifiNetworks.isEmpty()) {
+                            // We just disconnected from the last connected wifi, so send an update.
+                            obtainMessage(
+                                    EVENT_WIFI_CONNECTION_CHANGED, WIFI_UNAVAILABLE, 0)
+                                    .sendToTarget();
+                            log("Wifi (default) disconnected", true);
+                        }
+                    }
                 }
-            }
-        }
-    };
+            };
 
     /**
      * Flag for wifi/usb/bluetooth tethering turned on or not
@@ -197,6 +202,11 @@ public class DeviceStateMonitor extends Handler {
      * True indicates we should always enable the signal strength reporting from radio.
      */
     private boolean mIsAlwaysSignalStrengthReportingEnabled;
+
+    /**
+     * if carrier config allows display network type indication
+     */
+    private boolean mCarrierRequiredModemDisplayNetworkType;
 
     @VisibleForTesting
     static final int CELL_INFO_INTERVAL_SHORT_MS = 2000;
@@ -297,6 +307,18 @@ public class DeviceStateMonitor extends Handler {
         // Assuming tethering is always off after boot up.
         mIsTetheringOn = false;
         mIsLowDataExpected = false;
+        CarrierConfigManager ccm = mPhone.getContext().getSystemService(CarrierConfigManager.class);
+        if (ccm != null) {
+            // Update device state for display network type base on carrier config
+            ccm.registerCarrierConfigChangeListener(this::post,
+                    (slotIndex, subId, carrierId, specificCarrierId) -> {
+                        if (slotIndex == mPhone.getPhoneId()) {
+                            onUpdateDeviceState(EVENT_DISPLAY_NETWORK_TYPE_CARRIER_CONFIG_CHANGED,
+                                    isModemDisplayNetworkTypeEnabled());
+                        }
+                    });
+        }
+        mCarrierRequiredModemDisplayNetworkType = isModemDisplayNetworkTypeEnabled();
 
         log("DeviceStateMonitor mIsTetheringOn=" + mIsTetheringOn
                 + ", mIsScreenOn=" + mIsScreenOn
@@ -410,6 +432,17 @@ public class DeviceStateMonitor extends Handler {
      */
     private boolean shouldEnablePhysicalChannelConfigReports() {
         return shouldEnableNrTrackingIndications();
+    }
+
+    /**
+     * @return True if display network type changed update should be enabled.
+     * This is enabled if:
+     * 1. The carrier config allows it.
+     * 2. Not in high power consumption mode.
+     */
+    private boolean shouldEnableDisplayNetworkTypeReports() {
+        return mCarrierRequiredModemDisplayNetworkType
+                && shouldEnableHighPowerConsumptionIndications();
     }
 
     /**
@@ -553,6 +586,10 @@ public class DeviceStateMonitor extends Handler {
                 if (mIsAutomotiveProjectionActive == state) return;
                 mIsAutomotiveProjectionActive = state;
                 break;
+            case EVENT_DISPLAY_NETWORK_TYPE_CARRIER_CONFIG_CHANGED:
+                if (mCarrierRequiredModemDisplayNetworkType == state) return;
+                mCarrierRequiredModemDisplayNetworkType = state;
+                break;
             default:
                 return;
         }
@@ -602,6 +639,10 @@ public class DeviceStateMonitor extends Handler {
             newFilter |= IndicationFilter.BARRING_INFO;
         }
 
+        if (shouldEnableDisplayNetworkTypeReports()) {
+            newFilter |= IndicationFilter.DISPLAY_NETWORK_TYPE_CHANGED;
+        }
+
         // notify PhysicalChannelConfig registrants if state changes
         if ((newFilter & IndicationFilter.PHYSICAL_CHANNEL_CONFIG)
                 != (mUnsolicitedResponseFilter & IndicationFilter.PHYSICAL_CHANNEL_CONFIG)) {
@@ -625,11 +666,9 @@ public class DeviceStateMonitor extends Handler {
             mSignalStrengthReportDecisionCallbackRegistrants.notifyResult(false);
         }
 
-        if (mFeatureFlags.carrierRoamingNbIotNtn()) {
-            // Determine whether to notify registrants about the screen on, off state change.
-            if (wasScreenOn != mIsScreenOn) {
-                mScreenStateRegistrants.notifyResult(mIsScreenOn);
-            }
+        // Determine whether to notify registrants about the screen on, off state change.
+        if (wasScreenOn != mIsScreenOn) {
+            mScreenStateRegistrants.notifyResult(mIsScreenOn);
         }
     }
 
@@ -784,6 +823,19 @@ public class DeviceStateMonitor extends Handler {
         return isAutomotiveProjectionActive;
     }
 
+    private boolean isModemDisplayNetworkTypeEnabled() {
+        PersistableBundle config = CarrierConfigManager.getDefaultConfig();
+        CarrierConfigManager configManager = (CarrierConfigManager)
+                mPhone.getContext().getSystemService(Context.CARRIER_CONFIG_SERVICE);
+        if (configManager != null) {
+            PersistableBundle b = configManager.getConfigForSubId(mPhone.getSubId());
+            if (b != null) {
+                config = b;
+            }
+        }
+        return config.getBoolean(CarrierConfigManager.KEY_USE_MODEM_DISPLAY_NETWORK_TYPE_BOOL);
+    }
+
     /**
      * Register for PhysicalChannelConfig notifications changed. On change, msg.obj will be an
      * AsyncResult with a boolean result. AsyncResult.result is true if notifications are enabled
@@ -822,11 +874,6 @@ public class DeviceStateMonitor extends Handler {
      * @param h Handler to notify
      */
     public void unregisterForScreenStateChanged(Handler h) {
-        if (!mFeatureFlags.carrierRoamingNbIotNtn()) {
-            Rlog.d(TAG, "unregisterForScreenStateChanged: carrierRoamingNbIotNtn is disabled");
-            return;
-        }
-
         mScreenStateRegistrants.remove(h);
     }
 
@@ -837,10 +884,6 @@ public class DeviceStateMonitor extends Handler {
      * @param obj AsyncResult.userObj when the message is delivered
      */
     public void registerForScreenStateChanged(Handler h, int what, Object obj) {
-        if (!mFeatureFlags.carrierRoamingNbIotNtn()) {
-            Rlog.d(TAG, "registerForScreenStateChanged: carrierRoamingNbIotNtn is disabled");
-            return;
-        }
         Registrant r = new Registrant(h, what, obj);
         mScreenStateRegistrants.add(r);
 

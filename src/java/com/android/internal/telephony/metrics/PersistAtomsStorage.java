@@ -23,14 +23,12 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.telephony.TelephonyManager;
 import android.telephony.TelephonyManager.NetworkTypeBitMask;
 import android.util.SparseIntArray;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.BackgroundThread;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.nano.PersistAtomsProto.CarrierIdMismatch;
 import com.android.internal.telephony.nano.PersistAtomsProto.CarrierRoamingSatelliteControllerStats;
 import com.android.internal.telephony.nano.PersistAtomsProto.CarrierRoamingSatelliteSession;
@@ -47,6 +45,8 @@ import com.android.internal.telephony.nano.PersistAtomsProto.ImsRegistrationStat
 import com.android.internal.telephony.nano.PersistAtomsProto.ImsRegistrationTermination;
 import com.android.internal.telephony.nano.PersistAtomsProto.IncomingSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.NetworkRequestsV2;
+import com.android.internal.telephony.nano.PersistAtomsProto.OtpEvaluationEvent;
+import com.android.internal.telephony.nano.PersistAtomsProto.OtpRedactionEvent;
 import com.android.internal.telephony.nano.PersistAtomsProto.OutgoingShortCodeSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.OutgoingSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.PersistAtoms;
@@ -184,6 +184,8 @@ public class PersistAtomsStorage {
     /** Maximum number of data network validation to store during pulls. */
     private final int mMaxNumDataNetworkValidation;
 
+    private final int mMaxNumOtpStats;
+
     /** Stores persist atoms and persist states of the puller. */
     @VisibleForTesting protected PersistAtoms mAtoms;
 
@@ -195,7 +197,6 @@ public class PersistAtomsStorage {
 
     private final Context mContext;
     private final Handler mHandler;
-    private final HandlerThread mHandlerThread;
     private static final SecureRandom sRandom = new SecureRandom();
 
     private Runnable mSaveRunnable =
@@ -235,6 +236,7 @@ public class PersistAtomsStorage {
             mMaxOutgoingShortCodeSms = 5;
             mMaxNumSatelliteStats = 5;
             mMaxNumDataNetworkValidation = 5;
+            mMaxNumOtpStats = 10;
         } else {
             mMaxNumVoiceCallSessions = 50;
             mMaxNumSms = 25;
@@ -260,20 +262,13 @@ public class PersistAtomsStorage {
             mMaxOutgoingShortCodeSms = 10;
             mMaxNumSatelliteStats = 15;
             mMaxNumDataNetworkValidation = 15;
+            mMaxNumOtpStats = 100;
         }
 
         mAtoms = loadAtomsFromFile();
         mVoiceCallRatTracker = VoiceCallRatTracker.fromProto(mAtoms.voiceCallRatUsage);
 
-        if (Flags.threadShred()) {
-            mHandlerThread = null;
-            mHandler = new Handler(BackgroundThread.get().getLooper());
-        } else {
-            // TODO: we might be able to make mHandlerThread a local variable
-            mHandlerThread = new HandlerThread("PersistAtomsThread");
-            mHandlerThread.start();
-            mHandler = new Handler(mHandlerThread.getLooper());
-        }
+        mHandler = new Handler(BackgroundThread.get().getLooper());
         mSaveImmediately = false;
     }
 
@@ -774,6 +769,7 @@ public class PersistAtomsStorage {
             existingStats.countOfDisallowedSatelliteAccess
                     += stats.countOfDisallowedSatelliteAccess;
             existingStats.countOfSatelliteAccessCheckFail += stats.countOfSatelliteAccessCheckFail;
+            existingStats.isProvisioned = stats.isProvisioned;
             // Does not update isProvisioned and carrierId due to they are dimension fields.
             existingStats.countOfSatelliteAllowedStateChangedEvents
                     += stats.countOfSatelliteAllowedStateChangedEvents;
@@ -784,7 +780,7 @@ public class PersistAtomsStorage {
                     += stats.countOfP2PSmsAvailableNotificationShown;
             existingStats.countOfP2PSmsAvailableNotificationRemoved
                     += stats.countOfP2PSmsAvailableNotificationRemoved;
-            // Does not update isNtnOnlyCarrier due to it is a dimension field.
+            existingStats.isNtnOnlyCarrier = stats.isNtnOnlyCarrier;
             existingStats.versionOfSatelliteAccessConfig = stats.versionOfSatelliteAccessConfig;
             existingStats.countOfIncomingDatagramTypeSosSmsSuccess
                     += stats.countOfIncomingDatagramTypeSosSmsSuccess;
@@ -798,6 +794,9 @@ public class PersistAtomsStorage {
                     += stats.countOfIncomingDatagramTypeSmsSuccess;
             existingStats.countOfIncomingDatagramTypeSmsFail
                     += stats.countOfIncomingDatagramTypeSmsFail;
+            existingStats.carrierRoamingSatelliteConfigVersion =
+                    stats.carrierRoamingSatelliteConfigVersion;
+            existingStats.maxAllowedDataMode = stats.maxAllowedDataMode;
         } else {
             mAtoms.satelliteController = insertAtRandomPlace(mAtoms.satelliteController, stats,
                     mMaxNumSatelliteStats);
@@ -900,6 +899,12 @@ public class PersistAtomsStorage {
             existingStats.isMultiSim = stats.isMultiSim;
             existingStats.countOfSatelliteSessions += stats.countOfSatelliteSessions;
             existingStats.isNbIotNtn = stats.isNbIotNtn;
+            // Does not update supportedConnectionMode as it is dimension field
+            existingStats.countOfSessionConnectionModeAutomatic +=
+                    stats.countOfSessionConnectionModeAutomatic;
+            existingStats.countOfSessionConnectionModeManual +=
+                    stats.countOfSessionConnectionModeManual;
+            existingStats.serviceDataPolicy = stats.serviceDataPolicy;
         } else {
             mAtoms.carrierRoamingSatelliteControllerStats = insertAtRandomPlace(
                     mAtoms.carrierRoamingSatelliteControllerStats, stats, mMaxNumSatelliteStats);
@@ -937,6 +942,27 @@ public class PersistAtomsStorage {
         mAtoms.satelliteAccessController =
                 insertAtRandomPlace(mAtoms.satelliteAccessController, stats,
                         mMaxNumSatelliteStats);
+        saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
+    }
+
+    /** Adds a new {@link OtpEvaluationEvent} to the storage. */
+    public synchronized void addOtpEvaluationEvent(OtpEvaluationEvent stats) {
+        mAtoms.otpEvaluationEvent = insertAtRandomPlace(mAtoms.otpEvaluationEvent, stats,
+                mMaxNumOtpStats);
+        saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
+    }
+
+    /** Adds a new {@link OtpRedactionEvent} to the storage. */
+    public synchronized void addOtpRedactionEvent(OtpRedactionEvent stats) {
+        for (OtpRedactionEvent existingStats : mAtoms.otpRedactionEvent) {
+            if (stats.uid == existingStats.uid) {
+                existingStats.count += 1;
+                saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
+                return;
+            }
+        }
+        mAtoms.otpRedactionEvent = insertAtRandomPlace(mAtoms.otpRedactionEvent, stats,
+                mMaxNumOtpStats);
         saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_UPDATE_MILLIS);
     }
 
@@ -1714,6 +1740,43 @@ public class PersistAtomsStorage {
         }
     }
 
+    /**
+     * Returns and clears the {@link OtpEvaluationEvent} stats if last pulled longer
+     * than {@code minIntervalMillis} ago, otherwise returns {@code null}.
+     */
+    @Nullable
+    public synchronized OtpEvaluationEvent[] getOtpEvaluationEventStats(
+            long minIntervalMillis) {
+        if ((getWallTimeMillis() - mAtoms.otpEvaluationEventPullTimestampMillis)
+                > minIntervalMillis) {
+            mAtoms.otpEvaluationEventPullTimestampMillis = getWallTimeMillis();
+            OtpEvaluationEvent[] statsArray = mAtoms.otpEvaluationEvent;
+            mAtoms.otpEvaluationEvent = new OtpEvaluationEvent[0];
+            saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_GET_MILLIS);
+            return statsArray;
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * Returns and clears the {@link OtpRedactionEvent} stats if last pulled longer
+     * than {@code minIntervalMillis} ago, otherwise returns {@code null}.
+     */
+    @Nullable
+    public synchronized OtpRedactionEvent[] getOtpRedactionEventStats(
+            long minIntervalMillis) {
+        if (getWallTimeMillis() - mAtoms.otpRedactionEventPullTimestampMillis > minIntervalMillis) {
+            mAtoms.otpRedactionEventPullTimestampMillis = getWallTimeMillis();
+            OtpRedactionEvent[] statsArray = mAtoms.otpRedactionEvent;
+            mAtoms.otpRedactionEvent = new OtpRedactionEvent[0];
+            saveAtomsToFile(SAVE_TO_FILE_DELAY_FOR_GET_MILLIS);
+            return statsArray;
+        } else {
+            return null;
+        }
+    }
+
     /** Saves {@link PersistAtoms} to a file in private storage immediately. */
     public synchronized void flushAtoms() {
         saveAtomsToFile(0);
@@ -1723,6 +1786,25 @@ public class PersistAtomsStorage {
     public synchronized void clearAtoms() {
         mAtoms = makeNewPersistAtoms();
         saveAtomsToFile(0);
+    }
+
+    /**
+     * Gets the in-memory atoms as a serialized byte array.
+     * <p>
+     * This method serializes the current state of the in-memory {@link PersistAtoms}
+     * into a byte array, which can be used for exporting or debugging.
+     *
+     * @return A byte array representing the serialized atom data, or null if the
+     *         in-memory atoms object is null.
+     */
+    @Nullable
+    public synchronized byte[] getAtomsProtoBytes() {
+        if (mAtoms == null) {
+            Rlog.w(TAG, "getAtomsProtoBytes: mAtoms is null, returning null.");
+            return null;
+        }
+
+        return PersistAtoms.toByteArray(mAtoms);
     }
 
     /** Loads {@link PersistAtoms} from a file in private storage. */
@@ -2376,7 +2458,9 @@ public class PersistAtomsStorage {
                     && stats.countOfAutoExitDueToScreenOff == key.countOfAutoExitDueToScreenOff
                     && stats.countOfAutoExitDueToTnNetwork == key.countOfAutoExitDueToTnNetwork
                     && stats.isEmergency == key.isEmergency
-                    && stats.maxInactivityDurationSec == key.maxInactivityDurationSec) {
+                    && stats.maxInactivityDurationSec == key.maxInactivityDurationSec
+                    && stats.supportedConnectionMode == key.supportedConnectionMode
+                    && stats.sessionConnectionMode == key.sessionConnectionMode) {
                 return stats;
             }
         }
@@ -2399,7 +2483,9 @@ public class PersistAtomsStorage {
                     && stats.isSatelliteAllowedInCurrentLocation
                     == key.isSatelliteAllowedInCurrentLocation
                     && stats.isWifiConnected == key.isWifiConnected
-                    && stats.carrierId == key.carrierId) {
+                    && stats.carrierId == key.carrierId
+                    && stats.supportedConnectionMode == key.supportedConnectionMode
+                    && stats.sessionConnectionMode == key.sessionConnectionMode) {
                 return stats;
             }
         }
@@ -2430,8 +2516,7 @@ public class PersistAtomsStorage {
     private @Nullable SatelliteController find(SatelliteController key) {
         for (SatelliteController stats : mAtoms.satelliteController) {
             if (stats.carrierId == key.carrierId
-                    && stats.isProvisioned == key.isProvisioned
-                    && stats.isNtnOnlyCarrier == key.isNtnOnlyCarrier) {
+                    && stats.supportedConnectionMode == key.supportedConnectionMode) {
                 return stats;
             }
         }
@@ -2446,7 +2531,8 @@ public class PersistAtomsStorage {
             CarrierRoamingSatelliteControllerStats key) {
         for (CarrierRoamingSatelliteControllerStats stats :
                 mAtoms.carrierRoamingSatelliteControllerStats) {
-            if (stats.carrierId == key.carrierId) {
+            if (stats.carrierId == key.carrierId
+                    && stats.supportedConnectionMode == key.supportedConnectionMode) {
                 return stats;
             }
         }
@@ -2461,7 +2547,8 @@ public class PersistAtomsStorage {
             if (stats.carrierId == key.carrierId
                     && stats.result == key.result
                     && stats.entitlementStatus == key.entitlementStatus
-                    && stats.isRetry == key.isRetry) {
+                    && stats.isRetry == key.isRetry
+                    && stats.supportedConnectionMode == key.supportedConnectionMode) {
                 return stats;
             }
         }
@@ -2482,6 +2569,7 @@ public class PersistAtomsStorage {
         }
         return null;
     }
+
 
     /**
      * Inserts a new element in a random position in an array with a maximum size.
@@ -2640,6 +2728,33 @@ public class PersistAtomsStorage {
             // even if the new call is not an emergency call.
         }
 
+        if (array instanceof OtpEvaluationEvent[]) {
+            // for otp evaluation events, don't evict the maximum redaction time for each result
+            OtpEvaluationEvent[] arr = (OtpEvaluationEvent[]) array;
+            SparseIntArray idxOfMaxValueForResult = new SparseIntArray();
+            for (int i = 0; i < arr.length; i++) {
+                OtpEvaluationEvent storedEvent = arr[i];
+                int maxIdx = idxOfMaxValueForResult.get(storedEvent.result, -1);
+                if (maxIdx < 0 || storedEvent.redactionTimeMs > arr[maxIdx].redactionTimeMs) {
+                    idxOfMaxValueForResult.put(storedEvent.result, i);
+                }
+            }
+
+            int rand = sRandom.nextInt(array.length);
+            // If we have as many result types as there are spots in the array, then they are all
+            // maximums. Evict at random.
+            if (array.length == idxOfMaxValueForResult.size()) {
+                return rand;
+            }
+
+            // Else, If we randomly picked an index of one of our maximum values, then cycle through
+            // the array until we find an index that isn't a maximum.
+            while (idxOfMaxValueForResult.indexOfValue(rand) != -1) {
+                rand = (rand + 1) % array.length;
+            }
+            return rand;
+        }
+
         return sRandom.nextInt(array.length);
     }
 
@@ -2754,5 +2869,15 @@ public class PersistAtomsStorage {
     protected long getWallTimeMillis() {
         // Epoch time in UTC, preserved across reboots, but can be adjusted e.g. by the user or NTP
         return System.currentTimeMillis();
+    }
+
+    /**
+     * For CTS test purpose only. Sets whether atoms should be saved immediately.
+     *
+     * @param enabled true to enable immediate saving.
+     */
+    public synchronized void setSaveImmediately(boolean enabled) {
+        Rlog.d(TAG, "setSaveImmediately(" + enabled + ")");
+        mSaveImmediately = enabled;
     }
 }

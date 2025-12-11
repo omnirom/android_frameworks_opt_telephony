@@ -27,6 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import android.content.Context;
+import android.hardware.radio.network.DisplayNetworkType;
 import android.os.AsyncResult;
 import android.os.Handler;
 import android.os.IPowerManager;
@@ -2222,6 +2223,65 @@ public class NetworkTypeControllerTest extends TelephonyTest {
     }
 
     @Test
+    public void testNrAdvancedRequiresWideSingleCc() {
+        // Set up the carrier config to require wide single CC for NR Advanced.
+        mBundle.putBoolean(CarrierConfigManager
+                .KEY_NR_ADVANCED_REQUIRES_SINGLE_CC_ABOVE_BANDWIDTH_THRESHOLD_BOOL, true);
+        // Set a bandwidth threshold that is relevant for a single wide band.
+        mBundle.putInt(CarrierConfigManager.KEY_NR_ADVANCED_THRESHOLD_BANDWIDTH_KHZ_INT, 100000);
+        sendCarrierConfigChanged();
+
+        // Ensure NR is mmWave.
+        doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
+        doReturn(ServiceState.FREQUENCY_RANGE_MMWAVE).when(mServiceState).getNrFrequencyRange();
+
+        // Case 1: Multiple NR PCCs, one is wide enough (100MHz), others are not.
+        // Expected: Should qualify for NR_ADVANCED because the *maximum* bandwidth
+        // (100000 KHz) meets the 100000 KHz threshold.
+        List<PhysicalChannelConfig> pccs1 = new ArrayList<>();
+        pccs1.add(new PhysicalChannelConfig.Builder()
+                .setNetworkType(TelephonyManager.NETWORK_TYPE_NR)
+                .setCellConnectionStatus(CellInfo.CONNECTION_PRIMARY_SERVING)
+                .setCellBandwidthDownlinkKhz(90000) // 90 MHz - Not wide enough alone
+                .setPhysicalCellId(1)
+                .build());
+        pccs1.add(new PhysicalChannelConfig.Builder()
+                .setNetworkType(TelephonyManager.NETWORK_TYPE_NR)
+                .setCellConnectionStatus(CellInfo.CONNECTION_SECONDARY_SERVING)
+                .setCellBandwidthDownlinkKhz(100000) // 100 MHz - Wide enough!
+                .setPhysicalCellId(2)
+                .build());
+        // Total sum = 190000 KHz; Max = 100000 KHz.
+        // Since mNrAdvancedRequiresWideSingleCc is true, max is considered.
+        doReturn(pccs1).when(mSST).getPhysicalChannelConfigList();
+        sendCarrierConfigChanged();
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
+                mNetworkTypeController.getOverrideNetworkType());
+
+        // Case 2: Multiple NR PCCs, none are individually wide enough.
+        // Expected: Should NOT qualify for NR_ADVANCED because no single CC meets the threshold.
+        List<PhysicalChannelConfig> pccs2 = new ArrayList<>();
+        pccs2.add(new PhysicalChannelConfig.Builder()
+                .setNetworkType(TelephonyManager.NETWORK_TYPE_NR)
+                .setCellConnectionStatus(CellInfo.CONNECTION_PRIMARY_SERVING)
+                .setCellBandwidthDownlinkKhz(70000) // 70 MHz
+                .setPhysicalCellId(3)
+                .build());
+        pccs2.add(new PhysicalChannelConfig.Builder()
+                .setNetworkType(TelephonyManager.NETWORK_TYPE_NR)
+                .setCellConnectionStatus(CellInfo.CONNECTION_SECONDARY_SERVING)
+                .setCellBandwidthDownlinkKhz(80000) // 80 MHz
+                .setPhysicalCellId(4)
+                .build());
+        // Total sum = 150000 KHz (would qualify if summing); Max = 80000 KHz (does NOT qualify).
+        // Since mNrAdvancedRequiresWideSingleCc is true, max is considered.
+        doReturn(pccs2).when(mSST).getPhysicalChannelConfigList();
+        sendCarrierConfigChanged();
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA, // Not NR_ADVANCED
+                mNetworkTypeController.getOverrideNetworkType());
+    }
+
+    @Test
     public void testNrAdvancedDisabledWhileRoaming() throws Exception {
         assertEquals("DefaultState", getCurrentState().getName());
         doReturn(true).when(mServiceState).getDataRoaming();
@@ -2233,5 +2293,80 @@ public class NetworkTypeControllerTest extends TelephonyTest {
         mNetworkTypeController.sendMessage(3 /* EVENT_SERVICE_STATE_CHANGED */);
         processAllMessages();
         assertEquals("connected", getCurrentState().getName());
+    }
+
+    @Test
+    public void testModemOverrideFlow() throws Exception {
+        // Start in a known state: LTE with NR available (NSA), so 5G icon is shown.
+        doReturn(NetworkRegistrationInfo.NR_STATE_CONNECTED).when(mServiceState).getNrState();
+        mNetworkTypeController.sendMessage(3 /* EVENT_SERVICE_STATE_CHANGED */);
+        processAllMessages();
+        assertEquals("connected", getCurrentState().getName());
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertEquals(TelephonyManager.NETWORK_TYPE_LTE,
+                mNetworkTypeController.getDataNetworkType());
+
+        // --- Test 1: Feature is disabled (default) ---
+        // Send a modem override event. It should be ignored.
+        mNetworkTypeController.sendMessage(14 /* EVENT_MODEM_DISPLAY_NETWORK_TYPE_OVERRIDE */,
+                new AsyncResult(null, DisplayNetworkType.NR_ADVANCED, null));
+        processAllMessages();
+
+        // Verify that the override type has NOT changed because the feature is off.
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertEquals(TelephonyManager.NETWORK_TYPE_LTE,
+                mNetworkTypeController.getDataNetworkType());
+
+        // --- Test 2: Enable the feature via CarrierConfig ---
+        mBundle.putBoolean(CarrierConfigManager.KEY_USE_MODEM_DISPLAY_NETWORK_TYPE_BOOL, true);
+        sendCarrierConfigChanged();
+
+        // Verify that the override type is still the same, as no modem event has been sent yet.
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+
+        // --- Test 3: Modem sends an override for NR_ADVANCED ---
+        mNetworkTypeController.sendMessage(14 /* EVENT_MODEM_DISPLAY_NETWORK_TYPE_OVERRIDE */,
+                new AsyncResult(null, DisplayNetworkType.NR_ADVANCED, null));
+        processAllMessages();
+
+        // Verify that the modem's opinion now takes precedence.
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertEquals(TelephonyManager.NETWORK_TYPE_NR, mNetworkTypeController.getDataNetworkType());
+        // The internal state of the state machine should remain unchanged.
+        assertEquals("connected", getCurrentState().getName());
+
+        // --- Test 4: Modem sends a non-advanced override, resetting the state ---
+        mNetworkTypeController.sendMessage(14 /* EVENT_MODEM_DISPLAY_NETWORK_TYPE_OVERRIDE */,
+                new AsyncResult(null, DisplayNetworkType.UNKNOWN, null));
+        processAllMessages();
+
+        // Verify that the override is cleared and the display types revert to the state machine's
+        // calculated values.
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertEquals(TelephonyManager.NETWORK_TYPE_LTE,
+                mNetworkTypeController.getDataNetworkType());
+
+        // --- Test 5: Disable the feature after an override was active ---
+        // First, set the modem override again.
+        mNetworkTypeController.sendMessage(14 /* EVENT_MODEM_DISPLAY_NETWORK_TYPE_OVERRIDE */,
+                new AsyncResult(null, DisplayNetworkType.NR_ADVANCED, null));
+        processAllMessages();
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED,
+                mNetworkTypeController.getOverrideNetworkType());
+
+        // Now, disable the feature via a carrier config change.
+        mBundle.putBoolean(CarrierConfigManager.KEY_USE_MODEM_DISPLAY_NETWORK_TYPE_BOOL, false);
+        sendCarrierConfigChanged();
+
+        // Verify that the modem override is immediately reverted upon the config change.
+        assertEquals(TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                mNetworkTypeController.getOverrideNetworkType());
+        assertEquals(TelephonyManager.NETWORK_TYPE_LTE,
+                mNetworkTypeController.getDataNetworkType());
     }
 }

@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
@@ -40,6 +41,7 @@ import android.app.BroadcastOptions;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -107,6 +109,8 @@ public class GsmInboundSmsHandlerTest extends TelephonyTest {
     private GsmInboundSmsHandler mGsmInboundSmsHandler;
 
     private FakeSmsContentProvider mContentProvider;
+    private UserManager mUserManager;
+    private ContentResolver mContentResolver;
     private static final String RAW_TABLE_NAME = "raw";
     private static final Uri sRawUri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI,
             RAW_TABLE_NAME);
@@ -166,6 +170,9 @@ public class GsmInboundSmsHandlerTest extends TelephonyTest {
         mCdmaInboundSmsHandler = Mockito.mock(CdmaInboundSmsHandler.class);
         mSmsFilter = Mockito.mock(InboundSmsHandler.SmsFilter.class);
         mSmsFilter2 = Mockito.mock(InboundSmsHandler.SmsFilter.class);
+        mUserManager = Mockito.mock(UserManager.class);
+        ContentResolver resolver = mContext.getContentResolver();
+        mContentResolver = Mockito.spy(resolver);
 
         when(mFeatureFlags.smsMmsDeliverBroadcastsRedirectToMainUser()).thenReturn(true);
         doReturn(true).when(mTelephonyManager).getSmsReceiveCapableForPhone(anyInt(), anyBoolean());
@@ -1308,6 +1315,43 @@ public class GsmInboundSmsHandlerTest extends TelephonyTest {
         ImsManager imsManager = Mockito.mock(ImsManager.class);
         transitionFromStartupToIdle();
         assertTrue(mGsmInboundSmsHandler.setImsManager(imsManager));
+    }
+
+    @Test
+    public void testNewMessageNotification_nullLaunchIntent_doesNotCrash() {
+        BroadcastReceiver receiver =
+                mGsmInboundSmsHandler.makeNewMessageNotificationActionReceiver();
+
+        when(mContext.getSystemService(Context.USER_SERVICE)).thenReturn(mUserManager);
+        when(mContext.getPackageManager()).thenReturn(mPackageManager);
+        when(mUserManager.isUserUnlocked()).thenReturn(true);
+
+        // getLaunchIntentForPackage returns null
+        when(mPackageManager.getLaunchIntentForPackage(anyString())).thenReturn(null);
+        Intent intent = new Intent("com.android.internal.telephony.OPEN_DEFAULT_SMS_APP");
+
+        transitionFromStartupToIdle();
+        receiver.onReceive(mContext, intent);
+
+        // There should not happen the invocation for below method, nor exception
+        verify(mContext, never()).startActivityAsUser(any(Intent.class), any(UserHandle.class));
+    }
+
+    @Test
+    public void testNewMessageNotification_nullSmsPackage_doesNotCrash() {
+        transitionFromStartupToIdle();
+
+        BroadcastReceiver receiver =
+                mGsmInboundSmsHandler.makeNewMessageNotificationActionReceiver();
+
+        when(mContext.getSystemService(Context.USER_SERVICE)).thenReturn(mUserManager);
+        when(mUserManager.isUserUnlocked()).thenReturn(true);
+        // ContentResolver returns null for the default package name for the SMS
+        Intent intent = new Intent("com.android.internal.telephony.OPEN_DEFAULT_SMS_APP");
+        receiver.onReceive(mContext, intent);
+
+        // There should not happen the invocation for below method, nor exception
+        verify(mContext, never()).startActivityAsUser(any(Intent.class), any(UserHandle.class));
     }
 }
 

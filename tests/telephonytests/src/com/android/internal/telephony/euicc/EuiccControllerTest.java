@@ -1097,21 +1097,21 @@ public class EuiccControllerTest extends TelephonyTest {
     public void testDeleteSubscription_adminOwned_success() throws Exception {
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(true);
-        String callingPackage = "whatever";
         SubscriptionInfo subInfo1 = new SubscriptionInfo.Builder()
                 .setId(SUBSCRIPTION_ID)
                 .setEmbedded(true)
                 .setIccId(ICC_ID)
                 .setCardId(CARD_ID)
                 .setPortIndex(TelephonyManager.DEFAULT_PORT_INDEX)
-                .setGroupOwner(callingPackage)
                 .build();
         ArrayList<SubscriptionInfo> subInfos = new ArrayList<>(Arrays.asList(subInfo1));
+        doReturn(true).when(mDevicePolicyManager).isSubscriptionEnterpriseManaged(eq(subInfo1),
+                anyString());
         when(mSubscriptionManager.getAvailableSubscriptionInfoList()).thenReturn(subInfos);
 
         callDeleteSubscription(
                 SUBSCRIPTION_ID, ICC_ID, true /* complete */,
-                0 /* result */, callingPackage /* callingPackage */);
+                0 /* result */, "whatever" /* callingPackage */);
 
         verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK,
                 0 /* detailedCode */);
@@ -1121,21 +1121,21 @@ public class EuiccControllerTest extends TelephonyTest {
     public void testDeleteSubscription_adminOwned_noPermissions_error() throws Exception {
         setHasWriteEmbeddedPermission(false);
         setHasManageDevicePolicyManagedSubscriptionsPermission(false);
-        String callingPackage = "whatever";
         SubscriptionInfo subInfo1 = new SubscriptionInfo.Builder()
                 .setId(SUBSCRIPTION_ID)
                 .setEmbedded(true)
                 .setIccId(ICC_ID)
                 .setCardId(CARD_ID)
                 .setPortIndex(TelephonyManager.DEFAULT_PORT_INDEX)
-                .setGroupOwner(callingPackage)
                 .build();
         ArrayList<SubscriptionInfo> subInfos = new ArrayList<>(Arrays.asList(subInfo1));
+        doReturn(true).when(mDevicePolicyManager).isSubscriptionEnterpriseManaged(eq(subInfo1),
+                anyString());
         when(mSubscriptionManager.getAvailableSubscriptionInfoList()).thenReturn(subInfos);
 
         callDeleteSubscription(
                 SUBSCRIPTION_ID, ICC_ID, true /* complete */,
-                0 /* result */, callingPackage /* callingPackage */);
+                0 /* result */, "whatever" /* callingPackage */);
 
         verifyIntentSent(EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_ERROR,
                 0 /* detailedCode */);

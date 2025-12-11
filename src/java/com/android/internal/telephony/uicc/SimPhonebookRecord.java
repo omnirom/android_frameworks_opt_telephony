@@ -28,7 +28,7 @@ import java.util.Arrays;
 /**
  * Represents a Phonebook entry from the SIM.
  *
- * {@hide}
+ * @hide
  */
 public class SimPhonebookRecord {
     // Instance variables

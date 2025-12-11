@@ -27,8 +27,8 @@ import static com.android.internal.telephony.Phone.EVENT_SET_SECURITY_ALGORITHMS
 import static com.android.internal.telephony.Phone.EVENT_SRVCC_STATE_CHANGED;
 import static com.android.internal.telephony.Phone.EVENT_UICC_APPS_ENABLEMENT_STATUS_CHANGED;
 import static com.android.internal.telephony.TelephonyTestUtils.waitForMs;
-import static com.android.internal.telephony.test.SimulatedCommands.FAKE_IMEI;
-import static com.android.internal.telephony.test.SimulatedCommands.FAKE_IMEISV;
+import static com.android.internal.telephony.SimulatedCommands.FAKE_IMEI;
+import static com.android.internal.telephony.SimulatedCommands.FAKE_IMEISV;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -97,8 +97,6 @@ import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneCall;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
-import com.android.internal.telephony.test.SimulatedCommands;
-import com.android.internal.telephony.test.SimulatedCommandsVerifier;
 import com.android.internal.telephony.uicc.AdnRecord;
 import com.android.internal.telephony.uicc.AdnRecordCache;
 import com.android.internal.telephony.uicc.IccCardApplicationStatus;
@@ -161,6 +159,7 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
         doReturn(false).when(mSST).isDeviceShuttingDown();
         doReturn(true).when(mImsManager).isVolteEnabledByPlatform();
+        doReturn(true).when(mFeatureFlags).allowedServices();
 
         mPhoneUT = new GsmCdmaPhone(mContext, mSimulatedCommands, mNotifier, true, 0,
             PhoneConstants.PHONE_TYPE_GSM, mTelephonyComponentFactory, (c, p) -> mImsManager,
@@ -369,9 +368,6 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
         // Ensure the phone type is GSM
         GsmCdmaPhone spyPhone = spy(mPhoneUT);
-        doReturn(false).when(spyPhone).isPhoneTypeCdma();
-        doReturn(false).when(spyPhone).isPhoneTypeCdmaLte();
-        doReturn(true).when(spyPhone).isPhoneTypeGsm();
 
         assertEquals(subscriberId, spyPhone.getSubscriberId());
     }
@@ -450,14 +446,6 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                         .setIsEmergency(true)
                         .build());
         assertNull(connection);
-        verify(mCT, never()).dialGsm(eq("17"), any(PhoneInternalInterface.DialArgs.class));
-
-        // Enable feature flag.
-        doReturn(true).when(mFeatureFlags).skipMmiCodeCheckForEmergencyCall();
-        mPhoneUT.dial("17",
-                new PhoneInternalInterface.DialArgs.Builder()
-                        .setIsEmergency(true)
-                        .build());
         verify(mCT).dialGsm(eq("17"), any(PhoneInternalInterface.DialArgs.class));
     }
 
@@ -819,33 +807,6 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
                 nullable(Message.class));
         processAllMessages();
         verify(mSimRecords).setVoiceCallForwardingFlag(anyInt(), anyBoolean(), eq(cfNumber));
-    }
-
-    @Test
-    public void testZeroMeid() {
-        doReturn(false).when(mSST).isDeviceShuttingDown();
-
-        SimulatedCommands sc = new SimulatedCommands() {
-            @Override
-            public void getDeviceIdentity(Message response) {
-                SimulatedCommandsVerifier.getInstance().getDeviceIdentity(response);
-                resultSuccess(response, new String[] {FAKE_IMEI, FAKE_IMEISV, FAKE_ESN, "0000000"});
-            }
-        };
-
-        Phone phone = new GsmCdmaPhone(mContext, sc, mNotifier, true, 0,
-                PhoneConstants.PHONE_TYPE_GSM, mTelephonyComponentFactory, (c, p) -> mImsManager,
-                mFeatureFlags);
-        phone.setVoiceCallSessionStats(mVoiceCallSessionStats);
-        ArgumentCaptor<Integer> integerArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(mUiccController).registerForIccChanged(eq(phone), integerArgumentCaptor.capture(),
-                nullable(Object.class));
-        Message msg = Message.obtain();
-        msg.what = integerArgumentCaptor.getValue();
-        phone.sendMessage(msg);
-        processAllMessages();
-
-        assertNull(phone.getMeid());
     }
 
     private void verifyEcbmIntentSent(int times, boolean isInEcm) throws Exception {
@@ -2606,6 +2567,40 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
     }
 
     @Test
+    public void testCellularIdentifierDisclosure_withInvalidSubscriptionID() {
+        int phoneId = 0;
+        int subId = -1;
+        when(mSubscriptionManagerService.getSubId(phoneId)).thenReturn(subId);
+
+        Phone phoneUT =
+                new GsmCdmaPhone(
+                        mContext,
+                        mMockCi,
+                        mNotifier,
+                        true,
+                        phoneId,
+                        PhoneConstants.PHONE_TYPE_GSM,
+                        mTelephonyComponentFactory,
+                        (c, p) -> mImsManager,
+                        mFeatureFlags);
+
+        CellularIdentifierDisclosure disclosure =
+                new CellularIdentifierDisclosure(
+                        CellularIdentifierDisclosure.NAS_PROTOCOL_MESSAGE_ATTACH_REQUEST,
+                        CellularIdentifierDisclosure.CELLULAR_IDENTIFIER_IMSI,
+                        "001001",
+                        false);
+        phoneUT.sendMessage(
+                mPhoneUT.obtainMessage(
+                        Phone.EVENT_CELL_IDENTIFIER_DISCLOSURE,
+                        new AsyncResult(null, disclosure, null)));
+        processAllMessages();
+
+        verify(mIdentifierDisclosureNotifier, never())
+                .addDisclosure(eq(mContext), eq(subId), any(CellularIdentifierDisclosure.class));
+    }
+
+    @Test
     public void testCellularIdentifierDisclosure_unsupportedByModemOnRadioAvailable() {
         GsmCdmaPhone phoneUT = makeNewPhoneUT();
         assertFalse(phoneUT.isIdentifierDisclosureTransparencySupported());
@@ -2666,6 +2661,29 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
 
         verify(mNullCipherNotifier, times(1))
                 .onSecurityAlgorithmUpdate(eq(mContext), eq(0), eq(0), eq(update));
+    }
+
+    @Test
+    public void testSecurityAlgorithm_withInValidSubscriptionId() {
+        Phone phoneUT = makeNewPhoneUT();
+        int subId = -1;
+        int phoneId = 0;
+        when(mSubscriptionManagerService.getSubId(phoneId)).thenReturn(subId);
+        SecurityAlgorithmUpdate update =
+                new SecurityAlgorithmUpdate(
+                        SecurityAlgorithmUpdate.CONNECTION_EVENT_PS_SIGNALLING_3G,
+                        SecurityAlgorithmUpdate.SECURITY_ALGORITHM_UEA1,
+                        SecurityAlgorithmUpdate.SECURITY_ALGORITHM_AUTH_HMAC_SHA2_256_128,
+                        true);
+
+        phoneUT.sendMessage(
+                mPhoneUT.obtainMessage(
+                        Phone.EVENT_SECURITY_ALGORITHM_UPDATE,
+                        new AsyncResult(null, update, null)));
+        processAllMessages();
+
+        verify(mNullCipherNotifier, never())
+                .onSecurityAlgorithmUpdate(eq(mContext), eq(0), eq(subId), eq(update));
     }
 
     @Test
@@ -2757,6 +2775,64 @@ public class GsmCdmaPhoneTest extends TelephonyTest {
         verify(mNullCipherNotifier, times(1)).disable(eq(mContext));
         verify(mMockCi, times(1)).setSecurityAlgorithmsUpdatedEnabled(eq(false),
                 any(Message.class));
+    }
+
+    @Test
+    public void testAllowedImsServices() {
+        mPhoneUT.mCi = mMockCi;
+        // Update allowed IMS service for VoLTE and VoWiFi
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(1)).updateAllowedImsServices(any(), any(), any());
+        mPhoneUT.setAllowedImsServicesForHomeOnly(
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, true);
+        verify(mMockCi, times(2)).updateAllowedImsServices(any(), any(), any());
+
+        // Do not update allowed IMS services to modem if no change
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(2)).updateAllowedImsServices(any(), any(), any());
+
+        // Update allowed IMS service for VoWiFi
+        mPhoneUT.setAllowedImsServicesForAny(
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, true);
+        verify(mMockCi, times(3)).updateAllowedImsServices(any(), any(), any());
+    }
+
+    @Test
+    public void testClearAllowedImsServicesOnSimAbsent() {
+        mPhoneUT.mCi = mMockCi;
+        // Set allowed IMS service for VoLTE.
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(1)).updateAllowedImsServices(any(), any(), any());
+
+        // Clear allowed IMS service on SIM absent.
+        Intent intent = new Intent(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
+        intent.putExtra(SubscriptionManager.EXTRA_SLOT_INDEX, mPhone.getPhoneId());
+        intent.putExtra(TelephonyManager.EXTRA_SIM_STATE, TelephonyManager.SIM_STATE_ABSENT);
+        mContext.sendBroadcast(intent);
+        processAllFutureMessages();
+
+        // Set allowed IMS service for VoLTE.
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(2)).updateAllowedImsServices(any(), any(), any());
+    }
+
+    @Test
+    public void testClearAllowedImsServicesOnSimUnknown() {
+        mPhoneUT.mCi = mMockCi;
+        // Set allowed IMS service for VoLTE.
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(1)).updateAllowedImsServices(any(), any(), any());
+
+        // Clear allowed IMS service on SIM unknown.
+        Intent intent = new Intent(TelephonyManager.ACTION_SIM_CARD_STATE_CHANGED);
+        intent.putExtra(SubscriptionManager.EXTRA_SLOT_INDEX, mPhone.getPhoneId());
+        intent.putExtra(TelephonyManager.EXTRA_SIM_STATE, TelephonyManager.SIM_STATE_UNKNOWN);
+        mContext.sendBroadcast(intent);
+        processAllFutureMessages();
+
+        // Set allowed IMS service for VoLTE.
+        mPhoneUT.setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_LTE, true);
+        verify(mMockCi, times(2)).updateAllowedImsServices(any(), any(), any());
     }
 
     private void sendRadioAvailableToPhone(GsmCdmaPhone phone) {

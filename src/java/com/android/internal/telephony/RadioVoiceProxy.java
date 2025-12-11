@@ -21,8 +21,6 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.Rlog;
 import android.telephony.emergency.EmergencyNumber;
 
-import com.android.internal.telephony.flags.Flags;
-
 import java.util.ArrayList;
 
 /**
@@ -480,22 +478,6 @@ public class RadioVoiceProxy extends RadioServiceProxy {
             mVoiceProxy.sendBurstDtmf(serial, dtmf, on, off);
         } else {
             mRadioProxy.sendBurstDtmf(serial, dtmf, on, off);
-        }
-    }
-
-    /**
-     * Call IRadioVoice#sendCdmaFeatureCode
-     * @param serial Serial number of request
-     * @param featureCode String associated with FLASH command
-     * @throws RemoteException
-     */
-    public void sendCdmaFeatureCode(int serial, String featureCode) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mVoiceProxy.sendCdmaFeatureCode(serial, featureCode);
-        } else {
-            mRadioProxy.sendCDMAFeatureCode(serial, featureCode);
         }
     }
 

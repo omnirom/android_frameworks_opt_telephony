@@ -41,7 +41,7 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
 /**
- * {@hide}
+ * @hide
  */
 public class UiccCardApplication {
     private static final String LOG_TAG = "UiccCardApplication";
@@ -113,7 +113,6 @@ public class UiccCardApplication {
     public UiccCardApplication(@NonNull UiccProfile uiccProfile,
             @NonNull IccCardApplicationStatus as, @NonNull Context c, @NonNull CommandsInterface ci,
             @NonNull FeatureFlags flags) {
-        if (DBG) log("Creating UiccApp: " + as);
         mFeatureFlags = flags;
         mUiccProfile = uiccProfile;
         mAppState = as.app_state;
@@ -130,6 +129,7 @@ public class UiccCardApplication {
         mContext = c;
         mCi = ci;
 
+        if (DBG) log("Creating UiccApp: " + as);
         mIccFh = createIccFileHandler(as.app_type);
         mIccRecords = createIccRecords(as.app_type, mContext, mCi);
         if (mAppState == AppState.APPSTATE_READY) {
@@ -210,7 +210,8 @@ public class UiccCardApplication {
     private IccRecords createIccRecords(AppType type, Context c, CommandsInterface ci) {
         if (type == AppType.APPTYPE_USIM || type == AppType.APPTYPE_SIM) {
             return new SIMRecords(this, c, ci);
-        } else if (type == AppType.APPTYPE_RUIM || type == AppType.APPTYPE_CSIM){
+        } else if (!mFeatureFlags.deleteCdma()
+                && (type == AppType.APPTYPE_RUIM || type == AppType.APPTYPE_CSIM)) {
             return new RuimRecords(this, c, ci);
         } else if (type == AppType.APPTYPE_ISIM) {
             return new IsimUiccRecords(this, c, ci, mFeatureFlags);
@@ -225,11 +226,16 @@ public class UiccCardApplication {
             case APPTYPE_SIM:
                 return new SIMFileHandler(this, mAid, mCi);
             case APPTYPE_RUIM:
-                return new RuimFileHandler(this, mAid, mCi);
+                if (!mFeatureFlags.deleteCdma()) {
+                    return new RuimFileHandler(this, mAid, mCi);
+                }
+                return null;
             case APPTYPE_USIM:
                 return new UsimFileHandler(this, mAid, mCi);
             case APPTYPE_CSIM:
-                return new CsimFileHandler(this, mAid, mCi);
+                if (!mFeatureFlags.deleteCdma()) {
+                    return new CsimFileHandler(this, mAid, mCi);
+                }
             case APPTYPE_ISIM:
                 return new IsimFileHandler(this, mAid, mCi);
             default:
@@ -985,12 +991,12 @@ public class UiccCardApplication {
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private void log(String msg) {
-        Rlog.d(LOG_TAG, msg);
+        Rlog.d(LOG_TAG + " [" + getPhoneId() + "]", msg);
     }
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private void loge(String msg) {
-        Rlog.e(LOG_TAG, msg);
+        Rlog.e(LOG_TAG + " [" + getPhoneId() + "]", msg);
     }
 
     public void dump(FileDescriptor fd, PrintWriter printWriter, String[] args) {
@@ -1006,6 +1012,7 @@ public class UiccCardApplication {
         pw.println("mPin1Replaced=" + mPin1Replaced);
         pw.println("mPin1State=" + mPin1State);
         pw.println("mPin2State=" + mPin2State);
+        pw.println("mIccFdnAvailable=" + mIccFdnAvailable);
         pw.println("mIccFdnEnabled=" + mIccFdnEnabled);
         pw.println("mDesiredFdnEnabled=" + mDesiredFdnEnabled);
         pw.println("mIccLockEnabled=" + mIccLockEnabled);

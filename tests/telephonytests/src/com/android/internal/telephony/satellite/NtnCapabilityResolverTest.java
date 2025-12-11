@@ -43,6 +43,7 @@ import android.util.ArraySet;
 
 import com.android.internal.telephony.TelephonyTest;
 
+import java.util.Set;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,7 +63,7 @@ public class NtnCapabilityResolverTest extends TelephonyTest {
     private static final int SUB_ID = 0;
     private static final String VISITING_PLMN = "00102";
     private static final String SATELLITE_PLMN = "00103";
-    private static final String[] SATELLITE_PLMN_ARRAY = {SATELLITE_PLMN};
+    private static final Set<String> SATELLITE_PLMN_SET = Set.of(SATELLITE_PLMN);
 
     private final int[] mSatelliteSupportedServices = {SERVICE_TYPE_SMS, SERVICE_TYPE_EMERGENCY};
     private final List<Integer> mSatelliteSupportedServiceList =
@@ -77,8 +78,8 @@ public class NtnCapabilityResolverTest extends TelephonyTest {
 
         replaceInstance(SatelliteController.class, "sInstance", null,
                 mMockSatelliteController);
-        doReturn(Arrays.asList(SATELLITE_PLMN_ARRAY))
-                .when(mMockSatelliteController).getSatellitePlmnsForCarrier(anyInt());
+        doReturn(SATELLITE_PLMN_SET)
+                .when(mMockSatelliteController).getAllPlmnSet();
         doReturn(mSatelliteSupportedServiceList).when(mMockSatelliteController)
                 .getSupportedSatelliteServicesForPlmn(SUB_ID, SATELLITE_PLMN);
     }
@@ -102,7 +103,7 @@ public class NtnCapabilityResolverTest extends TelephonyTest {
                 .mapToInt(Integer::intValue)
                 .toArray()));
         NtnCapabilityResolver.resolveNtnCapability(satelliteNri, SUB_ID);
-        verify(mMockSatelliteController).getSatellitePlmnsForCarrier(anyInt());
+        verify(mMockSatelliteController).getAllPlmnSet();
         assertNotEquals(satelliteNri, originalNri);
         assertTrue(satelliteNri.isNonTerrestrialNetwork());
         assertTrue(Arrays.equals(mSatelliteSupportedServices,
@@ -121,7 +122,7 @@ public class NtnCapabilityResolverTest extends TelephonyTest {
                         .mapToInt(Integer::intValue)
                         .toArray()));
         NtnCapabilityResolver.resolveNtnCapability(cellularNri, SUB_ID);
-        verify(mMockSatelliteController, times(2)).getSatellitePlmnsForCarrier(anyInt());
+        verify(mMockSatelliteController, times(2)).getAllPlmnSet();
         assertEquals(cellularNri, originalNri);
         assertFalse(cellularNri.isNonTerrestrialNetwork());
         assertFalse(Arrays.equals(mSatelliteSupportedServices,
@@ -140,7 +141,7 @@ public class NtnCapabilityResolverTest extends TelephonyTest {
                         .mapToInt(Integer::intValue)
                         .toArray()));
         NtnCapabilityResolver.resolveNtnCapability(emptyPlmnNri, SUB_ID);
-        verify(mMockSatelliteController, times(2)).getSatellitePlmnsForCarrier(anyInt());
+        verify(mMockSatelliteController, times(2)).getAllPlmnSet();
         assertEquals(emptyPlmnNri, originalNri);
         assertFalse(emptyPlmnNri.isNonTerrestrialNetwork());
         assertFalse(Arrays.equals(mSatelliteSupportedServices,

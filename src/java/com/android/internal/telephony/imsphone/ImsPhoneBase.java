@@ -349,18 +349,6 @@ abstract class ImsPhoneBase extends Phone {
     }
 
     @Override
-    public String getEsn() {
-        Rlog.e(LOG_TAG, "[VoltePhone] getEsn() is a CDMA method");
-        return "0";
-    }
-
-    @Override
-    public String getMeid() {
-        Rlog.e(LOG_TAG, "[VoltePhone] getMeid() is a CDMA method");
-        return "0";
-    }
-
-    @Override
     public String getSubscriberId() {
         return null;
     }

@@ -44,7 +44,7 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
- * {@hide}
+ * @hide
  */
 public abstract class Connection {
     private static final String TAG = "Connection";
@@ -680,44 +680,45 @@ public abstract class Connection {
         }
 
         if (DomainSelectionResolver.getInstance().isDomainSelectionSupported()) {
-            if (mEmergencyNumberInfo == null) {
-                Rlog.d(TAG, "setEmergencyCallInfo: create EmergencyNumber");
-                setNonDetectableEmergencyCallInfo((dialArgs != null) ? dialArgs.eccCategory
-                        : EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED,
-                        new ArrayList<String>());
-            }
+            // Updates EmergencyNumber information for the emergency routing ECCs.
             if (dialArgs != null && dialArgs.intentExtras != null
                     && dialArgs.intentExtras.getBoolean(
-                            PhoneConstants.EXTRA_USE_EMERGENCY_ROUTING, false)
-                    && mEmergencyNumberInfo.getEmergencyCallRouting()
+                            PhoneConstants.EXTRA_USE_EMERGENCY_ROUTING, false)) {
+                if (mEmergencyNumberInfo == null) {
+                    Rlog.d(TAG, "setEmergencyCallInfo: create EmergencyNumber");
+                    setNonDetectableEmergencyCallInfo(dialArgs.eccCategory,
+                            new ArrayList<String>());
+                }
+                if (mEmergencyNumberInfo.getEmergencyCallRouting()
                         != EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY) {
-                int eccCategory = dialArgs.intentExtras.getInt(
-                    PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
-                    mEmergencyNumberInfo.getEmergencyServiceCategoryBitmask());
-                // According to 3gpp 23.167 section 7.1.2, when CS domain is selected,
-                // emergency routing is performed only if the emergency category is provided.
-                if (this instanceof GsmCdmaConnection
-                        && dialArgs.intentExtras.getInt(
-                                PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
-                                EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED)
-                                == EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED) {
-                    Rlog.d(TAG, "setEmergencyCallInfo: specific eccCategory is required");
-                    return;
+                    int eccCategory = dialArgs.intentExtras.getInt(
+                            PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                            mEmergencyNumberInfo.getEmergencyServiceCategoryBitmask());
+                    // According to 3gpp 23.167 section 7.1.2, when CS domain is selected,
+                    // emergency routing is performed only if the emergency category is provided.
+                    if (this instanceof GsmCdmaConnection
+                            && dialArgs.intentExtras.getInt(
+                                    PhoneConstants.EXTRA_EMERGENCY_SERVICE_CATEGORY,
+                                    EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED)
+                                    == EmergencyNumber.EMERGENCY_SERVICE_CATEGORY_UNSPECIFIED) {
+                        Rlog.d(TAG, "setEmergencyCallInfo: specific eccCategory is required");
+                        return;
+                    }
+                    Rlog.d(TAG, "setEmergencyCallInfo: enforce emergency routing eccCategory="
+                            + eccCategory);
+                    List<String> emergencyUrns = dialArgs.intentExtras.getStringArrayList(
+                            PhoneConstants.EXTRA_EMERGENCY_URNS);
+                    if (emergencyUrns == null || emergencyUrns.isEmpty()) {
+                        emergencyUrns = mEmergencyNumberInfo.getEmergencyUrns();
+                    }
+                    mEmergencyNumberInfo = new EmergencyNumber(mEmergencyNumberInfo.getNumber(),
+                            mEmergencyNumberInfo.getCountryIso(),
+                            mEmergencyNumberInfo.getMnc(),
+                            eccCategory,
+                            emergencyUrns,
+                            getEmergencyNumberSourceForEmergencyRouting(),
+                            EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY);
                 }
-                Rlog.d(TAG, "setEmergencyCallInfo: enforce emergency routing eccCategory="
-                        + eccCategory);
-                List<String> emergencyUrns = dialArgs.intentExtras.getStringArrayList(
-                        PhoneConstants.EXTRA_EMERGENCY_URNS);
-                if (emergencyUrns == null || emergencyUrns.isEmpty()) {
-                    emergencyUrns = mEmergencyNumberInfo.getEmergencyUrns();
-                }
-                mEmergencyNumberInfo = new EmergencyNumber(mEmergencyNumberInfo.getNumber(),
-                        mEmergencyNumberInfo.getCountryIso(),
-                        mEmergencyNumberInfo.getMnc(),
-                        eccCategory,
-                        emergencyUrns,
-                        getEmergencyNumberSourceForEmergencyRouting(),
-                        EmergencyNumber.EMERGENCY_CALL_ROUTING_EMERGENCY);
             }
         }
     }

@@ -9,14 +9,6 @@ flag {
     bug:"298567545"
 }
 
-# OWNER=arunvoddu TARGET=24Q3
-flag {
-    name: "imsi_key_retry_download_on_phone_unlock"
-    namespace: "telephony"
-    description: "This flag controls to download the IMSI encryption keys after user unlocks the phone."
-    bug:"303780982"
-}
-
 # OWNER=arunvoddu TARGET=24Q4
 flag {
     name: "carrier_restriction_status"
@@ -24,14 +16,6 @@ flag {
     namespace: "telephony"
     description: "This flag controls the visibility of the getCarrierRestrictionStatus in carrierRestrictionRules class."
     bug:"313553044"
-}
-
-# OWNER=arunvoddu TARGET=24Q3
-flag {
-    name: "carrier_restriction_rules_enhancement"
-    namespace: "telephony"
-    description: "This flag controls the new enhancements to the existing carrier restrictions rules"
-    bug:"317226653"
 }
 
 # OWNER=rafahs TARGET=24Q3
@@ -52,34 +36,12 @@ flag {
     is_exported: true
 }
 
-# OWNER=arunvoddu TARGET=24Q4
-flag {
-    name: "uicc_app_count_check_to_create_channel"
-    namespace: "telephony"
-    description: "This flag controls to create the open channel when uicc application count is greater than 0."
-    bug:"349966950"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
 # OWNER=mewan TARGET=24Q4
 flag {
     name: "optimization_apdu_sender"
     namespace: "telephony"
     description: "This flag controls optimization of apdu sender class."
     bug:"335257880"
-}
-
-# OWNER=arunvoddu TARGET=24Q4
-flag {
-    name: "ignore_carrierid_reset_for_sim_removal"
-    namespace: "telephony"
-    description: "This flag controls the carrierId reset while imsi key deletion time upon sim ejection."
-    bug:"366178705"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
 }
 
 # OWNER=jhyoon TARGET=25Q2
@@ -100,29 +62,58 @@ flag {
     is_exported: true
 }
 
-# OWNER=arunvoddu TARGET=25Q2
+# OWNER=arunvoddu TARGET=25Q3
 flag {
-    name: "force_imsi_certificate_delete"
+    name: "sim_phonebook_cache_fix"
     namespace: "telephony"
-    description: "This flag controls the IMSI certificate delete with out any condition."
-    bug:"235296888"
+    description: "This flag reset the cache if the sim phonebook is empty"
+    bug:"404094844"
+}
+
+# OWNER=arunvoddu TARGET=25Q4
+flag {
+    name: "send_imsi_key_for_duplicate_sim"
+    namespace: "telephony"
+    description: "This will make sure to send the IMSIKey to Modem in case SIM2 operator is same as SIM1"
+    bug:"400888891"
+}
+
+# OWNER=arunvoddu TARGET=25Q4
+flag {
+    name: "cat_service_creation_fix"
+    namespace: "telephony"
+    description: "Flag fix is to create the catService object with valid SIM Application"
+    bug:"417398404"
+}
+
+# OWNER=juhokim TARGET=26Q2
+flag {
+    name: "support_stk_command_ussd_and_call"
+    namespace: "telephony"
+    description: "When enabled, SEND USSD and SET UP CALL commands from STK are handled through the telephony framework."
+    bug:"404099417"
     metadata {
-        purpose: PURPOSE_BUGFIX
+        purpose: PURPOSE_FEATURE
     }
 }
 
-# OWNER=jinjeong TARGET=25Q2
+# OWNER=muralidharm TARGET=25Q4
 flag {
-    name: "get_group_id_level2"
+    name: "support_slot_switching_2psim_1esim_config"
     namespace: "telephony"
-    description: "This flag controls to get a group id level2."
-    bug:"381171540"
+    description: "Flag to control supporting slow switching in 2pSIM+1eSIM configured devices"
+    bug:"427638226"
+    is_exported: true
 }
 
-# OWNER=jinjeong TARGET=25Q2
+# OWNER=jhyoon TARGET=26Q2
 flag {
-    name: "action_sim_preference_settings"
+    name: "support_ims_registration_event_download"
+    is_exported: true
     namespace: "telephony"
-    description: "This flag controls to launch sim preference page in Setting"
-    bug:"381319469"
+    description: "This flag controls whether support APIs for the USAT IMS registration event download feature."
+    bug:"408143665"
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
 }

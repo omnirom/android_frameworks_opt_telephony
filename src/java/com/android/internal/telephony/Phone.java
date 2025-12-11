@@ -31,6 +31,7 @@ import android.content.res.Configuration;
 import android.hardware.radio.modem.ImeiInfo;
 import android.net.Uri;
 import android.os.AsyncResult;
+import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -148,7 +149,7 @@ import java.util.stream.Collectors;
  * from a single application thread. This should be the same thread that
  * originally called PhoneFactory to obtain the interface.
  *
- *  {@hide}
+ * @hide
  *
  */
 
@@ -211,7 +212,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     @VisibleForTesting
     public static final int EVENT_EMERGENCY_CALLBACK_MODE_ENTER  = 25;
     protected static final int EVENT_EXIT_EMERGENCY_CALLBACK_RESPONSE = 26;
-    protected static final int EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED = 27;
     // other
     protected static final int EVENT_SET_NETWORK_AUTOMATIC          = 28;
     protected static final int EVENT_ICC_RECORD_EVENTS              = 29;
@@ -228,8 +228,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private static final int EVENT_CHECK_FOR_NETWORK_AUTOMATIC      = 38;
     protected static final int EVENT_VOICE_RADIO_TECH_CHANGED       = 39;
     protected static final int EVENT_REQUEST_VOICE_RADIO_TECH_DONE  = 40;
-    protected static final int EVENT_RIL_CONNECTED                  = 41;
-    protected static final int EVENT_UPDATE_PHONE_OBJECT            = 42;
     protected static final int EVENT_CARRIER_CONFIG_CHANGED         = 43;
     // Carrier's CDMA prefer mode setting
     protected static final int EVENT_SET_ROAMING_PREFERENCE_DONE    = 44;
@@ -392,6 +390,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     private int mUsageSettingFromModem = SubscriptionManager.USAGE_SETTING_UNKNOWN;
     private boolean mIsUsageSettingSupported = true;
     private boolean mIsNetworkScanStarted = false;
+    private Set<Integer> mAllowedImsServicesAny = new HashSet<>();
+    private Set<Integer> mAllowedImsServicesHomeOnly = new HashSet<>();
 
     //IMS
     /**
@@ -456,7 +456,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     private final RegistrantList mPhysicalChannelConfigRegistrants = new RegistrantList();
 
-    private final RegistrantList mOtaspRegistrants = new RegistrantList();
 
     private final RegistrantList mPreferredNetworkTypeRegistrants = new RegistrantList();
 
@@ -669,7 +668,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mSimActivationTracker = mTelephonyComponentFactory
                 .inject(SimActivationTracker.class.getName())
                 .makeSimActivationTracker(this);
-        if (getPhoneType() != PhoneConstants.PHONE_TYPE_SIP) {
+        if (mFeatureFlags.deleteCdma() || getPhoneType() != PhoneConstants.PHONE_TYPE_SIP) {
             mCi.registerForSrvccStateChanged(this, EVENT_SRVCC_STATE_CHANGED, null);
         }
         //Initialize Telephony Analytics
@@ -681,7 +680,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * called if this device does not support FEATURE_IMS_TELEPHONY.
      */
     public void createImsPhone() {
-        if (getPhoneType() == PhoneConstants.PHONE_TYPE_SIP) {
+        if (!mFeatureFlags.deleteCdma() && getPhoneType() == PhoneConstants.PHONE_TYPE_SIP) {
             return;
         }
 
@@ -1133,11 +1132,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         migrate(mSuppServiceFailedRegistrants, from.mSuppServiceFailedRegistrants);
         migrate(mCellInfoRegistrants, from.mCellInfoRegistrants);
         migrate(mRedialRegistrants, from.mRedialRegistrants);
-        // The emergency state of IMS phone will be cleared in ImsPhone#notifySrvccState after
-        // receive SRVCC completed
-        if (from.isInEmergencyCall()) {
-            setIsInEmergencyCall();
-        }
         setEcmCanceledForEmergency(from.isEcmCanceledForEmergency());
     }
 
@@ -2253,7 +2247,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @return true if there is a voice call forwarding
      */
     public boolean getCallForwardingIndicator() {
-        if (getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
+        if (!mFeatureFlags.deleteCdma() && getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
             Rlog.e(mLogTag, "getCallForwardingIndicator: not possible in CDMA");
             return false;
         }
@@ -2277,26 +2271,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     public CarrierActionAgent getCarrierActionAgent() {
         return mCarrierActionAgent;
-    }
-
-    /**
-     * Query the CDMA roaming preference setting.
-     *
-     * @param response is callback message to report one of TelephonyManager#CDMA_ROAMING_MODE_*
-     */
-    public void queryCdmaRoamingPreference(Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.queryCdmaRoamingPreference(response);
-    }
-
-    /**
-     * Get the CDMA subscription mode setting.
-     *
-     * @param response is callback message to report one of TelephonyManager#CDMA_SUBSCRIPTION_*
-     */
-    public void queryCdmaSubscriptionMode(Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.getCdmaSubscriptionSource(response);
     }
 
     /**
@@ -2325,26 +2299,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public boolean isConcurrentVoiceAndDataAllowed() {
         ServiceStateTracker sst = getServiceStateTracker();
         return sst == null ? false : sst.isConcurrentVoiceAndDataAllowed();
-    }
-
-    /**
-     * Requests to set the CDMA roaming preference
-     * @param cdmaRoamingType one of TelephonyManager#CDMA_ROAMING_MODE_*
-     * @param response is callback message
-     */
-    public void setCdmaRoamingPreference(int cdmaRoamingType, Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.setCdmaRoamingPreference(cdmaRoamingType, response);
-    }
-
-    /**
-     * Requests to set the CDMA subscription mode
-     * @param cdmaSubscriptionType one of TelephonyManager#CDMA_SUBSCRIPTION_*
-     * @param response is callback message
-     */
-    public void setCdmaSubscriptionMode(int cdmaSubscriptionType, Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.setCdmaSubscriptionSource(cdmaSubscriptionType, response);
     }
 
     /**
@@ -2600,7 +2554,10 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         SubscriptionManager.setSubscriptionProperty(subId,
                 SubscriptionManager.ALLOWED_NETWORK_TYPES,
                 mapAsString);
-        logd("setAllowedNetworkTypes: SubId" + subId + ",setAllowedNetworkTypes " + mapAsString);
+        logl("setAllowedNetworkTypes: subId=" + subId + ", reason="
+                + convertAllowedNetworkTypeMapIndexToDbName(reason) + ", allowed network types="
+                + TelephonyManager.convertNetworkTypeBitmaskToString(networkTypes)
+                + ", uid=" + Binder.getCallingUid());
 
         updateAllowedNetworkTypes(response);
         notifyAllowedNetworkTypesChanged(reason);
@@ -2750,97 +2707,13 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Assign a specified band for RF configuration.
-     *
-     * @param bandMode one of BM_*_BAND
-     * @param response is callback message
-     */
-    public void setBandMode(int bandMode, Message response) {
-        mCi.setBandMode(bandMode, response);
-    }
-
-    /**
-     * Query the list of band mode supported by RF.
-     *
-     * @param response is callback message
-     *        ((AsyncResult)response.obj).result  is an int[] where int[0] is
-     *        the size of the array and the rest of each element representing
-     *        one available BM_*_BAND
-     */
-    public void queryAvailableBandMode(Message response) {
-        mCi.queryAvailableBandMode(response);
-    }
-
-    /**
-     * Read one of the NV items defined in {@link RadioNVItems} / {@code ril_nv_items.h}.
-     * Used for device configuration by some CDMA operators.
-     *
-     * @param itemID the ID of the item to read
-     * @param response callback message with the String response in the obj field
-     * @param workSource calling WorkSource
-     */
-    public void nvReadItem(int itemID, Message response, WorkSource workSource) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.nvReadItem(itemID, response, workSource);
-    }
-
-    /**
-     * Write one of the NV items defined in {@link RadioNVItems} / {@code ril_nv_items.h}.
-     * Used for device configuration by some CDMA operators.
-     *
-     * @param itemID the ID of the item to read
-     * @param itemValue the value to write, as a String
-     * @param response Callback message.
-     * @param workSource calling WorkSource
-     */
-    public void nvWriteItem(int itemID, String itemValue, Message response,
-            WorkSource workSource) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.nvWriteItem(itemID, itemValue, response, workSource);
-    }
-
-    /**
-     * Update the CDMA Preferred Roaming List (PRL) in the radio NV storage.
-     * Used for device configuration by some CDMA operators.
-     *
-     * @param preferredRoamingList byte array containing the new PRL
-     * @param response Callback message.
-     */
-    public void nvWriteCdmaPrl(byte[] preferredRoamingList, Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.nvWriteCdmaPrl(preferredRoamingList, response);
-    }
-
-    /**
      * Perform the radio modem reboot. The radio will be taken offline. Used for device
      * configuration by some CDMA operators.
-     * TODO: reuse nvResetConfig for now, should move to separate HAL API.
      *
      * @param response Callback message.
      */
     public void rebootModem(Message response) {
-        mCi.nvResetConfig(1 /* 1: reload NV reset, trigger a modem reboot */, response);
-    }
-
-    /**
-     * Perform the modem configuration reset. Used for device configuration by some CDMA operators.
-     * TODO: reuse nvResetConfig for now, should move to separate HAL API.
-     *
-     * @param response Callback message.
-     */
-    public void resetModemConfig(Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.nvResetConfig(3 /* factory NV reset */, response);
-    }
-
-    /**
-     * Perform modem configuration erase. Used for network reset
-     *
-     * @param response Callback message.
-     */
-    public void eraseModemConfig(Message response) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.nvResetConfig(2 /* erase NV */, response);
+        mCi.nvResetConfig(1/* 1: reload NV reset, trigger a modem reboot */, response);
     }
 
     /**
@@ -2885,11 +2758,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     /** Send notification with an updated PreciseDataConnectionState to a single data connection */
     public void notifyDataConnection(PreciseDataConnectionState state) {
         mNotifier.notifyDataConnection(this, state);
-    }
-
-    @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
-    public void notifyOtaspChanged(int otaspMode) {
-        mOtaspRegistrants.notifyRegistrants(new AsyncResult(null, otaspMode, null));
     }
 
     public void notifyVoiceActivationStateChanged(int state) {
@@ -3022,6 +2890,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     public boolean isInCdmaEcm() {
+        if (mFeatureFlags.deleteCdma()) return false;
         if (DomainSelectionResolver.getInstance().isDomainSelectionSupported()) {
             return EmergencyStateTracker.getInstance().isInCdmaEcm();
         }
@@ -3200,11 +3069,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent intent = new Intent(TelephonyIntents.SECRET_CODE_ACTION,
                     Uri.parse("android_secret_code://" + code));
             intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-            if (mFeatureFlags.hsumBroadcast()) {
-                mContext.sendBroadcastAsUser(intent, UserHandle.ALL, null, options.toBundle());
-            } else {
-                mContext.sendBroadcast(intent, null, options.toBundle());
-            }
+            mContext.sendBroadcastAsUser(intent, UserHandle.ALL, null, options.toBundle());
 
             // {@link TelephonyManager.ACTION_SECRET_CODE} will replace {@link
             // TelephonyIntents#SECRET_CODE_ACTION} in the next Android version. Before
@@ -3212,66 +3077,9 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             Intent secrectCodeIntent = new Intent(TelephonyManager.ACTION_SECRET_CODE,
                     Uri.parse("android_secret_code://" + code));
             secrectCodeIntent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-            if (mFeatureFlags.hsumBroadcast()) {
-                mContext.sendBroadcastAsUser(secrectCodeIntent, UserHandle.ALL, null,
-                        options.toBundle());
-            } else {
-                mContext.sendBroadcast(secrectCodeIntent, null, options.toBundle());
-            }
+            mContext.sendBroadcastAsUser(secrectCodeIntent, UserHandle.ALL, null,
+                    options.toBundle());
         }
-    }
-
-    /**
-     * Returns the CDMA ERI icon index to display
-     */
-    public int getCdmaEriIconIndex() {
-        return -1;
-    }
-
-    /**
-     * Returns the CDMA ERI icon mode,
-     * 0 - ON
-     * 1 - FLASHING
-     */
-    public int getCdmaEriIconMode() {
-        return -1;
-    }
-
-    /**
-     * Returns the CDMA ERI text,
-     */
-    public String getCdmaEriText() {
-        return "GSM nw, no ERI";
-    }
-
-    /**
-     * Retrieves the MIN for CDMA phones.
-     */
-    public String getCdmaMin() {
-        return null;
-    }
-
-    /**
-     * Check if subscription data has been assigned to mMin
-     *
-     * return true if MIN info is ready; false otherwise.
-     */
-    public boolean isMinInfoReady() {
-        return false;
-    }
-
-    /**
-     *  Retrieves PRL Version for CDMA phones
-     */
-    public String getCdmaPrlVersion(){
-        return null;
-    }
-
-    /**
-     * @return {@code true} if data is suspended.
-     */
-    public boolean isDataSuspended() {
-        return false;
     }
 
     /**
@@ -3385,51 +3193,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * this decides if the dial number is OTA(Over the air provision) number or not
-     * @param dialStr is string representing the dialing digit(s)
-     * @return  true means the dialStr is OTA number, and false means the dialStr is not OTA number
-     */
-    public  boolean isOtaSpNumber(String dialStr) {
-        return false;
-    }
-
-    /**
-     * Register for notifications when OTA Service Provisioning mode has changed.
-     *
-     * <p>The mode is integer. {@link TelephonyManager#OTASP_UNKNOWN}
-     * means the value is currently unknown and the system should wait until
-     * {@link TelephonyManager#OTASP_NEEDED} or {@link TelephonyManager#OTASP_NOT_NEEDED} is
-     * received before making the decision to perform OTASP or not.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerForOtaspChange(Handler h, int what, Object obj) {
-        checkCorrectThread(h);
-        mOtaspRegistrants.addUnique(h, what, obj);
-        // notify first
-        new Registrant(h, what, obj).notifyRegistrant(new AsyncResult(null, getOtasp(), null));
-    }
-
-    /**
-     * Unegister for notifications when OTA Service Provisioning mode has changed.
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForOtaspChange(Handler h) {
-        mOtaspRegistrants.remove(h);
-    }
-
-    /**
-     * Returns the current OTA Service Provisioning mode.
-     *
-     * @see registerForOtaspChange
-     */
-    public int getOtasp() {
-        return TelephonyManager.OTASP_UNKNOWN;
-    }
-
-    /**
      * Register for notifications when CDMA call waiting comes
      *
      * @param h Handler that receives the notification message.
@@ -3511,59 +3274,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Register for CDMA number information record notification from the network.
-     * Message.obj will contain an AsyncResult.
-     * AsyncResult.result will be a CdmaInformationRecords.CdmaNumberInfoRec
-     * instance.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerForNumberInfo(Handler h, int what, Object obj) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.registerForNumberInfo(h, what, obj);
-    }
-
-    /**
-     * Unregisters for number information record notifications.
-     * Extraneous calls are tolerated silently
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForNumberInfo(Handler h) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.unregisterForNumberInfo(h);
-    }
-
-    /**
-     * Register for CDMA redirected number information record notification
-     * from the network.
-     * Message.obj will contain an AsyncResult.
-     * AsyncResult.result will be a CdmaInformationRecords.CdmaRedirectingNumberInfoRec
-     * instance.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerForRedirectedNumberInfo(Handler h, int what, Object obj) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.registerForRedirectedNumberInfo(h, what, obj);
-    }
-
-    /**
-     * Unregisters for redirected number information record notification.
-     * Extraneous calls are tolerated silently
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForRedirectedNumberInfo(Handler h) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.unregisterForRedirectedNumberInfo(h);
-    }
-
-    /**
      * Register for CDMA line control information record notification
      * from the network.
      * Message.obj will contain an AsyncResult.
@@ -3575,8 +3285,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param obj User object.
      */
     public void registerForLineControlInfo(Handler h, int what, Object obj) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.registerForLineControlInfo(h, what, obj);
     }
 
     /**
@@ -3586,62 +3294,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      * @param h Handler to be removed from the registrant list.
      */
     public void unregisterForLineControlInfo(Handler h) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.unregisterForLineControlInfo(h);
-    }
-
-    /**
-     * Register for CDMA T53 CLIR information record notifications
-     * from the network.
-     * Message.obj will contain an AsyncResult.
-     * AsyncResult.result will be a CdmaInformationRecords.CdmaT53ClirInfoRec
-     * instance.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerFoT53ClirlInfo(Handler h, int what, Object obj) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.registerFoT53ClirlInfo(h, what, obj);
-    }
-
-    /**
-     * Unregisters for T53 CLIR information record notification
-     * Extraneous calls are tolerated silently
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForT53ClirInfo(Handler h) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.unregisterForT53ClirInfo(h);
-    }
-
-    /**
-     * Register for CDMA T53 audio control information record notifications
-     * from the network.
-     * Message.obj will contain an AsyncResult.
-     * AsyncResult.result will be a CdmaInformationRecords.CdmaT53AudioControlInfoRec
-     * instance.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerForT53AudioControlInfo(Handler h, int what, Object obj) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.registerForT53AudioControlInfo(h, what, obj);
-    }
-
-    /**
-     * Unregisters for T53 audio control information record notifications.
-     * Extraneous calls are tolerated silently
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForT53AudioControlInfo(Handler h) {
-        if (mFeatureFlags.cleanupCdma()) return;
-        mCi.unregisterForT53AudioControlInfo(h);
     }
 
     /**
@@ -4034,7 +3686,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      *        IMSI and IMPI. This includes the Key type, the Public key
      *        {@link java.security.PublicKey} and the Key identifier.
      */
-    public void setCarrierInfoForImsiEncryption(ImsiEncryptionInfo imsiEncryptionInfo) {
+    public void setCarrierInfoForImsiEncryption(ImsiEncryptionInfo imsiEncryptionInfo,
+            boolean saveToDb) {
         return;
     }
 
@@ -4197,11 +3850,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
         setRoamingOverrideHelper(gsmRoamingList, GSM_ROAMING_LIST_OVERRIDE_PREFIX, iccId);
         setRoamingOverrideHelper(gsmNonRoamingList, GSM_NON_ROAMING_LIST_OVERRIDE_PREFIX, iccId);
-        if (!mFeatureFlags.cleanupCdma()) {
-            setRoamingOverrideHelper(cdmaRoamingList, CDMA_ROAMING_LIST_OVERRIDE_PREFIX, iccId);
-            setRoamingOverrideHelper(cdmaNonRoamingList, CDMA_NON_ROAMING_LIST_OVERRIDE_PREFIX,
-                    iccId);
-        }
 
         // Refresh.
         ServiceStateTracker tracker = getServiceStateTracker();
@@ -4722,13 +4370,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     }
 
     /**
-     * Set boolean broadcastEmergencyCallStateChanges
-     */
-    public abstract void setBroadcastEmergencyCallStateChanges(boolean broadcast);
-
-    public abstract void sendEmergencyCallStateChange(boolean callActive);
-
-    /**
      * This function returns the parent phone of the current phone. It is applicable
      * only for IMS phone (function is overridden by ImsPhone). For others the phone
      * object itself is returned.
@@ -4768,6 +4409,7 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      **/
     public void setVoNrEnabled(boolean enabled, Message result, WorkSource workSource) {
         mCi.setVoNrEnabled(enabled, result, workSource);
+        setAllowedImsServicesForAny(ImsRegistrationImplBase.REGISTRATION_TECH_NR, enabled);
     }
 
     /**
@@ -4802,11 +4444,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
             }
         }
         return isEmergencyCallOnly;
-    }
-
-    // Return true if either CSIM or RUIM app is present. By default it returns false.
-    public boolean isCdmaSubscriptionAppPresent() {
-        return false;
     }
 
     /**
@@ -5362,8 +4999,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void startEmergencyCallbackMode(@TelephonyManager.EmergencyCallbackModeType int type,
             long durationMillis) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         Rlog.d(mLogTag, "startEmergencyCallbackMode:type=" + type);
         mNotifier.notifyCallbackModeStarted(this, type, durationMillis);
     }
@@ -5376,8 +5011,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void restartEmergencyCallbackMode(@TelephonyManager.EmergencyCallbackModeType int type,
             long durationMillis) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         Rlog.d(mLogTag, "restartEmergencyCallbackMode:type=" + type);
         mNotifier.notifyCallbackModeRestarted(this, type, durationMillis);
     }
@@ -5389,8 +5022,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void stopEmergencyCallbackMode(@TelephonyManager.EmergencyCallbackModeType int type,
             @TelephonyManager.EmergencyCallbackModeStopReason int reason) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         Rlog.d(mLogTag, "stopEmergencyCallbackMode:type=" + type + ", reason=" + reason);
         mNotifier.notifyCallbackModeStopped(this, type, reason);
     }
@@ -5498,6 +5129,63 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         mCi.isSatelliteEnabledForCarrier(simSlot, result);
     }
 
+    /**
+     * Update allowed IMS services for home network only.
+     *
+     * @param regTech Which technology is associated with this capability.
+     * @param enabled Whether this capability is enabled.
+     */
+    public void setAllowedImsServicesForHomeOnly(
+            @ImsRegistrationImplBase.ImsRegistrationTech int regTech,
+            boolean enabled) {
+        if (!mFeatureFlags.allowedServices()) return;
+        Set<Integer> oldAllowedImsServicesAny = new HashSet<>(mAllowedImsServicesAny);
+        Set<Integer> oldAllowedImsServicesHomeOnly = new HashSet<>(mAllowedImsServicesHomeOnly);
+        if (enabled) {
+            mAllowedImsServicesHomeOnly.add(regTech);
+        } else {
+            mAllowedImsServicesHomeOnly.remove(regTech);
+        }
+        mAllowedImsServicesAny.remove(regTech);
+        if (!oldAllowedImsServicesAny.equals(mAllowedImsServicesAny)
+                || !oldAllowedImsServicesHomeOnly.equals(mAllowedImsServicesHomeOnly)) {
+            mCi.updateAllowedImsServices(mAllowedImsServicesAny, mAllowedImsServicesHomeOnly, null);
+        }
+    }
+
+    /**
+     * Update allowed IMS services for home and roaming networks.
+     *
+     * @param regTech Which technology is associated with this capability.
+     * @param enabled Whether this capability is enabled.
+     */
+    public void setAllowedImsServicesForAny(
+            @ImsRegistrationImplBase.ImsRegistrationTech int regTech,
+            boolean enabled) {
+        if (!mFeatureFlags.allowedServices()) return;
+        Set<Integer> oldAllowedImsServicesAny = new HashSet<>(mAllowedImsServicesAny);
+        Set<Integer> oldAllowedImsServicesHomeOnly = new HashSet<>(mAllowedImsServicesHomeOnly);
+        if (enabled) {
+            mAllowedImsServicesAny.add(regTech);
+        } else {
+            mAllowedImsServicesAny.remove(regTech);
+        }
+        mAllowedImsServicesHomeOnly.remove(regTech);
+        if (!oldAllowedImsServicesAny.equals(mAllowedImsServicesAny)
+                || !oldAllowedImsServicesHomeOnly.equals(mAllowedImsServicesHomeOnly)) {
+            mCi.updateAllowedImsServices(mAllowedImsServicesAny, mAllowedImsServicesHomeOnly, null);
+        }
+    }
+
+    /**
+     * Clear allowed IMS services.
+     */
+    public void clearAllowedImsServices() {
+        Rlog.d(mLogTag, "clearAllowedImsServices");
+        mAllowedImsServicesAny.clear();
+        mAllowedImsServicesHomeOnly.clear();
+    }
+
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Phone: subId=" + getSubId());
         pw.println(" mPhoneId=" + mPhoneId);
@@ -5528,7 +5216,6 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
         pw.println(" getPhoneName()=" + getPhoneName());
         pw.println(" getPhoneType()=" + getPhoneType());
         pw.println(" getVoiceMessageCount()=" + getVoiceMessageCount());
-        pw.println(" needsOtaServiceProvisioning=" + needsOtaServiceProvisioning());
         pw.println(" isInEmergencySmsMode=" + isInEmergencySmsMode());
         pw.println(" isEcmCanceledForEmergency=" + isEcmCanceledForEmergency());
         pw.println(" service state=" + getServiceState());
@@ -5704,6 +5391,11 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
 
     private void logd(String s) {
         Rlog.d(mLogTag, "[" + mPhoneId + "] " + s);
+    }
+
+    private void logl(String s) {
+        mLocalLog.log(s);
+        Log.d(mLogTag, s);
     }
 
     private void logi(String s) {

@@ -56,7 +56,6 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.UUSInfo;
 import com.android.internal.telephony.emergency.EmergencyNumberTracker;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.telephony.Rlog;
 
 import java.util.ArrayList;
@@ -66,7 +65,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * {@hide}
+ * @hide
  */
 public class ImsPhoneConnection extends Connection implements
         ImsVideoCallProviderWrapper.ImsVideoProviderWrapperCallback {
@@ -83,7 +82,6 @@ public class ImsPhoneConnection extends Connection implements
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private ImsCall mImsCall;
     private final Bundle mExtras = new Bundle();
-    private TelephonyMetrics mMetrics = TelephonyMetrics.getInstance();
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private boolean mDisconnected;
@@ -336,17 +334,7 @@ public class ImsPhoneConnection extends Connection implements
         }
     }
 
-    @VisibleForTesting
-    public void setTelephonyMetrics(TelephonyMetrics tm) {
-        mMetrics = tm;
-    }
-
     public void dispose() {
-    }
-
-    static boolean
-    equalsHandlesNulls (Object a, Object b) {
-        return (a == null) ? (b == null) : a.equals (b);
     }
 
     static boolean
@@ -1127,7 +1115,6 @@ public class ImsPhoneConnection extends Connection implements
             if (localCallProfile != null
                     && localCallProfile.mMediaProfile.mAudioQuality != mAudioCodec) {
                 mAudioCodec = localCallProfile.mMediaProfile.mAudioQuality;
-                mMetrics.writeAudioCodecIms(mOwner.mPhone.getPhoneId(), imsCall.getCallSession());
                 mOwner.getPhone().getVoiceCallSessionStats().onAudioCodecChanged(this, mAudioCodec);
                 changed = true;
                 mediaAttributesChanged = true;
@@ -1387,6 +1374,9 @@ public class ImsPhoneConnection extends Connection implements
             if (com.android.server.telecom.flags.Flags.businessCallComposer()) {
                 maybeInjectBusinessComposerExtras(mExtras);
             }
+            if (com.android.server.telecom.flags.Flags.isUsingVideoRingback()) {
+                maybeInjectIsUsingVideoRingbackExtras(mExtras);
+            }
             setConnectionExtras(mExtras);
         }
         return changed;
@@ -1425,6 +1415,28 @@ public class ImsPhoneConnection extends Connection implements
                 extras.putString(android.telecom.Call.EXTRA_ASSERTED_DISPLAY_NAME, v);
             }
 
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * The Ims Vendor is responsible for setting the ImsCallProfile video color ring back tone
+     * value (ImsCallProfile.EXTRA_IS_USING_VIDEO_RINGBACK). This helper notifies
+     * Telecom of the video color ring back tone value which will then be injected into
+     * the android.telecom.Call object.
+     */
+    @VisibleForTesting
+    public void maybeInjectIsUsingVideoRingbackExtras(Bundle extras) {
+        if (extras == null) {
+            return;
+        }
+        try {
+            if (extras.containsKey(ImsCallProfile.EXTRA_IS_USING_VIDEO_RINGBACK)) {
+                boolean v = extras.getBoolean(ImsCallProfile.EXTRA_IS_USING_VIDEO_RINGBACK);
+                Rlog.i(LOG_TAG, String.format("mIBCE: EXTRA_IS_USING_VIDEO_RINGBACK=[%s]", v));
+                extras.putBoolean(android.telecom.Call.EXTRA_IS_USING_VIDEO_RINGBACK, v);
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -24,6 +24,8 @@ import static com.android.internal.telephony.TelephonyStatsLog.OUTGOING_SHORT_CO
 import static com.android.internal.telephony.TelephonyStatsLog.SATELLITE_CONFIG_UPDATER;
 import static com.android.internal.telephony.TelephonyStatsLog.SATELLITE_ENTITLEMENT;
 import static com.android.internal.telephony.TelephonyStatsLog.SIM_SLOT_STATE;
+import static com.android.internal.telephony.TelephonyStatsLog.SMS_OTP_EVALUATION;
+import static com.android.internal.telephony.TelephonyStatsLog.SMS_OTP_REDACTED;
 import static com.android.internal.telephony.TelephonyStatsLog.SUPPORTED_RADIO_ACCESS_FAMILY;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_RAT_USAGE;
 import static com.android.internal.telephony.TelephonyStatsLog.VOICE_CALL_SESSION;
@@ -53,6 +55,8 @@ import com.android.internal.telephony.nano.PersistAtomsProto.CarrierRoamingSatel
 import com.android.internal.telephony.nano.PersistAtomsProto.CarrierRoamingSatelliteSession;
 import com.android.internal.telephony.nano.PersistAtomsProto.CellularDataServiceSwitch;
 import com.android.internal.telephony.nano.PersistAtomsProto.CellularServiceState;
+import com.android.internal.telephony.nano.PersistAtomsProto.OtpEvaluationEvent;
+import com.android.internal.telephony.nano.PersistAtomsProto.OtpRedactionEvent;
 import com.android.internal.telephony.nano.PersistAtomsProto.OutgoingShortCodeSms;
 import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteConfigUpdater;
 import com.android.internal.telephony.nano.PersistAtomsProto.SatelliteEntitlement;
@@ -650,6 +654,90 @@ public class MetricsCollectorTest extends TelephonyTest {
         List<StatsEvent> actualAtoms = new ArrayList<>();
 
         int result = mMetricsCollector.onPullAtom(SATELLITE_CONFIG_UPDATER, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(4);
+        assertThat(result).isEqualTo(StatsManager.PULL_SUCCESS);
+    }
+
+    @Test
+    public void onPullAtom_otpEvaluationEvent_empty() {
+        doReturn(new OtpEvaluationEvent[0]).when(mPersistAtomsStorage)
+                .getOtpEvaluationEventStats(anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_EVALUATION, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(0);
+        assertThat(result).isEqualTo(StatsManager.PULL_SUCCESS);
+    }
+
+    @Test
+    public void onPullAtom_otpEvaluationEvent_tooFrequent() {
+        doReturn(null).when(mPersistAtomsStorage).getOtpEvaluationEventStats(
+                anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_EVALUATION, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(0);
+        assertThat(result).isEqualTo(StatsManager.PULL_SKIP);
+        verify(mPersistAtomsStorage, times(1))
+                .getOtpEvaluationEventStats(eq(MIN_COOLDOWN_MILLIS));
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+    }
+
+    @Test
+    public void onPullAtom_otpEvaluationEvent_multipleAtoms() {
+        OtpEvaluationEvent otpEvaluationEvent = new OtpEvaluationEvent();
+        doReturn(new OtpEvaluationEvent[] {otpEvaluationEvent, otpEvaluationEvent,
+                otpEvaluationEvent, otpEvaluationEvent})
+                .when(mPersistAtomsStorage)
+                .getOtpEvaluationEventStats(anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_EVALUATION, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(4);
+        assertThat(result).isEqualTo(StatsManager.PULL_SUCCESS);
+    }
+
+    @Test
+    public void onPullAtom_otpRedactionEvent_empty() {
+        doReturn(new OtpRedactionEvent[0]).when(mPersistAtomsStorage)
+                .getOtpRedactionEventStats(anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_REDACTED, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(0);
+        assertThat(result).isEqualTo(StatsManager.PULL_SUCCESS);
+    }
+
+    @Test
+    public void onPullAtom_otpRedactionEvent_tooFrequent() {
+        doReturn(null).when(mPersistAtomsStorage).getOtpEvaluationEventStats(
+                anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_REDACTED, actualAtoms);
+
+        assertThat(actualAtoms).hasSize(0);
+        assertThat(result).isEqualTo(StatsManager.PULL_SKIP);
+        verify(mPersistAtomsStorage, times(1))
+                .getOtpRedactionEventStats(eq(MIN_COOLDOWN_MILLIS));
+        verifyNoMoreInteractions(mPersistAtomsStorage);
+    }
+
+    @Test
+    public void onPullAtom_otpRedactionEvent_multipleAtoms() {
+        OtpRedactionEvent otpRedactionEvent = new OtpRedactionEvent();
+        doReturn(new OtpRedactionEvent[] {otpRedactionEvent, otpRedactionEvent,
+                otpRedactionEvent, otpRedactionEvent})
+                .when(mPersistAtomsStorage)
+                .getOtpRedactionEventStats(anyLong());
+        List<StatsEvent> actualAtoms = new ArrayList<>();
+
+        int result = mMetricsCollector.onPullAtom(SMS_OTP_REDACTED, actualAtoms);
 
         assertThat(actualAtoms).hasSize(4);
         assertThat(result).isEqualTo(StatsManager.PULL_SUCCESS);

@@ -22,7 +22,7 @@ import android.os.Build;
 import com.android.internal.annotations.VisibleForTesting;
 
 /**
- * {@hide}
+ * @hide
  */
 public class GsmCdmaCall extends Call {
     /*************************** Instance Variables **************************/

@@ -28,7 +28,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * {@hide}
+ * @hide
  */
 public class PlmnActRecord implements Parcelable {
     private static final String LOG_TAG = "PlmnActRecord";

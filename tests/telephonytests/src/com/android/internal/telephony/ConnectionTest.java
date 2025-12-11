@@ -26,8 +26,6 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.ArrayList;
-
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -39,6 +37,8 @@ import com.android.internal.telephony.emergency.EmergencyNumberTracker;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.util.ArrayList;
 
 /**
  * Unit test verifying the methods of the connection class.
@@ -185,9 +185,15 @@ public class ConnectionTest extends TelephonyTest {
         doReturn(1).when(mPhone).getPhoneId();
         doReturn(2).when(mPhone2).getPhoneId();
 
+        when(mPhone.getEmergencyNumberTracker().getEmergencyNumber(any())).thenReturn(null);
+        when(mPhone2.getEmergencyNumberTracker().getEmergencyNumber(any())).thenReturn(null);
+
+        //Ensure the connection is considered as an non-emergency call:
+        mTestConnection.setEmergencyCallInfo(mCT, null);
+        assertFalse(mTestConnection.isEmergencyCall());
+
         //Replicate behavior when a number is an emergency number
         // on the secondary SIM but not on the default SIM:
-        when(mPhone.getEmergencyNumberTracker().getEmergencyNumber(any())).thenReturn(null);
         when(mEmergencyNumberTracker2.getEmergencyNumber(any()))
                 .thenReturn(getTestEmergencyNumber());
 
@@ -207,6 +213,13 @@ public class ConnectionTest extends TelephonyTest {
 
         // Enable DomainSelectionService
         doReturn(true).when(mDomainSelectionResolver).isDomainSelectionSupported();
+
+        connection = new TestConnection(TEST_PHONE_TYPE);
+        connection.setEmergencyCallInfo(mPhone.getCallTracker(), null);
+
+        // Not updated when dialArgs is null.
+        assertEquals(getTestEmergencyNumber(), connection.getEmergencyNumberInfo());
+
         connection = new TestConnection(TEST_PHONE_TYPE);
         connection.setEmergencyCallInfo(mPhone.getCallTracker(), dialArgs);
 

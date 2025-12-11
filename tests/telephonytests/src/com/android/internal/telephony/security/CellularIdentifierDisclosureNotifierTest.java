@@ -93,7 +93,7 @@ public class CellularIdentifierDisclosureNotifierTest {
         notifier.addDisclosure(mContext, SUB_ID_1, mDislosure);
         assertEquals(0, notifier.getCurrentDisclosureCount(SUB_ID_1));
         verify(mSafetySource, never())
-                .setIdentifierDisclosure(any(), anyInt(), anyInt(), any(), any());
+                .setIdentifierDisclosure(any(), anyInt(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -112,7 +112,7 @@ public class CellularIdentifierDisclosureNotifierTest {
 
         assertEquals(0, notifier.getCurrentDisclosureCount(SUB_ID_1));
         verify(mSafetySource, never())
-                .setIdentifierDisclosure(any(), anyInt(), anyInt(), any(), any());
+                .setIdentifierDisclosure(any(), anyInt(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -131,7 +131,7 @@ public class CellularIdentifierDisclosureNotifierTest {
 
         assertEquals(0, notifier.getCurrentDisclosureCount(SUB_ID_1));
         verify(mSafetySource, never())
-                .setIdentifierDisclosure(any(), anyInt(), anyInt(), any(), any());
+                .setIdentifierDisclosure(any(), anyInt(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -150,7 +150,7 @@ public class CellularIdentifierDisclosureNotifierTest {
 
         assertEquals(1, notifier.getCurrentDisclosureCount(SUB_ID_1));
         verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
     }
 
     @Test
@@ -164,11 +164,11 @@ public class CellularIdentifierDisclosureNotifierTest {
 
         assertEquals(3, notifier.getCurrentDisclosureCount(SUB_ID_1));
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(2), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(2), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(3), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(3), any(), any());
     }
 
     @Test
@@ -181,7 +181,7 @@ public class CellularIdentifierDisclosureNotifierTest {
         assertEquals(1, notifier.getCurrentDisclosureCount(SUB_ID_1));
         Assert.assertEquals(notifier.getFirstOpen(SUB_ID_1), notifier.getCurrentEnd(SUB_ID_1));
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
     }
 
     @Test
@@ -200,7 +200,7 @@ public class CellularIdentifierDisclosureNotifierTest {
         assertEquals(2, notifier.getCurrentDisclosureCount(SUB_ID_1));
         assertTrue(notifier.getFirstOpen(SUB_ID_1).isBefore(notifier.getCurrentEnd(SUB_ID_1)));
         verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
     }
 
     @Test
@@ -213,9 +213,9 @@ public class CellularIdentifierDisclosureNotifierTest {
         notifier.addDisclosure(mContext, SUB_ID_1, mDislosure);
         assertEquals(2, notifier.getCurrentDisclosureCount(SUB_ID_1));
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(2), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(2), any(), any());
 
         // Window close should reset the counter
         mExecutor.advanceTime(WINDOW_CLOSE_ADVANCE_MILLIS);
@@ -225,7 +225,7 @@ public class CellularIdentifierDisclosureNotifierTest {
         notifier.addDisclosure(mContext, SUB_ID_1, mDislosure);
         assertEquals(1, notifier.getCurrentDisclosureCount(SUB_ID_1));
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
     }
 
     @Test
@@ -238,9 +238,9 @@ public class CellularIdentifierDisclosureNotifierTest {
         notifier.addDisclosure(mContext, SUB_ID_1, mDislosure);
         assertEquals(2, notifier.getCurrentDisclosureCount(SUB_ID_1));
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(2), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(2), any(), any());
 
         notifier.disable(mContext);
         assertFalse(notifier.isEnabled());
@@ -262,23 +262,23 @@ public class CellularIdentifierDisclosureNotifierTest {
             notifier.addDisclosure(mContext, SUB_ID_1, mDislosure);
         }
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(1), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(2), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(2), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_1), eq(3), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_1), any(), eq(3), any(), any());
 
         for (int i = 0; i < 4; i++) {
             notifier.addDisclosure(mContext, SUB_ID_2, mDislosure);
         }
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_2), eq(1), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_2), any(), eq(1), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_2), eq(2), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_2), any(), eq(2), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_2), eq(3), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_2), any(), eq(3), any(), any());
         mInOrder.verify(mSafetySource, times(1))
-                .setIdentifierDisclosure(any(), eq(SUB_ID_2), eq(4), any(), any());
+                .setIdentifierDisclosure(any(), eq(SUB_ID_2), any(), eq(4), any(), any());
 
         assertEquals(3, notifier.getCurrentDisclosureCount(SUB_ID_1));
         assertEquals(4, notifier.getCurrentDisclosureCount(SUB_ID_2));

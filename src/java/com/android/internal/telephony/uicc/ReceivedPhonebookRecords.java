@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * Represents the received ADN entries from the SIM.
  *
- * {@hide}
+ * @hide
  */
 public class ReceivedPhonebookRecords {
     @PhonebookReceivedState

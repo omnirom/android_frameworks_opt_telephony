@@ -56,7 +56,7 @@ public class QosCallbackTracker extends Handler {
     @NonNull
     private final String mLogTag;
     @NonNull
-    private final TelephonyNetworkAgent mNetworkAgent;
+    private TelephonyNetworkAgent mNetworkAgent;
     @NonNull
     private final Map<Integer, QosBearerSession> mQosBearerSessions;
     @NonNull
@@ -115,6 +115,27 @@ public class QosCallbackTracker extends Handler {
         mRcsStats = RcsStats.getInstance();
         mLogTag = "QOSCT" + "-" + ((NetworkAgent) mNetworkAgent).getNetwork().getNetId();
 
+        registerTelephonyNetworkAgentCallback(mNetworkAgent);
+    }
+
+    /**
+     * Update to the new NetworkAgent in this QosCallbackTracker
+     *
+     * @param networkAgent new network agent supposed to be used.
+     */
+    public void updateNetworkAgent(TelephonyNetworkAgent networkAgent) {
+        post(() -> {
+            // Clear mCallbacksToFilter entries that were come from the previous NetworkAgent. The
+            // actual QoS callback at client side will receive QosCallbackException
+            // #EX_TYPE_FILTER_NETWORK_RELEASED through the Connectivity service and unregistered.
+            mCallbacksToFilter.clear();
+            mNetworkAgent = networkAgent;
+            registerTelephonyNetworkAgentCallback(mNetworkAgent);
+            log("updateNetworkAgent done netId:" + (mNetworkAgent).getNetwork().getNetId());
+        });
+    }
+
+    private void registerTelephonyNetworkAgentCallback(TelephonyNetworkAgent networkAgent) {
         networkAgent.registerCallback(
                 new TelephonyNetworkAgent.TelephonyNetworkAgentCallback(this::post) {
                     @Override

@@ -19,14 +19,12 @@ package com.android.internal.telephony;
 import android.annotation.NonNull;
 import android.os.AsyncResult;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import android.util.ArraySet;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.util.WorkerThread;
 import com.android.telephony.Rlog;
 
@@ -53,28 +51,18 @@ public class RadioInterfaceCapabilityController extends Handler {
      * Init method to instantiate the object
      * Should only be called once.
      */
-    public static RadioInterfaceCapabilityController init(final RadioConfig radioConfig,
+    public static synchronized RadioInterfaceCapabilityController init(
+            final RadioConfig radioConfig,
             final CommandsInterface commandsInterface) {
-        synchronized (RadioInterfaceCapabilityController.class) {
-            if (sInstance == null) {
-                if (Flags.threadShred()) {
-                    sInstance = new RadioInterfaceCapabilityController(
-                            radioConfig,
-                            commandsInterface,
-                            WorkerThread.get().getLooper());
-                } else {
-                    final HandlerThread handlerThread = new HandlerThread("RHC");
-                    handlerThread.start();
-                    sInstance = new RadioInterfaceCapabilityController(
-                            radioConfig,
-                            commandsInterface,
-                            handlerThread.getLooper());
-                }
-            } else {
-                Log.wtf(LOG_TAG, "init() called multiple times!  sInstance = " + sInstance);
-            }
-            return sInstance;
+        if (sInstance == null) {
+            sInstance = new RadioInterfaceCapabilityController(
+                    radioConfig,
+                    commandsInterface,
+                    WorkerThread.get().getLooper());
+        } else {
+            Log.wtf(LOG_TAG, "init() called multiple times!  sInstance = " + sInstance);
         }
+        return sInstance;
     }
 
     /**

@@ -25,7 +25,7 @@ import com.android.telephony.Rlog;
 /**
  * See also RIL_AppStatus in include/telephony/ril.h
  *
- * {@hide}
+ * @hide
  */
 public class IccCardApplicationStatus {
     // TODO: Replace with constants from PhoneConstants.APPTYPE_xxx

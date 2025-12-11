@@ -15,6 +15,7 @@
  */
 package com.android.internal.telephony.uicc;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -29,17 +30,22 @@ import static org.mockito.Mockito.verify;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.platform.test.annotations.EnableFlags;
+import android.telephony.TelephonyManager;
 
 import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyTest;
+import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.uicc.IccCardStatus.CardState;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.util.Arrays;
 
 public class UiccSlotTest extends TelephonyTest {
     private UiccSlotTestHandlerThread mTestHandlerThread;
@@ -180,7 +186,6 @@ public class UiccSlotTest extends TelephonyTest {
 
         // update slot to inactive
         mUiccSlot.update(null, iss, 0 /* slotIndex */);
-
         // assert on updated values
         assertFalse(mUiccSlot.isActive());
         assertNull(mUiccSlot.getUiccCard());
@@ -578,5 +583,36 @@ public class UiccSlotTest extends TelephonyTest {
         mUiccSlot.onRadioStateUnavailable(phoneId);
         // When radio is not available, state is unknown
         assertTrue(mUiccSlot.isStateUnknown());
+    }
+
+    @Test
+    @SmallTest
+    @EnableFlags(Flags.FLAG_SUPPORT_SLOT_SWITCHING_2PSIM_1ESIM_CONFIG)
+    public void testSimTypeInfo() {
+        assertEquals(TelephonyManager.SIM_TYPE_UNKNOWN, mUiccSlot.getSimType());
+        assertArrayEquals(new int[]{TelephonyManager.SIM_TYPE_UNKNOWN},
+                mUiccSlot.getSupportedSimTypes());
+
+        SimTypeInfo simTypeInfo = new SimTypeInfo();
+        simTypeInfo.mCurrentSimType = SimTypeInfo.SimType.SIM_TYPE_ESIM;
+        simTypeInfo.mSupportedSimTypes = SimTypeInfo.SimType.SIM_TYPE_ESIM;
+        mUiccSlot.updateSimTypeInfo(simTypeInfo);
+        assertEquals(TelephonyManager.SIM_TYPE_EMBEDDED, mUiccSlot.getSimType());
+        assertNotNull(mUiccSlot.getSupportedSimTypes());
+        assertEquals(1, mUiccSlot.getSupportedSimTypes().length);
+
+        int[] expectedSimTypes =
+                {TelephonyManager.SIM_TYPE_PHYSICAL, TelephonyManager.SIM_TYPE_EMBEDDED};
+        simTypeInfo.mCurrentSimType = SimTypeInfo.SimType.SIM_TYPE_ESIM;
+        simTypeInfo.mSupportedSimTypes =
+                (SimTypeInfo.SimType.SIM_TYPE_PHYSICAL | SimTypeInfo.SimType.SIM_TYPE_ESIM);
+        mUiccSlot.updateSimTypeInfo(simTypeInfo);
+        assertEquals(TelephonyManager.SIM_TYPE_EMBEDDED, mUiccSlot.getSimType());
+        int[] actualSimTypes = mUiccSlot.getSupportedSimTypes();
+        assertNotNull(actualSimTypes);
+        assertEquals(2, actualSimTypes.length);
+        Arrays.sort(expectedSimTypes);
+        Arrays.sort(actualSimTypes);
+        assertArrayEquals(expectedSimTypes, actualSimTypes);
     }
 }

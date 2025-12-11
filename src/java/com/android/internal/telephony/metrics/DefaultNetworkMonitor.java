@@ -63,7 +63,8 @@ public class DefaultNetworkMonitor extends Handler {
     }
 
     DefaultNetworkMonitor(@NonNull Context context, @NonNull FeatureFlags featureFlags) {
-        super(Looper.myLooper());
+        // Looper.myLooper is only null during mock tests
+        super(Looper.myLooper() != null ? Looper.myLooper() : Looper.getMainLooper());
         registerSystemDefaultNetworkCallback(context);
     }
 

@@ -24,16 +24,21 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import android.os.AsyncResult;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemProperties;
+import android.platform.test.annotations.EnableFlags;
 import android.preference.PreferenceManager;
 import android.telephony.TelephonyManager;
 import android.telephony.UiccCardInfo;
 import android.telephony.UiccPortInfo;
+import android.telephony.UiccSlotMapping;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
 
@@ -41,6 +46,7 @@ import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.TelephonyTest;
+import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.uicc.euicc.EuiccCard;
 
 import org.junit.After;
@@ -51,6 +57,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 @RunWith(AndroidTestingRunner.class)
 @TestableLooper.RunWithLooper
@@ -62,6 +69,7 @@ public class UiccControllerTest extends TelephonyTest {
     private static final int EVENT_GET_SLOT_STATUS_DONE = 4;
     private static final int EVENT_SIM_REFRESH = 8;
     private static final int EVENT_EID_READY = 9;
+    private static final int EVENT_GET_SLOT_SWITCH_DONE = 10;
 
     // Mocked classes
     private Handler mMockedHandler;
@@ -72,6 +80,7 @@ public class UiccControllerTest extends TelephonyTest {
     private EuiccCard mMockEuiccCard;
     private UiccProfile mMockProfile;
     private UiccPort mMockPort;
+    private UiccControllerTest mSpyUiccControllerTest;
 
     private IccCardApplicationStatus composeUiccApplicationStatus(
             IccCardApplicationStatus.AppType appType,
@@ -122,6 +131,7 @@ public class UiccControllerTest extends TelephonyTest {
         mIccCardStatus.mSlotPortMapping = new IccSlotPortMapping();
         mIccCardStatus.mSlotPortMapping.mPhysicalSlotIndex = 0;
         mUiccControllerUT = UiccController.make(mContext, mFeatureFlags);
+        mSpyUiccControllerTest = spy(this);
         // reset sLastSlotStatus so that onGetSlotStatusDone always sees a change in the slot status
         mUiccControllerUT.sLastSlotStatus = null;
         processAllMessages();
@@ -146,6 +156,7 @@ public class UiccControllerTest extends TelephonyTest {
         replaceInstance(UiccController.class, "mInstance", null, null);
         mUiccControllerUT.dispose();
         mUiccControllerUT = UiccController.make(mContext, mFeatureFlags);
+        mSpyUiccControllerTest = spy(this);
         processAllMessages();
     }
 
@@ -721,5 +732,82 @@ public class UiccControllerTest extends TelephonyTest {
 
         // status should be treated different from last status
         assertTrue(mUiccControllerUT.slotStatusChanged(status));
+    }
+
+    @Test
+    @SmallTest
+    public void testNumPhysicalSlotsAdjusted() throws Exception {
+        // Mock first API level to be older than V
+        doReturn(Build.VERSION_CODES.TIRAMISU).when(mSpyUiccControllerTest).getFirstApiLevel();
+        // Mock the resource config_num_physical_slots
+        mContextFixture.putIntResource(com.android.internal.R.integer.config_num_physical_slots,
+                PHONE_COUNT - 1);
+
+        // Verify that numPhysicalSlots is adjusted to PHONE_COUNT
+        assertEquals(PHONE_COUNT, mUiccControllerUT.getUiccSlots().length);
+    }
+
+    @Test
+    @SmallTest
+    public void testNumPhysicalSlotsNotAdjustedForNewerApiLevel() throws Exception {
+        // Mock first API level to be newer than V
+        doReturn(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+                .when(mSpyUiccControllerTest).getFirstApiLevel();
+        // Mock the resource config_num_physical_slots
+        mContextFixture.putIntResource(com.android.internal.R.integer.config_num_physical_slots,
+                PHONE_COUNT);
+
+        // Verify that numPhysicalSlots is not adjusted
+        assertEquals(PHONE_COUNT, mUiccControllerUT.getUiccSlots().length);
+    }
+
+    @Test
+    @SmallTest
+    public void testSwitchSlots_setSimSlotsMapping() throws Exception {
+        // by default feature flag will be false
+        List<UiccSlotMapping> slotMappingList = new ArrayList<>();
+        UiccSlotMapping slotMapping1 = new UiccSlotMapping(
+                TelephonyManager.DEFAULT_PORT_INDEX,
+                /* physicalSlotIndex= */ 1,
+                /* logicalSlotIndex= */ 1);
+        UiccSlotMapping slotMapping2 = new UiccSlotMapping(
+                TelephonyManager.DEFAULT_PORT_INDEX,
+                /* physicalSlotIndex= */ 0,
+                /* logicalSlotIndex= */ 0);
+        slotMappingList.add(slotMapping1);
+        slotMappingList.add(slotMapping2);
+        Message message = mUiccControllerUT.obtainMessage(EVENT_GET_SLOT_SWITCH_DONE);
+        mUiccControllerUT.switchSlots(slotMappingList, message);
+        verify(mMockRadioConfig, times(1)).setSimSlotsMapping(slotMappingList, message);
+    }
+
+    @Test
+    @SmallTest
+    @EnableFlags(Flags.FLAG_SUPPORT_SLOT_SWITCHING_2PSIM_1ESIM_CONFIG)
+    public void testSwitchSlots_setSimType() throws Exception {
+        // by default feature flag will be false
+        doReturn(true).when(mFeatureFlags).supportSlotSwitching2psim1esimConfig();
+        mUiccControllerUT.setUiccSlot(0, mMockSlot);
+        doReturn(TelephonyManager.SIM_TYPE_PHYSICAL).when(mMockSlot).getSimType();
+        doReturn(true).when(mMockRadioConfig).isGetOrSetSimTypeSupported();
+        List<UiccSlotMapping> slotMappingList = new ArrayList<>();
+        UiccSlotMapping slotMapping = new UiccSlotMapping(
+                TelephonyManager.DEFAULT_PORT_INDEX,
+                /* physicalSlotIndex= */ 0,
+                /* logicalSlotIndex= */ 0,
+                TelephonyManager.SIM_TYPE_EMBEDDED);
+        slotMappingList.add(slotMapping);
+        Message message = mUiccControllerUT.obtainMessage(EVENT_GET_SLOT_SWITCH_DONE);
+        mUiccControllerUT.switchSlots(slotMappingList, message);
+        int [] simTypes = new int[1];
+        simTypes[0] = TelephonyManager.SIM_TYPE_EMBEDDED;
+        verify(mMockRadioConfig, times(1)).setSimType(simTypes, message);
+    }
+    /**
+     * Wrapper method to get the first api level to allow mocking it in tests.
+     */
+    public int getFirstApiLevel() {
+        return SystemProperties.getInt(
+                "ro.vendor.api_level", Build.VERSION.DEVICE_INITIAL_SDK_INT);
     }
 }

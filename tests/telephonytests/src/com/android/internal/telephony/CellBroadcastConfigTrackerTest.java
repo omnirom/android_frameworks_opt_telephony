@@ -43,7 +43,6 @@ import android.testing.TestableLooper;
 
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
 import com.android.internal.telephony.flags.FeatureFlags;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 
 import org.junit.After;
@@ -153,61 +152,24 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
 
         verify(mSpyCi, times(1)).setGsmBroadcastConfig(any(), any());
         List<CdmaSmsBroadcastConfigInfo> cdmaArgs;
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(1)).setCdmaBroadcastConfig(cdmaCaptor.capture(),
-                    msgCaptor.capture());
-            cdmaArgs = Arrays.asList(
-                    (CdmaSmsBroadcastConfigInfo[]) cdmaCaptor.getValue());
-            assertEquals(cdmaConfigs, cdmaArgs);
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
-        }
+        verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
 
         verify(mSpyCi, times(1)).setGsmBroadcastActivation(anyBoolean(), any());
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(1)).setCdmaBroadcastActivation(eq(true), msgCaptor.capture());
+        verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
 
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
-        }
-
-        if (!Flags.cleanupCdma()) {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(ranges));
-        } else {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
-        }
+        assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
 
         // Verify not to set cdma or gsm config as the config is not changed
         mPhone.setCellBroadcastIdRanges(ranges, r -> assertTrue(
                 TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS == r));
         processAllMessages();
 
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(1)).setCdmaBroadcastConfig(any(), any());
-            verify(mSpyCi, times(1)).setCdmaBroadcastActivation(anyBoolean(), any());
-        } else {
-            verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
-            verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
-        }
+        verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
+        verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
         verify(mSpyCi, times(1)).setGsmBroadcastConfig(any(), any());
         verify(mSpyCi, times(1)).setGsmBroadcastActivation(anyBoolean(), any());
 
-        if (!Flags.cleanupCdma()) {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(ranges));
-        } else {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
-        }
+        assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
 
         // Verify to reset ranges with empty ranges list
         mPhone.setCellBroadcastIdRanges(new ArrayList<>(), r -> assertTrue(
@@ -233,29 +195,8 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
         msg.sendToTarget();
         processAllMessages();
 
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(2)).setCdmaBroadcastConfig(cdmaCaptor.capture(),
-                    msgCaptor.capture());
-            assertEquals(0, ((CdmaSmsBroadcastConfigInfo[]) cdmaCaptor.getValue()).length);
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-
-            // Verify to deavtivate cdma broadcast on empty ranges
-            verify(mSpyCi, times(1)).setCdmaBroadcastActivation(eq(false), msgCaptor.capture());
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
-            verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
-        }
+        verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
+        verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
 
         assertTrue(mPhone.getCellBroadcastIdRanges().isEmpty());
 
@@ -283,35 +224,10 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
         msg.sendToTarget();
         processAllMessages();
 
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(3)).setCdmaBroadcastConfig(cdmaCaptor.capture(),
-                    msgCaptor.capture());
-            cdmaArgs = Arrays.asList((CdmaSmsBroadcastConfigInfo[]) cdmaCaptor.getValue());
-            assertEquals(cdmaConfigs, cdmaArgs);
+        verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
+        verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
 
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-
-            verify(mSpyCi, times(2)).setCdmaBroadcastActivation(eq(true), msgCaptor.capture());
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, never()).setCdmaBroadcastConfig(any(), any());
-            verify(mSpyCi, never()).setCdmaBroadcastActivation(anyBoolean(), any());
-        }
-
-        if (!Flags.cleanupCdma()) {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(ranges));
-        } else {
-            assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
-        }
+        assertEquals(mPhone.getCellBroadcastIdRanges(), mergeRangesAsNeeded(gsmRanges));
     }
 
     @Test
@@ -376,9 +292,8 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
         assertTrue(mPhone.getCellBroadcastIdRanges().isEmpty());
 
         // Verify the result on setCdmaBroadcastConfig failure
-        mPhone.setCellBroadcastIdRanges(ranges, !Flags.cleanupCdma()
-                ? r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_FAIL_CONFIG == r)
-                : r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS == r));
+        mPhone.setCellBroadcastIdRanges(ranges,
+                r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS == r));
         processAllMessages();
 
         verify(mSpyCi, times(3)).setGsmBroadcastConfig(any(), msgCaptor.capture());
@@ -397,17 +312,7 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
         msg.sendToTarget();
         processAllMessages();
 
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(1)).setCdmaBroadcastConfig(any(), msgCaptor.capture());
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg).exception = new RuntimeException();
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, times(0)).setCdmaBroadcastConfig(any(), any());
-        }
+        verify(mSpyCi, times(0)).setCdmaBroadcastConfig(any(), any());
         verify(mSpyCi, times(0)).setCdmaBroadcastActivation(anyBoolean(), any());
 
         List<CellBroadcastIdRange> ranges3gpp = new ArrayList<>();
@@ -416,34 +321,15 @@ public final class CellBroadcastConfigTrackerTest extends TelephonyTest {
         assertEquals(mPhone.getCellBroadcastIdRanges(), ranges3gpp);
 
         // Verify the result on setCdmaBroadcastActivation failure
-        mPhone.setCellBroadcastIdRanges(ranges, !Flags.cleanupCdma()
-                ? r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_FAIL_ACTIVATION == r)
-                : r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS == r));
+        mPhone.setCellBroadcastIdRanges(ranges,
+                r -> assertTrue(TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS == r));
         processAllMessages();
 
         // Verify no more calls as there is no change of ranges for 3gpp
         verify(mSpyCi, times(3)).setGsmBroadcastConfig(any(), any());
         verify(mSpyCi, times(2)).setGsmBroadcastActivation(anyBoolean(), any());
-        if (!Flags.cleanupCdma()) {
-            verify(mSpyCi, times(2)).setCdmaBroadcastConfig(any(), msgCaptor.capture());
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg);
-            msg.sendToTarget();
-            processAllMessages();
-
-            verify(mSpyCi, times(1)).setCdmaBroadcastActivation(anyBoolean(), msgCaptor.capture());
-
-            msg = msgCaptor.getValue();
-            assertNotNull(msg);
-            AsyncResult.forMessage(msg).exception = new RuntimeException();
-            msg.sendToTarget();
-            processAllMessages();
-        } else {
-            verify(mSpyCi, times(0)).setCdmaBroadcastConfig(any(), any());
-            verify(mSpyCi, times(0)).setCdmaBroadcastActivation(anyBoolean(), any());
-        }
+        verify(mSpyCi, times(0)).setCdmaBroadcastConfig(any(), any());
+        verify(mSpyCi, times(0)).setCdmaBroadcastActivation(anyBoolean(), any());
 
         assertEquals(mPhone.getCellBroadcastIdRanges(), ranges3gpp);
     }

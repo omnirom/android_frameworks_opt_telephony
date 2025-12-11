@@ -72,22 +72,6 @@ public class GsmCdmaConnectionTest extends TelephonyTest {
     }
 
     @Test @SmallTest
-    public void testFormatDialString(){
-        connection = new GsmCdmaConnection(mPhone, String.format(
-                "+1 (700).555-41NN%c1234", PhoneNumberUtils.PAUSE), mCT, null,
-                new DialArgs.Builder().build());
-       /* case 1: If PAUSE/WAIT sequence at the end, ignore them */
-        String formattedDialStr = connection.formatDialString(
-                String.format("+1 (700).555-41NN1234%c", PhoneNumberUtils.PAUSE));
-        assertEquals("+1 (700).555-41NN1234", formattedDialStr);
-
-       /*  case 2: If consecutive PAUSE/WAIT sequence in the middle of the string,
-        *  and if there is any WAIT in PAUSE/WAIT sequence, treat them like WAIT.*/
-        formattedDialStr = connection.formatDialString("+1 (700).555-41NN,;1234");
-        assertEquals("+1 (700).555-41NN;1234", formattedDialStr);
-    }
-
-    @Test @SmallTest
     public void testOriginalDialString(){
         connection = new GsmCdmaConnection(mPhone, "+8610000", mCT, null,
                 new DialArgs.Builder().build());

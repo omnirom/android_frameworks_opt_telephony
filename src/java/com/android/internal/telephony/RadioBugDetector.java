@@ -32,7 +32,7 @@ import java.util.UUID;
 /**
  * This class aims to detect radio bug based on wakelock timeout and system error.
  *
- * {@hide}
+ * @hide
  */
 public class RadioBugDetector {
     private static final String TAG = "RadioBugDetector";

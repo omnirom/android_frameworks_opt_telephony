@@ -23,7 +23,7 @@ import android.os.Build;
 /**
  * Interface for communication between STK App and CAT Telephony
  *
- * {@hide}
+ * @hide
  */
 public interface AppInterface {
 

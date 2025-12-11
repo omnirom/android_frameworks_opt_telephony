@@ -38,7 +38,7 @@ import java.util.Locale;
  * This class implements reading and parsing USIM records.
  * Refer to Spec 3GPP TS 31.102 for more details.
  *
- * {@hide}
+ * @hide
  */
 public class UsimPhoneBookManager extends Handler implements IccConstants {
     private static final String LOG_TAG = "UsimPhoneBookManager";

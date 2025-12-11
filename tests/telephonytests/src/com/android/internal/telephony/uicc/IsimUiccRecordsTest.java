@@ -29,8 +29,11 @@
 
 package com.android.internal.telephony.uicc;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doAnswer;
@@ -53,6 +56,12 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class IsimUiccRecordsTest extends TelephonyTest {
 
@@ -376,4 +385,65 @@ public class IsimUiccRecordsTest extends TelephonyTest {
         assertEquals(mockSst, resultSst);
     }
 
+    @Test
+    public void testGetImsApplicationReferenceIdentifier() {
+        String[] expectedIari = {"urn:3gpp-access:apn-id.ims.mnc001.mcc001.gprs"};
+        List<byte[]> iariBytes = encodeIariTlvObject(expectedIari);
+
+        Message message = mIsimUiccRecordsUT.obtainMessage(
+                SIMRecords.EVENT_GET_ICC_RECORD_DONE, mIsimUiccRecordsUT.getIsimIariObject());
+        AsyncResult.forMessage(message, iariBytes, null);
+        mIsimUiccRecordsUT.handleMessage(message);
+
+        assertArrayEquals(expectedIari, mIsimUiccRecordsUT.getUiccIari());
+    }
+
+    @Test
+    public void testGetImsApplicationReferenceIdentifierIsNull() {
+        Message message = mIsimUiccRecordsUT.obtainMessage(
+                SIMRecords.EVENT_GET_ICC_RECORD_DONE, mIsimUiccRecordsUT.getIsimIariObject());
+        AsyncResult.forMessage(message, null, null);
+        mIsimUiccRecordsUT.handleMessage(message);
+
+        assertNull(mIsimUiccRecordsUT.getUiccIari());
+    }
+
+    @Test
+    public void testGetImsApplicationReferenceIdentifierException() {
+        String[] expectedIari = {"urn:3gpp-access:apn-id.ims.mnc001.mcc001.gprs"};
+        List<byte[]> iariBytes = encodeIariTlvObject(expectedIari);
+
+        Message message = mIsimUiccRecordsUT.obtainMessage(
+                SIMRecords.EVENT_GET_ICC_RECORD_DONE, mIsimUiccRecordsUT.getIsimIariObject());
+        AsyncResult.forMessage(message, iariBytes, new CommandException(
+                CommandException.Error.OPERATION_NOT_ALLOWED));
+        mIsimUiccRecordsUT.handleMessage(message);
+
+        assertNull(mIsimUiccRecordsUT.getUiccIari());
+    }
+
+    private static List<byte[]> encodeIariTlvObject(String[] iariValues) {
+        List<byte[]> tlvList = new ArrayList<>();
+        if (iariValues == null || iariValues.length == 0) {
+            return tlvList;
+        }
+
+        for (String iariValue : iariValues) {
+            byte[] iari = iariValue.getBytes(StandardCharsets.UTF_8);
+            byte[] size = new byte[]{(byte) iari.length};
+            ByteArrayOutputStream tlvData = new ByteArrayOutputStream();
+
+            try {
+                tlvData.write(0x80); // IARI TLV TAG
+                tlvData.write(size);    // Length of IARI
+                tlvData.write(iari);    // IARI value
+            } catch (IOException e) {
+                fail("encodeIariTlvObject: IO exception:" + e);
+            }
+
+            tlvList.add(tlvData.toByteArray());
+        }
+
+        return tlvList;
+    }
 }

@@ -1,12 +1,12 @@
 package: "com.android.internal.telephony.flags"
 container: "system"
 
-# OWNER=linggm TARGET=25Q2
+# OWNER=linggm TARGET=26Q2
 flag {
-  name: "auto_data_switch_enhanced"
+  name: "keep_wfc_on_apm"
   namespace: "telephony"
-  description: "Ramp up RAT signal strength based auto data switch"
-  bug: "287132491"
+  description: "Keep WFC even when turn on APM."
+  bug:"420996981"
   metadata {
     purpose: PURPOSE_BUGFIX
   }
@@ -30,23 +30,6 @@ flag {
   bug:"286171724"
 }
 
-# OWNER=jackyu TARGET=24Q4
-flag {
-  name: "dds_callback"
-  namespace: "telephony"
-  description: "Adding new callback when DDS changed"
-  bug:"353723350"
-}
-
-# OWNER=jackyu TARGET=25Q2
-flag {
-  name: "oem_paid_private"
-  namespace: "telephony"
-  description: "Support OEM_PAID and OEM_PRIVATE networks"
-  bug: "366194627"
-  is_exported: true
-}
-
 # OWNER=gwenlin TARGET=25Q2
 flag {
   name: "incall_handover_policy"
@@ -64,6 +47,66 @@ flag {
   namespace: "telephony"
   description: "Support data service check based on nri available services."
   bug:"381338283"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=kuenyuet TARGET=26Q2
+flag {
+  name: "data_service_user_data_toggle_notify"
+  namespace: "telephony"
+  description: "Support notify data services when user data and user data roaming is toggled."
+  bug:"389120182"
+}
+
+# OWNER=rambowang TARGET=25Q4
+flag {
+    name: "macro_based_opportunistic_networks"
+    is_exported: true
+    namespace: "telephony"
+    description: "This flag enable the macro-based opportunistic networks with auto data switch"
+    bug:"401006757"
+}
+
+# OWNER=rambowang TARGET=25Q4
+flag {
+  name: "monitor_carrier_config_change_for_auto_data_switch"
+  namespace: "telephony"
+  description: "This flag lets AutoDataSwitchController monitor carrier config changes and update the policy accordingly."
+  bug:"436856439"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+
+
+# OWNER=gwenlin TARGET=26Q2
+flag {
+  name: "data_service_notify_ims_data_network"
+  namespace: "telephony"
+  description: "Support notifying IMS data network"
+  bug:"389103112"
+}
+
+# OWNER=melhuishj TARGET=25Q4
+flag {
+  name: "inactive_data_network_is_not_stalled"
+  namespace: "telephony"
+  description: "A DataNetwork that is not the active DataNetwork should not broadcast a data stall"
+  bug:"430976119"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=melhuishj TARGET=25Q4
+flag {
+  name: "ignore_initial_data_stall_recovered"
+  namespace: "telephony"
+  description: "Prevent DataStallRecoveryManager from broadcasting a data stall event during initial setup when no data stall has occurred"
+  bug:"432293174"
   metadata {
     purpose: PURPOSE_BUGFIX
   }

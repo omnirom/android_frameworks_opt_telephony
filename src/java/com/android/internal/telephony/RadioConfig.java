@@ -24,9 +24,11 @@ import static com.android.internal.telephony.RILConstants.REQUEST_NOT_SUPPORTED;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_HAL_DEVICE_CAPABILITIES;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_PHONE_CAPABILITY;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_SIMULTANEOUS_CALLING_SUPPORT;
+import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_SIM_TYPE_INFO;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_GET_SLOT_STATUS;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_SET_LOGICAL_TO_PHYSICAL_SLOT_MAPPING;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_SET_PREFERRED_DATA_MODEM;
+import static com.android.internal.telephony.RILConstants.RIL_REQUEST_SET_SIM_TYPE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_SWITCH_DUAL_SIM_CONFIG;
 
 import android.content.Context;
@@ -40,12 +42,14 @@ import android.os.ServiceManager;
 import android.os.Trace;
 import android.os.WorkSource;
 import android.telephony.TelephonyManager;
+import android.telephony.TelephonyManager.SimType;
 import android.telephony.UiccSlotMapping;
 import android.util.SparseArray;
 
 import com.android.telephony.Rlog;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -590,6 +594,74 @@ public class RadioConfig extends Handler {
             resetProxyAndRequestList("setNumOfLiveModems", e);
         }
     }
+
+    /**
+     * Wrapper function for using IRadioConfig.setSimType(in int serial,
+     * in android.hardware.radio.config.SimType[] simTypes) to update sim type.
+     */
+    public void setSimType(@SimType int[] simTypes, Message result) {
+        RadioConfigProxy proxy = getRadioConfigProxy(result);
+        if (proxy.isEmpty()) return;
+
+        if (proxy.getVersion().less(RIL.RADIO_HAL_VERSION_2_3)) {
+            if (result != null) {
+                AsyncResult.forMessage(
+                        result, null, CommandException.fromRilErrno(REQUEST_NOT_SUPPORTED));
+                result.sendToTarget();
+            }
+            return;
+        }
+
+        RILRequest rr = obtainRequest(RIL_REQUEST_SET_SIM_TYPE, result, mDefaultWorkSource);
+        if (DBG) {
+            logd(rr.serialString() + "> " + RILUtils.requestToString(rr.mRequest) + " "
+                    + Arrays.toString(simTypes));
+        }
+        try {
+            proxy.setSimType(rr.mSerial, RILUtils.convertToAidlSimTypes(simTypes));
+        } catch (RemoteException | RuntimeException e) {
+            resetProxyAndRequestList("setSimType", e);
+        }
+    }
+
+    /**
+     * Wrapper function for using IRadioConfig.getSimTypeInfo(in int serial).
+     */
+    public void getSimTypeInfo(Message result) {
+        RadioConfigProxy proxy = getRadioConfigProxy(result);
+        if (proxy.isEmpty()) return;
+
+        if (proxy.getVersion().less(RIL.RADIO_HAL_VERSION_2_3)) {
+            if (result != null) {
+                AsyncResult.forMessage(
+                        result, null, CommandException.fromRilErrno(REQUEST_NOT_SUPPORTED));
+                result.sendToTarget();
+            }
+            return;
+        }
+
+        RILRequest rr = obtainRequest(RIL_REQUEST_GET_SIM_TYPE_INFO, result, mDefaultWorkSource);
+        if (DBG) {
+            logd(rr.serialString() + "> " + RILUtils.requestToString(rr.mRequest));
+        }
+        try {
+            proxy.getSimTypeInfo(rr.mSerial);
+        } catch (RemoteException | RuntimeException e) {
+            resetProxyAndRequestList("getSimTypeInfo", e);
+        }
+    }
+
+    /**
+     * Checks if the current radio HAL version supports setting or getting SIM type information.
+     * <p>This functionality requires radio HAL version 2.3 or newer.
+     *
+     * @return {@code true} if the functionality is supported, {@code false} otherwise.
+     */
+    public boolean isGetOrSetSimTypeSupported() {
+        RadioConfigProxy proxy = getRadioConfigProxy(null);
+        return !proxy.isEmpty() && proxy.getVersion().greaterOrEqual(RIL.RADIO_HAL_VERSION_2_3);
+    }
+
 
     /**
      * Register a handler to get SIM slots that support simultaneous calling changed notifications.

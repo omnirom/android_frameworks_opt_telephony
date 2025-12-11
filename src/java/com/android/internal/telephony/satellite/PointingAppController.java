@@ -44,51 +44,63 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.internal.R;
-import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.os.SomeArgs;
 import com.android.internal.telephony.flags.FeatureFlags;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
  * PointingApp controller to manage interactions with PointingUI app.
  */
-public class PointingAppController {
+public class PointingAppController extends Handler {
     private static final String TAG = "PointingAppController";
     private static final String ALLOW_MOCK_MODEM_PROPERTY = "persist.radio.allow_mock_modem";
     private static final boolean DEBUG = !"user".equals(Build.TYPE);
 
+    private static final int REQUEST_START_POINTING_UI = 1;
+    private static final int REQUEST_REMOVE_LISTENER_FOR_POINTING_UI = 2;
+
+    /** All the variables initialized inside the constructor are declared here. */
     @NonNull
     private static PointingAppController sInstance;
     @NonNull private final Context mContext;
     @NonNull private final FeatureFlags mFeatureFlags;
-    private boolean mStartedSatelliteTransmissionUpdates;
-    private boolean mLastNeedFullScreenPointingUI;
-    private boolean mLastIsDemoMode;
-    private boolean mLastIsEmergency;
-
-    private final Object mListenerForPointingUIRegisteredLock = new Object();
-    @GuardedBy("mListenerForPointingUIRegisteredLock")
-    private boolean mListenerForPointingUIRegistered;
-    @NonNull private String mPointingUiPackageName = "";
-    @NonNull private String mPointingUiClassName = "";
     @NonNull private ActivityManager mActivityManager;
-    @NonNull public UidImportanceListener mUidImportanceListener = new UidImportanceListener();
+    @Nullable private PersistentLogger mPersistentLogger = null;
+
+    /** All the variables initialized inside the constructor are declared here. */
+    private AtomicBoolean mStartedSatelliteTransmissionUpdates = new AtomicBoolean(false);
+    private AtomicBoolean mLastNeedFullScreenPointingUI = new AtomicBoolean(false);
+    private AtomicBoolean mLastIsDemoMode = new AtomicBoolean(false);
+    private AtomicBoolean mLastIsEmergency = new AtomicBoolean(false);
+    private AtomicBoolean mListenerForPointingUIRegistered = new AtomicBoolean(false);
+
     /**
      * Map key: subId, value: SatelliteTransmissionUpdateHandler to notify registrants.
      */
     private final ConcurrentHashMap<Integer, SatelliteTransmissionUpdateHandler>
             mSatelliteTransmissionUpdateHandlers = new ConcurrentHashMap<>();
-    @Nullable private PersistentLogger mPersistentLogger = null;
+
+
+    /**
+     * All the variables declared here should only be accessed by methods that run inside the
+     * handler thread.
+     */
+    @NonNull private String mPointingUiPackageName = "";
+    @NonNull private String mPointingUiClassName = "";
+    @NonNull public UidImportanceListener mUidImportanceListener = new UidImportanceListener();
+
 
     /**
      * @return The singleton instance of PointingAppController.
      */
-    public static PointingAppController getInstance() {
+    static PointingAppController getInstance() {
         if (sInstance == null) {
             loge("PointingAppController was not yet initialized.");
         }
@@ -101,7 +113,7 @@ public class PointingAppController {
      * @param featureFlags The telephony feature flags.
      * @return The singleton instance of PointingAppController.
      */
-    public static PointingAppController make(@NonNull Context context,
+    static PointingAppController make(@NonNull Context context,
             @NonNull FeatureFlags featureFlags) {
         if (sInstance == null) {
             sInstance = new PointingAppController(context, featureFlags);
@@ -115,17 +127,41 @@ public class PointingAppController {
      * @param context The Context for the PointingUIController.
      */
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
-    public PointingAppController(@NonNull Context context,
+    protected PointingAppController(@NonNull Context context,
             @NonNull FeatureFlags featureFlags) {
         mContext = context;
         mFeatureFlags = featureFlags;
-        mStartedSatelliteTransmissionUpdates = false;
-        mLastNeedFullScreenPointingUI = false;
-        mLastIsDemoMode = false;
-        mLastIsEmergency = false;
-        mListenerForPointingUIRegistered = false;
+        mListenerForPointingUIRegistered.set(false);
         mActivityManager = mContext.getSystemService(ActivityManager.class);
         mPersistentLogger = SatelliteServiceUtils.getPersistentLogger(context);
+    }
+
+    @Override
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+            case REQUEST_START_POINTING_UI: {
+                plogd("REQUEST_START_POINTING_UI");
+                SomeArgs args = (SomeArgs) msg.obj;
+                boolean needFullScreenPointingUI = (boolean) args.arg1;
+                boolean isDemoMode = (boolean) args.arg2;
+                boolean isEmergency = (boolean) args.arg3;
+                try {
+                    handleRequestStartPointingUI(needFullScreenPointingUI, isDemoMode, isEmergency);
+                } finally {
+                    args.recycle();
+                }
+                break;
+            }
+
+            case REQUEST_REMOVE_LISTENER_FOR_POINTING_UI: {
+                handleRequestRemoveListenerForPointingUI();
+                break;
+            }
+
+            default:
+                ploge("PointingAppControllerHandler: unexpected message code: " + msg.what);
+                break;
+        }
     }
 
     /**
@@ -133,19 +169,19 @@ public class PointingAppController {
      * transmission updates
      * @param startedSatelliteTransmissionUpdates boolean to set the flag
      */
-    @VisibleForTesting
-    public void setStartedSatelliteTransmissionUpdates(
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void setStartedSatelliteTransmissionUpdates(
             boolean startedSatelliteTransmissionUpdates) {
-        mStartedSatelliteTransmissionUpdates = startedSatelliteTransmissionUpdates;
+        mStartedSatelliteTransmissionUpdates.set(startedSatelliteTransmissionUpdates);
     }
 
     /**
      * Get the flag mStartedSatelliteTransmissionUpdates
      * @return returns mStartedSatelliteTransmissionUpdates
      */
-    @VisibleForTesting
-    public boolean getStartedSatelliteTransmissionUpdates() {
-        return mStartedSatelliteTransmissionUpdates;
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PRIVATE)
+    protected boolean getStartedSatelliteTransmissionUpdates() {
+        return mStartedSatelliteTransmissionUpdates.get();
     }
 
     /**
@@ -163,8 +199,8 @@ public class PointingAppController {
             if (callerPackages != null) {
                 if (Arrays.stream(callerPackages).anyMatch(pointingUiPackage::contains)) {
                     plogd("Restarting pointingUI");
-                    startPointingUI(mLastNeedFullScreenPointingUI, mLastIsDemoMode,
-                            mLastIsEmergency);
+                    startPointingUI(mLastNeedFullScreenPointingUI.get(), mLastIsDemoMode.get(),
+                            mLastIsEmergency.get());
                 }
             }
         }
@@ -309,7 +345,8 @@ public class PointingAppController {
      * @param subId The subId of the subscription to register for receiving the updates.
      * @param callback The callback to notify of satellite transmission updates.
      */
-    public void registerForSatelliteTransmissionUpdates(int subId,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void registerForSatelliteTransmissionUpdates(int subId,
             ISatelliteTransmissionUpdateCallback callback) {
         subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
@@ -338,7 +375,8 @@ public class PointingAppController {
      * @param callback The callback that was passed to {@link
      * #registerForSatelliteTransmissionUpdates(int, ISatelliteTransmissionUpdateCallback)}.
      */
-    public void unregisterForSatelliteTransmissionUpdates(int subId, Consumer<Integer> result,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void unregisterForSatelliteTransmissionUpdates(int subId, Consumer<Integer> result,
             ISatelliteTransmissionUpdateCallback callback) {
         subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
@@ -365,8 +403,9 @@ public class PointingAppController {
      * {@link android.telephony.satellite.SatelliteTransmissionUpdateCallback
      * #onSatellitePositionChanged(pointingInfo)}.
      */
-    public void startSatelliteTransmissionUpdates(@NonNull Message message) {
-        if (mStartedSatelliteTransmissionUpdates) {
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void startSatelliteTransmissionUpdates(@NonNull Message message) {
+        if (mStartedSatelliteTransmissionUpdates.get()) {
             plogd("startSatelliteTransmissionUpdates: already started");
             AsyncResult.forMessage(message, null, new SatelliteManager.SatelliteException(
                     SatelliteManager.SATELLITE_RESULT_SUCCESS));
@@ -374,7 +413,7 @@ public class PointingAppController {
             return;
         }
         SatelliteModemInterface.getInstance().startSendingSatellitePointingInfo(message);
-        mStartedSatelliteTransmissionUpdates = true;
+        mStartedSatelliteTransmissionUpdates.set(true);
     }
 
     /**
@@ -382,7 +421,8 @@ public class PointingAppController {
      * Reset the flag mStartedSatelliteTransmissionUpdates
      * This can be called by the pointing UI when the user stops pointing to the satellite.
      */
-    public void stopSatelliteTransmissionUpdates(@NonNull Message message) {
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void stopSatelliteTransmissionUpdates(@NonNull Message message) {
         setStartedSatelliteTransmissionUpdates(false);
         SatelliteModemInterface.getInstance().stopSendingSatellitePointingInfo(message);
     }
@@ -391,7 +431,22 @@ public class PointingAppController {
      * Check if Pointing is needed and Launch Pointing UI
      * @param needFullScreenPointingUI if pointing UI has to be launchd with Full screen
      */
-    public void startPointingUI(boolean needFullScreenPointingUI, boolean isDemoMode,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void startPointingUI(boolean needFullScreenPointingUI, boolean isDemoMode,
+            boolean isEmergency) {
+        if (mFeatureFlags.satelliteImproveMultiThreadDesign()) {
+            SomeArgs args = SomeArgs.obtain();
+            args.arg1 = needFullScreenPointingUI;
+            args.arg2 = isDemoMode;
+            args.arg3 = isEmergency;
+            sendMessage(obtainMessage(REQUEST_START_POINTING_UI, args));
+            return;
+        }
+
+        handleRequestStartPointingUI(needFullScreenPointingUI, isDemoMode, isEmergency);
+    }
+
+    private void handleRequestStartPointingUI(boolean needFullScreenPointingUI, boolean isDemoMode,
             boolean isEmergency) {
         String packageName = getPointingUiPackageName();
         if (TextUtils.isEmpty(packageName)) {
@@ -417,18 +472,18 @@ public class PointingAppController {
         launchIntent.putExtra("needFullScreen", needFullScreenPointingUI);
         launchIntent.putExtra("isDemoMode", isDemoMode);
         launchIntent.putExtra("isEmergency", isEmergency);
+        launchIntent.setFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION);
 
         try {
-            synchronized (mListenerForPointingUIRegisteredLock) {
-                if (!mListenerForPointingUIRegistered) {
-                    mActivityManager.addOnUidImportanceListener(mUidImportanceListener,
-                            IMPORTANCE_GONE);
-                    mListenerForPointingUIRegistered = true;
-                }
+            if (!mListenerForPointingUIRegistered.get()) {
+                mActivityManager.addOnUidImportanceListener(mUidImportanceListener,
+                        IMPORTANCE_GONE);
+                mListenerForPointingUIRegistered.set(true);
             }
-            mLastNeedFullScreenPointingUI = needFullScreenPointingUI;
-            mLastIsDemoMode = isDemoMode;
-            mLastIsEmergency = isEmergency;
+
+            mLastNeedFullScreenPointingUI.set(needFullScreenPointingUI);
+            mLastIsDemoMode.set(isDemoMode);
+            mLastIsEmergency.set(isEmergency);
             mContext.startActivityAsUser(launchIntent, UserHandle.CURRENT);
         } catch (ActivityNotFoundException | IllegalArgumentException ex) {
             ploge("startPointingUI: Unable to start Pointing UI activity due to an exception, ex="
@@ -439,16 +494,26 @@ public class PointingAppController {
     /**
      * Remove the Importance Listener For Pointing UI App once the satellite is disabled
      */
-    public void removeListenerForPointingUI() {
-        synchronized (mListenerForPointingUIRegisteredLock) {
-            if (mListenerForPointingUIRegistered) {
-                mActivityManager.removeOnUidImportanceListener(mUidImportanceListener);
-                mListenerForPointingUIRegistered = false;
-            }
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void removeListenerForPointingUI() {
+        if (mFeatureFlags.satelliteImproveMultiThreadDesign()) {
+            sendMessage(obtainMessage(REQUEST_REMOVE_LISTENER_FOR_POINTING_UI));
+            return;
+        }
+
+        handleRequestRemoveListenerForPointingUI();
+    }
+
+    private void handleRequestRemoveListenerForPointingUI() {
+        plogd("handleRequestRemoveListenerForPointingUI");
+        if (mListenerForPointingUIRegistered.get()) {
+            mActivityManager.removeOnUidImportanceListener(mUidImportanceListener);
+            mListenerForPointingUIRegistered.set(false);
         }
     }
 
-    public void updateSendDatagramTransferState(int subId,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void updateSendDatagramTransferState(int subId,
             @SatelliteManager.DatagramType int datagramType,
             @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
             int sendPendingCount, int errorCode) {
@@ -472,8 +537,7 @@ public class PointingAppController {
      * This API is used to notify PointingAppController that a send datagram has just been
      * requested.
      */
-    public void onSendDatagramRequested(
-            int subId, @SatelliteManager.DatagramType int datagramType) {
+    void onSendDatagramRequested(int subId, @SatelliteManager.DatagramType int datagramType) {
         subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
         SatelliteTransmissionUpdateHandler handler =
                 mSatelliteTransmissionUpdateHandlers.get(subId);
@@ -487,7 +551,8 @@ public class PointingAppController {
         }
     }
 
-    public void updateReceiveDatagramTransferState(int subId,
+    @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
+    protected void updateReceiveDatagramTransferState(int subId,
             @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
             int receivePendingCount, int errorCode) {
         DatagramTransferStateHandlerRequest request = new DatagramTransferStateHandlerRequest(

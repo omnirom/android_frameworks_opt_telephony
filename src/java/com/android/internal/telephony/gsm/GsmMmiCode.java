@@ -72,7 +72,7 @@ import java.util.regex.Pattern;
  * "NOTE:    By using the # as a separator, most cases are expected to be unambiguous."
  *   -- TS 22.030 6.5.2
  *
- * {@hide}
+ * @hide
  *
  */
 public final class GsmMmiCode extends Handler implements MmiCode {

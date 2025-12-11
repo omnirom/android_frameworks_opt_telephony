@@ -23,7 +23,7 @@ import com.android.telephony.Rlog;
 /**
  * See also RIL_CallForwardInfo in include/telephony/ril.h
  *
- * {@hide}
+ * @hide
  */
 public class CallForwardInfo {
     private static final String TAG = "CallForwardInfo";

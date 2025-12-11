@@ -42,7 +42,7 @@ import java.util.Locale;
  * Similarly, FileHandler is used for selecting/reading each file, so common codes are
  * all in same place.
  *
- * {@hide}
+ * @hide
  */
 public class UiccPkcs15 extends Handler {
     private static final String LOG_TAG = "UiccPkcs15";

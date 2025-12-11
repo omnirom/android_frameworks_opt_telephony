@@ -57,7 +57,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * {@hide}
+ * @hide
  */
 public abstract class IccRecords extends Handler implements IccConstants {
     private static final String LOG_TAG = "IccRecords";
@@ -72,7 +72,7 @@ public abstract class IccRecords extends Handler implements IccConstants {
 
     // Lookup table for carriers known to produce SIMs which incorrectly indicate MNC length.
     private static final String[] MCCMNC_CODES_HAVING_3DIGITS_MNC = {
-        "302370", "302720", "310260",
+        "262800", "302370", "302720", "310260",
         "405025", "405026", "405027", "405028", "405029", "405030", "405031", "405032",
         "405033", "405034", "405035", "405036", "405037", "405038", "405039", "405040",
         "405041", "405042", "405043", "405044", "405045", "405046", "405047", "405750",
@@ -1250,6 +1250,14 @@ public abstract class IccRecords extends Handler implements IccConstants {
     }
 
     public UsimServiceTable getUsimServiceTable() {
+        return null;
+    }
+
+    /**
+     * Returns the IMS Application Reference Identifier(IARI).
+     * @return array of IARI or null if not presend
+     */
+    public String[] getUiccIari() {
         return null;
     }
 

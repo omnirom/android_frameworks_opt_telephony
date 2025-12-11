@@ -25,9 +25,18 @@ import static org.junit.Assert.assertTrue;
 
 import android.os.Parcel;
 import android.telephony.BarringInfo;
+import android.telephony.CellIdentity;
+import android.telephony.CellIdentityGsm;
+import android.telephony.CellIdentityLte;
+import android.telephony.CellIdentityNr;
+import android.telephony.CellIdentityTdscdma;
+import android.telephony.CellIdentityWcdma;
 import android.util.SparseArray;
 
 import org.junit.Test;
+
+import java.util.Arrays;
+import java.util.List;
 
 /** Unit test for {@link android.telephony.BarringInfo}. */
 public class BarringInfoTest {
@@ -48,6 +57,14 @@ public class BarringInfoTest {
             BarringInfo.BARRING_SERVICE_TYPE_EMERGENCY,
             BarringInfo.BARRING_SERVICE_TYPE_SMS,
     };
+
+    private static final List<CellIdentity> sCellIdentities = Arrays.asList(
+            new CellIdentityGsm(),
+            new CellIdentityWcdma(),
+            new CellIdentityTdscdma(),
+            new CellIdentityLte(),
+            new CellIdentityNr()
+    );
 
     /** Return a placeholder set of barring info */
     private static SparseArray<BarringServiceInfo> getBarringServiceInfos() {
@@ -143,5 +160,17 @@ public class BarringInfoTest {
         condInfo = new BarringInfo(null, getBarringServiceInfos(true));
         assertTrue(condInfo.getBarringServiceInfo(BarringInfo.BARRING_SERVICE_TYPE_MMTEL_VIDEO)
                 .isBarred());
+    }
+
+    /** Verifies getCellIdentity() returns the expected CellIdentity object. */
+    @Test
+    public void testGetCellIdentity_returnsCorrectInstanceOfCellIdentity() {
+        for (CellIdentity expectedIdentity : sCellIdentities) {
+            BarringInfo barringInfo = new BarringInfo(expectedIdentity, new SparseArray<>());
+
+            CellIdentity actualIdentity = barringInfo.getCellIdentity();
+
+            assertEquals(expectedIdentity, actualIdentity);
+        }
     }
 }

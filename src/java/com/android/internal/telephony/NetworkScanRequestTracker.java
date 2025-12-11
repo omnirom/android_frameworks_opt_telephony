@@ -59,7 +59,7 @@ import java.util.stream.Stream;
  *
  * Provides methods to start and stop network scan requests, and keeps track of all the live scans.
  *
- * {@hide}
+ * @hide
  */
 public final class NetworkScanRequestTracker {
 

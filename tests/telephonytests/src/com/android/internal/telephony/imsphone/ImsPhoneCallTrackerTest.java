@@ -278,9 +278,6 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
             return mMockConnector;
         }).when(mConnectorFactory).create(any(), anyInt(), anyString(), any(), any());
 
-        doReturn(false)
-                .when(mFeatureFlags).updateImsServiceByGatheringProvisioningChanges();
-
         // Capture CarrierConfigChangeListener to emulate the carrier config change notification
         ArgumentCaptor<CarrierConfigManager.CarrierConfigChangeListener> listenerArgumentCaptor =
                 ArgumentCaptor.forClass(CarrierConfigManager.CarrierConfigChangeListener.class);
@@ -1460,6 +1457,8 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
                 new ImsReasonInfo(ImsReasonInfo.CODE_SIP_BAD_REQUEST, 0), Call.State.INCOMING));
         assertEquals(DisconnectCause.INCOMING_AUTO_REJECTED, mCTUT.getDisconnectCauseFromReasonInfo(
                 new ImsReasonInfo(ImsReasonInfo.CODE_SIP_BAD_REQUEST, 0), Call.State.WAITING));
+        assertEquals(DisconnectCause.INCOMING_AUTO_REJECTED, mCTUT.getDisconnectCauseFromReasonInfo(
+                new ImsReasonInfo(ImsReasonInfo.CODE_REJECT_ONGOING_CS_CALL, 0), Call.State.IDLE));
         assertEquals(DisconnectCause.SERVER_ERROR, mCTUT.getDisconnectCauseFromReasonInfo(
                 new ImsReasonInfo(ImsReasonInfo.CODE_SIP_BAD_REQUEST, 0), Call.State.DIALING));
         assertEquals(DisconnectCause.SERVER_ERROR, mCTUT.getDisconnectCauseFromReasonInfo(
@@ -1478,8 +1477,6 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     @Test
     @SmallTest
     public void testSipRequestCancelled() {
-        doReturn(true).when(mFeatureFlags).remapDisconnectCauseSipRequestCancelled();
-
         assertEquals(DisconnectCause.NORMAL,
                 mCTUT.getDisconnectCauseFromReasonInfo(
                         new ImsReasonInfo(ImsReasonInfo.CODE_SIP_REQUEST_CANCELLED, 0),
@@ -2550,6 +2547,32 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     }
 
     @Test
+    public void testUpdateImsCallStatusAutoRejectedIncoming() throws Exception {
+        IImsCallSession session = mock(IImsCallSession.class);
+        // Set a disconnect cause to CODE_REJECT_ONGOING_CS_CALL
+        mImsCallProfile.setCallExtra(ImsCallProfile.EXTRA_CALL_DISCONNECT_CAUSE, "1621");
+
+        // mock an auto rejected MT call
+        try {
+            doReturn(mImsCallProfile).when(session).getCallProfile();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            Assert.fail("unexpected exception thrown" + ex.getMessage());
+        }
+        mMmTelListener.onIncomingCall(session, null, Bundle.EMPTY);
+        verify(mImsPhone, times(1)).notifyNewRingingConnection((Connection) any());
+        verify(mImsPhone, times(1)).notifyIncomingRing();
+        assertEquals(PhoneConstants.State.RINGING, mCTUT.getState());
+        assertTrue(mCTUT.mRingingCall.isRinging());
+        assertEquals(1, mCTUT.mRingingCall.getConnections().size());
+
+        ImsPhoneConnection connection =
+                (ImsPhoneConnection) mCTUT.mRingingCall.getConnections().get(0);
+        assertTrue(connection.isIncomingCallAutoRejected());
+        verify(mImsPhone, never()).updateImsCallStatus(any(), any());
+    }
+
+    @Test
     public void testUpdateImsCallStatus() throws Exception {
         // Dialing
         ImsPhoneConnection connection = placeCall();
@@ -2691,9 +2714,7 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
     }
 
     @Test
-    public void testProvisioningItemAndUpdateImsServiceConfigWithFeatureEnabled() {
-        doReturn(true)
-                .when(mFeatureFlags).updateImsServiceByGatheringProvisioningChanges();
+    public void testProvisioningItemAndUpdateImsServiceConfig() {
 
         // Receive a subscription loaded and IMS connection ready indication.
         mContextFixture.getCarrierConfigBundle().putBoolean(
@@ -2719,42 +2740,6 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         // 2. ProvisioningManager.KEY_VOICE_OVER_WIFI_ENABLED_OVERRIDE(28), ProvisioningManager
         // .KEY_VOLTE_PROVISIONING_STATUS(10) and ProvisioningManager.KEY_VT_PROVISIONING_STATUS(11)
         verify(mImsManager, times(2)).updateImsServiceConfig();
-    }
-
-
-    @Test
-    public void testProvisioningItemAndUpdateImsServiceConfigWithFeatureDisabled() {
-        doReturn(false)
-                .when(mFeatureFlags).updateImsServiceByGatheringProvisioningChanges();
-
-        // Receive a subscription loaded and IMS connection ready indication.
-        mContextFixture.getCarrierConfigBundle().putBoolean(
-                CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL, true);
-        sendCarrierConfigChanged();
-        processAllMessages();
-        verify(mImsManager, times(1)).updateImsServiceConfig();
-
-        logd("deliver provisioning items");
-        mConfigCallback.onProvisioningIntChanged(27, 2);
-        //ProvisioningManager.KEY_VOICE_OVER_WIFI_ENABLED_OVERRIDE(28) call updateImsServiceConfig.
-        mConfigCallback.onProvisioningIntChanged(28, 1);
-        //ProvisioningManager.KEY_VOLTE_PROVISIONING_STATUS(10) call updateImsServiceConfig.
-        mConfigCallback.onProvisioningIntChanged(10, 1);
-        //ProvisioningManager.KEY_VT_PROVISIONING_STATUS(11) call updateImsServiceConfig.
-        mConfigCallback.onProvisioningIntChanged(11, 1);
-        mConfigCallback.onProvisioningStringChanged(12, "msg.pc.t-mobile.com");
-        mConfigCallback.onProvisioningIntChanged(26, 0);
-        mConfigCallback.onProvisioningIntChanged(66, 0);
-
-        logd("proc provisioning items");
-        processAllFutureMessages();
-
-        // updateImsServiceConfig is called with below 4 events.
-        // 1. CarrierConfig
-        // 2. ProvisioningManager.KEY_VOICE_OVER_WIFI_ENABLED_OVERRIDE(28)
-        // 3. ProvisioningManager.KEY_VOLTE_PROVISIONING_STATUS(10)
-        // 4. ProvisioningManager.KEY_VT_PROVISIONING_STATUS(11)
-        verify(mImsManager, times(4)).updateImsServiceConfig();
     }
 
     private void sendCarrierConfigChanged() {
@@ -2791,9 +2776,6 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
 
     @Test
     public void testPreventHangupDuringCallMerge() {
-        // Enable feature flag
-        doReturn(true).when(mFeatureFlags).preventHangupDuringCallMerge();
-
         // Change carrier config to allow call hold for 2nd call setup
         PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
         bundle.putBoolean(CarrierConfigManager.KEY_ALLOW_HOLD_VIDEO_CALL_BOOL, true);
@@ -2813,6 +2795,74 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         } catch  (CallStateException e) {
             // Expected exception
         }
+    }
+
+    @Test
+    public void testAllowedImsServicesForVowifi() {
+        doReturn(true).when(mFeatureFlags).allowedServices();
+        ImsManager.ImsStatsCallback imsStatsCallback = mCTUT.getImsStatsCallback();
+        when(mImsManager.isWfcRoamingEnabledByUser()).thenReturn(false);
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, /*isEnabled= */ true);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN), eq(true), eq(true));
+
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, /*isEnabled= */ false);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN), eq(false), eq(true));
+
+        when(mImsManager.isWfcRoamingEnabledByUser()).thenReturn(true);
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, /*isEnabled= */ true);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN), eq(true), eq(false));
+
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN, /*isEnabled= */ false);
+        verify(mImsPhone, times(2)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN), eq(false), eq(true));
+    }
+
+    @Test
+    public void testAllowedImsServicesForVolte() {
+        doReturn(true).when(mFeatureFlags).allowedServices();
+        ImsManager.ImsStatsCallback imsStatsCallback = mCTUT.getImsStatsCallback();
+        PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
+        bundle.putBoolean(CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL, true);
+        bundle.putBoolean(
+                CarrierConfigManager.ImsVoice.KEY_CARRIER_VOLTE_ROAMING_AVAILABLE_BOOL, true);
+        sendCarrierConfigChanged();
+        verify(mImsPhone, never()).setAllowedImsServices(anyInt(), anyBoolean(), anyBoolean());
+
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_LTE, /*isEnabled= */ true);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_LTE), eq(true), eq(false));
+
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_LTE, /*isEnabled= */ false);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_LTE), eq(false), eq(true));
+
+        bundle.putBoolean(CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL, true);
+        bundle.putBoolean(
+                CarrierConfigManager.ImsVoice.KEY_CARRIER_VOLTE_ROAMING_AVAILABLE_BOOL, false);
+        sendCarrierConfigChanged();
+        verify(mImsPhone, times(2)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_LTE), eq(false), eq(true));
+
+        imsStatsCallback.onEnabledMmTelCapabilitiesChanged(
+                MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
+                ImsRegistrationImplBase.REGISTRATION_TECH_LTE, /*isEnabled= */ true);
+        verify(mImsPhone, times(1)).setAllowedImsServices(
+                eq(ImsRegistrationImplBase.REGISTRATION_TECH_LTE), eq(true), eq(true));
     }
 
     private ImsPhoneConnection placeCallAndMakeActive() {
@@ -2895,6 +2945,35 @@ public class ImsPhoneCallTrackerTest extends TelephonyTest {
         }
 
         return profile;
+    }
+
+    @Test
+    public void testHandleMergeFailure() throws Exception {
+        doReturn(true).when(mFeatureFlags).sendMergeFailureOnHandleConferenceFailed();
+
+        // Change carrier config to allow call hold for 2nd call setup
+        PersistableBundle bundle = mContextFixture.getCarrierConfigBundle();
+        bundle.putBoolean(CarrierConfigManager.KEY_ALLOW_HOLD_VIDEO_CALL_BOOL, true);
+        mCTUT.updateCarrierConfigCache(bundle);
+
+        placeCallAndMakeActive();
+        // Place a 2nd call
+        placeCallAndMakeActive();
+
+        ImsPhoneCall fgCall = mock(ImsPhoneCall.class);
+        mCTUT.mForegroundCall = fgCall;
+        when(fgCall.getImsCall()).thenReturn(mImsCall);
+        when(fgCall.getFirstConnection()).thenReturn(mImsPhoneConnection);
+
+        //Throw exception when Merge is triggered
+        doThrow(new ImsException("test Exception Handling for Merge Failure",
+                ImsReasonInfo.CODE_LOCAL_ILLEGAL_STATE)).when(mImsCall).merge(any());
+
+        mCTUT.conference();
+
+        //verify invocation
+        verify(mImsPhoneConnection).onConferenceMergeFailed();
+        verify(mImsPhoneConnection).handleMergeComplete();
     }
 }
 

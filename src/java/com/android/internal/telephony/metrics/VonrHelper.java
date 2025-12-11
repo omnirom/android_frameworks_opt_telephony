@@ -21,7 +21,6 @@ import static com.android.internal.telephony.metrics.PerSimStatus.isVonrEnabled;
 
 import android.annotation.NonNull;
 import android.os.Handler;
-import android.os.HandlerThread;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.BackgroundThread;
@@ -40,18 +39,11 @@ public class VonrHelper {
     private final @NonNull FeatureFlags mFlags;
 
     private Handler mHandler;
-    private Handler mHandlerThread;
     private Map<Integer, Boolean> mPhoneVonrState = new ConcurrentHashMap<>();
 
     public VonrHelper(@NonNull FeatureFlags featureFlags) {
         this.mFlags = featureFlags;
-        if (mFlags.threadShred()) {
-            mHandler = new Handler(BackgroundThread.get().getLooper());
-        } else {
-            HandlerThread mHandlerThread = new HandlerThread("VonrHelperThread");
-            mHandlerThread.start();
-            mHandler = new Handler(mHandlerThread.getLooper());
-        }
+        mHandler = new Handler(BackgroundThread.get().getLooper());
     }
 
     /** Update vonr_enabled state */

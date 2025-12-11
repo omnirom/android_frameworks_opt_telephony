@@ -120,7 +120,6 @@ public class ModemIndication extends IRadioModemIndication.Stub {
 
         // Initial conditions
         mRil.setRadioPower(false, null);
-        mRil.setCdmaSubscriptionSource(mRil.mCdmaSubscription, null);
         // TODO: This should not require a version number. Setting it to latest RIL version for now.
         mRil.notifyRegistrantsRilConnectionChanged(15);
     }

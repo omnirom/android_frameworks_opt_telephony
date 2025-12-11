@@ -33,6 +33,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.annotation.NonNull;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.AsyncResult;
@@ -50,6 +52,7 @@ import android.util.Log;
 
 import com.android.internal.R;
 import com.android.internal.telephony.TelephonyTest;
+import com.android.internal.telephony.flags.FeatureFlags;
 
 import org.junit.After;
 import org.junit.Before;
@@ -63,6 +66,7 @@ import org.mockito.MockitoAnnotations;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @RunWith(AndroidTestingRunner.class)
 @TestableLooper.RunWithLooper
@@ -80,7 +84,7 @@ public class PointingAppControllerTest extends TelephonyTest {
     private static final String KEY_IS_DEMO_MODE = "isDemoMode";
     private static final String KEY_IS_EMERGENCY = "isEmergency";
 
-    private PointingAppController mPointingAppController;
+    private TestPointingAppController mPointingAppController;
     InOrder mInOrder;
     InOrder mInOrderForPointingUi;
 
@@ -106,7 +110,8 @@ public class PointingAppControllerTest extends TelephonyTest {
                 mMockSatelliteModemInterface);
         replaceInstance(SatelliteController.class, "sInstance", null,
                 mMockSatelliteController);
-        mPointingAppController = new PointingAppController(mContext, mFeatureFlags);
+        doReturn(true).when(mFeatureFlags).satelliteImproveMultiThreadDesign();
+        mPointingAppController = new TestPointingAppController(mContext, mFeatureFlags);
         mContextFixture.putResource(R.string.config_pointing_ui_package,
                 KEY_POINTING_UI_PACKAGE_NAME);
         mContextFixture.putResource(R.string.config_pointing_ui_class,
@@ -321,6 +326,7 @@ public class PointingAppControllerTest extends TelephonyTest {
     public void testStartPointingUI() throws Exception {
         ArgumentCaptor<Intent> startedIntentCaptor = ArgumentCaptor.forClass(Intent.class);
         mPointingAppController.startPointingUI(true, true, true);
+        processAllMessages();
         verify(mContext).startActivityAsUser(startedIntentCaptor.capture(), eq(UserHandle.CURRENT));
         Intent intent = startedIntentCaptor.getValue();
         assertEquals(KEY_POINTING_UI_PACKAGE_NAME, intent.getComponent().getPackageName());
@@ -337,10 +343,12 @@ public class PointingAppControllerTest extends TelephonyTest {
     @Test
     public void testRestartPointingUi() throws Exception {
         mPointingAppController.startPointingUI(true, false, true);
+        processAllMessages();
         mInOrderForPointingUi.verify(mContext).startActivityAsUser(any(Intent.class),
                 eq(UserHandle.CURRENT));
         testRestartPointingUi(true, false, true);
         mPointingAppController.startPointingUI(false, true, false);
+        processAllMessages();
         mInOrderForPointingUi.verify(mContext).startActivityAsUser(any(Intent.class),
                 eq(UserHandle.CURRENT));
         testRestartPointingUi(false, true, false);
@@ -352,6 +360,7 @@ public class PointingAppControllerTest extends TelephonyTest {
         doReturn(new String[]{KEY_POINTING_UI_PACKAGE_NAME}).when(mPackageManager)
             .getPackagesForUid(anyInt());
         mPointingAppController.mUidImportanceListener.onUidImportance(1, IMPORTANCE_GONE);
+        processAllMessages();
         ArgumentCaptor<Intent> restartedIntentCaptor = ArgumentCaptor.forClass(Intent.class);
         mInOrderForPointingUi.verify(mContext).startActivityAsUser(restartedIntentCaptor.capture(),
                 eq(UserHandle.CURRENT));
@@ -448,5 +457,73 @@ public class PointingAppControllerTest extends TelephonyTest {
 
     private static void loge(String message) {
         Log.e(TAG, message);
+    }
+
+    public static class TestPointingAppController extends PointingAppController {
+        public TestPointingAppController(@NonNull Context context,
+                @NonNull FeatureFlags featureFlags) {
+            super(context, featureFlags);
+        }
+
+        @Override
+        protected void setStartedSatelliteTransmissionUpdates(
+                boolean startedSatelliteTransmissionUpdates) {
+            super.setStartedSatelliteTransmissionUpdates(startedSatelliteTransmissionUpdates);
+        }
+
+        @Override
+        protected boolean getStartedSatelliteTransmissionUpdates() {
+            return super.getStartedSatelliteTransmissionUpdates();
+        }
+
+        @Override
+        protected void registerForSatelliteTransmissionUpdates(int subId,
+                ISatelliteTransmissionUpdateCallback callback) {
+            super.registerForSatelliteTransmissionUpdates(subId, callback);
+        }
+
+        @Override
+        protected void unregisterForSatelliteTransmissionUpdates(int subId,
+                Consumer<Integer> result, ISatelliteTransmissionUpdateCallback callback) {
+            super.unregisterForSatelliteTransmissionUpdates(subId, result, callback);
+        }
+
+        @Override
+        protected void startSatelliteTransmissionUpdates(@NonNull Message message) {
+            super.startSatelliteTransmissionUpdates(message);
+        }
+
+        @Override
+        protected void stopSatelliteTransmissionUpdates(@NonNull Message message) {
+            super.stopSatelliteTransmissionUpdates(message);
+        }
+
+        @Override
+        protected void startPointingUI(boolean needFullScreenPointingUI, boolean isDemoMode,
+                boolean isEmergency) {
+            super.startPointingUI(needFullScreenPointingUI, isDemoMode, isEmergency);
+        }
+
+        @Override
+        protected void removeListenerForPointingUI() {
+            super.removeListenerForPointingUI();
+        }
+
+        @Override
+        protected void updateSendDatagramTransferState(int subId,
+                @SatelliteManager.DatagramType int datagramType,
+                @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
+                int sendPendingCount, int errorCode) {
+            super.updateSendDatagramTransferState(subId, datagramType, datagramTransferState,
+                    sendPendingCount, errorCode);
+        }
+
+        @Override
+        protected void updateReceiveDatagramTransferState(int subId,
+                @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
+                int receivePendingCount, int errorCode) {
+            super.updateReceiveDatagramTransferState(subId, datagramTransferState,
+                    receivePendingCount, errorCode);
+        }
     }
 }

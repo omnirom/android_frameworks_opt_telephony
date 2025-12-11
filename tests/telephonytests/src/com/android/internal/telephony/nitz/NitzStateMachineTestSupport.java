@@ -50,6 +50,15 @@ final class NitzStateMachineTestSupport {
             .setCountryIso("gb")
             .buildFrozen();
 
+    // A country with a single zone : the zone cannot be guessed from the MCC country.
+    static final Scenario FRENCH_GUIANA_SCENARIO = new Scenario.Builder()
+            .setTimeZone("America/Cayenne")
+            .setActualTimeUtc(2018, 1, 1, 12, 0, 0)
+            .setCountryIso("gf")
+            .buildFrozen();
+
+    static final String UNITED_KINGDOM_COUNTRY_DEFAULT = "gb";
+
     static final String UNITED_KINGDOM_COUNTRY_DEFAULT_ZONE_ID = "Europe/London";
 
     // The US is a country that has multiple zones, but there is only one matching time zone at the
@@ -79,6 +88,8 @@ final class NitzStateMachineTestSupport {
     static final String[] NON_UNIQUE_US_ZONE_SCENARIO_ZONES =
             { "America/Denver", "America/Phoenix" };
 
+    static final String US_COUNTRY_DEFAULT = "us";
+
     static final String US_COUNTRY_DEFAULT_ZONE_ID = "America/New_York";
 
     // New Zealand is a country with multiple zones, but the default zone has the "boost" modifier
@@ -94,6 +105,8 @@ final class NitzStateMachineTestSupport {
             .setCountryIso("nz")
             .buildFrozen();
 
+    static final String NEW_ZEALAND_COUNTRY_DEFAULT = "nz";
+
     static final String NEW_ZEALAND_COUNTRY_DEFAULT_ZONE_ID = "Pacific/Auckland";
 
     // A country with a single zone: the zone can be guessed from the country alone. CZ never uses
@@ -103,6 +116,8 @@ final class NitzStateMachineTestSupport {
             .setActualTimeUtc(2018, 1, 1, 12, 0, 0)
             .setCountryIso("cz")
             .buildFrozen();
+
+    static final String CZECHIA_COUNTRY_DEFAULT = "cz";
 
     static final String CZECHIA_COUNTRY_DEFAULT_ZONE_ID = "Europe/Prague";
 

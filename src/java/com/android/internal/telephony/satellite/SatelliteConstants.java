@@ -67,22 +67,26 @@ public class SatelliteConstants {
     public static final int CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_S2_CELL_FILE = 10;
     public static final int CONFIG_UPDATE_RESULT_IO_ERROR = 11;
     public static final int CONFIG_UPDATE_RESULT_INVALID_SATELLITE_ACCESS_CONFIG_FILE = 12;
+    public static final int CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_MAX_ALLOWED_DATA_MODE = 13;
 
-    @IntDef(prefix = {"CONFIG_UPDATE_RESULT_"}, value = {
-            CONFIG_UPDATE_RESULT_UNKNOWN,
-            CONFIG_UPDATE_RESULT_SUCCESS,
-            CONFIG_UPDATE_RESULT_INVALID_DOMAIN,
-            CONFIG_UPDATE_RESULT_INVALID_VERSION,
-            CONFIG_UPDATE_RESULT_NO_DATA,
-            CONFIG_UPDATE_RESULT_NO_SATELLITE_DATA,
-            CONFIG_UPDATE_RESULT_PARSE_ERROR,
-            CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_PLMN,
-            CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_SUPPORTED_SERVICES,
-            CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_COUNTRY_CODE,
-            CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_S2_CELL_FILE,
-            CONFIG_UPDATE_RESULT_IO_ERROR,
-            CONFIG_UPDATE_RESULT_INVALID_SATELLITE_ACCESS_CONFIG_FILE
-    })
+    @IntDef(
+            prefix = {"CONFIG_UPDATE_RESULT_"},
+            value = {
+                CONFIG_UPDATE_RESULT_UNKNOWN,
+                CONFIG_UPDATE_RESULT_SUCCESS,
+                CONFIG_UPDATE_RESULT_INVALID_DOMAIN,
+                CONFIG_UPDATE_RESULT_INVALID_VERSION,
+                CONFIG_UPDATE_RESULT_NO_DATA,
+                CONFIG_UPDATE_RESULT_NO_SATELLITE_DATA,
+                CONFIG_UPDATE_RESULT_PARSE_ERROR,
+                CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_PLMN,
+                CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_SUPPORTED_SERVICES,
+                CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_COUNTRY_CODE,
+                CONFIG_UPDATE_RESULT_DEVICE_DATA_INVALID_S2_CELL_FILE,
+                CONFIG_UPDATE_RESULT_IO_ERROR,
+                CONFIG_UPDATE_RESULT_INVALID_SATELLITE_ACCESS_CONFIG_FILE,
+                CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_MAX_ALLOWED_DATA_MODE
+            })
     @Retention(RetentionPolicy.SOURCE)
     public @interface ConfigUpdateResult {}
 
@@ -144,4 +148,30 @@ public class SatelliteConstants {
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface SatelliteEntitlementServicePolicy {}
+
+    public static final int GLOBAL_NTN_CONNECT_TYPE_UNKNOWN = 0;
+    public static final int GLOBAL_NTN_CONNECT_TYPE_AUTOMATIC = 1;
+    public static final int GLOBAL_NTN_CONNECT_TYPE_MANUAL = 2;
+    public static final int GLOBAL_NTN_CONNECT_TYPE_HYBRID = 3;
+
+    @IntDef(prefix = {"SATELLITE_GLOBAL_CONNECT_TYPE_"}, value = {
+            GLOBAL_NTN_CONNECT_TYPE_UNKNOWN,
+            GLOBAL_NTN_CONNECT_TYPE_AUTOMATIC,
+            GLOBAL_NTN_CONNECT_TYPE_MANUAL,
+            GLOBAL_NTN_CONNECT_TYPE_HYBRID
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SatelliteGlobalConnectType {}
+
+    public static final int SESSION_NTN_CONNECT_TYPE_UNKNOWN = 0;
+    public static final int SESSION_NTN_CONNECT_TYPE_AUTOMATIC = 1;
+    public static final int SESSION_NTN_CONNECT_TYPE_MANUAL = 2;
+
+    @IntDef(prefix = {"SATELLITE_GLOBAL_CONNECT_TYPE_"}, value = {
+            SESSION_NTN_CONNECT_TYPE_UNKNOWN,
+            SESSION_NTN_CONNECT_TYPE_AUTOMATIC,
+            SESSION_NTN_CONNECT_TYPE_MANUAL
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SatelliteSessionConnectType {}
 }

@@ -53,7 +53,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 
 @RunWith(AndroidTestingRunner.class)
@@ -283,8 +285,12 @@ public class TelephonyNetworkProviderTest extends TelephonyTest {
 
         NetworkCapabilities caps = capsCaptor.getValue();
 
-        TelephonyNetworkRequest.getAllSupportedNetworkCapabilities().forEach(
-                (cap) -> assertThat(caps.hasCapability(cap)).isTrue());
+        List<Integer> allCaps = new ArrayList<>(
+                TelephonyNetworkRequest.getAllSupportedNetworkCapabilities());
+        // TODO: Remove the following after NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS
+        //   is added into NetworkCapabilities.java
+        allCaps.remove(Integer.valueOf(DataUtils.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS));
+        allCaps.forEach((cap) -> assertThat(caps.hasCapability(cap)).isTrue());
         assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_IA)).isTrue();
         assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_MMTEL)).isTrue();
         assertThat(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)).isTrue();

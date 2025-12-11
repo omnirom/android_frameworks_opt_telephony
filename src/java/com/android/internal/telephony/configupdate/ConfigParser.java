@@ -108,4 +108,14 @@ public abstract class ConfigParser<T> {
         mVersion = version;
         Log.d(TAG, "overrideVersion: mVersion=" + mVersion);
     }
+
+    /**
+     * Overrides the config
+     *
+     * @param config the config that should be overrided with
+     */
+    public void overrideConfig(T config) {
+        Log.d(TAG, "overrideConfig: overriding config to " + config);
+        mConfig = config;
+    }
 }

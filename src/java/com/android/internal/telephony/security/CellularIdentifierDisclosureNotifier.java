@@ -131,7 +131,7 @@ public class CellularIdentifierDisclosureNotifier {
             // because we know that any actions taken on disabled will be scheduled after this
             // incrementAndNotify call.
             try {
-                mSerializedWorkQueue.execute(incrementAndNotify(context, subId));
+                mSerializedWorkQueue.execute(incrementAndNotify(context, subId, disclosure));
             } catch (RejectedExecutionException e) {
                 Rlog.e(TAG, "Failed to schedule incrementAndNotify: " + e.getMessage());
             }
@@ -212,7 +212,8 @@ public class CellularIdentifierDisclosureNotifier {
         return sInstance;
     }
 
-    private Runnable incrementAndNotify(Context context, int subId) {
+    private Runnable incrementAndNotify(Context context, int subId,
+                                        CellularIdentifierDisclosure disclosure) {
         return () -> {
             DisclosureWindow window = mWindows.get(subId);
             if (window == null) {
@@ -234,6 +235,7 @@ public class CellularIdentifierDisclosureNotifier {
             mSafetySource.setIdentifierDisclosure(
                     context,
                     subId,
+                    disclosure,
                     disclosureCount,
                     window.getFirstOpen(),
                     window.getCurrentEnd());

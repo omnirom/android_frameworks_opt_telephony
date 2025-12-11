@@ -159,10 +159,14 @@ public class DataConfigManagerTest extends TelephonyTest {
         assertThat(mDataConfigManagerUT.getMeteredNetworkCapabilities(false)).containsExactly(
                 NetworkCapabilities.NET_CAPABILITY_MMS, NetworkCapabilities.NET_CAPABILITY_INTERNET,
                 NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH,
-                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY);
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY,
+                DataUtils.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS
+        );
         assertThat(mDataConfigManagerUT.getMeteredNetworkCapabilities(true)).containsExactly(
                 NetworkCapabilities.NET_CAPABILITY_SUPL, NetworkCapabilities.NET_CAPABILITY_MCX,
                 NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH,
-                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY);
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY,
+                DataUtils.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS
+        );
     }
 }

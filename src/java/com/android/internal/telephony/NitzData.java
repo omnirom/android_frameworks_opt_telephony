@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  * Represents NITZ data. Various static methods are provided to help with parsing and interpretation
  * of NITZ data.
  *
- * {@hide}
+ * @hide
  */
 @VisibleForTesting(visibility = PACKAGE)
 public final class NitzData {

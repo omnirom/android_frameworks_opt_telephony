@@ -64,7 +64,6 @@ import android.testing.TestableLooper;
 
 import androidx.test.filters.MediumTest;
 
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.util.ArrayUtils;
 
 import org.junit.After;
@@ -470,22 +469,6 @@ public class SignalStrengthControllerTest extends TelephonyTest {
         sendSignalStrength(ss);
         assertEquals(mSsc.getSignalStrength(), ss);
         assertEquals(mSsc.getSignalStrength().isGsm(), true);
-
-        if (!Flags.cleanupCdma()) {
-            // Send in CDMA-only Signal Strength Info and expect isGsm == false
-            ss = new SignalStrength(
-                    new CellSignalStrengthCdma(-90, -12,
-                            SignalStrength.INVALID, SignalStrength.INVALID, SignalStrength.INVALID),
-                    new CellSignalStrengthGsm(),
-                    new CellSignalStrengthWcdma(),
-                    new CellSignalStrengthTdscdma(),
-                    new CellSignalStrengthLte(),
-                    new CellSignalStrengthNr());
-
-            sendSignalStrength(ss);
-            assertEquals(mSsc.getSignalStrength(), ss);
-            assertEquals(mSsc.getSignalStrength().isGsm(), false);
-        }
     }
 
     @Test
@@ -1511,6 +1494,70 @@ public class SignalStrengthControllerTest extends TelephonyTest {
                 isNull());
 
         reset(mSimulatedCommandsVerifier);
+    }
+
+    @Test
+    public void testLteSignalStrengthReportingCriteriaWhenApmOnOff() {
+        SignalStrength ss = new SignalStrength(
+                new CellSignalStrengthCdma(),
+                new CellSignalStrengthGsm(),
+                new CellSignalStrengthWcdma(),
+                new CellSignalStrengthTdscdma(),
+                new CellSignalStrengthLte(
+                        -110, /* rssi */
+                        -114, /* rsrp */
+                        -5, /* rsrq */
+                        0, /* rssnr */
+                        SignalStrength.INVALID, /* cqi */
+                        SignalStrength.INVALID /* ta */),
+                new CellSignalStrengthNr());
+
+        // RSRP NTN_LTE threshold set to Good and LTE threshold set to poor.
+        mBundle.putInt(CarrierConfigManager.KEY_PARAMETERS_USED_FOR_NTN_LTE_SIGNAL_BAR_INT,
+                CellSignalStrengthLte.USE_RSRP);
+        mBundle.putIntArray(CarrierConfigManager.KEY_NTN_LTE_RSRP_THRESHOLDS_INT_ARRAY,
+                new int[]{-125 /* SIGNAL_STRENGTH_POOR */, -120 /* SIGNAL_STRENGTH_MODERATE */,
+                        -115 /* SIGNAL_STRENGTH_GOOD */, -110/* SIGNAL_STRENGTH_GREAT */});
+        mBundle.putIntArray(CarrierConfigManager.KEY_LTE_RSRP_THRESHOLDS_INT_ARRAY,
+                new int[]{-114, /* SIGNAL_STRENGTH_POOR */ -110, /* SIGNAL_STRENGTH_MODERATE */
+                        -105, /* SIGNAL_STRENGTH_GOOD */ -100, /* SIGNAL_STRENGTH_GREAT */});
+        CarrierConfigManager mockConfigManager = Mockito.mock(CarrierConfigManager.class);
+        when(mContext.getSystemService(Context.CARRIER_CONFIG_SERVICE))
+                .thenReturn(mockConfigManager);
+        when(mockConfigManager.getConfigForSubId(anyInt())).thenReturn(mBundle);
+
+        // NTN -> APM ON -> APM OFF -> NTN
+        // When NTN is connected, check the signal strength is GOOD
+        AsyncResult asyncResult = mock(AsyncResult.class);
+        asyncResult.result = mServiceState;
+        doReturn(true).when(mServiceState).isUsingNonTerrestrialNetwork();
+        mSsc.handleMessage(mSsc.obtainMessage(10/*EVENT_SERVICE_STATE_CHANGED*/, asyncResult));
+        processAllMessages();
+
+        mSimulatedCommands.setSignalStrength(ss);
+        mSimulatedCommands.notifySignalStrength();
+        processAllMessages();
+        assertEquals(CellSignalStrength.SIGNAL_STRENGTH_GOOD, mSsc.getSignalStrength().getLevel());
+
+        // APM ON -> APM OFF triggers EVENT_ON_DEVICE_IDLE_STATE_CHANGED
+        // Thresholds are updated to LTE, check the signal strength is poor.
+        doReturn(false).when(mServiceState).isUsingNonTerrestrialNetwork();
+        mSsc.onDeviceIdleStateChanged(false);
+        processAllMessages();
+        mSimulatedCommands.setSignalStrength(ss);
+        mSimulatedCommands.notifySignalStrength();
+        processAllMessages();
+        assertEquals(CellSignalStrength.SIGNAL_STRENGTH_POOR, mSsc.getSignalStrength().getLevel());
+
+        // Again When NTN is connected, thresholds are updated to NTN LTE
+        doReturn(true).when(mServiceState).isUsingNonTerrestrialNetwork();
+        mSsc.handleMessage(mSsc.obtainMessage(10/*EVENT_SERVICE_STATE_CHANGED*/, asyncResult));
+        processAllMessages();
+
+        mSimulatedCommands.setSignalStrength(ss);
+        mSimulatedCommands.notifySignalStrength();
+        processAllMessages();
+        assertEquals(CellSignalStrength.SIGNAL_STRENGTH_GOOD, mSsc.getSignalStrength().getLevel());
     }
 
     private void verifyAllEmptyThresholdAreDisabledWhenSetSignalStrengthReportingCriteria(

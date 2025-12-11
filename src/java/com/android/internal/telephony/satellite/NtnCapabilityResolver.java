@@ -21,7 +21,7 @@ import android.telephony.NetworkRegistrationInfo;
 import android.text.TextUtils;
 import android.util.Log;
 
-import java.util.List;
+import java.util.Set;
 
 /**
  * This utility class is responsible for resolving NTN capabilities of a
@@ -45,8 +45,8 @@ public class NtnCapabilityResolver {
         }
 
         SatelliteController satelliteController = SatelliteController.getInstance();
-        List<String> satellitePlmnList = satelliteController.getSatellitePlmnsForCarrier(subId);
-        for (String satellitePlmn : satellitePlmnList) {
+        Set<String> allSatellitePlmns = satelliteController.getAllPlmnSet();
+        for (String satellitePlmn : allSatellitePlmns) {
             if (TextUtils.equals(satellitePlmn, registeredPlmn)
                     && networkRegistrationInfo.isInService()) {
                 logd("Registered to satellite PLMN " + satellitePlmn);

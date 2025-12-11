@@ -26,7 +26,7 @@ package com.android.internal.telephony;
  *
  * The detailed fail causes are defined in ITU Recommendation Q.850.
  *
- * {@hide}
+ * @hide
  *
  */
 public interface CallFailCause {

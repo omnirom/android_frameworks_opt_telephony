@@ -27,7 +27,6 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.AsyncResult;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
@@ -44,7 +43,6 @@ import com.android.internal.telephony.ExponentialBackoff;
 import com.android.internal.telephony.IDomainSelectionServiceController;
 import com.android.internal.telephony.ITransportSelectorCallback;
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.internal.telephony.util.WorkerThread;
 
@@ -82,7 +80,6 @@ public class DomainSelectionController {
         long getMaximumDelay();
     }
 
-    private HandlerThread mHandlerThread; // effectively final
     private final Handler mHandler;
 
     // Only added or removed, never accessed on purpose.
@@ -256,15 +253,8 @@ public class DomainSelectionController {
             @Nullable Looper looper, @Nullable BindRetry bindRetry) {
         mContext = context;
 
-        mHandlerThread = null;
         if (looper == null) {
-            if (Flags.threadShred()) {
-                looper = WorkerThread.get().getLooper();
-            } else {
-                mHandlerThread = new HandlerThread("DomainSelectionControllerHandler");
-                mHandlerThread.start();
-                looper = mHandlerThread.getLooper();
-            }
+            looper = WorkerThread.get().getLooper();
         }
         mHandler = new DomainSelectionControllerHandler(looper);
 

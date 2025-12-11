@@ -27,6 +27,7 @@ import com.android.internal.telephony.cat.AppInterface.CommandType;
 
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.TimeZone;
 
@@ -172,6 +173,50 @@ class GetInkeyInputResponseData extends ResponseData {
         for (byte b : data) {
             buf.write(b);
         }
+    }
+}
+
+// For "SEND USSD" command.
+// See TS 31.111 section 6.4.15/ETSI TS 102 223
+// TS 31.124 section 27.22.4.15 for test spec */
+class SendUssdResponseData extends ResponseData {
+    private String mUssdResponse;
+    private byte mCodingScheme;
+
+    SendUssdResponseData(String ussdResponse, byte codingScheme) {
+        super();
+        mUssdResponse = ussdResponse;
+        mCodingScheme = codingScheme;
+    }
+
+    @Override
+    public void format(ByteArrayOutputStream buf) {
+        if (buf == null) {
+            return;
+        }
+
+        byte[] data;
+        try {
+            data = switch (mCodingScheme) {
+                case 0x00 -> {
+                    byte[] tempData = GsmAlphabet.stringToGsm7BitPacked(mUssdResponse);
+                    byte[] dataExcludingSeptetsCount = new byte[tempData.length - 1];
+                    System.arraycopy(
+                            tempData, 1, dataExcludingSeptetsCount, 0, tempData.length - 1);
+                    yield dataExcludingSeptetsCount;
+                }
+                case 0x04 -> GsmAlphabet.stringToGsm8BitPacked(mUssdResponse);
+                case 0x08 -> mUssdResponse.getBytes(StandardCharsets.UTF_16BE);
+                default -> new byte[0];
+            };
+        } catch (EncodeException e) {
+            data = new byte[0];
+        }
+
+        buf.write(0x80 | ComprehensionTlvTag.TEXT_STRING.value());
+        writeLength(buf, data.length + 1);
+        buf.write(mCodingScheme);
+        buf.write(data, 0, data.length);
     }
 }
 

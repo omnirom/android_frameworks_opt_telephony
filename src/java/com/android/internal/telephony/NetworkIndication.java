@@ -19,8 +19,9 @@ package com.android.internal.telephony;
 import static android.telephony.TelephonyManager.HAL_SERVICE_NETWORK;
 import static android.telephony.TelephonyManager.UNKNOWN_CARRIER_ID;
 
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CDMA_PRL_CHANGED;
+import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CELLULAR_IDENTIFIER_DISCLOSED;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CELL_INFO_LIST;
+import static com.android.internal.telephony.RILConstants.RIL_UNSOL_DISPLAY_NETWORK_TYPE_CHANGED;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_EMERGENCY_NETWORK_SCAN_RESULT;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_LCEDATA_RECV;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_NETWORK_SCAN_RESULT;
@@ -34,7 +35,6 @@ import static com.android.internal.telephony.RILConstants.RIL_UNSOL_SECURITY_ALG
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_SIGNAL_STRENGTH;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_SUPP_SVC_NOTIFICATION;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_VOICE_RADIO_TECH_CHANGED;
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CELLULAR_IDENTIFIER_DISCLOSED;
 
 import android.annotation.ElapsedRealtimeLong;
 import android.hardware.radio.network.IRadioNetworkIndication;
@@ -101,13 +101,6 @@ public class NetworkIndication extends IRadioNetworkIndication.Stub {
      * @param version PRL version after PRL changes
      */
     public void cdmaPrlChanged(int indicationType, int version) {
-        mRil.processIndication(HAL_SERVICE_NETWORK, indicationType);
-
-        int[] response = new int[]{version};
-
-        if (mRil.isLogOrTrace()) mRil.unsljLogRet(RIL_UNSOL_CDMA_PRL_CHANGED, response);
-
-        mRil.mCdmaPrlChangedRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
     }
 
     /**
@@ -330,9 +323,10 @@ public class NetworkIndication extends IRadioNetworkIndication.Stub {
             reportAnomaly(UUID.fromString("f16e5703-6105-4341-9eb3-e68189156eb5"),
                     "Invalid registrationFailed indication");
 
-            mRil.riljLoge("Invalid registrationFailed indication (ci is null)=" + (ci == null)
+            mRil.riljLoge("Invalid registrationFailed indication ci =" + ci
                     + " (chosenPlmn is empty)=" + TextUtils.isEmpty(chosenPlmn)
-                    + " (is CS/PS)=" + ((domain & NetworkRegistrationInfo.DOMAIN_CS_PS) == 0)
+                    + " (domain)=" + domain
+                    + " (neither CS/PS)=" + ((domain & NetworkRegistrationInfo.DOMAIN_CS_PS) == 0)
                     + " (only CS/PS)=" + ((domain & ~NetworkRegistrationInfo.DOMAIN_CS_PS) != 0)
                     + " (causeCode)=" + causeCode
                     + " (additionalCauseCode)=" + additionalCauseCode);
@@ -463,6 +457,23 @@ public class NetworkIndication extends IRadioNetworkIndication.Stub {
 
         mRil.mSecurityAlgorithmUpdatedRegistrants.notifyRegistrants(
                 new AsyncResult(null, update, null));
+    }
+
+    /**
+     * Process radio's opinion on what network type should be displayed.
+     *
+     * @param indicationType is the indication type, which should be UNSOLICITED
+     * @param networkType is the network type that has changed to
+     */
+    public void displayNetworkTypeChanged(int indicationType, int networkType) {
+        mRil.processIndication(HAL_SERVICE_NETWORK, indicationType);
+
+        if (mRil.isLogOrTrace()) {
+            mRil.unsljLogRet(RIL_UNSOL_DISPLAY_NETWORK_TYPE_CHANGED, networkType);
+        }
+
+        mRil.mDisplayNetworkTypeChangedRegistrants.notifyRegistrants(
+                new AsyncResult(null, networkType, null));
     }
 
     @Override

@@ -21,7 +21,7 @@ import android.compat.annotation.UnsupportedAppUsage;
 import com.android.internal.telephony.util.TelephonyUtils;
 
 /**
- * {@hide}
+ * @hide
  */
 public class
 IccIoResult {

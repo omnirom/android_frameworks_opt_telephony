@@ -37,6 +37,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.data.PhoneSwitcher.PhoneSwitcherCallback;
 import com.android.internal.telephony.flags.FeatureFlags;
+import com.android.internal.telephony.metrics.NetworkRequestsStats;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.telephony.Rlog;
@@ -158,6 +159,8 @@ public class TelephonyNetworkProvider extends NetworkProvider implements Network
         // Check with PhoneSwitcher to see where to route the request.
         int phoneId = getPhoneIdForNetworkRequest(networkRequest);
         if (phoneId != SubscriptionManager.INVALID_PHONE_INDEX) {
+            NetworkRequestsStats.addNetworkRequest(request,
+                    SubscriptionManager.getSubscriptionId(phoneId));
             logl("onNetworkNeeded: phoneId=" + phoneId + ", " + networkRequest);
             PhoneFactory.getPhone(phoneId).getDataNetworkController()
                     .addNetworkRequest(networkRequest);

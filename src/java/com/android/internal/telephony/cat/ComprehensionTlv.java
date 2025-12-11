@@ -29,7 +29,7 @@ import java.util.List;
  *
  * @see "ETSI TS 101 220 subsection 7.1.1"
  *
- * {@hide}
+ * @hide
  */
 public class ComprehensionTlv {
     private static final String LOG_TAG = "ComprehensionTlv";

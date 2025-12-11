@@ -21,12 +21,21 @@ import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 
+import com.android.internal.telephony.flags.Flags;
+
 /**
  * Class used to pass CAT messages from telephony to application. Application
  * should call getXXX() to get commands's specific values.
  *
  */
 public class CatCmdMessage implements Parcelable {
+    /**
+     * Enumerates the types of call setup requested by the SET UP CALL proactive command.
+     */
+    public enum SetUpCallType {
+        IF_NOT_BUSY, PUT_OTHERS_HOLD, DISCONNECT_ALL_OTHERS
+    }
+
     // members
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     CommandDetails mCmdDet;
@@ -56,10 +65,59 @@ public class CatCmdMessage implements Parcelable {
      * Container for Call Setup command settings.
      */
     public class CallSettings {
+        // ETSI TS 102.223 8.6
+        private static final int COMMAND_QUALIFIER_IF_NOT_BUSY = 0x00;
+        private static final int COMMAND_QUALIFIER_IF_NOT_BUSY_WITH_REDIAL = 0x01;
+        private static final int COMMAND_QUALIFIER_PUT_OTHERS_HOLD = 0x02;
+        private static final int COMMAND_QUALIFIER_PUT_OTHERS_HOLD_WITH_REDIAL = 0x03;
+        private static final int COMMAND_QUALIFIER_DISCONNECT_ALL_OTHERS = 0x04;
+        private static final int COMMAND_QUALIFIER_DISCONNECT_ALL_OTHERS_WITH_REDIAL = 0x05;
+
         @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
         public TextMessage confirmMsg;
         @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
         public TextMessage callMsg;
+        public String address;
+        public Duration duration;
+        public boolean redial;
+        public SetUpCallType setUpCallType;
+
+        public CallSettings() {
+        }
+
+        public CallSettings(CallSetupParams cmdParams) {
+            confirmMsg = cmdParams.mConfirmMsg;
+            callMsg = cmdParams.mCallMsg;
+            address = cmdParams.mAddress;
+            duration = cmdParams.mDuration;
+
+            redial = getRedialPolicy(cmdParams.mCmdDet.commandQualifier);
+            setUpCallType = getSetUpCallType(cmdParams.mCmdDet.commandQualifier);
+        }
+
+        private boolean getRedialPolicy(int commandQualifier) {
+            return switch (commandQualifier) {
+                case COMMAND_QUALIFIER_IF_NOT_BUSY_WITH_REDIAL,
+                     COMMAND_QUALIFIER_PUT_OTHERS_HOLD_WITH_REDIAL,
+                     COMMAND_QUALIFIER_DISCONNECT_ALL_OTHERS_WITH_REDIAL -> true;
+                default -> false;
+            };
+        }
+
+        private SetUpCallType getSetUpCallType(int commandQualifier) {
+            return switch (commandQualifier) {
+                case COMMAND_QUALIFIER_IF_NOT_BUSY,
+                     COMMAND_QUALIFIER_IF_NOT_BUSY_WITH_REDIAL
+                        -> SetUpCallType.IF_NOT_BUSY;
+                case COMMAND_QUALIFIER_PUT_OTHERS_HOLD,
+                     COMMAND_QUALIFIER_PUT_OTHERS_HOLD_WITH_REDIAL
+                        -> SetUpCallType.PUT_OTHERS_HOLD;
+                case COMMAND_QUALIFIER_DISCONNECT_ALL_OTHERS,
+                     COMMAND_QUALIFIER_DISCONNECT_ALL_OTHERS_WITH_REDIAL
+                        -> SetUpCallType.DISCONNECT_ALL_OTHERS;
+                default -> SetUpCallType.IF_NOT_BUSY;
+            };
+        }
     }
 
     /**
@@ -82,6 +140,7 @@ public class CatCmdMessage implements Parcelable {
         public static final int LANGUAGE_SELECTION_EVENT     = 0x07;
         public static final int BROWSER_TERMINATION_EVENT    = 0x08;
         public static final int BROWSING_STATUS_EVENT        = 0x0F;
+        public static final int IMS_REGISTRATION_EVENT       = 0x17;
     }
 
     public final class BrowserTerminationCauses {
@@ -116,8 +175,14 @@ public class CatCmdMessage implements Parcelable {
             case REFRESH:
             case RUN_AT:
             case SEND_SS:
-            case SEND_USSD:
                 mTextMsg = ((DisplayTextParams) cmdParams).mTextMsg;
+                break;
+            case SEND_USSD:
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    mTextMsg = ((SendUssdParams) cmdParams).mTextMsg;
+                } else {
+                    mTextMsg = ((DisplayTextParams) cmdParams).mTextMsg;
+                }
                 break;
             case GET_INPUT:
             case GET_INKEY:
@@ -138,9 +203,13 @@ public class CatCmdMessage implements Parcelable {
                 mTextMsg = ((CallSetupParams) cmdParams).mConfirmMsg;
                 break;
             case SET_UP_CALL:
-                mCallSettings = new CallSettings();
-                mCallSettings.confirmMsg = ((CallSetupParams) cmdParams).mConfirmMsg;
-                mCallSettings.callMsg = ((CallSetupParams) cmdParams).mCallMsg;
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    mCallSettings = new CallSettings((CallSetupParams) cmdParams);
+                } else {
+                    mCallSettings = new CallSettings();
+                    mCallSettings.confirmMsg = ((CallSetupParams) cmdParams).mConfirmMsg;
+                    mCallSettings.callMsg = ((CallSetupParams) cmdParams).mCallMsg;
+                }
                 break;
             case OPEN_CHANNEL:
             case CLOSE_CHANNEL:
@@ -178,6 +247,16 @@ public class CatCmdMessage implements Parcelable {
                 mCallSettings = new CallSettings();
                 mCallSettings.confirmMsg = in.readParcelable(TextMessage.class.getClassLoader());
                 mCallSettings.callMsg = in.readParcelable(TextMessage.class.getClassLoader());
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    mCallSettings.address = in.readString();
+                    mCallSettings.duration = in.readParcelable(Duration.class.getClassLoader());
+                    mCallSettings.redial = in.readBoolean();
+                    try {
+                        mCallSettings.setUpCallType = SetUpCallType.valueOf(in.readString());
+                    } catch (IllegalArgumentException | NullPointerException e) {
+                        mCallSettings.setUpCallType = SetUpCallType.IF_NOT_BUSY;
+                    }
+                }
                 break;
             case SET_UP_EVENT_LIST:
                 mSetupEventListSettings = new SetupEventListSettings();
@@ -215,6 +294,12 @@ public class CatCmdMessage implements Parcelable {
             case SET_UP_CALL:
                 dest.writeParcelable(mCallSettings.confirmMsg, 0);
                 dest.writeParcelable(mCallSettings.callMsg, 0);
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    dest.writeString(mCallSettings.address);
+                    dest.writeParcelable(mCallSettings.duration, 0);
+                    dest.writeBoolean(mCallSettings.redial);
+                    dest.writeString(mCallSettings.setUpCallType.name());
+                }
                 break;
             case SET_UP_EVENT_LIST:
                 dest.writeIntArray(mSetupEventListSettings.eventList);

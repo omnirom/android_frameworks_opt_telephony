@@ -24,7 +24,7 @@ import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.telephony.Rlog;
 
 /**
- * {@hide}
+ * @hide
  */
 public class ImsPhoneFactory {
 

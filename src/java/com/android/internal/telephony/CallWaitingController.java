@@ -209,7 +209,8 @@ public class CallWaitingController extends Handler {
             int serviceClass, @Nullable Message onComplete) {
         if (mCallWaitingState == TERMINAL_BASED_NOT_SUPPORTED) return false;
 
-        if ((serviceClass & SERVICE_CLASS_VOICE) != SERVICE_CLASS_VOICE) return false;
+        if (serviceClass != SERVICE_CLASS_NONE
+                && (serviceClass & SERVICE_CLASS_VOICE) != SERVICE_CLASS_VOICE) return false;
 
         logi("setCallWaiting enable=" + enable + ", service=" + serviceClass);
 

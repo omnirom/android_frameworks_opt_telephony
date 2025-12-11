@@ -34,7 +34,7 @@ import java.util.List;
  *
  * Used to load or store ADNs (Abbreviated Dialing Numbers).
  *
- * {@hide}
+ * @hide
  *
  */
 public class AdnRecord implements Parcelable {

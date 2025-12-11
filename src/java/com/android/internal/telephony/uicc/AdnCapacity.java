@@ -22,7 +22,7 @@ import android.os.Parcelable;
 /**
  * Used to present ADN capacity
  *
- * {@hide}
+ * @hide
  */
 public class AdnCapacity implements Parcelable {
 

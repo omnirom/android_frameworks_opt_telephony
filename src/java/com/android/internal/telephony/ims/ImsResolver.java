@@ -140,6 +140,8 @@ public class ImsResolver implements ImsServiceController.ImsServiceControllerCal
     // Delay between dynamic ImsService queries.
     private static final int DELAY_DYNAMIC_QUERY_MS = 5000;
 
+    // Compile-time debug flag for controlling worker thread behavior
+    private static final boolean USE_WORKER_THREAD = false;
     private static HandlerThread sHandlerThread;
 
     private static ImsResolver sInstance;
@@ -151,7 +153,7 @@ public class ImsResolver implements ImsServiceController.ImsServiceControllerCal
             String defaultRcsPackageName, int numSlots, ImsFeatureBinderRepository repo,
             FeatureFlags featureFlags) {
         if (sInstance == null) {
-            if (featureFlags.threadShred()) {
+            if (USE_WORKER_THREAD) {
                 sInstance = new ImsResolver(context, defaultMmTelPackageName, defaultRcsPackageName,
                         numSlots, repo, WorkerThread.get().getLooper(), featureFlags);
             } else {

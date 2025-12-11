@@ -16,9 +16,6 @@
 
 package com.android.internal.telephony.metrics;
 
-import android.os.Handler;
-import android.os.HandlerExecutor;
-import android.os.HandlerThread;
 import android.telephony.PhysicalChannelConfig;
 import android.telephony.PreciseDataConnectionState;
 import android.telephony.SubscriptionManager;
@@ -30,7 +27,6 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.BackgroundThread;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.TelephonyStatsLog;
-import com.android.internal.telephony.flags.Flags;
 
 import java.util.HashMap;
 import java.util.List;
@@ -76,14 +72,7 @@ public class DataConnectionStateTracker {
             };
 
     private DataConnectionStateTracker() {
-        if (Flags.threadShred()) {
-            mExecutor = BackgroundThread.getExecutor();
-        } else {
-            HandlerThread handlerThread =
-                    new HandlerThread(DataConnectionStateTracker.class.getSimpleName());
-            handlerThread.start();
-            mExecutor = new HandlerExecutor(new Handler(handlerThread.getLooper()));
-        }
+        mExecutor = BackgroundThread.getExecutor();
     }
 
     /** Getting or Creating DataConnectionStateTracker based on phoneId */

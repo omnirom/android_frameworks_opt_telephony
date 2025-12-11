@@ -332,7 +332,7 @@ public class CdmaInboundSmsHandler extends InboundSmsHandler {
         // update voice mail count in phone
         mPhone.setVoiceMessageCount(voicemailCount);
         // update metrics
-        addVoicemailSmsToMetrics(smsSource);
+        addVoicemailSmsToMetrics(smsSource, getPduLength(sms));
     }
 
     /**
@@ -440,10 +440,8 @@ public class CdmaInboundSmsHandler extends InboundSmsHandler {
     /**
      * Add voicemail indication SMS 0 to metrics.
      */
-    private void addVoicemailSmsToMetrics(@SmsSource int smsSource) {
-        mMetrics.writeIncomingVoiceMailSms(mPhone.getPhoneId(),
-                android.telephony.SmsMessage.FORMAT_3GPP2);
-        mPhone.getSmsStats().onIncomingSmsVoicemail(true /* is3gpp2 */, smsSource);
+    private void addVoicemailSmsToMetrics(@SmsSource int smsSource, int pduLength) {
+        mPhone.getSmsStats().onIncomingSmsVoicemail(true /* is3gpp2 */, smsSource, pduLength);
     }
 
     /**

@@ -54,3 +54,26 @@ flag {
   bug: "357272015"
   is_exported: true
 }
+
+# OWNER=melhuishj TARGET=25Q3
+flag {
+  name: "ons_thread_consolidation"
+  namespace: "telephony"
+  description: "Consolidate ONS work to a single worker thread"
+  bug: "240081918"
+  is_exported: false
+}
+
+# OWNER=jackyu TARGET=26Q2
+flag {
+  name: "update_resource_configuration"
+  namespace: "telephony"
+  description: "Update resource configuration when default sub id is changed"
+  bug: "397605393"
+  is_exported: false
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+

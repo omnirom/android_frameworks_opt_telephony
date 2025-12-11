@@ -72,8 +72,7 @@ public class NullCipherNotifierTest {
                     SecurityAlgorithmUpdate.SECURITY_ALGORITHM_NEA0,
                     SecurityAlgorithmUpdate.SECURITY_ALGORITHM_IMS_NULL,
                     SecurityAlgorithmUpdate.SECURITY_ALGORITHM_SIP_NULL,
-                    SecurityAlgorithmUpdate.SECURITY_ALGORITHM_SRTP_NULL,
-                    SecurityAlgorithmUpdate.SECURITY_ALGORITHM_OTHER);
+                    SecurityAlgorithmUpdate.SECURITY_ALGORITHM_SRTP_NULL);
     private static final List<Integer> NON_NULL_CIPHERS =
             List.of(SecurityAlgorithmUpdate.SECURITY_ALGORITHM_A51,
                     SecurityAlgorithmUpdate.SECURITY_ALGORITHM_A52,

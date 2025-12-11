@@ -39,12 +39,16 @@ import static com.android.internal.telephony.nitz.NitzStateMachineTestSupport.US
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import android.app.timezonedetector.TelephonySignal;
 import android.app.timezonedetector.TelephonyTimeZoneSuggestion;
+import android.timezone.MobileCountries;
+import android.timezone.flags.Flags;
 
 import com.android.internal.telephony.NitzData;
 import com.android.internal.telephony.NitzSignal;
-import com.android.internal.telephony.nitz.NitzStateMachineImpl.TimeZoneSuggester;
 import com.android.internal.telephony.nitz.NitzStateMachineTestSupport.FakeDeviceState;
 import com.android.internal.telephony.nitz.NitzStateMachineTestSupport.Scenario;
 
@@ -54,6 +58,7 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 public class TimeZoneSuggesterImplTest {
     private static final int SLOT_INDEX = 99999;
@@ -84,7 +89,7 @@ public class TimeZoneSuggesterImplTest {
     public void test_emptySuggestionForNullCountryNullNitz() throws Exception {
         assertEquals(EMPTY_TIME_ZONE_SUGGESTION,
                 mTimeZoneSuggester.getTimeZoneSuggestion(
-                        SLOT_INDEX, null /* countryIsoCode */, null /* nitzSignal */));
+                        SLOT_INDEX, (String) null /* countryIsoCode */, null /* nitzSignal */));
     }
 
     @Test
@@ -94,7 +99,23 @@ public class TimeZoneSuggesterImplTest {
                 scenario.createNitzSignal(ARBITRARY_ELAPSED_REALTIME, ARBITRARY_AGE);
         assertEquals(EMPTY_TIME_ZONE_SUGGESTION,
                 mTimeZoneSuggester.getTimeZoneSuggestion(
-                        SLOT_INDEX, null /* countryIsoCode */, nitzSignal));
+                        SLOT_INDEX, (String) null /* countryIsoCode */, nitzSignal));
+    }
+
+    @Test
+    public void test_emptySuggestionForNullMobileCountries() {
+        assertEquals(
+                EMPTY_TIME_ZONE_SUGGESTION,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, (MobileCountries) null, null /* nitzSignal */));
+
+        Scenario scenario = UNIQUE_US_ZONE_SCENARIO1;
+        NitzSignal nitzSignal =
+                scenario.createNitzSignal(ARBITRARY_ELAPSED_REALTIME, ARBITRARY_AGE);
+        assertEquals(
+                EMPTY_TIME_ZONE_SUGGESTION,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, (MobileCountries) null, nitzSignal));
     }
 
     @Test
@@ -146,7 +167,7 @@ public class TimeZoneSuggesterImplTest {
             NitzSignal nitzSignal = scenario.createNitzSignal(
                     mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
             TelephonyTimeZoneSuggestion actualSuggestion = mTimeZoneSuggester.getTimeZoneSuggestion(
-                    SLOT_INDEX, null /* countryIsoCode */, nitzSignal);
+                    SLOT_INDEX, (String) null /* countryIsoCode */, nitzSignal);
             assertEquals(EMPTY_TIME_ZONE_SUGGESTION, actualSuggestion);
         }
 
@@ -220,7 +241,7 @@ public class TimeZoneSuggesterImplTest {
             NitzSignal nitzSignal = scenario.createNitzSignal(
                     mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
             TelephonyTimeZoneSuggestion actualSuggestion = mTimeZoneSuggester.getTimeZoneSuggestion(
-                    SLOT_INDEX, null /* countryIsoCode */, nitzSignal);
+                    SLOT_INDEX, (String) null /* countryIsoCode */, nitzSignal);
             assertEquals(EMPTY_TIME_ZONE_SUGGESTION, actualSuggestion);
         }
 
@@ -292,7 +313,7 @@ public class TimeZoneSuggesterImplTest {
             NitzSignal nitzSignal = scenario.createNitzSignal(
                     mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
             TelephonyTimeZoneSuggestion actualSuggestion = mTimeZoneSuggester.getTimeZoneSuggestion(
-                    SLOT_INDEX, null /* countryIsoCode */, nitzSignal);
+                    SLOT_INDEX, (String) null /* countryIsoCode */, nitzSignal);
             assertEquals(EMPTY_TIME_ZONE_SUGGESTION, actualSuggestion);
         }
 
@@ -372,7 +393,7 @@ public class TimeZoneSuggesterImplTest {
             NitzSignal nitzSignal = scenario.createNitzSignal(
                     mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
             TelephonyTimeZoneSuggestion actualSuggestion = mTimeZoneSuggester.getTimeZoneSuggestion(
-                    SLOT_INDEX, null /* countryIsoCode */, nitzSignal);
+                    SLOT_INDEX, (String) null /* countryIsoCode */, nitzSignal);
             assertEquals(EMPTY_TIME_ZONE_SUGGESTION, actualSuggestion);
         }
 
@@ -656,5 +677,212 @@ public class TimeZoneSuggesterImplTest {
                     SLOT_INDEX, scenario.getNetworkCountryIsoCode(), nitzSignal);
             assertEquals(expectedSuggestion, actualSuggestion);
         }
+    }
+
+    @Test
+    public void test_getTimeZoneSuggestion_withMobileCountries_singleCountry() {
+        // Test with a single country MCC (US).
+        Scenario usScenario = UNIQUE_US_ZONE_SCENARIO1;
+        String usCountryCode = usScenario.getNetworkCountryIsoCode();
+        MobileCountries usMobileCountries =
+                MobileCountries.createForTest("310", null, Set.of(usCountryCode), usCountryCode);
+
+        // Country only.
+        TelephonySignal expectedUsCountryOnlyTelephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            expectedUsCountryOnlyTelephonySignal =
+                    new TelephonySignal(
+                            usMobileCountries.getMcc(),
+                            null,
+                            usMobileCountries.getDefaultCountryIsoCode(),
+                            usMobileCountries.getCountryIsoCodes(),
+                            null);
+        }
+        TelephonyTimeZoneSuggestion expectedUsCountryOnlySuggestion =
+                new TelephonyTimeZoneSuggestion.Builder(SLOT_INDEX)
+                        .setZoneId(US_COUNTRY_DEFAULT_ZONE_ID)
+                        .setCountryIsoCode(usCountryCode)
+                        .setMatchType(MATCH_TYPE_NETWORK_COUNTRY_ONLY)
+                        .setQuality(QUALITY_MULTIPLE_ZONES_WITH_DIFFERENT_OFFSETS)
+                        .setTelephonySignal(expectedUsCountryOnlyTelephonySignal)
+                        .build();
+        assertEquals(
+                expectedUsCountryOnlySuggestion,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, usMobileCountries, null /* nitzSignal */));
+
+        // Country + NITZ.
+        NitzSignal usNitzSignal =
+                usScenario.createNitzSignal(
+                        mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
+
+        TelephonySignal expectedUsNitzTelephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            NitzData usNitzData = usNitzSignal.getNitzData();
+            android.app.timezonedetector.NitzSignal expectedNitz =
+                    new android.app.timezonedetector.NitzSignal(
+                            usNitzSignal.getReceiptElapsedRealtimeMillis(),
+                            usNitzSignal.getAgeMillis(),
+                            usNitzData.getLocalOffsetMillis(),
+                            usNitzData.getDstAdjustmentMillis(),
+                            usNitzData.getCurrentTimeInMillis(),
+                            usNitzData.getEmulatorHostTimeZone());
+            expectedUsNitzTelephonySignal =
+                    new TelephonySignal(
+                            usMobileCountries.getMcc(),
+                            null,
+                            usMobileCountries.getDefaultCountryIsoCode(),
+                            usMobileCountries.getCountryIsoCodes(),
+                            expectedNitz);
+        }
+
+        TelephonyTimeZoneSuggestion expectedUsNitzSuggestion =
+                new TelephonyTimeZoneSuggestion.Builder(SLOT_INDEX)
+                        .setZoneId(usScenario.getTimeZoneId())
+                        .setCountryIsoCode(usCountryCode)
+                        .setMatchType(MATCH_TYPE_NETWORK_COUNTRY_AND_OFFSET)
+                        .setQuality(QUALITY_SINGLE_ZONE)
+                        .setTelephonySignal(expectedUsNitzTelephonySignal)
+                        .build();
+        assertEquals(
+                expectedUsNitzSuggestion,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, usMobileCountries, usNitzSignal));
+    }
+
+    @Test
+    public void test_getTimeZoneSuggestion_withMobileCountries_multiCountryDifferentOffsets() {
+        // Test with a multi-country MCC where countries have different offsets.
+        // French Guiana (gf, UTC-3) and Guadeloupe (gp, UTC-4). Default is gp.
+        String gfCountryCode = "gf";
+        String gpCountryCode = "gp";
+        MobileCountries gfGpMobileCountries =
+                MobileCountries.createForTest(
+                        "340", null, Set.of(gfCountryCode, gpCountryCode), gpCountryCode);
+
+        // Country only: no suggestion as offsets differ.
+        assertEquals(
+                EMPTY_TIME_ZONE_SUGGESTION,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, gfGpMobileCountries, null /* nitzSignal */));
+
+        // Country + NITZ for French Guiana (gf).
+        NitzData gfNitzData = NitzData.parse("15/06/01,00:00:00-12,0"); // UTC-3
+        NitzSignal gfNitzSignal =
+                new NitzSignal(ARBITRARY_ELAPSED_REALTIME, gfNitzData, ARBITRARY_AGE);
+
+        TelephonySignal expectedGfNitzTelephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            android.app.timezonedetector.NitzSignal expectedNitz =
+                    new android.app.timezonedetector.NitzSignal(
+                            gfNitzSignal.getReceiptElapsedRealtimeMillis(),
+                            gfNitzSignal.getAgeMillis(),
+                            gfNitzData.getLocalOffsetMillis(),
+                            gfNitzData.getDstAdjustmentMillis(),
+                            gfNitzData.getCurrentTimeInMillis(),
+                            gfNitzData.getEmulatorHostTimeZone());
+            expectedGfNitzTelephonySignal =
+                    new TelephonySignal(
+                            gfGpMobileCountries.getMcc(),
+                            null,
+                            gfGpMobileCountries.getDefaultCountryIsoCode(),
+                            gfGpMobileCountries.getCountryIsoCodes(),
+                            expectedNitz);
+        }
+
+        TelephonyTimeZoneSuggestion expectedGfNitzSuggestion =
+                new TelephonyTimeZoneSuggestion.Builder(SLOT_INDEX)
+                        .setZoneId("America/Cayenne")
+                        .setCountryIsoCode(gfCountryCode)
+                        .setMatchType(MATCH_TYPE_NETWORK_COUNTRY_AND_OFFSET)
+                        .setQuality(QUALITY_SINGLE_ZONE)
+                        .setTelephonySignal(expectedGfNitzTelephonySignal)
+                        .build();
+        assertEquals(
+                expectedGfNitzSuggestion,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, gfGpMobileCountries, gfNitzSignal));
+    }
+
+    @Test
+    public void test_getTimeZoneSuggestion_withMobileCountries_multiCountrySameOffset() {
+        // Test with a multi-country MCC where countries have the same offset.
+        // Guadeloupe (gp) and Martinique (mq) are both UTC-4. Default is gp.
+        String gpCountryCode = "gp";
+        String mqCountryCode = "mq";
+        MobileCountries gpMqMobileCountries =
+                MobileCountries.createForTest(
+                        "340", null, Set.of(gpCountryCode, mqCountryCode), gpCountryCode);
+
+        // Country only: suggests default country's zone.
+        TelephonySignal expectedGpMqCountryOnlyTelephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            expectedGpMqCountryOnlyTelephonySignal =
+                    new TelephonySignal(
+                            gpMqMobileCountries.getMcc(),
+                            null,
+                            gpMqMobileCountries.getDefaultCountryIsoCode(),
+                            gpMqMobileCountries.getCountryIsoCodes(),
+                            null);
+        }
+
+        TelephonyTimeZoneSuggestion expectedGpMqCountryOnlySuggestion =
+                new TelephonyTimeZoneSuggestion.Builder(SLOT_INDEX)
+                        .setZoneId("America/Guadeloupe")
+                        .setCountryIsoCode(gpCountryCode)
+                        .setMatchType(MATCH_TYPE_NETWORK_COUNTRY_ONLY)
+                        .setQuality(QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET)
+                        .setTelephonySignal(expectedGpMqCountryOnlyTelephonySignal)
+                        .build();
+        assertEquals(
+                expectedGpMqCountryOnlySuggestion,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, gpMqMobileCountries, null /* nitzSignal */));
+
+        // Country + NITZ for UTC-4.
+        NitzData gpNitzData = NitzData.parse("15/06/01,00:00:00-16,0"); // UTC-4
+        NitzSignal gpNitzSignal =
+                new NitzSignal(ARBITRARY_ELAPSED_REALTIME, gpNitzData, ARBITRARY_AGE);
+
+        TelephonySignal expectedGpNitzTelephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            android.app.timezonedetector.NitzSignal expectedNitz =
+                    new android.app.timezonedetector.NitzSignal(
+                            gpNitzSignal.getReceiptElapsedRealtimeMillis(),
+                            gpNitzSignal.getAgeMillis(),
+                            gpNitzData.getLocalOffsetMillis(),
+                            gpNitzData.getDstAdjustmentMillis(),
+                            gpNitzData.getCurrentTimeInMillis(),
+                            gpNitzData.getEmulatorHostTimeZone());
+            expectedGpNitzTelephonySignal =
+                    new TelephonySignal(
+                            gpMqMobileCountries.getMcc(),
+                            null,
+                            gpMqMobileCountries.getDefaultCountryIsoCode(),
+                            gpMqMobileCountries.getCountryIsoCodes(),
+                            expectedNitz);
+        }
+
+        TelephonyTimeZoneSuggestion expectedGpNitzSuggestion =
+                new TelephonyTimeZoneSuggestion.Builder(SLOT_INDEX)
+                        .setZoneId("America/Guadeloupe")
+                        .setCountryIsoCode(gpCountryCode)
+                        .setMatchType(MATCH_TYPE_NETWORK_COUNTRY_AND_OFFSET)
+                        .setQuality(QUALITY_SINGLE_ZONE)
+                        .setTelephonySignal(expectedGpNitzTelephonySignal)
+                        .build();
+        assertEquals(
+                expectedGpNitzSuggestion,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, gpMqMobileCountries, gpNitzSignal));
+
+        // Test bogus NITZ signal with multi-country MCC.
+        NitzSignal bogusNitzSignal =
+                CZECHIA_SCENARIO.createNitzSignal(
+                        mFakeDeviceState.elapsedRealtimeMillis(), ARBITRARY_AGE);
+        assertEquals(
+                EMPTY_TIME_ZONE_SUGGESTION,
+                mTimeZoneSuggester.getTimeZoneSuggestion(
+                        SLOT_INDEX, gpMqMobileCountries, bogusNitzSignal));
     }
 }

@@ -19,7 +19,6 @@ package com.android.internal.telephony;
 import static android.telephony.TelephonyManager.HAL_SERVICE_SIM;
 
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CARRIER_INFO_IMSI_ENCRYPTION;
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CDMA_SUBSCRIPTION_SOURCE_CHANGED;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_RESPONSE_SIM_PHONEBOOK_CHANGED;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_RESPONSE_SIM_PHONEBOOK_RECORDS_RECEIVED;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED;
@@ -71,15 +70,6 @@ public class SimIndication extends IRadioSimIndication.Stub {
      * @param cdmaSource New CdmaSubscriptionSource
      */
     public void cdmaSubscriptionSourceChanged(int indicationType, int cdmaSource) {
-        mRil.processIndication(HAL_SERVICE_SIM, indicationType);
-
-        int[] response = new int[]{cdmaSource};
-        if (mRil.isLogOrTrace()) {
-            mRil.unsljLogRet(RIL_UNSOL_CDMA_SUBSCRIPTION_SOURCE_CHANGED, response);
-        }
-
-        mRil.mCdmaSubscriptionChangedRegistrants.notifyRegistrants(
-                new AsyncResult(null, response, null));
     }
 
     /**

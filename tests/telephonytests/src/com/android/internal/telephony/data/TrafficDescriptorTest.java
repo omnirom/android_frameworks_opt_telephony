@@ -70,6 +70,19 @@ public class TrafficDescriptorTest {
     }
 
     @Test
+    public void testUfcOsAppId() {
+        OsAppId osAppId = new OsAppId(OsAppId.ANDROID_OS_ID,
+                "PRIORITIZE_UNIFIED_COMMUNICATIONS", 1);
+        byte[] rawBytes = osAppId.getBytes();
+        Rlog.d("TrafficDescriptorTest", "rawBytes=" + new BigInteger(1, rawBytes).toString(16)
+                + ", osAppId=" + osAppId);
+        assertThat(new OsAppId(rawBytes)).isEqualTo(osAppId);
+        assertThat(osAppId.getOsId()).isEqualTo(OsAppId.ANDROID_OS_ID);
+        assertThat(osAppId.getAppId()).isEqualTo("PRIORITIZE_UNIFIED_COMMUNICATIONS");
+        assertThat(osAppId.getDifferentiator()).isEqualTo(1);
+    }
+
+    @Test
     public void testInvalidOsId() {
         OsAppId osAppId = new OsAppId(UUID.fromString("91b7f6fb-5069-4e29-af83-50e942e9b1c3"),
                 "ENTERPRISE", 1);

@@ -79,7 +79,6 @@ public class CarrierDisplayNameResolverTest extends TelephonyTest {
         doReturn(mSS).when(mSST).getServiceState();
 
         doReturn(false).when(mPhone).isWifiCallingEnabled();
-        doReturn(true).when(mPhone).isPhoneTypeGsm();
 
         mConfig = mContextFixture.getCarrierConfigBundle();
         CarrierConfigManager mockConfigManager = Mockito.mock(CarrierConfigManager.class);

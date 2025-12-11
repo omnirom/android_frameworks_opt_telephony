@@ -27,7 +27,7 @@ import com.android.telephony.Rlog;
 /**
  * See also RIL_CardStatus in include/telephony/ril.h
  *
- * {@hide}
+ * @hide
  */
 public class IccCardStatus {
     public static final int CARD_MAX_APPS = 8;

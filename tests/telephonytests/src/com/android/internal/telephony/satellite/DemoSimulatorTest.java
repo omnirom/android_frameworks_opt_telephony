@@ -21,6 +21,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,6 +74,7 @@ public class DemoSimulatorTest extends TelephonyTest {
         when(mMockSatelliteController.getDemoPointingNotAlignedDurationMillis()).thenReturn(
                 TEST_DEVICE_POINTING_NOT_ALIGNED_DURATION_MILLIS);
 
+        doReturn(true).when(mFeatureFlags).satelliteImproveMultiThreadDesign();
         mTestDemoSimulator = new TestDemoSimulator(mContext, Looper.myLooper(),
                 mMockSatelliteController);
         mTestDemoSimulator.setSatelliteListener(mISatelliteListener);
@@ -241,6 +243,11 @@ public class DemoSimulatorTest extends TelephonyTest {
 
         boolean isDeviceNotAlignedTimerStarted() {
             return hasMessages(EVENT_DEVICE_NOT_ALIGNED);
+        }
+
+        @Override
+        protected void setDeviceAlignedWithSatellite(boolean isAligned) {
+            super.setDeviceAlignedWithSatellite(isAligned);
         }
     }
 }

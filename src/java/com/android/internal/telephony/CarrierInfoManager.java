@@ -33,9 +33,6 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 
-import com.android.internal.telephony.flags.Flags;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
-
 import java.security.PublicKey;
 import java.util.Date;
 
@@ -204,7 +201,6 @@ public class CarrierInfoManager {
                                                 Context context, int phoneId) {
         byte[] keyBytes = imsiEncryptionInfo.getPublicKey().getEncoded();
         ContentResolver mContentResolver = context.getContentResolver();
-        TelephonyMetrics tm = TelephonyMetrics.getInstance();
         // In the current design, MVNOs are not supported. If we decide to support them,
         // we'll need to add to this CL.
         ContentValues contentValues = new ContentValues();
@@ -249,8 +245,6 @@ public class CarrierInfoManager {
         }  catch (Exception e) {
             Log.d(LOG_TAG, "Error inserting/updating values:" + imsiEncryptionInfo + e);
             downloadSuccessfull = false;
-        } finally {
-            tm.writeCarrierKeyEvent(phoneId, imsiEncryptionInfo.getKeyType(), downloadSuccessfull);
         }
     }
 
@@ -302,12 +296,8 @@ public class CarrierInfoManager {
         final TelephonyManager telephonyManager = context.getSystemService(TelephonyManager.class)
                 .createForSubscriptionId(subId);
         int carrierId = telephonyManager.getSimCarrierId();
-        if (Flags.imsiKeyRetryDownloadOnPhoneUnlock()) {
-            String simOperator = telephonyManager.getSimOperator();
-            deleteCarrierInfoForImsiEncryption(context, subId, carrierId, simOperator);
-        } else {
-            deleteCarrierInfoForImsiEncryption(context, subId, carrierId);
-        }
+        String simOperator = telephonyManager.getSimOperator();
+        deleteCarrierInfoForImsiEncryption(context, subId, carrierId, simOperator);
         Intent resetIntent = new Intent(TelephonyIntents.ACTION_CARRIER_CERTIFICATE_DOWNLOAD);
         SubscriptionManager.putPhoneIdAndSubIdExtra(resetIntent, mPhoneId);
         context.sendBroadcastAsUser(resetIntent, UserHandle.ALL);

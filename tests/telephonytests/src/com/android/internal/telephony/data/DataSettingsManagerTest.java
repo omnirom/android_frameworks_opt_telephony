@@ -21,8 +21,11 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
@@ -33,9 +36,11 @@ import android.annotation.NonNull;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PersistableBundle;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.TelephonyManager;
 import android.testing.AndroidTestingRunner;
 import android.testing.TestableLooper;
+import android.util.SparseArray;
 
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
@@ -51,6 +56,7 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -65,6 +71,7 @@ public class DataSettingsManagerTest extends TelephonyTest {
 
     DataSettingsManager mDataSettingsManagerUT;
     PersistableBundle mBundle;
+    List<DataServiceManager> mMockDataServiceManagers;
 
     @Before
     public void setUp() throws Exception {
@@ -72,12 +79,23 @@ public class DataSettingsManagerTest extends TelephonyTest {
         super.setUp(getClass().getSimpleName());
         mMockedDataSettingsManagerCallback = Mockito.mock(DataSettingsManagerCallback.class);
         mBundle = mContextFixture.getCarrierConfigBundle();
+        mMockDataServiceManagers = List.of(
+                mMockedWwanDataServiceManager,
+                mMockedWlanDataServiceManager
+        );
+        SparseArray<DataServiceManager> mMockDataServiceManagerSparseArray = new SparseArray<>();
+        mMockDataServiceManagerSparseArray.put(AccessNetworkConstants.TRANSPORT_TYPE_WWAN,
+                mMockedWwanDataServiceManager);
+        mMockDataServiceManagerSparseArray.put(AccessNetworkConstants.TRANSPORT_TYPE_WLAN,
+                mMockedWlanDataServiceManager);
         doReturn(true).when(mDataConfigManager).isConfigCarrierSpecific();
+        doReturn(true).when(mFeatureFlags).dataServiceUserDataToggleNotify();
 
         doReturn(new SubscriptionInfoInternal.Builder().setId(1).build())
                 .when(mSubscriptionManagerService).getSubscriptionInfoInternal(anyInt());
 
         mDataSettingsManagerUT = new DataSettingsManager(mPhone, mDataNetworkController,
+                mMockDataServiceManagerSparseArray,
                 mFeatureFlags, Looper.myLooper(), mMockedDataSettingsManagerCallback);
         logd("DataSettingsManagerTest -Setup!");
     }
@@ -123,15 +141,33 @@ public class DataSettingsManagerTest extends TelephonyTest {
     @Test
     public void testDefaultDataRoamingEnabled() {
         doReturn(true).when(mDataConfigManager).isDataRoamingEnabledByDefault();
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
         mDataSettingsManagerUT.setDefaultDataRoamingEnabled();
         assertTrue(mDataSettingsManagerUT.isDataRoamingEnabled());
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            // should notify the default data roaming
+            verify(mockDataServiceManager,
+                    times(1)).notifyUserDataRoamingEnabled(eq(true),
+                    isNull());
+            clearInvocations(mockDataServiceManager);
+        });
 
         mDataSettingsManagerUT.setDataRoamingEnabled(false);
         processAllMessages();
         assertFalse(mDataSettingsManagerUT.isDataRoamingEnabled());
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager,
+                    times(1)).notifyUserDataRoamingEnabled(eq(false),
+                    isNull());
+            clearInvocations(mockDataServiceManager);
+        });
 
         mDataSettingsManagerUT.setDefaultDataRoamingEnabled();
         assertFalse(mDataSettingsManagerUT.isDataRoamingEnabled());
+        // Should not notify data service manager when there have no changes
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> verify(mockDataServiceManager,
+                never()).notifyUserDataRoamingEnabled(anyBoolean(),
+                isNull()));
     }
 
     @Test
@@ -225,6 +261,128 @@ public class DataSettingsManagerTest extends TelephonyTest {
         doReturn(mPhone.getSubId()).when(mSubscriptionManagerService).getDefaultDataSubId();
         callback.onDefaultDataSubscriptionChanged(mPhone.getSubId());
         verify(mPhone).notifyDataEnabled(false, TelephonyManager.DATA_ENABLED_REASON_OVERRIDE);
+    }
+
+    @Test
+    public void testUpdateDataEnabledAndNotifyDataService() throws Exception {
+        // Mock 2nd phone the DDS phone.
+        int phone2Id = 1;
+        int phone2SubId = 2;
+        doReturn(phone2SubId).when(mSubscriptionManagerService).getDefaultDataSubId();
+        Phone phone2 = Mockito.mock(Phone.class);
+        doReturn(phone2Id).when(phone2).getPhoneId();
+        doReturn(phone2SubId).when(phone2).getSubId();
+        doReturn(phone2Id).when(mSubscriptionManagerService).getPhoneId(phone2SubId);
+        DataSettingsManager dataSettingsManager2 = Mockito.mock(DataSettingsManager.class);
+        doReturn(dataSettingsManager2).when(phone2).getDataSettingsManager();
+        doReturn(true).when(phone2).isUserDataEnabled();
+
+        mPhones = new Phone[]{mPhone, phone2};
+        replaceInstance(PhoneFactory.class, "sPhones", null, mPhones);
+
+        processAllMessages();
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+        mDataSettingsManagerUT.sendEmptyMessage(11 /* EVENT_INITIALIZE */);
+        processAllMessages();
+        // Verify notified user data enabling state to data service manager when initialize
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager, times(1)).notifyUserDataEnabled(eq(true),
+                    isNull());
+            clearInvocations(mockDataServiceManager);
+        });
+
+        mDataSettingsManagerUT.setDataEnabled(TelephonyManager.DATA_ENABLED_REASON_USER, false, "");
+        processAllMessages();
+        // Verify notified user data enabling state to data service manager when data disabled
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager, times(1)).notifyUserDataEnabled(eq(false),
+                    isNull());
+            clearInvocations(mockDataServiceManager);
+        });
+
+        mDataSettingsManagerUT.setDataEnabled(TelephonyManager.DATA_ENABLED_REASON_USER, true, "");
+        processAllMessages();
+        // Verify notified user data enabling state to data service manager when data enabled
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager, times(1)).notifyUserDataEnabled(eq(true),
+                    isNull());
+            clearInvocations(mockDataServiceManager);
+        });
+    }
+
+    @Test
+    public void testInitializeNotifyDataServiceUserDataEnabled() throws Exception {
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            // After initialize, should notify data service the current data & roaming enabled state
+            verify(mockDataServiceManager, times(1)).notifyUserDataEnabled(eq(true),
+                    isNull());
+            verify(mockDataServiceManager, times(1)).notifyUserDataRoamingEnabled(anyBoolean(),
+                    isNull());
+        });
+    }
+
+    @Test
+    public void testNotifyDataServiceUserDataEnabledWhenSimStateChanged() {
+        processAllMessages();
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+
+        var dataNetworkControllerCallbackArgumentCaptor = ArgumentCaptor.forClass(
+                DataNetworkController.DataNetworkControllerCallback.class);
+        verify(mDataNetworkController).registerDataNetworkControllerCallback(
+                dataNetworkControllerCallbackArgumentCaptor.capture());
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+        // Sim absent should not trigger notify
+        dataNetworkControllerCallbackArgumentCaptor.getValue().onSimStateChanged(
+                TelephonyManager.SIM_STATE_ABSENT);
+        processAllMessages();
+
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager, never()).notifyUserDataRoamingEnabled(anyBoolean(),
+                    any());
+            verify(mockDataServiceManager, never()).notifyUserDataEnabled(anyBoolean(), any());
+        });
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+        // Sim loaded should trigger notify
+        dataNetworkControllerCallbackArgumentCaptor.getValue().onSimStateChanged(
+                TelephonyManager.SIM_STATE_LOADED);
+        processAllMessages();
+
+        mMockDataServiceManagers.forEach(mockDataServiceManager -> {
+            verify(mockDataServiceManager, times(1)).notifyUserDataRoamingEnabled(eq(false),
+                    isNull());
+            verify(mockDataServiceManager, times(1)).notifyUserDataEnabled(eq(true),
+                    isNull());
+        });
+    }
+
+    @Test
+    public void testNotifyCorrespondingDataServiceUserDataEnabledWhenDataServiceBound() {
+        processAllMessages();
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+        var dataNetworkControllerCallbackArgumentCaptor = ArgumentCaptor.forClass(
+                DataNetworkController.DataNetworkControllerCallback.class);
+        verify(mDataNetworkController).registerDataNetworkControllerCallback(
+                dataNetworkControllerCallbackArgumentCaptor.capture());
+        mMockDataServiceManagers.forEach(Mockito::clearInvocations);
+
+        dataNetworkControllerCallbackArgumentCaptor.getValue().onDataServiceBound(
+                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
+        processAllMessages();
+
+        // Notify the bound data service manager
+        verify(mMockedWwanDataServiceManager, times(1)).notifyUserDataRoamingEnabled(eq(false),
+                isNull());
+        verify(mMockedWwanDataServiceManager, times(1)).notifyUserDataEnabled(eq(true),
+                isNull());
+        // Should not notify another data service manager
+        verify(mMockedWlanDataServiceManager, never()).notifyUserDataRoamingEnabled(anyBoolean(),
+                any());
+        verify(mMockedWlanDataServiceManager, never()).notifyUserDataEnabled(anyBoolean(), any());
     }
 
     @Test

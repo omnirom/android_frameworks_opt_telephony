@@ -56,8 +56,6 @@ import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.TelephonyRegistryManager;
-import android.telephony.ims.ImsReasonInfo;
-import android.telephony.ims.ImsRegistrationAttributes;
 import android.telephony.ims.RegistrationManager;
 import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.util.ArrayMap;
@@ -77,12 +75,10 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConfigurationManager;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.RadioConfig;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.data.DataNetworkController.NetworkRequestList;
 import com.android.internal.telephony.data.DataSettingsManager.DataSettingsManagerCallback;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.imsphone.ImsPhone;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
 import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent.DataSwitch;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
@@ -342,7 +338,7 @@ public class PhoneSwitcher extends Handler {
             mAutoDataSwitchCallback;
 
     private final ConnectivityManager mConnectivityManager;
-    private int mImsRegistrationTech = REGISTRATION_TECH_NONE;
+
     @VisibleForTesting
     public final SparseIntArray mImsRegistrationRadioTechMap = new SparseIntArray();
     @NonNull
@@ -379,26 +375,6 @@ public class PhoneSwitcher extends Handler {
             mAutoDataSwitchController.updateDefaultNetworkCapabilities(null);
         }
     }
-
-    private final RegistrationManager.RegistrationCallback mRegistrationCallback =
-            new RegistrationManager.RegistrationCallback() {
-        @Override
-        public void onRegistered(@NonNull ImsRegistrationAttributes attributes) {
-            int imsRegistrationTech = attributes.getRegistrationTechnology();
-            if (imsRegistrationTech != mImsRegistrationTech) {
-                mImsRegistrationTech = imsRegistrationTech;
-                sendMessage(obtainMessage(EVENT_IMS_RADIO_TECH_CHANGED));
-            }
-        }
-
-        @Override
-        public void onUnregistered(@NonNull ImsReasonInfo info) {
-            if (mImsRegistrationTech != REGISTRATION_TECH_NONE) {
-                mImsRegistrationTech = REGISTRATION_TECH_NONE;
-                sendMessage(obtainMessage(EVENT_IMS_RADIO_TECH_CHANGED));
-            }
-        }
-    };
 
     private final DefaultNetworkCallback mDefaultNetworkCallback = new DefaultNetworkCallback();
 
@@ -471,24 +447,6 @@ public class PhoneSwitcher extends Handler {
         }
     }
 
-    private void registerForImsRadioTechChange(Context context, int phoneId) {
-        try {
-            mImsRegisterCallback.setCallback(context, phoneId, mRegistrationCallback, this::post);
-            mIsRegisteredForImsRadioTechChange = true;
-        } catch (ImsException imsException) {
-            mIsRegisteredForImsRadioTechChange = false;
-        }
-    }
-
-    private void registerForImsRadioTechChange() {
-        // register for radio tech change to listen to radio tech handover.
-        if (!mIsRegisteredForImsRadioTechChange) {
-            for (int i = 0; i < mActiveModemCount; i++) {
-                registerForImsRadioTechChange(mContext, i);
-            }
-        }
-    }
-
     /**
      * Register the callback for receiving information from {@link PhoneSwitcher}.
      *
@@ -552,14 +510,12 @@ public class PhoneSwitcher extends Handler {
                 if (phone.getImsPhone() != null) {
                     phone.getImsPhone().registerForPreciseCallStateChanged(
                             this, EVENT_PRECISE_CALL_STATE_CHANGED, null);
-                    if (mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                        // Initialize IMS registration tech
-                        mImsRegistrationRadioTechMap.put(phoneId, REGISTRATION_TECH_NONE);
-                        ((ImsPhone) phone.getImsPhone()).registerForImsRegistrationChanges(
-                                this, EVENT_IMS_RADIO_TECH_CHANGED, null);
+                    // Initialize IMS registration tech
+                    mImsRegistrationRadioTechMap.put(phoneId, REGISTRATION_TECH_NONE);
+                    ((ImsPhone) phone.getImsPhone()).registerForImsRegistrationChanges(
+                            this, EVENT_IMS_RADIO_TECH_CHANGED, null);
 
-                        log("register handler to receive IMS registration : " + phoneId);
-                    }
+                    log("register handler to receive IMS registration : " + phoneId);
                 }
                 mDataSettingsManagerCallbacks.computeIfAbsent(phoneId,
                         v -> new DataSettingsManagerCallback(this::post) {
@@ -577,10 +533,6 @@ public class PhoneSwitcher extends Handler {
                             }});
                 phone.getDataSettingsManager().registerCallback(
                         mDataSettingsManagerCallbacks.get(phoneId));
-
-                if (!mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                    registerForImsRadioTechChange(context, phoneId);
-                }
             }
             Set<CommandException.Error> ddsFailure = new HashSet<>();
             mCurrentDdsSwitchFailure.add(ddsFailure);
@@ -627,19 +579,14 @@ public class PhoneSwitcher extends Handler {
         };
         mAutoDataSwitchController = new AutoDataSwitchController(context, looper, this,
                 mFlags, mAutoDataSwitchCallback);
-        if (!mFlags.ddsCallback()) {
-            mContext.registerReceiver(mDefaultDataChangedReceiver,
-                    new IntentFilter(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED));
-        } else {
-            mSubscriptionManagerService.registerCallback(new SubscriptionManagerServiceCallback(
-                    this::post) {
-                @Override
-                public void onDefaultDataSubscriptionChanged(int subId) {
-                    evaluateIfImmediateDataSwitchIsNeeded("default data sub changed to " + subId,
-                            DataSwitch.Reason.DATA_SWITCH_REASON_MANUAL);
-                }
-            });
-        }
+        mSubscriptionManagerService.registerCallback(new SubscriptionManagerServiceCallback(
+                this::post) {
+            @Override
+            public void onDefaultDataSubscriptionChanged(int subId) {
+                evaluateIfImmediateDataSwitchIsNeeded("default data sub changed to " + subId,
+                        DataSwitch.Reason.DATA_SWITCH_REASON_MANUAL);
+            }
+        });
 
         PhoneConfigurationManager.registerForMultiSimConfigChange(
                 this, EVENT_MULTI_SIM_CONFIG_CHANGED, null);
@@ -649,14 +596,6 @@ public class PhoneSwitcher extends Handler {
 
         logl("PhoneSwitcher started");
     }
-
-    private final BroadcastReceiver mDefaultDataChangedReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Message msg = PhoneSwitcher.this.obtainMessage(EVENT_PRIMARY_DATA_SUB_CHANGED);
-            msg.sendToTarget();
-        }
-    };
 
     private final BroadcastReceiver mSimStateIntentReceiver = new BroadcastReceiver() {
         @Override
@@ -749,18 +688,12 @@ public class PhoneSwitcher extends Handler {
                 break;
             }
             case EVENT_IMS_RADIO_TECH_CHANGED: {
-                // register for radio tech change to listen to radio tech handover in case previous
-                // attempt was not successful
-                if (!mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                    registerForImsRadioTechChange();
-                } else {
-                    if (msg.obj == null) {
-                        log("EVENT_IMS_RADIO_TECH_CHANGED but parameter is not available");
-                        break;
-                    }
-                    if (!onImsRadioTechChanged((AsyncResult) (msg.obj))) {
-                        break;
-                    }
+                if (msg.obj == null) {
+                    log("EVENT_IMS_RADIO_TECH_CHANGED but parameter is not available");
+                    break;
+                }
+                if (!onImsRadioTechChanged((AsyncResult) (msg.obj))) {
+                    break;
                 }
 
                 // if voice call state changes or in voice call didn't change
@@ -772,12 +705,6 @@ public class PhoneSwitcher extends Handler {
                 break;
             }
             case EVENT_PRECISE_CALL_STATE_CHANGED: {
-                // register for radio tech change to listen to radio tech handover in case previous
-                // attempt was not successful
-                if (!mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                    registerForImsRadioTechChange();
-                }
-
                 // If the phoneId in voice call didn't change, do nothing.
                 if (!updatesIfPhoneInVoiceCallChanged()) {
                     break;
@@ -987,14 +914,12 @@ public class PhoneSwitcher extends Handler {
             if (phone.getImsPhone() != null) {
                 phone.getImsPhone().registerForPreciseCallStateChanged(
                         this, EVENT_PRECISE_CALL_STATE_CHANGED, null);
-                if (mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                    // Initialize IMS registration tech for new phoneId
-                    mImsRegistrationRadioTechMap.put(phoneId, REGISTRATION_TECH_NONE);
-                    ((ImsPhone) phone.getImsPhone()).registerForImsRegistrationChanges(
-                            this, EVENT_IMS_RADIO_TECH_CHANGED, null);
+                // Initialize IMS registration tech for new phoneId
+                mImsRegistrationRadioTechMap.put(phoneId, REGISTRATION_TECH_NONE);
+                ((ImsPhone) phone.getImsPhone()).registerForImsRegistrationChanges(
+                        this, EVENT_IMS_RADIO_TECH_CHANGED, null);
 
-                    log("register handler to receive IMS registration : " + phoneId);
-                }
+                log("register handler to receive IMS registration : " + phoneId);
             }
 
             mDataSettingsManagerCallbacks.computeIfAbsent(phone.getPhoneId(),
@@ -1017,10 +942,6 @@ public class PhoneSwitcher extends Handler {
 
             Set<CommandException.Error> ddsFailure = new HashSet<>();
             mCurrentDdsSwitchFailure.add(ddsFailure);
-
-            if (!mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                registerForImsRadioTechChange(mContext, phoneId);
-            }
         }
 
         mAutoDataSwitchController.onMultiSimConfigChanged(activeModemCount);
@@ -1144,14 +1065,6 @@ public class PhoneSwitcher extends Handler {
                     mAutoSelectedDataSubId = DEFAULT_SUBSCRIPTION_ID;
                 }
                 mPhoneSubscriptions[i] = sub;
-
-                if (!mFlags.changeMethodOfObtainingImsRegistrationRadioTech()) {
-                    // Listen to IMS radio tech change for new sub
-                    if (SubscriptionManager.isValidSubscriptionId(sub)) {
-                        registerForImsRadioTechChange(mContext, i);
-                    }
-                }
-
                 diffDetected = true;
                 mAutoDataSwitchController.notifySubscriptionsMappingChanged();
             }
@@ -1737,16 +1650,17 @@ public class PhoneSwitcher extends Handler {
         }
         Call bgCall = phone.getBackgroundCall();
         Call fgCall = phone.getForegroundCall();
-        if (bgCall == null || fgCall == null) {
+        Call ringingCall = phone.getRingingCall();
+        if (bgCall == null || fgCall == null || ringingCall == null) {
             return false;
         }
         // A phone in voice call might trigger data being switched to it.
         // Exclude dialing to give modem time to process an EMC first before dealing with DDS switch
         // Include alerting because modem RLF leads to delay in switch, so carrier required to
         // switch in alerting phase.
-        // TODO: check ringing call for vDADA
         return (!bgCall.isIdle() && bgCall.getState() != Call.State.DIALING)
-                || (!fgCall.isIdle() && fgCall.getState() != Call.State.DIALING);
+                || (!fgCall.isIdle() && fgCall.getState() != Call.State.DIALING)
+                || (!ringingCall.isIdle() && ringingCall.getState() != Call.State.DIALING);
     }
 
     private void updateHalCommandToUse() {
@@ -1831,7 +1745,6 @@ public class PhoneSwitcher extends Handler {
         DataSwitch dataSwitch = new DataSwitch();
         dataSwitch.state = state;
         dataSwitch.reason = reason;
-        TelephonyMetrics.getInstance().writeDataSwitch(subId, dataSwitch);
     }
 
     /**

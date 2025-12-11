@@ -47,6 +47,7 @@ public class SimTypeInfo {
     public @SimType int mCurrentSimType = SimType.SIM_TYPE_UNKNOWN;
     // Bitmask of the supported {@code SimType}s
     public int mSupportedSimTypes;
+    public int mPhysicalSlotIndex;
 
     /**
      * Set the current SimType according to the input type.
@@ -71,7 +72,8 @@ public class SimTypeInfo {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("SimTypeInfo {activeSimType=").append(mCurrentSimType).append(",")
-                .append("supportedSimType=").append(mSupportedSimTypes);
+                .append("supportedSimType=").append(mSupportedSimTypes).append(",")
+                .append("physicalSlotIndex=").append(mPhysicalSlotIndex);
         sb.append("}");
         return sb.toString();
     }

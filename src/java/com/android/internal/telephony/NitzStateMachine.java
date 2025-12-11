@@ -22,6 +22,7 @@ import android.content.Context;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
+import android.timezone.MobileCountries;
 
 import com.android.internal.util.IndentingPrintWriter;
 
@@ -31,10 +32,21 @@ import java.io.PrintWriter;
 /**
  * An interface for the Android component that handles NITZ and related signals for time and time
  * zone detection.
- *
- * {@hide}
+ * @hide
  */
 public interface NitzStateMachine {
+
+    /**
+     * Registers a listener that will be triggered when a new country has been detected by the
+     * {@link NitzStateMachine}. This is used for countries that share a same MCC but different
+     * time zones.
+     */
+    void registerCountryDetection(CountryDetectionListener listener);
+
+    /**
+     * Unregisters a given listener if it was previously registered.
+     */
+    void unregisterCountryDetection(CountryDetectionListener listener);
 
     /**
      * Called when the country suitable for time zone detection is detected.
@@ -43,6 +55,11 @@ public interface NitzStateMachine {
      *     cells only, otherwise {@link #handleCountryUnavailable()} should be called
      */
     void handleCountryDetected(@NonNull String countryIsoCode);
+
+    /**
+     * Called when the {@link MobileCountries} suitable for time zone detection is detected.
+     */
+    void handleMobileCountriesDetected(MobileCountries countryIsoCode);
 
     /**
      * Informs the {@link NitzStateMachine} that the network has become available.
@@ -130,7 +147,7 @@ public interface NitzStateMachine {
     /**
      * The real implementation of {@link DeviceState}.
      *
-     * {@hide}
+     * @hide
      */
     class DeviceStateImpl implements DeviceState {
 

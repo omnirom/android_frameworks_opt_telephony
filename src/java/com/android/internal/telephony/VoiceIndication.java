@@ -19,9 +19,6 @@ package com.android.internal.telephony;
 import static android.telephony.TelephonyManager.HAL_SERVICE_VOICE;
 
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CALL_RING;
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CDMA_CALL_WAITING;
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CDMA_INFO_REC;
-import static com.android.internal.telephony.RILConstants.RIL_UNSOL_CDMA_OTA_PROVISION_STATUS;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_EMERGENCY_NUMBER_LIST;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_ENTER_EMERGENCY_CALLBACK_MODE;
 import static com.android.internal.telephony.RILConstants.RIL_UNSOL_EXIT_EMERGENCY_CALLBACK_MODE;
@@ -38,9 +35,6 @@ import android.hardware.radio.voice.IRadioVoiceIndication;
 import android.os.AsyncResult;
 import android.telephony.emergency.EmergencyNumber;
 
-import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
-import com.android.internal.telephony.cdma.CdmaInformationRecords;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.gsm.SsData;
 
 import java.util.ArrayList;
@@ -78,7 +72,6 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
             response[1] = (char) record.signalType;
             response[2] = (char) record.alertPitch;
             response[3] = (char) record.signal;
-            mRil.writeMetricsCallRing(response);
         }
 
         if (mRil.isLogOrTrace()) mRil.unsljLogRet(RIL_UNSOL_CALL_RING, response);
@@ -107,28 +100,6 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      */
     public void cdmaCallWaiting(int indicationType,
             android.hardware.radio.voice.CdmaCallWaiting callWaitingRecord) {
-        if (Flags.phoneTypeCleanup()) return;
-        mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
-
-        // TODO: create a CdmaCallWaitingNotification constructor that takes in these fields to make
-        // sure no fields are missing
-        CdmaCallWaitingNotification notification = new CdmaCallWaitingNotification();
-        notification.number = callWaitingRecord.number;
-        notification.numberPresentation = CdmaCallWaitingNotification.presentationFromCLIP(
-                callWaitingRecord.numberPresentation);
-        notification.name = callWaitingRecord.name;
-        notification.namePresentation = notification.numberPresentation;
-        notification.isPresent = callWaitingRecord.signalInfoRecord.isPresent ? 1 : 0;
-        notification.signalType = callWaitingRecord.signalInfoRecord.signalType;
-        notification.alertPitch = callWaitingRecord.signalInfoRecord.alertPitch;
-        notification.signal = callWaitingRecord.signalInfoRecord.signal;
-        notification.numberType = callWaitingRecord.numberType;
-        notification.numberPlan = callWaitingRecord.numberPlan;
-
-        if (mRil.isLogOrTrace()) mRil.unsljLogRet(RIL_UNSOL_CDMA_CALL_WAITING, notification);
-
-        mRil.mCallWaitingInfoRegistrants.notifyRegistrants(
-                new AsyncResult(null, notification, null));
     }
 
     /**
@@ -138,98 +109,6 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      */
     public void cdmaInfoRec(int indicationType,
             android.hardware.radio.voice.CdmaInformationRecord[] records) {
-        if (Flags.phoneTypeCleanup()) return;
-        mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
-
-        for (int i = 0; i < records.length; i++) {
-            android.hardware.radio.voice.CdmaInformationRecord record = records[i];
-            int id = record.name;
-            CdmaInformationRecords cdmaInformationRecords;
-            switch (id) {
-                case CdmaInformationRecords.RIL_CDMA_DISPLAY_INFO_REC:
-                case CdmaInformationRecords.RIL_CDMA_EXTENDED_DISPLAY_INFO_REC:
-                    CdmaInformationRecords.CdmaDisplayInfoRec cdmaDisplayInfoRec =
-                            new CdmaInformationRecords.CdmaDisplayInfoRec(id,
-                                    record.display[0].alphaBuf);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaDisplayInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_CALLED_PARTY_NUMBER_INFO_REC:
-                case CdmaInformationRecords.RIL_CDMA_CALLING_PARTY_NUMBER_INFO_REC:
-                case CdmaInformationRecords.RIL_CDMA_CONNECTED_NUMBER_INFO_REC:
-                    android.hardware.radio.voice.CdmaNumberInfoRecord numInfoRecord =
-                            record.number[0];
-                    CdmaInformationRecords.CdmaNumberInfoRec cdmaNumberInfoRec =
-                            new CdmaInformationRecords.CdmaNumberInfoRec(id, numInfoRecord.number,
-                                    numInfoRecord.numberType, numInfoRecord.numberPlan,
-                                    numInfoRecord.pi, numInfoRecord.si);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaNumberInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_SIGNAL_INFO_REC:
-                    android.hardware.radio.voice.CdmaSignalInfoRecord signalInfoRecord =
-                            record.signal[0];
-                    CdmaInformationRecords.CdmaSignalInfoRec cdmaSignalInfoRec =
-                            new CdmaInformationRecords.CdmaSignalInfoRec(
-                                    signalInfoRecord.isPresent ? 1 : 0, signalInfoRecord.signalType,
-                                    signalInfoRecord.alertPitch, signalInfoRecord.signal);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaSignalInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_REDIRECTING_NUMBER_INFO_REC:
-                    android.hardware.radio.voice.CdmaRedirectingNumberInfoRecord
-                            redirectingNumberInfoRecord = record.redir[0];
-                    CdmaInformationRecords.CdmaRedirectingNumberInfoRec
-                            cdmaRedirectingNumberInfoRec =
-                            new CdmaInformationRecords.CdmaRedirectingNumberInfoRec(
-                                    redirectingNumberInfoRecord.redirectingNumber.number,
-                                    redirectingNumberInfoRecord.redirectingNumber.numberType,
-                                    redirectingNumberInfoRecord.redirectingNumber.numberPlan,
-                                    redirectingNumberInfoRecord.redirectingNumber.pi,
-                                    redirectingNumberInfoRecord.redirectingNumber.si,
-                                    redirectingNumberInfoRecord.redirectingReason);
-                    cdmaInformationRecords = new CdmaInformationRecords(
-                            cdmaRedirectingNumberInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_LINE_CONTROL_INFO_REC:
-                    android.hardware.radio.voice.CdmaLineControlInfoRecord lineControlInfoRecord =
-                            record.lineCtrl[0];
-                    CdmaInformationRecords.CdmaLineControlInfoRec cdmaLineControlInfoRec =
-                            new CdmaInformationRecords.CdmaLineControlInfoRec(
-                                    lineControlInfoRecord.lineCtrlPolarityIncluded,
-                                    lineControlInfoRecord.lineCtrlToggle,
-                                    lineControlInfoRecord.lineCtrlReverse,
-                                    lineControlInfoRecord.lineCtrlPowerDenial);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaLineControlInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_T53_CLIR_INFO_REC:
-                    CdmaInformationRecords.CdmaT53ClirInfoRec cdmaT53ClirInfoRec =
-                            new CdmaInformationRecords.CdmaT53ClirInfoRec(record.clir[0].cause);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaT53ClirInfoRec);
-                    break;
-
-                case CdmaInformationRecords.RIL_CDMA_T53_AUDIO_CONTROL_INFO_REC:
-                    android.hardware.radio.voice.CdmaT53AudioControlInfoRecord
-                            audioControlInfoRecord = record.audioCtrl[0];
-                    CdmaInformationRecords.CdmaT53AudioControlInfoRec cdmaT53AudioControlInfoRec =
-                            new CdmaInformationRecords.CdmaT53AudioControlInfoRec(
-                                    audioControlInfoRecord.upLink,
-                                    audioControlInfoRecord.downLink);
-                    cdmaInformationRecords = new CdmaInformationRecords(cdmaT53AudioControlInfoRec);
-                    break;
-
-                default:
-                    throw new RuntimeException("RIL_UNSOL_CDMA_INFO_REC: unsupported record. Got "
-                            + CdmaInformationRecords.idToString(id) + " ");
-            }
-
-            if (mRil.isLogOrTrace()) {
-                mRil.unsljLogRet(RIL_UNSOL_CDMA_INFO_REC, cdmaInformationRecords);
-            }
-            mRil.notifyRegistrantsCdmaInfoRec(cdmaInformationRecords);
-        }
     }
 
     /**
@@ -238,16 +117,6 @@ public class VoiceIndication extends IRadioVoiceIndication.Stub {
      * @param status CDMA OTA provision status
      */
     public void cdmaOtaProvisionStatus(int indicationType, int status) {
-        if (Flags.phoneTypeCleanup()) return;
-        mRil.processIndication(HAL_SERVICE_VOICE, indicationType);
-
-        int[] response = new int[] {status};
-
-        if (mRil.isLogOrTrace()) {
-            mRil.unsljLogRet(RIL_UNSOL_CDMA_OTA_PROVISION_STATUS, response);
-        }
-
-        mRil.mOtaProvisionRegistrants.notifyRegistrants(new AsyncResult(null, response, null));
     }
 
 

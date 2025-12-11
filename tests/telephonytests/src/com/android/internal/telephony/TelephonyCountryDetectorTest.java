@@ -102,6 +102,7 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
         mTestableLooper = new TestableLooper(mLooper);
 
         mLocaleTrackers = new LocaleTracker[]{mMockLocaleTracker, mMockLocaleTracker2};
+        replaceInstance(PhoneFactory.class, "sMadeDefaults", null, true);
         replaceInstance(PhoneFactory.class, "sPhones", null, new Phone[] {mPhone, mPhone2});
         when(mPhone.getServiceStateTracker()).thenReturn(mSST);
         when(mPhone.getPhoneId()).thenReturn(0);
@@ -194,6 +195,12 @@ public class TelephonyCountryDetectorTest extends TelephonyTest {
         assertEquals(2, mCountryDetectorUT.getCurrentNetworkCountryIso().size());
         assertTrue(mCountryDetectorUT.getCurrentNetworkCountryIso().contains("US"));
         assertTrue(mCountryDetectorUT.getCurrentNetworkCountryIso().contains("CA"));
+    }
+
+    @Test
+    public void testGetCurrentNetworkCountryIso_DefaultPhoneNotCreated() throws Exception {
+        replaceInstance(PhoneFactory.class, "sMadeDefaults", null, false);
+        assertTrue(mCountryDetectorUT.getCurrentNetworkCountryIso().isEmpty());
     }
 
     @Test

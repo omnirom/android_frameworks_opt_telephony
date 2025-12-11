@@ -21,7 +21,9 @@ import static org.junit.Assert.assertNotEquals;
 import android.net.InetAddresses;
 import android.net.LinkAddress;
 import android.os.Parcel;
+import android.telephony.AccessNetworkConstants;
 import android.telephony.PreciseDataConnectionState;
+import android.telephony.SubscriptionManager;
 import android.telephony.data.ApnSetting;
 import android.telephony.data.DataCallResponse;
 import android.telephony.data.EpsQos;
@@ -52,6 +54,7 @@ public class DataCallResponseTest extends AndroidTestCase {
     private static final byte[] FAKE_OS_APP_ID_2 = {-105, -92, -104, -29, -4, -110, 92,
             -108, -119, -122, 3, 51, -48, 110, 78, 71, 10, 69, 78, 84, 69,
             82, 80, 82, 73, 83, 69, 50};
+    private static final int PHYSICAL_NETWORK_SLOT_INDEX = 1;
 
     @SmallTest
     public void testParcel() {
@@ -77,6 +80,8 @@ public class DataCallResponseTest extends AndroidTestCase {
                         Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
                 .setNetworkValidationStatus(
                         PreciseDataConnectionState.NETWORK_VALIDATION_UNSUPPORTED)
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
                 .build();
 
         Parcel p = Parcel.obtain();
@@ -108,6 +113,8 @@ public class DataCallResponseTest extends AndroidTestCase {
                         Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
                 .setNetworkValidationStatus(
                         PreciseDataConnectionState.NETWORK_VALIDATION_IN_PROGRESS)
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
                 .build();
 
         DataCallResponse response1 = new DataCallResponse.Builder()
@@ -129,6 +136,8 @@ public class DataCallResponseTest extends AndroidTestCase {
                         Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
                 .setNetworkValidationStatus(
                         PreciseDataConnectionState.NETWORK_VALIDATION_IN_PROGRESS)
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
                 .build();
 
         assertEquals(response, response);
@@ -156,6 +165,8 @@ public class DataCallResponseTest extends AndroidTestCase {
                         new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID),
                         new TrafficDescriptor(FAKE_DNN_2, FAKE_OS_APP_ID_2)))
                 .setNetworkValidationStatus(PreciseDataConnectionState.NETWORK_VALIDATION_SUCCESS)
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WLAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
                 .build();
 
         assertNotSame(response1, response2);
@@ -186,11 +197,84 @@ public class DataCallResponseTest extends AndroidTestCase {
                         new TrafficDescriptor(FAKE_DNN_2, FAKE_OS_APP_ID_2),
                         new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
                 .setNetworkValidationStatus(PreciseDataConnectionState.NETWORK_VALIDATION_SUCCESS)
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WLAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
                 .build();
 
         assertEquals(response2, response3);
         assertEquals(response2.getNetworkValidationStatus(),
                 response3.getNetworkValidationStatus());
         assertEquals(response2.hashCode(), response3.hashCode());
+    }
+
+    @SmallTest
+    public void testPhysicalNetworkSlotIndex() {
+        DataCallResponse response = new DataCallResponse.Builder()
+                .setCause(0)
+                .setRetryDurationMillis(-1L)
+                .setId(1)
+                .setLinkStatus(2)
+                .setProtocolType(ApnSetting.PROTOCOL_IP)
+                .setInterfaceName(FAKE_IFNAME)
+                .setAddresses(Arrays.asList(
+                        new LinkAddress(InetAddresses.parseNumericAddress(FAKE_ADDRESS), 0)))
+                .setDnsAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_DNS)))
+                .setGatewayAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_GATEWAY)))
+                .setPcscfAddresses(
+                        Arrays.asList(InetAddresses.parseNumericAddress(FAKE_PCSCF_ADDRESS)))
+                .setMtuV4(1440)
+                .setMtuV6(1440)
+                .setTrafficDescriptors(
+                        Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WWAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
+                .build();
+        assertEquals(response.getPhysicalNetworkSlotIndex(), PHYSICAL_NETWORK_SLOT_INDEX);
+
+        response = new DataCallResponse.Builder()
+                .setCause(0)
+                .setRetryDurationMillis(-1L)
+                .setId(1)
+                .setLinkStatus(2)
+                .setProtocolType(ApnSetting.PROTOCOL_IP)
+                .setInterfaceName(FAKE_IFNAME)
+                .setAddresses(Arrays.asList(
+                        new LinkAddress(InetAddresses.parseNumericAddress(FAKE_ADDRESS), 0)))
+                .setDnsAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_DNS)))
+                .setGatewayAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_GATEWAY)))
+                .setPcscfAddresses(
+                        Arrays.asList(InetAddresses.parseNumericAddress(FAKE_PCSCF_ADDRESS)))
+                .setMtuV4(1440)
+                .setMtuV6(1440)
+                .setTrafficDescriptors(
+                        Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_WLAN)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
+                .build();
+        assertEquals(response.getPhysicalNetworkSlotIndex(),
+                SubscriptionManager.INVALID_SIM_SLOT_INDEX);
+
+        response = new DataCallResponse.Builder()
+                .setCause(0)
+                .setRetryDurationMillis(-1L)
+                .setId(1)
+                .setLinkStatus(2)
+                .setProtocolType(ApnSetting.PROTOCOL_IP)
+                .setInterfaceName(FAKE_IFNAME)
+                .setAddresses(Arrays.asList(
+                        new LinkAddress(InetAddresses.parseNumericAddress(FAKE_ADDRESS), 0)))
+                .setDnsAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_DNS)))
+                .setGatewayAddresses(Arrays.asList(InetAddresses.parseNumericAddress(FAKE_GATEWAY)))
+                .setPcscfAddresses(
+                        Arrays.asList(InetAddresses.parseNumericAddress(FAKE_PCSCF_ADDRESS)))
+                .setMtuV4(1440)
+                .setMtuV6(1440)
+                .setTrafficDescriptors(
+                        Arrays.asList(new TrafficDescriptor(FAKE_DNN, FAKE_OS_APP_ID)))
+                .setPhysicalNetworkTransportType(AccessNetworkConstants.TRANSPORT_TYPE_INVALID)
+                .setPhysicalNetworkSlotIndex(PHYSICAL_NETWORK_SLOT_INDEX)
+                .build();
+        assertEquals(response.getPhysicalNetworkSlotIndex(),
+                SubscriptionManager.INVALID_SIM_SLOT_INDEX);
     }
 }

@@ -32,7 +32,7 @@ import com.android.telephony.Rlog;
 import java.util.ArrayList;
 
 /**
- * {@hide}
+ * @hide
  */
 public abstract class IccFileHandler extends Handler implements IccConstants {
     protected static final String LOG_TAG = "IccFileHandler";

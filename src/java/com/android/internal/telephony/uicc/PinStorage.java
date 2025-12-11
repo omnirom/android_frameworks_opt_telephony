@@ -38,6 +38,7 @@ import static com.android.internal.telephony.uicc.IccCardStatus.PinState.PINSTAT
 import static com.android.internal.telephony.uicc.IccCardStatus.PinState.PINSTATE_ENABLED_VERIFIED;
 import static com.android.internal.telephony.util.TelephonyUtils.FORCE_VERBOSE_STATE_LOGGING;
 
+import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
@@ -47,6 +48,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.AsyncResult;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.os.PersistableBundle;
 import android.os.WorkSource;
@@ -66,10 +68,12 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.TelephonyStatsLog;
+import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.nano.StoredPinProto.EncryptedPin;
 import com.android.internal.telephony.nano.StoredPinProto.StoredPin;
 import com.android.internal.telephony.nano.StoredPinProto.StoredPin.PinStatus;
 import com.android.internal.telephony.uicc.IccCardStatus.PinState;
+import com.android.internal.telephony.util.WorkerThread;
 import com.android.internal.util.ArrayUtils;
 import com.android.telephony.Rlog;
 
@@ -145,6 +149,7 @@ public class PinStorage extends Handler {
     private final int mBootCount;
     private final KeyStore mKeyStore;
 
+    @Nullable
     private SecretKey mLongTermSecretKey;
     private SecretKey mShortTermSecretKey;
 
@@ -178,7 +183,8 @@ public class PinStorage extends Handler {
         }
     };
 
-    public PinStorage(Context context) {
+    public PinStorage(Context context, @NonNull Looper looper, @NonNull FeatureFlags featureFlags) {
+        super(looper);
         mContext = context;
         mBootCount = getBootCount();
         mKeyStore = initializeKeyStore();
@@ -208,9 +214,11 @@ public class PinStorage extends Handler {
         // The short term key is retrieved later when needed.
         String alias = (!mIsDeviceSecure || mIsDeviceLocked)
                 ? KEYSTORE_ALIAS_LONG_TERM_ALWAYS : KEYSTORE_ALIAS_LONG_TERM_USER_AUTH;
-        mLongTermSecretKey = initializeSecretKey(alias, /*createIfAbsent=*/ true);
+        // This is the main thread, so accessing keystore in a separate thread to prevent ANR.
+        WorkerThread.getExecutor().execute(() -> mLongTermSecretKey = initializeSecretKey(
+                alias, /*createIfAbsent=*/ true));
 
-        // If the device is not securee or is unlocked, we can start logic. Otherwise we need to
+        // If the device is not secured or is unlocked, we can start logic. Otherwise we need to
         // wait for the device to be unlocked and store any temporary PIN in RAM.
         if (!mIsDeviceSecure || !mIsDeviceLocked) {
             mRamStorage = null;
@@ -664,12 +672,12 @@ public class PinStorage extends Handler {
         if (mIsDeviceLocked) {
             // If the device is still locked, retrieve data from RAM storage.
             if (mRamStorage != null && mRamStorage.get(slotId) != null) {
-                result =  decryptStoredPin(mRamStorage.get(slotId), mLongTermSecretKey);
+                result = decryptStoredPin(mRamStorage.get(slotId), mLongTermSecretKey);
             }
         } else {
             // Load both the stored PIN in available state (with long-term key) and in other states
             // (with short-term key). At most one of them should be present at any given time and
-            // we treat the case wheere both are present as an error.
+            // we treat the case where both are present as an error.
             StoredPin availableStoredPin = loadPinInformationFromDisk(
                     slotId, SHARED_PREFS_AVAILABLE_PIN_BASE_KEY, mLongTermSecretKey);
             StoredPin rebootStoredPin = loadPinInformationFromDisk(
@@ -807,7 +815,7 @@ public class PinStorage extends Handler {
      * @return true if the operation was successful, false otherwise
      */
     private boolean savePinInformation(SharedPreferences.Editor editor, int slotId,
-            StoredPin storedPin, String baseKey, SecretKey secretKey) {
+            StoredPin storedPin, String baseKey, @Nullable SecretKey secretKey) {
         if (secretKey == null) {
             // Secret key for encryption is missing
             return false;
@@ -1150,7 +1158,7 @@ public class PinStorage extends Handler {
     }
 
     /** Returns the encrypted version of {@code input}, or an empty array in case of error. */
-    private byte[] encrypt(SecretKey secretKey, byte[] input) {
+    private byte[] encrypt(@Nullable SecretKey secretKey, byte[] input) {
         if (secretKey == null) {
             loge("Encrypt: Secret key is null");
             return new byte[0];

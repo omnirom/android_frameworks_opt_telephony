@@ -73,6 +73,23 @@ class DisplayTextParams extends CommandParams {
     }
 }
 
+/**
+ * Container class for SEND USSD proactive command.
+ */
+class SendUssdParams extends CommandParams {
+    public TextMessage mTextMsg;
+    public String mUssdString;
+    public byte mCodingScheme;
+
+    SendUssdParams(
+            CommandDetails cmdDet, TextMessage textMsg, String ussdString, byte codingScheme) {
+        super(cmdDet);
+        mTextMsg = textMsg;
+        mUssdString = ussdString;
+        mCodingScheme = codingScheme;
+    }
+}
+
 class LaunchBrowserParams extends CommandParams {
     TextMessage mConfirmMsg;
     LaunchBrowserMode mMode;
@@ -131,15 +148,29 @@ class PlayToneParams extends CommandParams {
     }
 }
 
+/**
+ * Container class for SET UP CALL proactive command.
+ */
 class CallSetupParams extends CommandParams {
     TextMessage mConfirmMsg;
     TextMessage mCallMsg;
+    String mAddress;
+    Duration mDuration;
 
     CallSetupParams(CommandDetails cmdDet, TextMessage confirmMsg,
             TextMessage callMsg) {
         super(cmdDet);
         mConfirmMsg = confirmMsg;
         mCallMsg = callMsg;
+    }
+
+    CallSetupParams(CommandDetails cmdDet, TextMessage confirmMsg,
+            TextMessage callMsg, String address, Duration duration) {
+        super(cmdDet);
+        mConfirmMsg = confirmMsg;
+        mCallMsg = callMsg;
+        mAddress = address;
+        mDuration = duration;
     }
 
     @Override

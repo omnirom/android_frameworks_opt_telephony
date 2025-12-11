@@ -24,7 +24,7 @@ import android.os.Parcelable;
  * This class serves to pass around the parameters of Keepalive session
  * status within the telephony framework.
  * <p>
- * {@hide}
+ * @hide
  */
 public class KeepaliveStatus implements Parcelable {
     /** This should match the HAL {@code KeepaliveStatus.aidl}. */

@@ -11,26 +11,10 @@ flag {
 
 # OWNER=joonhunshin TARGET=24Q2
 flag {
-    name: "ignore_already_terminated_incoming_call_before_registering_listener"
-    namespace: "telephony"
-    description: "This flag ignores the incoming call by throwing an exception if the call was already terminated before the framework registers the listener for the incoming call"
-    bug:"289461637"
-}
-
-# OWNER=joonhunshin TARGET=24Q2
-flag {
     name: "clear_cached_ims_phone_number_when_device_lost_ims_registration"
     namespace: "telephony"
     description: "This flag clears cached IMS phone number when device lost IMS registration"
     bug:"288002989"
-}
-
-# OWNER=sangyun TARGET=24Q2
-flag {
-    name: "update_ims_service_by_gathering_provisioning_changes"
-    namespace: "telephony"
-    description: "This flag is created to prevent unnecessary updates when multiple provisioning items to update ims service are changed."
-    bug:"302281114"
 }
 
 # OWNER=shmun TARGET=24Q3
@@ -42,14 +26,6 @@ flag {
     bug:"290573256"
 }
 
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "terminate_active_video_call_when_accepting_second_video_call_as_audio_only"
-    namespace: "telephony"
-    description: "This flag terminates active video call instead holding when accepting 2nd incoming video call as audio only"
-    bug:"309548300"
-}
-
 # OWNER=sewookseo TARGET=24Q3
 flag {
     name: "emergency_registration_state"
@@ -57,85 +33,6 @@ flag {
     namespace: "telephony"
     description: "This flag is created to notify emergency registration state changed."
     bug:"312101946"
-}
-
-# OWNER=apsankar TARGET=24Q3
-flag {
-    name: "call_extra_for_non_hold_supported_carriers"
-    namespace: "telephony"
-    description: "For DSDA devices, controls whether the existing call will be dropped when an incoming call on a different sub is answered, when either sub does not support hold capability."
-    bug:"315993953"
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "update_roaming_state_to_set_wfc_mode"
-    namespace: "telephony"
-    description: "This flag updates roaming state to set wfc mode"
-    bug:"317298331"
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "enable_sip_subscribe_retry"
-    namespace: "telephony"
-    description: "This flag controls whether framework supports SIP subscribe retry or not"
-    bug:"297023230"
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "answer_audio_only_when_answering_via_mmi_code"
-    namespace: "telephony"
-    description: "This flag changes the media type when answering incoming call via MMI code"
-    bug:"286499659"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "notify_initial_ims_provisioning_status"
-    namespace: "telephony"
-    description: "This flag allows to notify initial IMS provisioning status when IFeatureProvisioningCallback registered or ImsService connected"
-    bug:"330082572"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=joonhunshin TARGET=24Q3
-flag {
-    name: "set_number_of_sim_for_ims_enable"
-    namespace: "telephony"
-    description: "This flag allows to set number of SIM for IMS enable/disable for each slot when the eSIM is added while the binding with ImsService exists"
-    bug:"331971397"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=joonhunshin TARGET=24Q4
-flag {
-    name: "prevent_hangup_during_call_merge"
-    namespace: "telephony"
-    description: "This flag prevents hangup call during call merge"
-    bug:"317070933"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
-# OWNER=joonhunshin TARGET=24Q4
-flag {
-    name: "avoid_deleting_ims_object_from_cache"
-    namespace: "telephony"
-    description: "This flag controls deleting cached object to synchronize part of application callback and part of ImsFeature behavior"
-    bug:"353577279"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
 }
 
 # OWNER=breadley TARGET=25Q1
@@ -167,13 +64,74 @@ flag {
     is_exported: true
 }
 
-# OWNER=joonhunshin TARGET=25Q2
+# OWNER=yongnamcha TARGET=26Q2
 flag {
-    name: "skip_mmi_code_check_for_emergency_call"
+    name: "support_throttle_time_for_deregistration"
     namespace: "telephony"
-    description: "This flag allows to skip the MMI code check for the emergency number."
-    bug:"378065922"
+    description: "This flag controls whether the IMS registration throttling time is sent to the modem upon deregistration to support time-based carrier requirements."
+    bug:"408139522"
+    is_exported: true
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
+}
+
+# OWNER=grantmenke TARGET=25Q4
+flag {
+    name: "reuse_original_conn_remote_conf_behavior"
+    namespace: "telephony"
+    description: "Used to reuse the original Telephony Connection when a remotely hosted IMS conference is created."
+    bug:"391889544"
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
+}
+
+# OWNER=gwenlin TARGET=26Q2
+flag {
+    name: "allowed_services"
+    namespace: "telephony"
+    description: "Update allowed services to the modem"
+    bug:"389157806"
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
+}
+
+# OWNER=vodduarun TARGET=25Q4
+flag {
+    name: "send_merge_failure_on_handle_conference_failed"
+    namespace: "telephony"
+    description: "This flag updates merge failure to clients when ImsCall rejects the merge request"
+    bug:"418942310"
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+# OWNER=gpiecyk TARGET=25Q4
+flag {
+    name: "enable_rtt_hold_carrier_config"
+    namespace: "telephony"
+    description: "This flag controls the availability and functionality of the KEY_ALLOW_HOLD_IN_RTT_CALL_BOOL carrier config."
+    bug: "413765645"
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
+}
+
+# OWNER=shashannk TARGET=26Q2
+flag {
+    name: "support_ims_sms_smma"
+    namespace: "telephony"
+    description: "This flag exposes sms memory availability notification related APIs"
+    bug:"428178177"
+}
+
+# OWNER=gwenlin TARGET=26Q2
+flag {
+    name: "pcscf_address"
+    namespace: "telephony"
+    description: "This flag adds P-CSCF address in IMS registration attributes"
+    bug:"433593483"
 }

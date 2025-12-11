@@ -365,11 +365,7 @@ public class ProxyController {
                     logd("onStartRadioCapabilityResponse got exception=" + ar.exception);
                     mRadioCapabilitySessionId = mUniqueIdGenerator.getAndIncrement();
                     Intent intent = new Intent(TelephonyIntents.ACTION_SET_RADIO_CAPABILITY_FAILED);
-                    if (mFlags.hsumBroadcast()) {
-                        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
-                    } else {
-                        mContext.sendBroadcast(intent);
-                    }
+                    mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
                     clearTransaction();
                     return;
                 }
@@ -616,12 +612,8 @@ public class ProxyController {
         }
 
         // Broadcast that we're done
-        if (mFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
-                    android.Manifest.permission.READ_PHONE_STATE);
-        } else {
-            mContext.sendBroadcast(intent, android.Manifest.permission.READ_PHONE_STATE);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
+                android.Manifest.permission.READ_PHONE_STATE);
     }
 
     // Clear this transaction

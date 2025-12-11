@@ -34,7 +34,7 @@ import java.io.IOException;
 import java.util.HashMap;
 
 /**
- * {@hide}
+ * @hide
  */
 class VoiceMailConstants {
     private HashMap<String, String[]> CarrierVmMap;

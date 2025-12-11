@@ -27,6 +27,11 @@ message SatelliteConfigProto {
   optional int32 version = 1;
   repeated CarrierSupportedSatelliteServicesProto carrier_supported_satellite_services = 2;
   optional SatelliteRegionProto device_satellite_region = 3;
+  optional CarrierRoamingConfigProto carrier_roaming_config = 4;
+}
+
+message CarrierRoamingConfigProto {
+  optional int32 max_allowed_data_mode = 1;
 }
 
 message CarrierSupportedSatelliteServicesProto {

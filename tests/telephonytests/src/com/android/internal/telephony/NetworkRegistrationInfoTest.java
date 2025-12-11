@@ -19,11 +19,14 @@ package com.android.internal.telephony;
 import static com.google.common.truth.Truth.assertThat;
 
 import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.assertNotSame;
 
 import android.compat.testing.PlatformCompatChangeRule;
 import android.os.Parcel;
 import android.telephony.AccessNetworkConstants;
 import android.telephony.CellIdentityLte;
+import android.telephony.CellInfo;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
@@ -151,5 +154,22 @@ public class NetworkRegistrationInfoTest {
         NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder().build();
         nri.setIsNonTerrestrialNetwork(true);
         assertThat(nri.isNonTerrestrialNetwork()).isEqualTo(true);
+    }
+
+    @Test
+    public void testSanitizeLocationInfo() {
+        final int cellIdentity = 3;
+        NetworkRegistrationInfo nri = new NetworkRegistrationInfo.Builder()
+                .setCellIdentity(new CellIdentityLte(1, 2, cellIdentity, 4, 5)).build();
+
+        assertEquals(((CellIdentityLte) nri.getCellIdentity()).getCi(), cellIdentity);
+        final NetworkRegistrationInfo redactedNri = nri.sanitizeLocationInfo();
+        assertNotSame(redactedNri, nri);
+        assertEquals(
+                ((CellIdentityLte) redactedNri.getCellIdentity()).getCi(),
+                CellInfo.UNAVAILABLE);
+        nri = new NetworkRegistrationInfo.Builder().build();
+        assertNull(nri.getCellIdentity());
+        assertNull(nri.sanitizeLocationInfo().getCellIdentity());
     }
 }

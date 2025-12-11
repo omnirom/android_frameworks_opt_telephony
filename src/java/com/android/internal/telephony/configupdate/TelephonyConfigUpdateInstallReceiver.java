@@ -25,6 +25,7 @@ import android.util.Log;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.telephony.data.DataUtils;
 import com.android.internal.telephony.satellite.SatelliteConfig;
 import com.android.internal.telephony.satellite.SatelliteConfigParser;
 import com.android.internal.telephony.satellite.SatelliteConstants;
@@ -140,6 +141,37 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
         return true;
     }
 
+    /**
+     * Validates if the max allowed datamode is valid
+     *
+     * @param parser target of validation.
+     * @return {@code true} if max allowed datamode is valid, {@code false} otherwise.
+     */
+    public boolean isValidMaxAllowedDataMode(@NonNull ConfigParser parser) {
+        SatelliteConfig satelliteConfig = (SatelliteConfig) parser.getConfig();
+        if (satelliteConfig == null) {
+            Log.e(TAG, "satelliteConfig is null");
+            mConfigUpdaterMetricsStats.reportOemAndCarrierConfigError(
+                    SatelliteConstants.CONFIG_UPDATE_RESULT_NO_SATELLITE_DATA);
+            return false;
+        }
+
+        Integer maxAllowedDataMode = satelliteConfig.getSatelliteMaxAllowedDataMode();
+        if (maxAllowedDataMode == null) {
+            Log.d(TAG, "maxAllowedDataMode is not set");
+            return true;
+        }
+
+        if (!DataUtils.isValidDataMode(maxAllowedDataMode)) {
+            Log.e(TAG, "found invalid maxAllowedDataMode : " + maxAllowedDataMode);
+            mConfigUpdaterMetricsStats.reportCarrierConfigError(
+                    SatelliteConstants
+                            .CONFIG_UPDATE_RESULT_CARRIER_DATA_INVALID_MAX_ALLOWED_DATA_MODE);
+            return false;
+        }
+        Log.d(TAG, "maxAllowedDataMode is valid");
+        return true;
+    }
 
     @Override
     @VisibleForTesting(visibility = VisibleForTesting.Visibility.PROTECTED)
@@ -160,6 +192,11 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
 
         if (!isValidSatelliteCarrierConfigData(newConfigParser)) {
             Log.e(TAG, "received config data has invalid satellite carrier config data");
+            return;
+        }
+
+        if (!isValidMaxAllowedDataMode(newConfigParser)) {
+            Log.e(TAG, "received config data has invalid max allowed data mode");
             return;
         }
 
@@ -209,6 +246,18 @@ public class TelephonyConfigUpdateInstallReceiver extends ConfigUpdateInstallRec
                                 VALID_CONFIG_CONTENT_PATH)));
             }
             return getInstance().mConfigParser;
+        }
+    }
+
+    /**
+     * Overrides the config parser. Should be used only in tests.
+     *
+     * @param configParser the config parser that we have to override
+     */
+    public void overrideConfigParser(ConfigParser configParser) {
+        Log.d(TAG, "overrideConfigParser");
+        synchronized (getInstance().mConfigParserLock) {
+            getInstance().mConfigParser = configParser;
         }
     }
 

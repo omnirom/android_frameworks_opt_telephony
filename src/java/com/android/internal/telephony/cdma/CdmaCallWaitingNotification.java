@@ -24,7 +24,7 @@ import com.android.telephony.Rlog;
 /**
  * Represents a Supplementary Service Notification received from the network.
  *
- * {@hide}
+ * @hide
  */
 public class CdmaCallWaitingNotification {
     static final String LOG_TAG = "CdmaCallWaitingNotification";

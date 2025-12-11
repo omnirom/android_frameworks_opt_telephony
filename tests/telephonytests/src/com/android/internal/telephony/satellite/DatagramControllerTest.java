@@ -29,6 +29,8 @@ import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TR
 import static android.telephony.satellite.SatelliteManager.SATELLITE_DATAGRAM_TRANSFER_STATE_SENDING;
 import static android.telephony.satellite.SatelliteManager.SATELLITE_RESULT_SUCCESS;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,10 +39,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
+import android.annotation.NonNull;
+import android.content.Context;
 import android.os.Looper;
+import android.telephony.satellite.ISatelliteDatagramCallback;
 import android.telephony.satellite.SatelliteDatagram;
 import android.telephony.satellite.SatelliteManager;
 import android.testing.AndroidTestingRunner;
@@ -48,6 +51,7 @@ import android.testing.TestableLooper;
 
 import com.android.internal.R;
 import com.android.internal.telephony.TelephonyTest;
+import com.android.internal.telephony.flags.FeatureFlags;
 
 import org.junit.After;
 import org.junit.Before;
@@ -63,11 +67,11 @@ import java.util.function.Consumer;
 public class DatagramControllerTest extends TelephonyTest {
     private static final String TAG = "DatagramControllerTest";
 
-    private DatagramController mDatagramControllerUT;
+    private TestDatagramController mDatagramControllerUT;
 
-    @Mock private DatagramReceiver mMockDatagramReceiver;
+    @Mock private DatagramReceiverTest.TestDatagramReceiver mMockDatagramReceiver;
     @Mock private DatagramDispatcher mMockDatagramDispatcher;
-    @Mock private PointingAppController mMockPointingAppController;
+    @Mock private PointingAppControllerTest.TestPointingAppController mMockPointingAppController;
     @Mock private SatelliteSessionController mMockSatelliteSessionController;
     @Mock private SatelliteController mMockSatelliteController;
 
@@ -88,7 +92,7 @@ public class DatagramControllerTest extends TelephonyTest {
         replaceInstance(SatelliteSessionController.class, "sInstance", null,
                 mMockSatelliteSessionController);
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
-        mDatagramControllerUT = new DatagramController(
+        mDatagramControllerUT = new TestDatagramController(
                 mContext, Looper.myLooper(), mFeatureFlags, mMockPointingAppController);
 
         // Move both send and receive to IDLE state
@@ -193,7 +197,6 @@ public class DatagramControllerTest extends TelephonyTest {
     public void testNeedsWaitingForSatelliteConnected_checkMessageInNotConnected_returnsFalse()
             throws Exception {
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
-        when(mFeatureFlags.carrierRoamingNbIotNtn()).thenReturn(true);
         mContextFixture.putBooleanResource(
                 R.bool.config_satellite_allow_check_message_in_not_connected, true);
         mDatagramControllerUT.onSatelliteModemStateChanged(
@@ -210,7 +213,6 @@ public class DatagramControllerTest extends TelephonyTest {
     public void testNeedsWaitingForSatelliteConnected_regularSmsInNotConnected_returnsTrue()
             throws Exception {
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
-        when(mFeatureFlags.carrierRoamingNbIotNtn()).thenReturn(true);
         mContextFixture.putBooleanResource(
                 R.bool.config_satellite_allow_check_message_in_not_connected, true);
         mDatagramControllerUT.onSatelliteModemStateChanged(
@@ -228,7 +230,6 @@ public class DatagramControllerTest extends TelephonyTest {
             testNeedsWaitingForSatelliteConnected_checkMessageInNotConnected_allowCheckMessageFalse_returnsTrue()
                     throws Exception {
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
-        when(mFeatureFlags.carrierRoamingNbIotNtn()).thenReturn(true);
         mContextFixture.putBooleanResource(
                 R.bool.config_satellite_allow_check_message_in_not_connected, false);
         mDatagramControllerUT.onSatelliteModemStateChanged(
@@ -243,10 +244,9 @@ public class DatagramControllerTest extends TelephonyTest {
 
     @Test
     public void
-            testNeedsWaitingForSatelliteConnected_checkMessageInNotConnected_carrierRoamingNbIotNtnFalse_returnsTrue()
+            testNeedsWaitingForSatelliteConnected_checkMessageInNotConnected_allowCheckMessageTrue_returnsFalse()
                     throws Exception {
         when(mMockSatelliteController.isSatelliteAttachRequired()).thenReturn(true);
-        when(mFeatureFlags.carrierRoamingNbIotNtn()).thenReturn(false);
         mContextFixture.putBooleanResource(
                 R.bool.config_satellite_allow_check_message_in_not_connected, true);
         mDatagramControllerUT.onSatelliteModemStateChanged(
@@ -256,7 +256,7 @@ public class DatagramControllerTest extends TelephonyTest {
                 mDatagramControllerUT.needsWaitingForSatelliteConnected(
                         DATAGRAM_TYPE_CHECK_PENDING_INCOMING_SMS);
 
-        assertTrue(result);
+        assertFalse(result);
     }
 
     private void testUpdateSendStatus(boolean isDemoMode, int datagramType, int sendState) {
@@ -335,5 +335,125 @@ public class DatagramControllerTest extends TelephonyTest {
         SatelliteDatagram datagram = new SatelliteDatagram(testMessage.getBytes());
         mDatagramControllerUT.setDemoMode(true);
         mDatagramControllerUT.pushDemoModeDatagram(datagramType, datagram);
+    }
+
+    public static class TestDatagramController extends DatagramController {
+
+        public TestDatagramController(@NonNull Context context, @NonNull Looper  looper,
+                @NonNull FeatureFlags featureFlags,
+                @NonNull PointingAppController pointingAppController) {
+            super(context, looper, featureFlags, pointingAppController);
+        }
+
+        @Override
+        protected void updateSendStatus(int subId, int datagramType, int datagramTransferState,
+                int sendPendingCount, int errorCode) {
+            super.updateSendStatus(subId, datagramType, datagramTransferState, sendPendingCount,
+                    errorCode);
+        }
+
+        @Override
+        protected void updateReceiveStatus(int subId,
+                @SatelliteManager.DatagramType int datagramType,
+                @SatelliteManager.SatelliteDatagramTransferState int datagramTransferState,
+                int receivePendingCount, int errorCode) {
+            super.updateReceiveStatus(subId, datagramType, datagramTransferState,
+                    receivePendingCount, errorCode);
+        }
+
+        @Override
+        protected boolean isSendingInIdleState() {
+            return super.isSendingInIdleState();
+        }
+
+        @Override
+        protected int getReceivePendingCount() {
+            return super.getReceivePendingCount();
+        }
+
+        @Override
+        protected boolean isReceivingDatagrams() {
+            return super.isReceivingDatagrams();
+        }
+
+        @Override
+        protected boolean isPollingInIdleState() {
+            return super.isPollingInIdleState();
+        }
+
+        @Override
+        protected long getDatagramWaitTimeForConnectedState(boolean isLastSosMessage) {
+            return super.getDatagramWaitTimeForConnectedState(isLastSosMessage);
+        }
+
+        @Override
+        protected void setDemoMode(boolean isDemoMode) {
+            super.setDemoMode(isDemoMode);
+        }
+
+        @Override
+        protected SatelliteDatagram popDemoModeDatagram() {
+            return super.popDemoModeDatagram();
+        }
+
+        @Override
+        protected void pushDemoModeDatagram(@SatelliteManager.DatagramType int datagramType,
+                SatelliteDatagram datagram) {
+            super.pushDemoModeDatagram(datagramType, datagram);
+        }
+
+        @Override
+        protected void onSatelliteModemStateChanged(
+                @SatelliteManager.SatelliteModemState int state) {
+            super.onSatelliteModemStateChanged(state);
+        }
+
+        @Override
+        protected boolean needsWaitingForSatelliteConnected(
+                @SatelliteManager.DatagramType int datagramType) {
+            return super.needsWaitingForSatelliteConnected(datagramType);
+        }
+
+        @Override
+        @SatelliteManager.SatelliteResult protected int registerForSatelliteDatagram(int subId,
+                @NonNull ISatelliteDatagramCallback callback) {
+            return super.registerForSatelliteDatagram(subId, callback);
+        }
+
+        @Override
+        protected void unregisterForSatelliteDatagram(int subId,
+                @NonNull ISatelliteDatagramCallback callback) {
+            super.unregisterForSatelliteDatagram(subId, callback);
+        }
+
+        @Override
+        protected void pollPendingSatelliteDatagrams(int subId,
+                @NonNull Consumer<Integer> callback) {
+            super.pollPendingSatelliteDatagrams(subId, callback);
+        }
+
+        @Override
+        protected void sendSatelliteDatagram(int subId,
+                @SatelliteManager.DatagramType int datagramType,
+                @NonNull SatelliteDatagram datagram, boolean needFullScreenPointingUI,
+                @NonNull Consumer<Integer> callback) {
+            super.sendSatelliteDatagram(subId, datagramType, datagram, needFullScreenPointingUI,
+                    callback);
+        }
+
+        @Override
+        protected boolean isEmergencyCommunicationEstablished() {
+            return super.isEmergencyCommunicationEstablished();
+        }
+
+        @Override
+        protected void setDeviceAlignedWithSatellite(boolean isAligned) {
+            super.setDeviceAlignedWithSatellite(isAligned);
+        }
+
+        @Override
+        protected boolean waitForAligningToSatellite(boolean isAligned) {
+            return super.waitForAligningToSatellite(isAligned);
+        }
     }
 }

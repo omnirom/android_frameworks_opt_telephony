@@ -58,7 +58,6 @@ import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.data.DataSettingsManager;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
-import com.android.internal.telephony.test.SimulatedCommands;
 
 import org.junit.After;
 import org.junit.Assert;

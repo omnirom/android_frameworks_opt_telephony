@@ -191,4 +191,19 @@ public class RadioImsProxy extends RadioServiceProxy {
             mImsProxy.updateImsCallStatus(serial, imsCalls);
         }
     }
+
+    /**
+     * Call IRadioIms#updateAllowedServices
+     *
+     * @param serial Serial number of request.
+     * @param imsServices The list of allowed services.
+     * @throws RemoteException.
+     */
+    public void updateAllowedServices(int serial,
+            android.hardware.radio.ims.ImsService[] imsServices) throws RemoteException {
+        if (isEmpty()) return;
+        if (isAidl()) {
+            mImsProxy.updateAllowedServices(serial, imsServices);
+        }
+    }
 }

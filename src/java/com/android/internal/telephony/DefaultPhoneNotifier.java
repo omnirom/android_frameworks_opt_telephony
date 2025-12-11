@@ -309,8 +309,6 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     @Override
     public void notifyCallbackModeStarted(Phone sender, @EmergencyCallbackModeType int type,
             long durationMillis) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         mTelephonyRegistryMgr.notifyCallbackModeStarted(sender.getPhoneId(),
                 sender.getSubId(), type, durationMillis);
     }
@@ -318,8 +316,6 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     @Override
     public void notifyCallbackModeRestarted(Phone sender, @EmergencyCallbackModeType int type,
             long durationMillis) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         mTelephonyRegistryMgr.notifyCallbackModeRestarted(sender.getPhoneId(),
                 sender.getSubId(), type, durationMillis);
     }
@@ -327,8 +323,6 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     @Override
     public void notifyCallbackModeStopped(Phone sender, @EmergencyCallbackModeType int type,
             @EmergencyCallbackModeStopReason int reason) {
-        if (!mFeatureFlags.emergencyCallbackModeNotification()) return;
-
         mTelephonyRegistryMgr.notifyCallbackModeStopped(sender.getPhoneId(),
                 sender.getSubId(), type, reason);
     }

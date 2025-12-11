@@ -340,4 +340,33 @@ public class TelephonyConfigUpdateInstallReceiverTest extends TelephonyTest {
         assertFalse(spyTelephonyConfigUpdateInstallReceiver
                 .isValidSatelliteCarrierConfigData(mockParser));
     }
+
+    @Test
+    public void testIsValidMaxAllowedDataMode() {
+        TelephonyConfigUpdateInstallReceiver spyTelephonyConfigUpdateInstallReceiver =
+                spy(new TelephonyConfigUpdateInstallReceiver());
+        SatelliteConfigParser mockParser = mock(SatelliteConfigParser.class);
+        SatelliteConfig mockConfig = mock(SatelliteConfig.class);
+        doReturn(mockConfig).when(mockParser).getConfig();
+
+        assertTrue(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(null).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertTrue(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(0).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertTrue(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(1).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertTrue(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(2).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertTrue(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(-1).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertFalse(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+
+        doReturn(3).when(mockConfig).getSatelliteMaxAllowedDataMode();
+        assertFalse(spyTelephonyConfigUpdateInstallReceiver.isValidMaxAllowedDataMode(mockParser));
+    }
 }

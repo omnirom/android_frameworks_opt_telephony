@@ -17,9 +17,12 @@
 package com.android.internal.telephony.cat;
 
 import static com.android.internal.telephony.cat.CatCmdMessage.SetupEventListConstants.IDLE_SCREEN_AVAILABLE_EVENT;
+import static com.android.internal.telephony.cat.CatCmdMessage.SetupEventListConstants.IMS_REGISTRATION_EVENT;
 import static com.android.internal.telephony.cat.CatCmdMessage.SetupEventListConstants.LANGUAGE_SELECTION_EVENT;
 import static com.android.internal.telephony.cat.CatCmdMessage.SetupEventListConstants.USER_ACTIVITY_EVENT;
+import static com.android.internal.telephony.uicc.IccCardApplicationStatus.AppType.APPTYPE_UNKNOWN;
 
+import android.annotation.NonNull;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.PendingIntent;
@@ -35,7 +38,6 @@ import android.content.res.Resources.NotFoundException;
 import android.os.AsyncResult;
 import android.os.Build;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.LocaleList;
 import android.os.Looper;
 import android.os.Message;
@@ -44,6 +46,7 @@ import android.os.UserHandle;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.ims.feature.ImsFeature;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.CommandsInterface;
@@ -52,6 +55,8 @@ import com.android.internal.telephony.ProxyController;
 import com.android.internal.telephony.SmsController;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.flags.FeatureFlagsImpl;
+import com.android.internal.telephony.flags.Flags;
+import com.android.internal.telephony.ims.ImsResolver;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.uicc.IccCardStatus.CardState;
 import com.android.internal.telephony.uicc.IccFileHandler;
@@ -92,7 +97,7 @@ class RilMessage {
  * Class that implements SIM Toolkit Telephony Service. Interacts with the RIL
  * and application.
  *
- * {@hide}
+ * @hide
  */
 public class CatService extends Handler implements AppInterface {
     private static final boolean DBG = false;
@@ -108,7 +113,7 @@ public class CatService extends Handler implements AppInterface {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private static CatService[] sInstance = null;
     @UnsupportedAppUsage
-    private static final FeatureFlags sFlags = new FeatureFlagsImpl();
+    private final FeatureFlags mFeatureFlags;
     @UnsupportedAppUsage
     private CommandsInterface mCmdIf;
     @UnsupportedAppUsage
@@ -140,6 +145,7 @@ public class CatService extends Handler implements AppInterface {
     protected static final int MSG_ID_ALPHA_NOTIFY   = 9;
 
     static final int MSG_ID_RIL_MSG_DECODED          = 10;
+    static final int MSG_ID_NOTIFY_COMMAND_RESULT    = 11;
 
     // Events to signal SIM presence or absent in the device.
     private static final int MSG_ID_ICC_RECORDS_LOADED       = 20;
@@ -162,12 +168,12 @@ public class CatService extends Handler implements AppInterface {
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private int mSlotId;
-    private static HandlerThread sCatServiceThread;
+    private SetUpCallCommandHandler mSetUpCallHandler = null;
 
     /* For multisim catservice should not be singleton */
     private CatService(CommandsInterface ci, UiccCardApplication ca, IccRecords ir,
             Context context, IccFileHandler fh, UiccProfile uiccProfile, int slotId,
-            Looper looper) {
+            Looper looper, FeatureFlags featureFlags) {
         //creating new thread to avoid deadlock conditions with the framework thread.
         super(looper);
         if (ci == null || ca == null || ir == null || context == null || fh == null
@@ -178,6 +184,7 @@ public class CatService extends Handler implements AppInterface {
         mCmdIf = ci;
         mContext = context;
         mSlotId = slotId;
+        mFeatureFlags = featureFlags;
 
         // Get the RilMessagesDecoder for decoding the messages.
         mMsgDecoder = RilMessageDecoder.getInstance(this, fh, context, slotId);
@@ -218,35 +225,67 @@ public class CatService extends Handler implements AppInterface {
         mContext.registerReceiver(mSmsBroadcastReceiver, new IntentFilter(SMS_SENT_ACTION));
     }
 
-    /**
-     * Used for instantiating the Service from the Card.
-     *
-     * @param ci CommandsInterface object
-     * @param context phone app context
-     * @param ic Icc card
-     * @param slotId to know the index of card
-     * @return The only Service object in the system
-     */
-    public static CatService getInstance(CommandsInterface ci,
-            Context context, UiccProfile uiccProfile, int slotId) {
-        if (!sFlags.threadShred()) {
-            if (sCatServiceThread == null) {
-                sCatServiceThread = new HandlerThread("CatServiceThread");
-                sCatServiceThread.start();
-            }
-        }
+    private static UiccCardApplication getValidUiccApplication(UiccProfile uiccProfile) {
         UiccCardApplication ca = null;
-        IccFileHandler fh = null;
-        IccRecords ir = null;
         if (uiccProfile != null) {
             /* Since Cat is not tied to any application, but rather is Uicc application
              * in itself - just get first FileHandler and IccRecords object
              */
             ca = uiccProfile.getApplicationIndex(0);
-            if (ca != null) {
-                fh = ca.getIccFileHandler();
-                ir = ca.getIccRecords();
+
+            /**
+             * Case where the SIMs reporting "UNKNOWN" application type.
+             * If an "UNKNOWN" application is detected, its file handler won't be initialized
+             * correctly.
+             * To avoid issues, always use the file handler from a known, valid SIM application.
+             */
+            if (Flags.catServiceCreationFix() && ca.getType() == APPTYPE_UNKNOWN
+                    && uiccProfile.getNumApplications() > 1) {
+                for (int i = 1; i < uiccProfile.getNumApplications(); i++) {
+                    UiccCardApplication tmpCa = uiccProfile.getApplicationIndex(i);
+                    if (tmpCa.getType() != APPTYPE_UNKNOWN) {
+                        ca = tmpCa;
+                        break;
+                    }
+                }
             }
+        }
+        return ca;
+    }
+
+    /**
+     * Used for instantiating the Service from the Card.
+     *
+     * @param ci CommandsInterface object
+     * @param context phone app context
+     * @param uiccProfile Icc card
+     * @param slotId to know the index of card
+     * @return The only Service object in the system
+     */
+    public static CatService getInstance(CommandsInterface ci,
+            Context context, UiccProfile uiccProfile, int slotId) {
+        return getInstance(ci, context, uiccProfile, slotId, new FeatureFlagsImpl());
+    }
+
+    /**
+     * Used for instantiating the Service from the Card.
+     *
+     * @param ci CommandsInterface object
+     * @param context phone app context
+     * @param uiccProfile Icc card
+     * @param slotId to know the index of card
+     * @param featureFlags The telephony feature flags.
+     * @return The only Service object in the system
+     */
+    public static CatService getInstance(CommandsInterface ci, Context context,
+            UiccProfile uiccProfile, int slotId, @NonNull FeatureFlags featureFlags) {
+        UiccCardApplication ca = null;
+        IccFileHandler fh = null;
+        IccRecords ir = null;
+        ca = getValidUiccApplication(uiccProfile);
+        if (ca != null) {
+            fh = ca.getIccFileHandler();
+            ir = ca.getIccRecords();
         }
 
         synchronized (sInstanceLock) {
@@ -262,13 +301,8 @@ public class CatService extends Handler implements AppInterface {
                         || uiccProfile == null) {
                     return null;
                 }
-                if (sFlags.threadShred()) {
-                    sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
-                            WorkerThread.get().getLooper());
-                } else {
-                    sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
-                            sCatServiceThread.getLooper());
-                }
+                sInstance[slotId] = new CatService(ci, ca, ir, context, fh, uiccProfile, slotId,
+                        WorkerThread.get().getLooper(), featureFlags);
             } else if ((ir != null) && (mIccRecords != ir)) {
                 if (mIccRecords != null) {
                     mIccRecords.unregisterForRecordsLoaded(sInstance[slotId]);
@@ -293,7 +327,7 @@ public class CatService extends Handler implements AppInterface {
             CatLog.d(this, "Disposing CatService object");
             mIccRecords.unregisterForRecordsLoaded(this);
 
-            if (sFlags.unregisterSmsBroadcastReceiverFromCatService()) {
+            if (mFeatureFlags.unregisterSmsBroadcastReceiverFromCatService()) {
                 try {
                     mContext.unregisterReceiver(mSmsBroadcastReceiver);
                 } catch (IllegalArgumentException e) {
@@ -406,6 +440,7 @@ public class CatService extends Handler implements AppInterface {
                 /* Currently android is supporting only the below events in SetupEventList
                  * Language Selection.  */
                 case IDLE_SCREEN_AVAILABLE_EVENT:
+                case IMS_REGISTRATION_EVENT:
                 case LANGUAGE_SELECTION_EVENT:
                 case USER_ACTIVITY_EVENT:
                     break;
@@ -456,6 +491,7 @@ public class CatService extends Handler implements AppInterface {
             case SET_UP_EVENT_LIST:
                 if (isSupportedSetupEventCommand(cmdMsg)) {
                     sendTerminalResponse(cmdParams.mCmdDet, ResultCode.OK, false, 0, null);
+                    broadcastSetupEventList(cmdMsg);
                 } else {
                     sendTerminalResponse(cmdParams.mCmdDet, ResultCode.BEYOND_TERMINAL_CAPABILITY,
                             false, 0, null);
@@ -509,7 +545,7 @@ public class CatService extends Handler implements AppInterface {
                     }
                     if (text != null && destAddr != null) {
                         ProxyController proxyController = ProxyController
-                                .getInstance(mContext, sFlags);
+                                .getInstance(mContext, mFeatureFlags);
                         SubscriptionManager subscriptionManager = (SubscriptionManager)
                                 mContext.getSystemService(
                                         Context.TELEPHONY_SUBSCRIPTION_SERVICE);
@@ -541,10 +577,14 @@ public class CatService extends Handler implements AppInterface {
             case SEND_DTMF:
             case SEND_SS:
             case SEND_USSD:
-                if ((((DisplayTextParams)cmdParams).mTextMsg.text != null)
-                        && (((DisplayTextParams)cmdParams).mTextMsg.text.equals(STK_DEFAULT))) {
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    sendUssd(cmdParams.mCmdDet,
+                            ((SendUssdParams) cmdParams).mUssdString,
+                            ((SendUssdParams) cmdParams).mCodingScheme);
+                } else if ((((DisplayTextParams) cmdParams).mTextMsg.text != null)
+                        && (((DisplayTextParams) cmdParams).mTextMsg.text.equals(STK_DEFAULT))) {
                     message = mContext.getText(com.android.internal.R.string.sending);
-                    ((DisplayTextParams)cmdParams).mTextMsg.text = message.toString();
+                    ((DisplayTextParams) cmdParams).mTextMsg.text = message.toString();
                 }
                 break;
             case PLAY_TONE:
@@ -722,11 +762,45 @@ public class CatService extends Handler implements AppInterface {
         intent.setComponent(AppInterface.getDefaultSTKApplication());
         CatLog.d(this, "Sending CmdMsg: " + cmdMsg+ " on slotid:" + mSlotId);
 
-        if (sFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
-        } else {
-            mContext.sendBroadcast(intent, AppInterface.STK_PERMISSION);
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
+    }
+
+    private void broadcastSetupEventList(CatCmdMessage cmdMsg) {
+        if (!mFeatureFlags.supportImsRegistrationEventDownload()) {
+            CatLog.d(this, "supportImsRegistrationEventDownload is disabled");
+            return;
         }
+
+        String receiver = getSetupEventListReceiver();
+        if (receiver == null) {
+            return;
+        }
+
+        Intent intent = new Intent(TelephonyManager.ACTION_STK_SETUP_EVENT_LIST);
+        intent.putExtra(TelephonyManager.EXTRA_SETUP_EVENT_LIST,
+                cmdMsg.getSetEventList().eventList);
+        intent.putExtra(TelephonyManager.EXTRA_SUBSCRIPTION_ID,
+                SubscriptionManager.getSubscriptionId(mSlotId));
+        intent.setPackage(receiver);
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
+    }
+
+    /**
+     * @return Receiver to receive broadcast intent for set up event list of UICC.
+     */
+    public String getSetupEventListReceiver() {
+        ImsResolver resolver = ImsResolver.getInstance();
+        if (resolver == null) {
+            CatLog.d(this, "getImsRcsPackage: Device does not support IMS - skipping");
+            return null;
+        }
+
+        try {
+            return resolver.getConfiguredImsServicePackageName(mSlotId, ImsFeature.FEATURE_MMTEL);
+        } catch (Exception ex) {
+            CatLog.e(this, "getSetupEventListReceiver: " + ex);
+        }
+        return null;
     }
 
     /**
@@ -740,11 +814,7 @@ public class CatService extends Handler implements AppInterface {
         Intent intent = new Intent(AppInterface.CAT_SESSION_END_ACTION);
         intent.putExtra("SLOT_ID", mSlotId);
         intent.setComponent(AppInterface.getDefaultSTKApplication());
-        if (sFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
-        } else {
-            mContext.sendBroadcast(intent, AppInterface.STK_PERMISSION);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
     }
 
 
@@ -1016,71 +1086,87 @@ public class CatService extends Handler implements AppInterface {
         CatLog.d(this, "handleMessage[" + msg.what + "]");
 
         switch (msg.what) {
-        case MSG_ID_SESSION_END:
-        case MSG_ID_PROACTIVE_COMMAND:
-        case MSG_ID_EVENT_NOTIFY:
-        case MSG_ID_REFRESH:
-            CatLog.d(this, "ril message arrived,slotid:" + mSlotId);
-            String data = null;
-            if (msg.obj != null) {
-                AsyncResult ar = (AsyncResult) msg.obj;
-                if (ar != null && ar.result != null) {
-                    try {
-                        data = (String) ar.result;
-                    } catch (ClassCastException e) {
-                        break;
+            case MSG_ID_SESSION_END:
+            case MSG_ID_PROACTIVE_COMMAND:
+            case MSG_ID_EVENT_NOTIFY:
+            case MSG_ID_REFRESH:
+                CatLog.d(this, "ril message arrived,slotid:" + mSlotId);
+                String data = null;
+                if (msg.obj != null) {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    if (ar != null && ar.result != null) {
+                        try {
+                            data = (String) ar.result;
+                        } catch (ClassCastException e) {
+                            break;
+                        }
                     }
                 }
-            }
-            if (mMsgDecoder != null) {
-                mMsgDecoder.sendStartDecodingMessageParams(new RilMessage(msg.what, data));
-            } else {
-                CatLog.e(this, "Error in handleMessage (" + msg.what + ") mMsgDecoder is NULL");
-            }
-            break;
-        case MSG_ID_CALL_SETUP:
-            mMsgDecoder.sendStartDecodingMessageParams(new RilMessage(msg.what, null));
-            break;
-        case MSG_ID_ICC_RECORDS_LOADED:
-            break;
-        case MSG_ID_RIL_MSG_DECODED:
-            handleRilMsg((RilMessage) msg.obj);
-            break;
-        case MSG_ID_RESPONSE:
-            handleCmdResponse((CatResponseMessage) msg.obj);
-            break;
-        case MSG_ID_ICC_CHANGED:
-            CatLog.d(this, "MSG_ID_ICC_CHANGED");
-            updateIccAvailability();
-            break;
-        case MSG_ID_ICC_REFRESH:
-            if (msg.obj != null) {
-                AsyncResult ar = (AsyncResult) msg.obj;
-                if (ar != null && ar.result != null) {
-                    broadcastCardStateAndIccRefreshResp(CardState.CARDSTATE_PRESENT,
-                                  (IccRefreshResponse) ar.result);
+                if (mMsgDecoder != null) {
+                    mMsgDecoder.sendStartDecodingMessageParams(new RilMessage(msg.what, data));
                 } else {
-                    CatLog.d(this,"Icc REFRESH with exception: " + ar.exception);
+                    CatLog.e(this, "Error in handleMessage (" + msg.what + ") mMsgDecoder is NULL");
                 }
-            } else {
-                CatLog.d(this, "IccRefresh Message is null");
-            }
-            break;
-        case MSG_ID_ALPHA_NOTIFY:
-            CatLog.d(this, "Received CAT CC Alpha message from card");
-            if (msg.obj != null) {
-                AsyncResult ar = (AsyncResult) msg.obj;
-                if (ar != null && ar.result != null) {
-                    broadcastAlphaMessage((String)ar.result);
+                break;
+            case MSG_ID_CALL_SETUP:
+                mMsgDecoder.sendStartDecodingMessageParams(new RilMessage(msg.what, null));
+                break;
+            case MSG_ID_ICC_RECORDS_LOADED:
+                break;
+            case MSG_ID_RIL_MSG_DECODED:
+                handleRilMsg((RilMessage) msg.obj);
+                break;
+            case MSG_ID_RESPONSE:
+                handleCmdResponse((CatResponseMessage) msg.obj);
+                break;
+            case MSG_ID_ICC_CHANGED:
+                CatLog.d(this, "MSG_ID_ICC_CHANGED");
+                updateIccAvailability();
+                break;
+            case MSG_ID_ICC_REFRESH:
+                if (msg.obj != null) {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    if (ar != null && ar.result != null) {
+                        broadcastCardStateAndIccRefreshResp(CardState.CARDSTATE_PRESENT,
+                                    (IccRefreshResponse) ar.result);
+                    } else {
+                        CatLog.d(this, "Icc REFRESH with exception: " + ar.exception);
+                    }
                 } else {
-                    CatLog.d(this, "CAT Alpha message: ar.result is null");
+                    CatLog.d(this, "IccRefresh Message is null");
                 }
-            } else {
-                CatLog.d(this, "CAT Alpha message: msg.obj is null");
-            }
-            break;
-        default:
-            throw new AssertionError("Unrecognized CAT command: " + msg.what);
+                break;
+            case MSG_ID_ALPHA_NOTIFY:
+                CatLog.d(this, "Received CAT CC Alpha message from card");
+                if (msg.obj != null) {
+                    AsyncResult ar = (AsyncResult) msg.obj;
+                    if (ar != null && ar.result != null) {
+                        broadcastAlphaMessage((String) ar.result);
+                    } else {
+                        CatLog.d(this, "CAT Alpha message: ar.result is null");
+                    }
+                } else {
+                    CatLog.d(this, "CAT Alpha message: msg.obj is null");
+                }
+                break;
+            case MSG_ID_NOTIFY_COMMAND_RESULT:
+                ResultCode resultCode = (ResultCode) msg.obj;
+                CatLog.d(this, "Command handling result: " + resultCode);
+
+                if (mCurrntCmd == null) {
+                    CatLog.e(this, "No command to handle");
+                    break;
+                }
+
+                sendTerminalResponse(mCurrntCmd.mCmdDet, resultCode, false, 0, null);
+
+                if (mCurrntCmd.mCmdDet.typeOfCommand == CommandType.SET_UP_CALL.value()) {
+                    mSetUpCallHandler = null;
+                }
+                mCurrntCmd = null;
+                break;
+            default:
+                throw new AssertionError("Unrecognized CAT command: " + msg.what);
         }
     }
 
@@ -1108,11 +1194,7 @@ public class CatService extends Handler implements AppInterface {
         intent.putExtra("SLOT_ID", mSlotId);
         CatLog.d(this, "Sending Card Status: "
                 + cardState + " " + "cardPresent: " + cardPresent +  "SLOT_ID: " +  mSlotId);
-        if (sFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
-        } else {
-            mContext.sendBroadcast(intent, AppInterface.STK_PERMISSION);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
     }
 
     private void broadcastAlphaMessage(String alphaString) {
@@ -1122,11 +1204,7 @@ public class CatService extends Handler implements AppInterface {
         intent.putExtra(AppInterface.ALPHA_STRING, alphaString);
         intent.putExtra("SLOT_ID", mSlotId);
         intent.setComponent(AppInterface.getDefaultSTKApplication());
-        if (sFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
-        } else {
-            mContext.sendBroadcast(intent, AppInterface.STK_PERMISSION);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL, AppInterface.STK_PERMISSION);
     }
 
     @Override
@@ -1190,113 +1268,173 @@ public class CatService extends Handler implements AppInterface {
         AppInterface.CommandType type = AppInterface.CommandType.fromInt(cmdDet.typeOfCommand);
 
         switch (resMsg.mResCode) {
-        case HELP_INFO_REQUIRED:
-            helpRequired = true;
-            // fall through
-        case OK:
-        case PRFRMD_WITH_PARTIAL_COMPREHENSION:
-        case PRFRMD_WITH_MISSING_INFO:
-        case PRFRMD_WITH_ADDITIONAL_EFS_READ:
-        case PRFRMD_ICON_NOT_DISPLAYED:
-        case PRFRMD_MODIFIED_BY_NAA:
-        case PRFRMD_LIMITED_SERVICE:
-        case PRFRMD_WITH_MODIFICATION:
-        case PRFRMD_NAA_NOT_ACTIVE:
-        case PRFRMD_TONE_NOT_PLAYED:
-        case LAUNCH_BROWSER_ERROR:
-        case TERMINAL_CRNTLY_UNABLE_TO_PROCESS:
-            switch (type) {
-            case SET_UP_MENU:
-                helpRequired = resMsg.mResCode == ResultCode.HELP_INFO_REQUIRED;
-                sendMenuSelection(resMsg.mUsersMenuSelection, helpRequired);
-                return;
-            case SELECT_ITEM:
-                resp = new SelectItemResponseData(resMsg.mUsersMenuSelection);
+            case HELP_INFO_REQUIRED:
+                helpRequired = true;
+                // fall through
+            case OK:
+            case PRFRMD_WITH_PARTIAL_COMPREHENSION:
+            case PRFRMD_WITH_MISSING_INFO:
+            case PRFRMD_WITH_ADDITIONAL_EFS_READ:
+            case PRFRMD_ICON_NOT_DISPLAYED:
+            case PRFRMD_MODIFIED_BY_NAA:
+            case PRFRMD_LIMITED_SERVICE:
+            case PRFRMD_WITH_MODIFICATION:
+            case PRFRMD_NAA_NOT_ACTIVE:
+            case PRFRMD_TONE_NOT_PLAYED:
+            case LAUNCH_BROWSER_ERROR:
+            case TERMINAL_CRNTLY_UNABLE_TO_PROCESS:
+                switch (type) {
+                    case SET_UP_MENU:
+                        helpRequired = resMsg.mResCode == ResultCode.HELP_INFO_REQUIRED;
+                        sendMenuSelection(resMsg.mUsersMenuSelection, helpRequired);
+                        return;
+                    case SELECT_ITEM:
+                        resp = new SelectItemResponseData(resMsg.mUsersMenuSelection);
+                        break;
+                    case GET_INPUT:
+                    case GET_INKEY:
+                        Input input = mCurrntCmd.geInput();
+                        if (!input.yesNo) {
+                            // when help is requested there is no need to send the text
+                            // string object.
+                            if (!helpRequired) {
+                                resp = new GetInkeyInputResponseData(resMsg.mUsersInput,
+                                        input.ucs2, input.packed);
+                            }
+                        } else {
+                            resp = new GetInkeyInputResponseData(
+                                    resMsg.mUsersYesNoSelection);
+                        }
+                        break;
+                    case DISPLAY_TEXT:
+                        if (resMsg.mResCode == ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS) {
+                            // For screenbusy case there will be additional information in the
+                            // terminal response. And the value of the additional information byte
+                            // is 0x01.
+                            resMsg.setAdditionalInfo(0x01);
+                        } else {
+                            resMsg.mIncludeAdditionalInfo = false;
+                            resMsg.mAdditionalInfo = 0;
+                        }
+                        break;
+                    case LAUNCH_BROWSER:
+                        if (resMsg.mResCode == ResultCode.LAUNCH_BROWSER_ERROR) {
+                            // Additional info for Default URL unavailable.
+                            resMsg.setAdditionalInfo(0x04);
+                        } else {
+                            resMsg.mIncludeAdditionalInfo = false;
+                            resMsg.mAdditionalInfo = 0;
+                        }
+                        break;
+                    // 3GPP TS.102.223: Open Channel alpha confirmation should not send TR
+                    case OPEN_CHANNEL:
+                        mCmdIf.handleCallSetupRequestFromSim(resMsg.mUsersConfirm, null);
+                        mCurrntCmd = null;
+                        return;
+                    case SET_UP_CALL:
+                        if (Flags.supportStkCommandUssdAndCall()) {
+                            if (mSetUpCallHandler != null) {
+                                CatLog.d(this, "Already handling another command");
+                                sendTerminalResponse(
+                                        cmdDet, ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS,
+                                        false, 0, null);
+                            }
+                            if (!resMsg.mUsersConfirm) {
+                                CatLog.d(this, "User not accept");
+                                sendTerminalResponse(cmdDet, ResultCode.USER_NOT_ACCEPT,
+                                        false, 0, null);
+                                mCurrntCmd = null;
+                                return;
+                            }
+
+                            SubscriptionInfo subInfo = getSubscriptionInfo(mSlotId);
+                            if (subInfo == null) {
+                                CatLog.d(this, "Subscription info is null");
+                                sendTerminalResponse(cmdDet, ResultCode.CMD_DATA_NOT_UNDERSTOOD,
+                                        false, 0, null);
+                                mCurrntCmd = null;
+                                return;
+                            }
+
+                            mSetUpCallHandler = new SetUpCallCommandHandler(
+                                    getLooper(),
+                                    this,
+                                    mContext,
+                                    subInfo.getSubscriptionId());
+                            mSetUpCallHandler.start(mCurrntCmd.getCallSettings());
+                        } else {
+                            mCmdIf.handleCallSetupRequestFromSim(resMsg.mUsersConfirm, null);
+                            // No need to send terminal response for SET UP CALL. The user's
+                            // confirmation result is send back using a dedicated ril message
+                            // invoked by the CommandInterface call above.
+                            mCurrntCmd = null;
+                        }
+                        return;
+                    case SET_UP_EVENT_LIST:
+                        if (IDLE_SCREEN_AVAILABLE_EVENT == resMsg.mEventValue) {
+                            eventDownload(resMsg.mEventValue, DEV_ID_DISPLAY, DEV_ID_UICC,
+                                    resMsg.mAddedInfo, false);
+                        } else {
+                            eventDownload(resMsg.mEventValue, DEV_ID_TERMINAL, DEV_ID_UICC,
+                                    resMsg.mAddedInfo, false);
+                        }
+                        // No need to send the terminal response after event download.
+                        return;
+                    default:
+                        break;
+                }
                 break;
-            case GET_INPUT:
-            case GET_INKEY:
-                Input input = mCurrntCmd.geInput();
-                if (!input.yesNo) {
-                    // when help is requested there is no need to send the text
-                    // string object.
-                    if (!helpRequired) {
-                        resp = new GetInkeyInputResponseData(resMsg.mUsersInput,
-                                input.ucs2, input.packed);
+            case BACKWARD_MOVE_BY_USER:
+            case USER_NOT_ACCEPT:
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    // if the user dismissed the alert dialog for a
+                    // open channel, consider that as the user
+                    // rejecting the call. Use dedicated API for this, rather than
+                    // sending a terminal response.
+                    if (type == CommandType.OPEN_CHANNEL) {
+                        mCmdIf.handleCallSetupRequestFromSim(false, null);
+                        mCurrntCmd = null;
+                        return;
+                    } else {
+                        resp = null;
                     }
                 } else {
-                    resp = new GetInkeyInputResponseData(
-                            resMsg.mUsersYesNoSelection);
+                    // if the user dismissed the alert dialog for a
+                    // setup call/open channel, consider that as the user
+                    // rejecting the call. Use dedicated API for this, rather than
+                    // sending a terminal response.
+                    if (type == CommandType.SET_UP_CALL || type == CommandType.OPEN_CHANNEL) {
+                        mCmdIf.handleCallSetupRequestFromSim(false, null);
+                        mCurrntCmd = null;
+                        return;
+                    } else {
+                        resp = null;
+                    }
                 }
                 break;
-            case DISPLAY_TEXT:
-                if (resMsg.mResCode == ResultCode.TERMINAL_CRNTLY_UNABLE_TO_PROCESS) {
-                    // For screenbusy case there will be addtional information in the terminal
-                    // response. And the value of the additional information byte is 0x01.
-                    resMsg.setAdditionalInfo(0x01);
+            case NO_RESPONSE_FROM_USER:
+                if (Flags.supportStkCommandUssdAndCall()) {
+                    if (type == CommandType.SET_UP_CALL) {
+                        sendTerminalResponse(cmdDet, ResultCode.USER_NOT_ACCEPT, false, 0, null);
+                        mCurrntCmd = null;
+                        return;
+                    }
+                    resp = null;
+                    break;
                 } else {
-                    resMsg.mIncludeAdditionalInfo = false;
-                    resMsg.mAdditionalInfo = 0;
+                    // No need to send terminal response for SET UP CALL on user timeout,
+                    // instead use dedicated API
+                    if (type == CommandType.SET_UP_CALL) {
+                        mCmdIf.handleCallSetupRequestFromSim(false, null);
+                        mCurrntCmd = null;
+                        return;
+                    }
                 }
-                break;
-            case LAUNCH_BROWSER:
-                if (resMsg.mResCode == ResultCode.LAUNCH_BROWSER_ERROR) {
-                    // Additional info for Default URL unavailable.
-                    resMsg.setAdditionalInfo(0x04);
-                } else {
-                    resMsg.mIncludeAdditionalInfo = false;
-                    resMsg.mAdditionalInfo = 0;
-                }
-                break;
-            // 3GPP TS.102.223: Open Channel alpha confirmation should not send TR
-            case OPEN_CHANNEL:
-            case SET_UP_CALL:
-                mCmdIf.handleCallSetupRequestFromSim(resMsg.mUsersConfirm, null);
-                // No need to send terminal response for SET UP CALL. The user's
-                // confirmation result is send back using a dedicated ril message
-                // invoked by the CommandInterface call above.
-                mCurrntCmd = null;
-                return;
-            case SET_UP_EVENT_LIST:
-                if (IDLE_SCREEN_AVAILABLE_EVENT == resMsg.mEventValue) {
-                    eventDownload(resMsg.mEventValue, DEV_ID_DISPLAY, DEV_ID_UICC,
-                            resMsg.mAddedInfo, false);
-                 } else {
-                     eventDownload(resMsg.mEventValue, DEV_ID_TERMINAL, DEV_ID_UICC,
-                            resMsg.mAddedInfo, false);
-                 }
-                // No need to send the terminal response after event download.
-                return;
-            default:
-                break;
-            }
-            break;
-        case BACKWARD_MOVE_BY_USER:
-        case USER_NOT_ACCEPT:
-            // if the user dismissed the alert dialog for a
-            // setup call/open channel, consider that as the user
-            // rejecting the call. Use dedicated API for this, rather than
-            // sending a terminal response.
-            if (type == CommandType.SET_UP_CALL || type == CommandType.OPEN_CHANNEL) {
-                mCmdIf.handleCallSetupRequestFromSim(false, null);
-                mCurrntCmd = null;
-                return;
-            } else {
+            case UICC_SESSION_TERM_BY_USER:
                 resp = null;
-            }
-            break;
-        case NO_RESPONSE_FROM_USER:
-            // No need to send terminal response for SET UP CALL on user timeout,
-            // instead use dedicated API
-            if (type == CommandType.SET_UP_CALL) {
-                mCmdIf.handleCallSetupRequestFromSim(false, null);
-                mCurrntCmd = null;
+                break;
+            default:
                 return;
-            }
-        case UICC_SESSION_TERM_BY_USER:
-            resp = null;
-            break;
-        default:
-            return;
         }
         sendTerminalResponse(cmdDet, resMsg.mResCode, resMsg.mIncludeAdditionalInfo,
                 resMsg.mAdditionalInfo, resp);
@@ -1318,15 +1456,9 @@ public class CatService extends Handler implements AppInterface {
             Context context, UiccProfile uiccProfile) {
         UiccCardApplication ca = null;
         IccRecords ir = null;
-
-        if (uiccProfile != null) {
-            /* Since Cat is not tied to any application, but rather is Uicc application
-             * in itself - just get first FileHandler and IccRecords object
-             */
-            ca = uiccProfile.getApplicationIndex(0);
-            if (ca != null) {
-                ir = ca.getIccRecords();
-            }
+        ca = getValidUiccApplication(uiccProfile);
+        if (ca != null) {
+            ir = ca.getIccRecords();
         }
 
         synchronized (sInstanceLock) {
@@ -1380,5 +1512,49 @@ public class CatService extends Handler implements AppInterface {
         }
         mContext.getSystemService(ActivityManager.class).setDeviceLocales(new LocaleList(locales));
         BackupManager.dataChanged("com.android.providers.settings");
+    }
+
+    private SubscriptionInfo getSubscriptionInfo(int slotId) {
+        SubscriptionManager subscriptionManager = (SubscriptionManager)
+                mContext.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+        if (subscriptionManager == null) {
+            return null;
+        }
+
+        return subscriptionManager.getActiveSubscriptionInfoForSimSlotIndex(slotId);
+    }
+
+
+    /**
+     * Sends a USSD request via TelephonyManager. The terminal request is sent after the USSD
+     * response is received or the request is failed.
+     *
+     * @param cmdDet The command details to be used for the terminal response.
+     * @param request The USSD request string.
+     * @param codingScheme The coding scheme to be used for the terminal response.
+     */
+    @VisibleForTesting
+    public void sendUssd(CommandDetails cmdDet, String request, byte codingScheme) {
+        TelephonyManager.UssdResponseCallback ussdCallback =
+                new TelephonyManager.UssdResponseCallback() {
+                    @Override
+                    public void onReceiveUssdResponse(final TelephonyManager telephonyManager,
+                            String request, CharSequence response) {
+                        ResponseData resp = new SendUssdResponseData(
+                                response == null ? "" : response.toString(), codingScheme);
+                        sendTerminalResponse(cmdDet,
+                                ResultCode.OK, false, 0x00, resp);
+                    }
+
+                    @Override
+                    public void onReceiveUssdResponseFailed(final TelephonyManager telephonyManager,
+                            String request, int failureCode) {
+                        sendTerminalResponse(cmdDet,
+                                ResultCode.USSD_RETURN_ERROR, false, 0x00, null);
+                    }
+                };
+
+        mContext.getSystemService(TelephonyManager.class)
+                .sendUssdRequest(request, ussdCallback, null);
     }
 }

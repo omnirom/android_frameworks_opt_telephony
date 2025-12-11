@@ -37,7 +37,7 @@ import java.util.ArrayList;
 
 
 /**
- * {@hide}
+ * @hide
  */
 public abstract class CallTracker extends Handler {
 
@@ -79,9 +79,6 @@ public abstract class CallTracker extends Handler {
     protected static final int EVENT_SEPARATE_RESULT               = 12;
     protected static final int EVENT_ECT_RESULT                    = 13;
     protected static final int EVENT_EXIT_ECM_RESPONSE_CDMA        = 14;
-    protected static final int EVENT_CALL_WAITING_INFO_CDMA        = 15;
-    protected static final int EVENT_THREE_WAY_DIAL_L2_RESULT_CDMA = 16;
-    protected static final int EVENT_THREE_WAY_DIAL_BLANK_FLASH    = 20;
 
     @UnsupportedAppUsage
     public CallTracker(FeatureFlags featureFlags) {
@@ -99,12 +96,10 @@ public abstract class CallTracker extends Handler {
 
     protected void
     pollCallsAfterDelay() {
-        if (mFeatureFlags.preventInvocationRepeatOfRilCallWhenDeviceDoesNotSupportVoice()) {
-            if (!mCi.getHalVersion(TelephonyManager.HAL_SERVICE_VOICE)
-                    .greaterOrEqual(RIL.RADIO_HAL_VERSION_1_4)) {
-                log("Skip polling because HAL_SERVICE_VOICE < RADIO_HAL_VERSION_1.4");
-                return;
-            }
+        if (!mCi.getHalVersion(TelephonyManager.HAL_SERVICE_VOICE)
+                .greaterOrEqual(RIL.RADIO_HAL_VERSION_1_4)) {
+            log("Skip polling because HAL_SERVICE_VOICE < RADIO_HAL_VERSION_1.4");
+            return;
         }
 
         Message msg = obtainMessage();
@@ -275,25 +270,6 @@ public abstract class CallTracker extends Handler {
 
         return phone.getDefaultPhone().getServiceState().getVoiceRoamingType()
                 == ServiceState.ROAMING_TYPE_INTERNATIONAL;
-    }
-
-    private boolean compareGid1(Phone phone, String serviceGid1) {
-        String gid1 = phone.getGroupIdLevel1();
-        int gid_length = serviceGid1.length();
-        boolean ret = true;
-
-        if (serviceGid1 == null || serviceGid1.equals("")) {
-            log("compareGid1 serviceGid is empty, return " + ret);
-            return ret;
-        }
-        // Check if gid1 match service GID1
-        if (!((gid1 != null) && (gid1.length() >= gid_length) &&
-                gid1.substring(0, gid_length).equalsIgnoreCase(serviceGid1))) {
-            log(" gid1 " + gid1 + " serviceGid1 " + serviceGid1);
-            ret = false;
-        }
-        log("compareGid1 is " + (ret?"Same":"Different"));
-        return ret;
     }
 
     /**

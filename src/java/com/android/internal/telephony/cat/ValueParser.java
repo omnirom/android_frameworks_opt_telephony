@@ -18,6 +18,7 @@ package com.android.internal.telephony.cat;
 
 import android.compat.annotation.UnsupportedAppUsage;
 import android.os.Build;
+import android.telephony.PhoneNumberUtils;
 import android.telephony.SmsMessage;
 
 import com.android.internal.telephony.GsmAlphabet;
@@ -314,6 +315,30 @@ public abstract class ValueParser {
     }
 
     /**
+     * Retrieves text's coding scheme from the Text COMPREHENSION-TLV object.
+     *
+     * @param ctlv A Text COMPREHENSION-TLV object
+     * @return 0x00 if GSM 7-bit packed
+     *         0x04 if GSM 8-bit unpacked
+     *         0x08 if UCS2
+     * @throws ResultException if coding scheme is not supported or data length is 0
+     */
+    public static byte retrieveTextCodingScheme(ComprehensionTlv ctlv) throws ResultException {
+        byte[] rawValue = ctlv.getRawValue();
+        int valueIndex = ctlv.getValueIndex();
+
+        try {
+            byte codingScheme = (byte) (rawValue[valueIndex] & 0x0c);
+            if (codingScheme != 0x00 && codingScheme != 0x04 && codingScheme != 0x08) {
+                throw new ResultException(ResultCode.CMD_DATA_NOT_UNDERSTOOD);
+            }
+            return codingScheme;
+        } catch (IndexOutOfBoundsException e) {
+            throw new ResultException(ResultCode.CMD_DATA_NOT_UNDERSTOOD);
+        }
+    }
+
+    /**
      * Retrieves text from the Text COMPREHENSION-TLV object, and decodes it
      * into a Java String.
      *
@@ -396,6 +421,25 @@ public abstract class ValueParser {
             }
         }
         return null;
+    }
+
+    /**
+     * Retrieves address from an Address COMPREHENSION-TLV object
+     *
+     * @param ctlv An Address COMPREHENSION-TLV object
+     * @return Address instance
+     * @throws ResultException If the valueIndex and length of ctlv are incorrect.
+     */
+    public static String retrieveAddress(ComprehensionTlv ctlv) throws ResultException {
+        try {
+            return PhoneNumberUtils.calledPartyBCDToString(
+                    ctlv.getRawValue(),
+                    ctlv.getValueIndex(),
+                    ctlv.getLength(),
+                    PhoneNumberUtils.BCD_EXTENDED_TYPE_EF_ADN);
+        } catch (IndexOutOfBoundsException e) {
+            throw new ResultException(ResultCode.CMD_DATA_NOT_UNDERSTOOD);
+        }
     }
 
 }

@@ -17,6 +17,11 @@
 package com.android.internal.telephony.data;
 
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
+import static android.telephony.CarrierConfigManager.OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_AVAILABILITY;
+import static android.telephony.CarrierConfigManager.OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_PERFORMANCE;
+import static android.telephony.CarrierConfigManager.OPP_AUTO_DATA_SWITCH_POLICY_DISABLED;
+import static android.telephony.CarrierConfigManager.OPP_AUTO_DATA_SWITCH_POLICY_FOLLOW_SYSTEM;
+import static android.telephony.CarrierConfigManager.OpportunisticNetworkSwitchPolicy;
 import static android.telephony.SubscriptionManager.DEFAULT_PHONE_INDEX;
 import static android.telephony.SubscriptionManager.INVALID_PHONE_INDEX;
 
@@ -36,9 +41,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.ParcelUuid;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.CarrierConfigManager;
 import android.telephony.NetworkRegistrationInfo;
 import android.telephony.NetworkRegistrationInfo.RegistrationState;
 import android.telephony.ServiceState;
@@ -46,6 +53,7 @@ import android.telephony.SignalStrength;
 import android.telephony.SubscriptionInfo;
 import android.telephony.TelephonyDisplayInfo;
 import android.util.ArrayMap;
+import android.util.ArraySet;
 import android.util.IndentingPrintWriter;
 import android.util.LocalLog;
 
@@ -58,17 +66,16 @@ import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.util.NotificationChannelController;
 import com.android.telephony.Rlog;
 
-
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Recommend a data phone to use based on its availability.
@@ -90,6 +97,8 @@ public class AutoDataSwitchController extends Handler {
     public static final int EVALUATION_REASON_SIM_LOADED = 7;
     /** Voice call ended. */
     public static final int EVALUATION_REASON_VOICE_CALL_END = 8;
+    /** Carrier configuration changed */
+    public static final int EVALUATION_REASON_CARRIER_CONFIG_CHANGED = 9;
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(prefix = "EVALUATION_REASON_",
             value = {EVALUATION_REASON_REGISTRATION_STATE_CHANGED,
@@ -99,7 +108,8 @@ public class AutoDataSwitchController extends Handler {
                     EVALUATION_REASON_DATA_SETTINGS_CHANGED,
                     EVALUATION_REASON_RETRY_VALIDATION,
                     EVALUATION_REASON_SIM_LOADED,
-                    EVALUATION_REASON_VOICE_CALL_END})
+                    EVALUATION_REASON_VOICE_CALL_END,
+                    EVALUATION_REASON_CARRIER_CONFIG_CHANGED})
     public @interface AutoDataSwitchEvaluationReason {}
 
     /**
@@ -185,6 +195,9 @@ public class AutoDataSwitchController extends Handler {
     private final AutoDataSwitchControllerCallback mPhoneSwitcherCallback;
     @NonNull
     private final AlarmManager mAlarmManager;
+    // TODO(b/441307439): fix issue that ADSC is created with null CCM on cellular-less devices
+    @NonNull
+    private final CarrierConfigManager mCarrierConfigManager;
     /** A map of a scheduled event to its associated extra for action when the event fires off. */
     @NonNull
     private final Map<Integer, Object> mScheduledEventsToExtras;
@@ -294,7 +307,7 @@ public class AutoDataSwitchController extends Handler {
         private int getRatSignalScore() {
             return isInService(mDataRegState)
                     ? mPhone.getDataNetworkController().getDataConfigManager()
-                            .getAutoDataSwitchScore(mDisplayInfo, mSignalStrength) : 0;
+                    .getAutoDataSwitchScore(mDisplayInfo, mSignalStrength) : 0;
         }
 
         /**
@@ -379,6 +392,19 @@ public class AutoDataSwitchController extends Handler {
         sFeatureFlags = featureFlags;
         mPhoneSwitcherCallback = phoneSwitcherCallback;
         mAlarmManager = context.getSystemService(AlarmManager.class);
+        mCarrierConfigManager = context.getSystemService(CarrierConfigManager.class);
+        if (sFeatureFlags.monitorCarrierConfigChangeForAutoDataSwitch()
+                && mCarrierConfigManager != null) {
+            mCarrierConfigManager.registerCarrierConfigChangeListener(this::post,
+                    (logicalSlotIndex, subId, carrierId, specificCarrierId) -> {
+                        // Carrier config change is only used from primary sub to detect OPPT switch
+                        if (!shouldExcludeOpportunisticForSwitch() && isActiveVisibleSubId(subId)) {
+                            logl("onCarrierConfigChanged: slot=" + logicalSlotIndex + ", sub="
+                                    + subId + ", carrierId=" + carrierId);
+                            evaluateAutoDataSwitch(EVALUATION_REASON_CARRIER_CONFIG_CHANGED);
+                        }
+                    });
+        }
         mScheduledEventsToExtras = new HashMap<>();
         mEventsToAlarmListener = new HashMap<>();
         mSubscriptionManagerService = SubscriptionManagerService.getInstance();
@@ -422,26 +448,79 @@ public class AutoDataSwitchController extends Handler {
      * sub to reduce unnecessary tracking.
      */
     private void onSubscriptionsChanged() {
-        Set<Integer> activePhoneIds = Arrays.stream(mSubscriptionManagerService
-                .getActiveSubIdList(true /*visibleOnly*/))
-                .map(mSubscriptionManagerService::getPhoneId)
-                .boxed()
-                .collect(Collectors.toSet());
-        // Track events only if there are at least two active visible subscriptions.
-        if (activePhoneIds.size() < 2) activePhoneIds.clear();
+        boolean changed = updateListenerRegistrations();
+        if (changed) logl("onSubscriptionChanged: " + Arrays.toString(mPhonesSignalStatus));
+    }
+
+    /**
+     * Updates network event listener registrations based on conditions.
+     *
+     * Unregisters listeners for *all* phones if:
+     * 1. <2 active subscriptions (auto-switching requires 2+).
+     * 2. Non-cellular default network (auto-switching not relevant).
+     * 3. Default data disabled (no need to monitor for switching).
+     * 4. No eligible auto-switch candidates (all other phones' data
+     *    disabled, preventing switching).
+     *
+     * Registers listeners if none of the above apply and a phone's
+     * listeners are currently unregistered.
+     *
+     * @return `true` if any registration changed; `false` otherwise.
+     */
+    private boolean updateListenerRegistrations() {
+        boolean shouldUnregister = false;
+        String reason = "";
+
+        if (mSubscriptionManagerService.getActiveSubIdList(
+                shouldExcludeOpportunisticForSwitch()).length < 2) {
+            shouldUnregister = true;
+            reason = "only have one active subscription";
+        } else if (mDefaultNetworkIsOnNonCellular) {
+            shouldUnregister = true;
+            reason = "default network is on non-cellular network";
+        } else {
+            int defaultDataPhoneId = mSubscriptionManagerService.getPhoneId(
+                    mSubscriptionManagerService.getDefaultDataSubId());
+            Phone defaultDataPhone = PhoneFactory.getPhone(defaultDataPhoneId);
+
+            if (defaultDataPhone != null && !defaultDataPhone.isUserDataEnabled()) {
+                shouldUnregister = true;
+                reason = "default data is disabled";
+            } else {
+                boolean anyCandidateEnabled = false;
+                for (int phoneId = 0; phoneId < mPhonesSignalStatus.length; phoneId++) {
+                    if (phoneId != defaultDataPhoneId) {
+                        Phone phone = PhoneFactory.getPhone(phoneId);
+                        if (phone != null && phone.getDataSettingsManager().isDataEnabled()) {
+                            anyCandidateEnabled = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!anyCandidateEnabled) {
+                    shouldUnregister = true;
+                    reason = "no candidate enabled auto data switch feature";
+                }
+            }
+        }
+
+        if (shouldUnregister) {
+            logl("updateListenerRegistrations: " + reason);
+        }
+
+        // Register or unregister as needed
         boolean changed = false;
         for (int phoneId = 0; phoneId < mPhonesSignalStatus.length; phoneId++) {
-            if (activePhoneIds.contains(phoneId)
-                    && !mPhonesSignalStatus[phoneId].mListeningForEvents) {
-                registerAllEventsForPhone(phoneId);
-                changed = true;
-            } else if (!activePhoneIds.contains(phoneId)
-                    && mPhonesSignalStatus[phoneId].mListeningForEvents) {
+            if (shouldUnregister && mPhonesSignalStatus[phoneId].mListeningForEvents) {
                 unregisterAllEventsForPhone(phoneId);
+                changed = true;
+            } else if (!shouldUnregister && !mPhonesSignalStatus[phoneId].mListeningForEvents) {
+                registerAllEventsForPhone(phoneId);
                 changed = true;
             }
         }
-        if (changed) logl("onSubscriptionChanged: " + Arrays.toString(mPhonesSignalStatus));
+        return changed;
     }
 
     /**
@@ -459,8 +538,9 @@ public class AutoDataSwitchController extends Handler {
             phone.getServiceStateTracker().registerForServiceStateChanged(this,
                     EVENT_SERVICE_STATE_CHANGED, phoneId);
             mPhonesSignalStatus[phoneId].mListeningForEvents = true;
+            logl("registerAllEventsForPhone: registered listeners for phone " + phoneId);
         } else {
-            loge("Unexpected null phone " + phoneId + " when register all events");
+            logle("Unexpected null phone " + phoneId + " when register all events");
         }
     }
 
@@ -475,8 +555,9 @@ public class AutoDataSwitchController extends Handler {
             phone.getSignalStrengthController().unregisterForSignalStrengthChanged(this);
             phone.getServiceStateTracker().unregisterForServiceStateChanged(this);
             mPhonesSignalStatus[phoneId].mListeningForEvents = false;
+            logl("unregisterAllEventsForPhone: unregistered listeners for phone " + phoneId);
         } else {
-            loge("Unexpected out of bound phone " + phoneId + " when unregister all events");
+            logle("Unexpected out of bound phone " + phoneId + " when unregister all events");
         }
     }
 
@@ -497,8 +578,7 @@ public class AutoDataSwitchController extends Handler {
                 dataConfig.getAutoDataSwitchAvailabilitySwitchbackStabilityTimeThreshold() >= 0
                         ? dataConfig.getAutoDataSwitchAvailabilitySwitchbackStabilityTimeThreshold()
                         : dataConfig.getAutoDataSwitchAvailabilityStabilityTimeThreshold());
-        mAutoDataSwitchValidationMaxRetry =
-                dataConfig.getAutoDataSwitchValidationMaxRetry();
+        mAutoDataSwitchValidationMaxRetry = dataConfig.getAutoDataSwitchValidationMaxRetry();
     }
 
     @Override
@@ -534,7 +614,7 @@ public class AutoDataSwitchController extends Handler {
                 if (obj instanceof StabilityEventExtra extra) {
                     int targetPhoneId = extra.targetPhoneId;
                     boolean needValidation = extra.needValidation;
-                    log("require validation on phone " + targetPhoneId
+                    logl("require validation on phone " + targetPhoneId
                             + (needValidation ? "" : " no") + " need to pass");
                     mScheduledEventsToExtras.remove(EVENT_STABILITY_CHECK_PASSED);
                     mPhoneSwitcherCallback.onRequireValidation(targetPhoneId, needValidation);
@@ -561,7 +641,7 @@ public class AutoDataSwitchController extends Handler {
                 mPhonesSignalStatus[phoneId].mDataRegState = newRegState;
                 if (isInService(oldRegState) != isInService(newRegState)
                         || isHomeService(oldRegState) != isHomeService(newRegState)) {
-                    log("onServiceStateChanged: phone " + phoneId + " "
+                    logl("onServiceStateChanged: phone " + phoneId + " "
                             + NetworkRegistrationInfo.registrationStateToString(oldRegState)
                             + " -> "
                             + NetworkRegistrationInfo.registrationStateToString(newRegState));
@@ -569,7 +649,7 @@ public class AutoDataSwitchController extends Handler {
                 }
             }
         } else {
-            loge("Unexpected null phone " + phoneId + " upon its registration state changed");
+            logle("Unexpected null phone " + phoneId + " upon its registration state changed");
         }
     }
 
@@ -595,12 +675,12 @@ public class AutoDataSwitchController extends Handler {
             TelephonyDisplayInfo displayInfo = phone.getDisplayInfoController()
                     .getTelephonyDisplayInfo();
             mPhonesSignalStatus[phoneId].mDisplayInfo = displayInfo;
-            if (getHigherScoreCandidatePhoneId() != mSelectedTargetPhoneId) {
-                log("onDisplayInfoChanged: phone " + phoneId + " " + displayInfo);
+            if (getBetterCandidatePhoneIdBasedOnScore() != mSelectedTargetPhoneId) {
+                logl("onDisplayInfoChanged: phone " + phoneId + " " + displayInfo);
                 evaluateAutoDataSwitch(EVALUATION_REASON_DISPLAY_INFO_CHANGED);
             }
         } else {
-            loge("Unexpected null phone " + phoneId + " upon its display info changed");
+            logle("Unexpected null phone " + phoneId + " upon its display info changed");
         }
     }
 
@@ -615,43 +695,57 @@ public class AutoDataSwitchController extends Handler {
             SignalStrength oldSignalStrength = mPhonesSignalStatus[phoneId].mSignalStrength;
             if (oldSignalStrength.getLevel() != newSignalStrength.getLevel()) {
                 mPhonesSignalStatus[phoneId].mSignalStrength = newSignalStrength;
-                if (getHigherScoreCandidatePhoneId() != mSelectedTargetPhoneId) {
-                    log("onSignalStrengthChanged: phone " + phoneId + " "
+                if (getBetterCandidatePhoneIdBasedOnScore() != mSelectedTargetPhoneId) {
+                    logl("onSignalStrengthChanged: phone " + phoneId + " "
                             + oldSignalStrength.getLevel() + "->" + newSignalStrength.getLevel());
                     evaluateAutoDataSwitch(EVALUATION_REASON_SIGNAL_STRENGTH_CHANGED);
                 }
             }
         } else {
-            loge("Unexpected null phone " + phoneId + " upon its signal strength changed");
+            logle("Unexpected null phone " + phoneId + " upon its signal strength changed");
         }
     }
 
     /**
-     * Called as a preliminary check for the frequent signal/display info change.
-     * @return The phone Id if found a candidate phone with higher signal score, or the DDS has
-     * an equal score.
+     * Checks for a better data phone candidate based on signal strength.Compares the preferred data
+     * phone and DDS, potentially switching to another active phone with a significantly better
+     * signal or reverting to DDS if the preferred phone isn't significantly better.
+     *
+     * @return A better candidate phone ID, the DDS phone ID,
+     * or {@link android.telephony.SubscriptionManager#INVALID_PHONE_INDEX}.
      */
-    private int getHigherScoreCandidatePhoneId() {
+    private int getBetterCandidatePhoneIdBasedOnScore() {
         int preferredPhoneId = mPhoneSwitcher.getPreferredDataPhoneId();
         int ddsPhoneId = mSubscriptionManagerService.getPhoneId(
                 mSubscriptionManagerService.getDefaultDataSubId());
-        if (isActiveModemPhone(preferredPhoneId) && isActiveModemPhone(ddsPhoneId)) {
-            int currentScore = mPhonesSignalStatus[preferredPhoneId].getRatSignalScore();
-            for (int phoneId = 0; phoneId < mPhonesSignalStatus.length; phoneId++) {
-                if (phoneId == preferredPhoneId) continue;
-                PhoneSignalStatus candidateStatus = mPhonesSignalStatus[phoneId];
-                // Ignore non-home phone.
-                if (candidateStatus.getUsableState() != PhoneSignalStatus.UsableState.HOME) {
+
+        if (!isActiveModemPhone(preferredPhoneId) || !isActiveModemPhone(ddsPhoneId)) {
+            return INVALID_PHONE_INDEX;
+        }
+
+        int defaultScore = mPhonesSignalStatus[ddsPhoneId].getRatSignalScore();
+        int preferredScore = mPhonesSignalStatus[preferredPhoneId].getRatSignalScore();
+
+        // Currently on default data subscription
+        if (ddsPhoneId == preferredPhoneId) {
+            // Find any candidate with significantly better score
+            for (int backupId = 0; backupId < mPhonesSignalStatus.length; backupId++) {
+                // Skip current phone and non-home phones
+                if (backupId == preferredPhoneId
+                        || !isHomeService(mPhonesSignalStatus[backupId].mDataRegState)) {
                     continue;
                 }
-                int candidateScore = candidateStatus.getRatSignalScore();
-                if ((candidateScore - currentScore) > mScoreTolerance
-                        // Also reevaluate if DDS has the same score as the current phone.
-                        || (candidateScore >= currentScore && phoneId == ddsPhoneId)) {
-                    return phoneId;
+
+                int candidateScore = mPhonesSignalStatus[backupId].getRatSignalScore();
+                if (candidateScore - defaultScore > mScoreTolerance) {
+                    return backupId;
                 }
             }
+        } else if (preferredScore - defaultScore <= mScoreTolerance) { // Currently on backup
+            // Switch back to dds if preferred isn't significantly better
+            return ddsPhoneId;
         }
+
         return INVALID_PHONE_INDEX;
     }
 
@@ -664,7 +758,15 @@ public class AutoDataSwitchController extends Handler {
                 ? STABILITY_CHECK_TIMER_MAP.get(STABILITY_CHECK_AVAILABILITY_SWITCH)
                 << mAutoSwitchValidationFailedCount
                 : 0;
-        if (!mScheduledEventsToExtras.containsKey(EVENT_EVALUATE_AUTO_SWITCH)) {
+        if (reason == EVALUATION_REASON_DATA_SETTINGS_CHANGED
+                || reason == EVALUATION_REASON_DEFAULT_NETWORK_CHANGED
+                || reason == EVALUATION_REASON_CARRIER_CONFIG_CHANGED) {
+            // In some conditions, listeners are paused to reduce unnecessary tracking.
+            updateListenerRegistrations();
+            // Always reevaluate with those critical condition change.
+            scheduleEventWithTimer(EVENT_EVALUATE_AUTO_SWITCH, new EvaluateEventExtra(reason),
+                    delayMs);
+        } else if (!mScheduledEventsToExtras.containsKey(EVENT_EVALUATE_AUTO_SWITCH)) {
             scheduleEventWithTimer(EVENT_EVALUATE_AUTO_SWITCH, new EvaluateEventExtra(reason),
                     delayMs);
         }
@@ -677,16 +779,31 @@ public class AutoDataSwitchController extends Handler {
      * @param reason The reason for the evaluation.
      */
     private void onEvaluateAutoDataSwitch(@AutoDataSwitchEvaluationReason int reason) {
+        if (sFeatureFlags.monitorCarrierConfigChangeForAutoDataSwitch()
+                && reason == EVALUATION_REASON_CARRIER_CONFIG_CHANGED
+                && shouldExcludeOpportunisticForSwitch()
+                && mScheduledEventsToExtras.containsKey(EVENT_STABILITY_CHECK_PASSED)) {
+            log("onEvaluateAutoDataSwitch: opportunistic policy disabled, cancelling pending "
+                    + "switch");
+            cancelAnyPendingSwitch();
+            return;
+        }
         // auto data switch feature is disabled.
-        if (STABILITY_CHECK_TIMER_MAP.get(STABILITY_CHECK_AVAILABILITY_SWITCH) < 0) return;
+        if (!isAvailabilityBasedSwitchEnabled()) {
+            logle("onEvaluateAutoDataSwitch: auto data switch feature is disabled.");
+            return;
+        }
         int defaultDataSubId = mSubscriptionManagerService.getDefaultDataSubId();
         // check is valid DSDS
-        if (mSubscriptionManagerService.getActiveSubIdList(true).length < 2) return;
-        int defaultDataPhoneId = mSubscriptionManagerService.getPhoneId(
-                defaultDataSubId);
+        if (mSubscriptionManagerService.getActiveSubIdList(
+                shouldExcludeOpportunisticForSwitch()).length < 2) {
+            logle("onEvaluateAutoDataSwitch: switch requires two active subscriptions.");
+            return;
+        }
+        int defaultDataPhoneId = mSubscriptionManagerService.getPhoneId(defaultDataSubId);
         Phone defaultDataPhone = PhoneFactory.getPhone(defaultDataPhoneId);
         if (defaultDataPhone == null) {
-            loge("onEvaluateAutoDataSwitch: cannot find the phone associated with default data"
+            logle("onEvaluateAutoDataSwitch: cannot find the phone associated with default data"
                     + " subscription " + defaultDataSubId);
             return;
         }
@@ -699,7 +816,7 @@ public class AutoDataSwitchController extends Handler {
         if (preferredPhoneId == defaultDataPhoneId) {
             // on default data sub
             StabilityEventExtra res = evaluateAnyCandidateToUse(defaultDataPhoneId, debugMessage);
-            log(debugMessage.toString());
+            logl(debugMessage.toString());
             if (res.targetPhoneId != INVALID_PHONE_INDEX) {
                 mSelectedTargetPhoneId = res.targetPhoneId;
                 startStabilityCheck(res.targetPhoneId, res.switchType, res.needValidation);
@@ -710,7 +827,7 @@ public class AutoDataSwitchController extends Handler {
             // on backup data sub
             Phone backupDataPhone = PhoneFactory.getPhone(preferredPhoneId);
             if (backupDataPhone == null || !isActiveModemPhone(preferredPhoneId)) {
-                loge(debugMessage.append(" Unexpected null phone ").append(preferredPhoneId)
+                logle(debugMessage.append(" Unexpected null phone ").append(preferredPhoneId)
                         .append(" as the current active data phone").toString());
                 return;
             }
@@ -721,7 +838,7 @@ public class AutoDataSwitchController extends Handler {
                 mPhoneSwitcherCallback.onRequireImmediatelySwitchToPhone(DEFAULT_PHONE_INDEX,
                         EVALUATION_REASON_DATA_SETTINGS_CHANGED);
                 cancelAnyPendingSwitch();
-                log(debugMessage.append(
+                logl(debugMessage.append(
                         ", immediately back to default as user turns off default").toString());
                 return;
             } else if (!(internetEvaluation = getInternetEvaluation(backupDataPhone))
@@ -730,7 +847,7 @@ public class AutoDataSwitchController extends Handler {
                 mPhoneSwitcherCallback.onRequireImmediatelySwitchToPhone(
                         DEFAULT_PHONE_INDEX, EVALUATION_REASON_DATA_SETTINGS_CHANGED);
                 cancelAnyPendingSwitch();
-                log(debugMessage.append(
+                logl(debugMessage.append(
                                 ", immediately back to default because backup ")
                         .append(internetEvaluation).toString());
                 return;
@@ -776,14 +893,18 @@ public class AutoDataSwitchController extends Handler {
                                     .getRatSignalScore();
                             int currentScore = mPhonesSignalStatus[preferredPhoneId]
                                     .getRatSignalScore();
-                            if (defaultScore >= currentScore) {
+                            if ((currentScore - defaultScore) <= mScoreTolerance) {
                                 debugMessage
-                                        .append(", back to default for higher or equal score ")
+                                        .append(", back to default for score ")
                                         .append(defaultScore).append(" versus current ")
                                         .append(currentScore);
                                 backToDefault = true;
                                 switchType = STABILITY_CHECK_PERFORMANCE_SWITCH;
                                 needValidation = mRequirePingTestBeforeSwitch;
+                            } else {
+                                debugMessage.append(", default's score ").append(defaultScore)
+                                        .append(" doesn't justify the switch given the current ")
+                                        .append(currentScore);
                             }
                         } else {
                             // Only OOS/in service switch is enabled, switch back.
@@ -800,8 +921,8 @@ public class AutoDataSwitchController extends Handler {
                 }
             }
 
+            logl(debugMessage.toString());
             if (backToDefault) {
-                log(debugMessage.toString());
                 mSelectedTargetPhoneId = defaultDataPhoneId;
                 startStabilityCheck(DEFAULT_PHONE_INDEX, switchType, needValidation);
             } else {
@@ -918,12 +1039,31 @@ public class AutoDataSwitchController extends Handler {
     }
 
     /**
+     * @return {@code true} If the availability based switching is enabled.
+     */
+    private boolean isAvailabilityBasedSwitchEnabled() {
+        final boolean enabledByDeviceConfig = STABILITY_CHECK_TIMER_MAP.get(
+                STABILITY_CHECK_AVAILABILITY_SWITCH) >= 0;
+
+        // Switch between primary networks only controlled by device config
+        if (!enabledByDeviceConfig) return false;
+
+        // Switch between primary and OPPT networks is controlled by both device and carrier configs
+        return shouldExcludeOpportunisticForSwitch() || isAvailabilityBasedSwitchEnabledForOppt();
+    }
+
+    /**
      * @return {@code true} If the feature of switching base on RAT and signal strength is enabled.
      */
     private boolean isRatSignalStrengthBasedSwitchEnabled() {
-        return mScoreTolerance >= 0
-                && STABILITY_CHECK_TIMER_MAP.get(STABILITY_CHECK_PERFORMANCE_SWITCH) >= 0
-                && sFeatureFlags.autoDataSwitchEnhanced();
+        final boolean enabledByDeviceConfig = mScoreTolerance >= 0
+                && STABILITY_CHECK_TIMER_MAP.get(STABILITY_CHECK_PERFORMANCE_SWITCH) >= 0;
+
+        // Switch between primary networks only controlled by device config
+        if (!enabledByDeviceConfig) return false;
+
+        // Switch between primary and OPPT networks is controlled by both device and carrier configs
+        return shouldExcludeOpportunisticForSwitch() || isPerformanceBasedSwitchEnabledForOppt();
     }
 
     /**
@@ -952,7 +1092,7 @@ public class AutoDataSwitchController extends Handler {
             delayMs = STABILITY_CHECK_TIMER_MAP.get(switchType);
             scheduleEventWithTimer(EVENT_STABILITY_CHECK_PASSED, eventExtras, delayMs);
         }
-        log("startStabilityCheck: "
+        logl("startStabilityCheck: "
                 + (delayMs != -1 ? "scheduling " : "already scheduled ")
                 + eventExtras);
     }
@@ -1004,7 +1144,21 @@ public class AutoDataSwitchController extends Handler {
             case EVALUATION_REASON_RETRY_VALIDATION -> "RETRY_VALIDATION";
             case EVALUATION_REASON_SIM_LOADED -> "SIM_LOADED";
             case EVALUATION_REASON_VOICE_CALL_END -> "VOICE_CALL_END";
+            case EVALUATION_REASON_CARRIER_CONFIG_CHANGED -> "CARRIER_CONFIG_CHANGED";
             default -> "Unknown(" + reason + ")";
+        };
+    }
+
+    /** Opportunistic network switch policy to string. */
+    @NonNull
+    public static String opportunisticNetworkSwitchPolicyToString(
+            @OpportunisticNetworkSwitchPolicy int policy) {
+        return switch (policy) {
+            case OPP_AUTO_DATA_SWITCH_POLICY_DISABLED -> "DISABLED";
+            case OPP_AUTO_DATA_SWITCH_POLICY_FOLLOW_SYSTEM -> "FOLLOW_SYSTEM";
+            case OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_AVAILABILITY -> "AVAILABILITY";
+            case OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_PERFORMANCE -> "PERFORMANCE";
+            default -> "Unknown(" + policy + ")";
         };
     }
 
@@ -1013,6 +1167,13 @@ public class AutoDataSwitchController extends Handler {
         SubscriptionInfoInternal subInfo = mSubscriptionManagerService
                 .getSubscriptionInfoInternal(subId);
         return subInfo != null && subInfo.isActive();
+    }
+
+    /** @return {@code true} if the sub is active and visible. */
+    private boolean isActiveVisibleSubId(int subId) {
+        SubscriptionInfoInternal subInfo = mSubscriptionManagerService
+                .getSubscriptionInfoInternal(subId);
+        return subInfo != null && subInfo.isActive() && subInfo.isVisible();
     }
 
     /**
@@ -1028,11 +1189,11 @@ public class AutoDataSwitchController extends Handler {
             mDefaultNetworkIsOnNonCellular = !networkCapabilities.hasTransport(TRANSPORT_CELLULAR);
             if (mDefaultNetworkIsOnNonCellular
                     && isActiveSubId(mPhoneSwitcher.getAutoSelectedDataSubId())) {
-                log("default network is active on non cellular, switch back to default");
+                logl("default network is active on non cellular, switch back to default");
                 evaluateAutoDataSwitch(EVALUATION_REASON_DEFAULT_NETWORK_CHANGED);
             }
         } else {
-            log("default network is lost, try to find another active sub to switch to");
+            logl("default network is lost, try to find another active sub to switch to");
             mDefaultNetworkIsOnNonCellular = false;
             evaluateAutoDataSwitch(EVALUATION_REASON_DEFAULT_NETWORK_CHANGED);
         }
@@ -1048,7 +1209,7 @@ public class AutoDataSwitchController extends Handler {
             if (mEventsToAlarmListener.containsKey(EVENT_STABILITY_CHECK_PASSED)) {
                 mAlarmManager.cancel(mEventsToAlarmListener.get(EVENT_STABILITY_CHECK_PASSED));
             } else {
-                loge("cancelAnyPendingSwitch: EVENT_STABILITY_CHECK_PASSED listener is null");
+                logle("cancelAnyPendingSwitch: EVENT_STABILITY_CHECK_PASSED listener is null");
             }
             removeMessages(EVENT_STABILITY_CHECK_PASSED);
             mScheduledEventsToExtras.remove(EVENT_STABILITY_CHECK_PASSED);
@@ -1062,6 +1223,9 @@ public class AutoDataSwitchController extends Handler {
      * @param isDueToAutoSwitch {@code true} if the switch was due to auto data switch feature.
      */
     public void displayAutoDataSwitchNotification(int phoneId, boolean isDueToAutoSwitch) {
+        // Don't display notification when networks switched between primary and opportunistic
+        if (!shouldExcludeOpportunisticForSwitch()) return;
+
         NotificationManager notificationManager = mContext.getSystemService(
                 NotificationManager.class);
         if (notificationManager == null) return;
@@ -1078,14 +1242,14 @@ public class AutoDataSwitchController extends Handler {
         SubscriptionInfo subInfo = mSubscriptionManagerService
                 .getSubscriptionInfo(mSubscriptionManagerService.getSubId(phoneId));
         if (subInfo == null || subInfo.isOpportunistic()) {
-            loge("displayAutoDataSwitchNotification: phoneId="
+            logle("displayAutoDataSwitchNotification: phoneId="
                     + phoneId + " unexpected subInfo " + subInfo);
             return;
         }
         int subId = subInfo.getSubscriptionId();
         logl("displayAutoDataSwitchNotification: display for subId=" + subId);
         // "Mobile network settings" screen / dialog
-        Intent intent = new Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS);
+        Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_SIM_PROFILES_SETTINGS);
         final Bundle fragmentArgs = new Bundle();
         // Special contract for Settings to highlight permission row
         fragmentArgs.putString(SETTINGS_EXTRA_FRAGMENT_ARG_KEY, AUTO_DATA_SWITCH_SETTING_R_ID);
@@ -1154,6 +1318,74 @@ public class AutoDataSwitchController extends Handler {
     }
 
     /**
+     * Exclude opportunistic profiles for switch when ANY of condition below is fulfilled:
+     * - Feature flag is disabled
+     * - No active primary (visible) and opportunistic profiles in the same group
+     * - Primary profile doesn't override carrier config to enable the feature
+     */
+    private boolean shouldExcludeOpportunisticForSwitch() {
+        if (!sFeatureFlags.macroBasedOpportunisticNetworks()) {
+            log("OPPT switch excluded: feature flag is disabled!");
+            return true;
+        }
+
+        if (getOpptSwitchPolicyForPrimaryPhone() == OPP_AUTO_DATA_SWITCH_POLICY_DISABLED) {
+            log("OPPT switch excluded: primary phone doesn't enable the feature!");
+            return true;
+        }
+
+        final List<SubscriptionInfo> infos =
+                mSubscriptionManagerService.getActiveSubscriptionInfoList(
+                        mContext.getOpPackageName(),
+                        mContext.getAttributionTag(), true /* mIsForAllUserProfiles */);
+        Set<ParcelUuid> primarySubs = new ArraySet<>();
+        Set<ParcelUuid> oppSubs = new ArraySet<>();
+        for (SubscriptionInfo si : infos) {
+            if (si.getGroupUuid() == null) continue;
+            if (si.isOpportunistic()) {
+                oppSubs.add(si.getGroupUuid());
+            } else {
+                primarySubs.add(si.getGroupUuid());
+            }
+        }
+        primarySubs.retainAll(oppSubs);
+        return primarySubs.isEmpty();
+    }
+
+    /**
+     * @return switch policy from carrier config for primary subscription.
+     */
+    @OpportunisticNetworkSwitchPolicy
+    private int getOpptSwitchPolicyForPrimaryPhone() {
+        int[] activeSubs = mSubscriptionManagerService.getActiveSubIdList(true /*visibleOnly*/);
+        if (activeSubs.length != 1) {
+            return OPP_AUTO_DATA_SWITCH_POLICY_DISABLED;
+        }
+        if (sFeatureFlags.monitorCarrierConfigChangeForAutoDataSwitch()) {
+            return mCarrierConfigManager == null ? OPP_AUTO_DATA_SWITCH_POLICY_DISABLED :
+                    mCarrierConfigManager.getCarrierConfigSubset(mContext, activeSubs[0],
+                            CarrierConfigManager.KEY_OPP_AUTO_DATA_SWITCH_POLICY_INT).getInt(
+                            CarrierConfigManager.KEY_OPP_AUTO_DATA_SWITCH_POLICY_INT,
+                            OPP_AUTO_DATA_SWITCH_POLICY_DISABLED);
+        } else {
+            return PhoneFactory.getPhone(mSubscriptionManagerService.getPhoneId(activeSubs[0]))
+                    .getDataNetworkController()
+                    .getDataConfigManager()
+                    .getCarrierOverriddenAutoDataSwitchPolicyForOppt();
+        }
+    }
+
+    private boolean isAvailabilityBasedSwitchEnabledForOppt() {
+        final int policy = getOpptSwitchPolicyForPrimaryPhone();
+        return (policy & OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_AVAILABILITY) != 0;
+    }
+
+    private boolean isPerformanceBasedSwitchEnabledForOppt() {
+        final int policy = getOpptSwitchPolicyForPrimaryPhone();
+        return (policy & OPP_AUTO_DATA_SWITCH_POLICY_BITMASK_PERFORMANCE) != 0;
+    }
+
+    /**
      * Log debug messages.
      * @param s debug messages
      */
@@ -1179,6 +1411,15 @@ public class AutoDataSwitchController extends Handler {
     }
 
     /**
+     * Log error messages and also log into the local log.
+     * @param s error messages
+     */
+    private void logle(@NonNull String s) {
+        loge(s);
+        mLocalLog.log(s);
+    }
+
+    /**
      * Dump the state of DataNetworkController
      *
      * @param fd File descriptor
@@ -1197,6 +1438,10 @@ public class AutoDataSwitchController extends Handler {
         STABILITY_CHECK_TIMER_MAP.forEach((key, value)
                 -> pw.println(switchTypeToString(key) + ": " + value));
         pw.println("mSelectedTargetPhoneId=" + mSelectedTargetPhoneId);
+        if (sFeatureFlags.monitorCarrierConfigChangeForAutoDataSwitch()) {
+            pw.println("autoDataSwitchPolicyForOppt=" + opportunisticNetworkSwitchPolicyToString(
+                    getOpptSwitchPolicyForPrimaryPhone()));
+        }
         pw.increaseIndent();
         for (PhoneSignalStatus status: mPhonesSignalStatus) {
             pw.println(status);

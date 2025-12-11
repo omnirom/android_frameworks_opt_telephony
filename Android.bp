@@ -114,7 +114,14 @@ java_library {
         enabled: true,
         shrink: true,
         obfuscate: false,
-        proguard_flags_files: ["proguard.flags"],
+        proguard_compatibility: false,
+        proguard_flags_files: [
+            "proguard.flags",
+            ":framework-sdk-proguard-rules",
+        ],
+        // Disallow access modification during optimization that would promote
+        // members into the public or protected API surface.
+        protect_api_surface: true,
     },
     lint: {
         baseline_filename: "lint-baseline.xml",

@@ -136,7 +136,9 @@ public class TelephonyNetworkRequest {
             new SimpleImmutableEntry<>(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH,
                     CAPABILITY_ATTRIBUTE_TRAFFIC_DESCRIPTOR_OS_APP_ID),
             new SimpleImmutableEntry<>(NetworkCapabilities.NET_CAPABILITY_RCS,
-                CAPABILITY_ATTRIBUTE_APN_SETTING | CAPABILITY_ATTRIBUTE_TRAFFIC_DESCRIPTOR_DNN)
+                CAPABILITY_ATTRIBUTE_APN_SETTING | CAPABILITY_ATTRIBUTE_TRAFFIC_DESCRIPTOR_DNN),
+            new SimpleImmutableEntry<>(DataUtils.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS,
+                    CAPABILITY_ATTRIBUTE_TRAFFIC_DESCRIPTOR_OS_APP_ID)
     );
 
     /**

@@ -20,7 +20,6 @@ import android.annotation.CallbackExecutor;
 import android.annotation.NonNull;
 import android.content.ContentResolver;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -41,6 +40,7 @@ import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.IndentingPrintWriter;
 import android.util.LocalLog;
+import android.util.SparseArray;
 
 import com.android.internal.telephony.GlobalSettingsHelper;
 import com.android.internal.telephony.Phone;
@@ -104,6 +104,14 @@ public class DataSettingsManager extends Handler {
     /** Data config manager */
     @NonNull
     private final DataConfigManager mDataConfigManager;
+
+    /** Data Network Controller */
+    @NonNull
+    private final DataNetworkController mDataNetworkController;
+
+    /** Data service managers. */
+    @NonNull
+    private final SparseArray<DataServiceManager> mDataServiceManagers;
 
     /** Data settings manager callbacks. */
     @NonNull
@@ -180,12 +188,14 @@ public class DataSettingsManager extends Handler {
      *
      * @param phone The phone instance.
      * @param dataNetworkController Data network controller.
+     * @param dataServiceManagers Data service managers indexed by transport type.
      * @param looper The looper to be used by the handler. Currently the handler thread is the
      * phone process's main thread.
      * @param callback Data settings manager callback.
      */
     public DataSettingsManager(@NonNull Phone phone,
             @NonNull DataNetworkController dataNetworkController,
+            @NonNull SparseArray<DataServiceManager> dataServiceManagers,
             @NonNull FeatureFlags featureFlags, @NonNull Looper looper,
             @NonNull DataSettingsManagerCallback callback) {
         super(looper);
@@ -196,7 +206,9 @@ public class DataSettingsManager extends Handler {
         mSubId = mPhone.getSubId();
         mResolver = mPhone.getContext().getContentResolver();
         registerCallback(callback);
+        mDataNetworkController = dataNetworkController;
         mDataConfigManager = dataNetworkController.getDataConfigManager();
+        mDataServiceManagers = dataServiceManagers;
         refreshEnabledMobileDataPolicy();
         mSettingsObserver = new SettingsObserver(mPhone.getContext(), this);
         mDataEnabledSettings.put(TelephonyManager.DATA_ENABLED_REASON_POLICY, true);
@@ -273,9 +285,7 @@ public class DataSettingsManager extends Handler {
     }
 
     private boolean hasCalling() {
-        if (!TelephonyCapabilities.minimalTelephonyCdmCheck(mFeatureFlags)) return true;
-        return mPhone.getContext().getPackageManager().hasSystemFeature(
-            PackageManager.FEATURE_TELEPHONY_CALLING);
+        return TelephonyCapabilities.supportsTelephonyCalling(mFeatureFlags, mPhone.getContext());
     }
 
     /**
@@ -346,6 +356,37 @@ public class DataSettingsManager extends Handler {
                     }
                 });
         updateDataEnabledAndNotify(TelephonyManager.DATA_ENABLED_REASON_UNKNOWN);
+        // Notify DataService the initial user data enabled and user data roaming enabled state.
+        // This is to ensure that DataService which bound to DataServiceManager before
+        // DataSettingsManager initialized can receive the initial state.
+        notifyDataServiceUserDataEnabled(isUserDataEnabled());
+        notifyDataServiceUserDataRoamingEnabled(isDataRoamingEnabled());
+        mDataNetworkController.registerDataNetworkControllerCallback(
+                new DataNetworkController.DataNetworkControllerCallback(this::post) {
+                    @Override
+                    public void onSimStateChanged(int simState) {
+                        // When the sim is loaded (e.g. modem restarted), notify all data service
+                        // the current user data and user data roaming enabled state
+                        if (simState == TelephonyManager.SIM_STATE_LOADED) {
+                            notifyDataServiceUserDataEnabled(isUserDataEnabled());
+                            notifyDataServiceUserDataRoamingEnabled(isDataRoamingEnabled());
+                        }
+                    }
+
+                    @Override
+                    public void onDataServiceBound(int transport) {
+                        // Sometime the DataService bounding may happens after the
+                        // DataSettingsManager initialized (e.g. DataService initialize late, or
+                        // DataService restarted). In this case, the DataService may not know the
+                        // user data enabled value until the value is updated. Therefore,
+                        // notifying the DataService in the onDataServiceBound callback ensures
+                        // that the DataService will receive the current value once bound.
+                        DataServiceManager dataServiceManager = mDataServiceManagers.get(transport);
+                        dataServiceManager.notifyUserDataEnabled(isUserDataEnabled(), null);
+                        dataServiceManager.notifyUserDataRoamingEnabled(isDataRoamingEnabled(),
+                                null);
+                    }
+                });
     }
 
     /**
@@ -384,6 +425,36 @@ public class DataSettingsManager extends Handler {
         if (!mInitialized || shouldNotify || prevDataEnabled != mIsDataEnabled) {
             if (!mInitialized) mInitialized = true;
             notifyDataEnabledChanged(mIsDataEnabled, reason, callingPackage);
+        }
+    }
+
+    /**
+     * Notify all data service the user data enabled state is changed, by calling
+     * {@link DataServiceManager#notifyUserDataEnabled}.
+     * @param isEnabled {@code true} if user data is enabled and {@code false} otherwise.
+     */
+    private void notifyDataServiceUserDataEnabled(boolean isEnabled) {
+        if (mFeatureFlags.dataServiceUserDataToggleNotify()) {
+            log("notifyDataServiceUserDataEnabled: enabled=" + isEnabled);
+            for (int i = 0; i < mDataServiceManagers.size(); i++) {
+                mDataServiceManagers.valueAt(i).notifyUserDataEnabled(isEnabled,
+                        null);
+            }
+        }
+    }
+
+    /**
+     * Notify all data service the user data roaming enabled state is changed, by calling
+     * {@link DataServiceManager#notifyUserDataRoamingEnabled}.
+     * @param isEnabled {@code true} if user data roaming is enabled and {@code false} otherwise.
+     */
+    private void notifyDataServiceUserDataRoamingEnabled(boolean isEnabled) {
+        if (mFeatureFlags.dataServiceUserDataToggleNotify()) {
+            log("notifyDataServiceUserDataRoamingEnabled: enabled=" + isEnabled);
+            for (int i = 0; i < mDataServiceManagers.size(); i++) {
+                mDataServiceManagers.valueAt(i).notifyUserDataRoamingEnabled(isEnabled,
+                        null);
+            }
         }
     }
 
@@ -476,6 +547,8 @@ public class DataSettingsManager extends Handler {
                     () -> callback.onUserDataEnabledChanged(enabled, callingPackage)));
             updateDataEnabledAndNotify(TelephonyManager.DATA_ENABLED_REASON_USER,
                     callingPackage, false);
+            // notify data service after user toggled the user data toggle
+            notifyDataServiceUserDataEnabled(enabled);
         }
     }
 
@@ -560,6 +633,8 @@ public class DataSettingsManager extends Handler {
         if (changed) {
             mDataSettingsManagerCallbacks.forEach(callback -> callback.invokeFromExecutor(
                     () -> callback.onDataRoamingEnabledChanged(enabled)));
+            // notify data service after user toggled the user data roaming toggle
+            notifyDataServiceUserDataRoamingEnabled(enabled);
         }
     }
 

@@ -25,8 +25,6 @@ import android.os.Build;
 import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.timezone.MobileCountries;
-import android.timezone.TelephonyLookup;
-import android.timezone.TelephonyNetwork;
 import android.timezone.TelephonyNetworkFinder;
 
 import com.android.internal.annotations.GuardedBy;
@@ -45,7 +43,7 @@ import java.util.Objects;
 /**
  * Mobile Country Code
  *
- * {@hide}
+ * @hide
  */
 public final class MccTable {
     static final String LOG_TAG = "MccTable";
@@ -205,8 +203,8 @@ public final class MccTable {
 
         synchronized (MccTable.class) {
             if ((telephonyNetworkFinder = sTelephonyNetworkFinder) == null) {
-                sTelephonyNetworkFinder = telephonyNetworkFinder =
-                        TelephonyLookup.getInstance().getTelephonyNetworkFinder();
+                sTelephonyNetworkFinder =
+                        telephonyNetworkFinder = TelephonyNetworkFinder.getInstance();
             }
         }
 
@@ -253,19 +251,19 @@ public final class MccTable {
     private static String countryCodeForMccMncNoFallback(MccMnc mccMnc) {
         synchronized (MccTable.class) {
             if (sTelephonyNetworkFinder == null) {
-                sTelephonyNetworkFinder = TelephonyLookup.getInstance().getTelephonyNetworkFinder();
+                sTelephonyNetworkFinder = TelephonyNetworkFinder.getInstance();
             }
         }
         if (sTelephonyNetworkFinder == null) {
             // This should not happen under normal circumstances, only when the data is missing.
             return null;
         }
-        TelephonyNetwork network =
-                sTelephonyNetworkFinder.findNetworkByMccMnc(mccMnc.mcc, mccMnc.mnc);
-        if (network == null) {
+        MobileCountries mobileCountries = sTelephonyNetworkFinder.findCountriesByMccMnc(
+                mccMnc.mcc, mccMnc.mnc);
+        if (mobileCountries == null) {
             return null;
         }
-        return network.getCountryIsoCode();
+        return mobileCountries.getDefaultCountryIsoCode();
     }
 
     /**
@@ -336,8 +334,7 @@ public final class MccTable {
     public static final Map<Locale, Locale> FALLBACKS = new HashMap<Locale, Locale>();
 
     public static boolean isNewMccTableEnabled() {
-        return com.android.icu.Flags.telephonyLookupMccExtension()
-                && com.android.internal.telephony.flags.Flags.useI18nForMccMapping();
+        return com.android.internal.telephony.flags.Flags.useI18nForMccMapping();
     }
 
     static {

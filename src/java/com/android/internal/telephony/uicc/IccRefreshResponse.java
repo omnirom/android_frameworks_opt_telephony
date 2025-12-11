@@ -22,7 +22,7 @@ import android.os.Build;
 /**
  * See also RIL_SimRefresh in include/telephony/ril.h
  *
- * {@hide}
+ * @hide
  */
 
 public class IccRefreshResponse {

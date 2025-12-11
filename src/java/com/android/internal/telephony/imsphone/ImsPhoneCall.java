@@ -38,7 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@hide}
+ * @hide
  */
 public class ImsPhoneCall extends Call {
     private static final String LOG_TAG = "ImsPhoneCall";

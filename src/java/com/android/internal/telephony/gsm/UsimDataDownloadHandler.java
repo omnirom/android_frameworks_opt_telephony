@@ -34,7 +34,6 @@ import com.android.internal.telephony.CommandsInterface;
 import com.android.internal.telephony.InboundSmsHandler;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.cat.ComprehensionTlvTag;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.uicc.IccIoResult;
 import com.android.internal.telephony.uicc.IccUtils;
 import com.android.internal.telephony.uicc.UsimServiceTable;
@@ -107,7 +106,8 @@ public class UsimDataDownloadHandler extends Handler {
                     IccUtils.bytesToHexString(smsMessage.getPdu()),
                     obtainMessage(EVENT_WRITE_SMS_COMPLETE,
                             new int[]{ smsSource, smsMessage.mMessageRef, token }));
-            addUsimDataDownloadToMetrics(false, smsSource);
+            addUsimDataDownloadToMetrics(false, smsSource,
+                    InboundSmsHandler.getPduLength(smsMessage));
             return Activity.RESULT_OK;  // acknowledge after response from write to USIM
         }
 
@@ -187,7 +187,7 @@ public class UsimDataDownloadHandler extends Handler {
             Rlog.e(TAG, "startDataDownload() calculated incorrect envelope length, aborting.");
             acknowledgeSmsWithError(CommandsInterface.GSM_SMS_FAIL_CAUSE_UNSPECIFIED_ERROR,
                     smsSource, token, smsMessage.mMessageRef);
-            addUsimDataDownloadToMetrics(false, smsSource);
+            addUsimDataDownloadToMetrics(false, smsSource, 0);
             return;
         }
 
@@ -195,8 +195,7 @@ public class UsimDataDownloadHandler extends Handler {
         mCi.sendEnvelopeWithStatus(encodedEnvelope, obtainMessage(
                 EVENT_SEND_ENVELOPE_RESPONSE, new int[]{ dcs, pid, smsSource,
                     smsMessage.mMessageRef, token }));
-
-        addUsimDataDownloadToMetrics(true, smsSource);
+        addUsimDataDownloadToMetrics(true, smsSource, InboundSmsHandler.getPduLength(smsMessage));
     }
 
     /**
@@ -330,10 +329,8 @@ public class UsimDataDownloadHandler extends Handler {
      * by the USIM itself.
      */
     private void addUsimDataDownloadToMetrics(boolean result,
-            @InboundSmsHandler.SmsSource int smsSource) {
-        TelephonyMetrics metrics = TelephonyMetrics.getInstance();
-        metrics.writeIncomingSMSPP(mPhoneId, android.telephony.SmsMessage.FORMAT_3GPP, result);
-        PhoneFactory.getPhone(mPhoneId).getSmsStats().onIncomingSmsPP(smsSource, result);
+            @InboundSmsHandler.SmsSource int smsSource, int pduLength) {
+        PhoneFactory.getPhone(mPhoneId).getSmsStats().onIncomingSmsPP(smsSource, result, pduLength);
     }
 
     /**

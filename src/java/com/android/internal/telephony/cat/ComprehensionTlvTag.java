@@ -23,7 +23,7 @@ import android.os.Build;
  * Enumeration for representing the tag value of COMPREHENSION-TLV objects. If
  * you want to get the actual value, call {@link #value() value} method.
  *
- * {@hide}
+ * @hide
  */
 public enum ComprehensionTlvTag {
     @UnsupportedAppUsage
@@ -37,6 +37,8 @@ public enum ComprehensionTlvTag {
     ALPHA_ID(0x05),
     @UnsupportedAppUsage
     ADDRESS(0x06),
+    CAPABILITY_CONFIGURATION_PARAMETERS(0x07),
+    SUBADDRESS(0x08),
     @UnsupportedAppUsage
     USSD_STRING(0x0a),
     @UnsupportedAppUsage

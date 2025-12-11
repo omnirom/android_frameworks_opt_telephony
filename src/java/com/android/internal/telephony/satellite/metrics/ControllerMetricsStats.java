@@ -113,21 +113,29 @@ public class ControllerMetricsStats {
     }
 
     /** Report a counter when an attempt for satellite service on is successfully done */
-    public void reportServiceEnablementSuccessCount() {
-        logd("reportServiceEnablementSuccessCount()");
-        mSatelliteStats.onSatelliteControllerMetrics(
-                new SatelliteStats.SatelliteControllerParams.Builder()
-                        .setCountOfSatelliteServiceEnablementsSuccess(ADD_COUNT)
-                        .build());
+    public void reportServiceEnablementSuccessCount(boolean isDemoMode) {
+        logd("reportServiceEnablementSuccessCount: isDemoMode=" + isDemoMode);
+        SatelliteStats.SatelliteControllerParams.Builder builder =
+                new SatelliteStats.SatelliteControllerParams.Builder();
+        if (isDemoMode) {
+            builder.setCountOfDemoModeSatelliteServiceEnablementsSuccess(ADD_COUNT);
+        } else {
+            builder.setCountOfSatelliteServiceEnablementsSuccess(ADD_COUNT);
+        }
+        mSatelliteStats.onSatelliteControllerMetrics(builder.build());
     }
 
     /** Report a counter when an attempt for satellite service on is failed */
-    public void reportServiceEnablementFailCount() {
-        logd("reportServiceEnablementFailCount()");
-        mSatelliteStats.onSatelliteControllerMetrics(
-                new SatelliteStats.SatelliteControllerParams.Builder()
-                        .setCountOfSatelliteServiceEnablementsFail(ADD_COUNT)
-                        .build());
+    public void reportServiceEnablementFailCount(boolean isDemoMode) {
+        logd("reportServiceEnablementFailCount: isDemoMode=" + isDemoMode);
+        SatelliteStats.SatelliteControllerParams.Builder builder =
+                new SatelliteStats.SatelliteControllerParams.Builder();
+        if (isDemoMode) {
+            builder.setCountOfDemoModeSatelliteServiceEnablementsFail(ADD_COUNT);
+        } else {
+            builder.setCountOfSatelliteServiceEnablementsFail(ADD_COUNT);
+        }
+        mSatelliteStats.onSatelliteControllerMetrics(builder.build());
     }
 
     /** Report a counter when an attempt for outgoing datagram is successfully done */
@@ -152,7 +160,7 @@ public class ControllerMetricsStats {
         }
 
         SatelliteStats.SatelliteControllerParams controllerParam = builder.build();
-        logd("reportServiceEnablementSuccessCount(): " + controllerParam);
+        logd("reportOutgoingDatagramSuccessCount(): " + controllerParam);
         mSatelliteStats.onSatelliteControllerMetrics(controllerParam);
     }
 
@@ -390,21 +398,27 @@ public class ControllerMetricsStats {
     }
 
     /** Capture the latest provisioned state for satellite service */
-    @VisibleForTesting
-    public void setIsProvisioned(boolean isProvisioned) {
-        logd("setIsProvisioned:" + isProvisioned);
+    public void setIsProvisioned(int carrierId, boolean isProvisioned, boolean isNtnOnlyCarrier,
+            int supportedConnectionMode) {
+        logd("setIsProvisioned: carrierId=" + carrierId + ", isProvisioned=" + isProvisioned);
         mSatelliteStats.onSatelliteControllerMetrics(
                 new SatelliteStats.SatelliteControllerParams.Builder()
+                        .setCarrierId(carrierId)
+                        .setSupportedConnectionMode(supportedConnectionMode)
                         .setIsProvisioned(isProvisioned)
+                        .setIsNtnOnlyCarrier(isNtnOnlyCarrier)
                         .build());
     }
 
     /** Capture the NB-IoT NTN carrier ID */
-    public void setCarrierId(int carrierId) {
-        logd("setCarrierId:" + carrierId);
+    public void setCarrierIdInfo(int carrierId, boolean isNtnOnlyCarrier,
+            int supportedConnectionMode) {
+        logd("setCarrierId:" + carrierId + ", isNtnOnlyCarrier:" + isNtnOnlyCarrier);
         mSatelliteStats.onSatelliteControllerMetrics(
                 new SatelliteStats.SatelliteControllerParams.Builder()
                         .setCarrierId(carrierId)
+                        .setSupportedConnectionMode(supportedConnectionMode)
+                        .setIsNtnOnlyCarrier(isNtnOnlyCarrier)
                         .build());
     }
 
@@ -448,6 +462,36 @@ public class ControllerMetricsStats {
     }
 
     /**
+     * Report a current version of carrier roaming satellite config.
+     */
+    public void reportCurrentVersionOfCarrierRoamingSatelliteConfig(int cid, int version,
+            int supportedConnectionMode) {
+        logd("reportCurrentVersionOfCarrierRoamingSatelliteConfig: cid=" + cid
+                + " version=" + version);
+        mSatelliteStats.onSatelliteControllerMetrics(
+                new SatelliteStats.SatelliteControllerParams.Builder()
+                        .setCarrierId(cid)
+                        .setSupportedConnectionMode(supportedConnectionMode)
+                        .setCarrierRoamingSatelliteConfigVersion(version)
+                        .build());
+    }
+
+    /**
+     * Report a current max allowed data mode.
+     */
+    public void reportCurrentMaxAllowedDataMode(int cid, int maxAllowedDataMode,
+            int supportedConnectionMode) {
+        logd("reportCurrentMaxAllowedDataMode: cid=" + cid
+                + " maxAllowedDataMode=" + maxAllowedDataMode);
+        mSatelliteStats.onSatelliteControllerMetrics(
+                new SatelliteStats.SatelliteControllerParams.Builder()
+                        .setCarrierId(cid)
+                        .setSupportedConnectionMode(supportedConnectionMode)
+                        .setMaxAllowedDataMode(maxAllowedDataMode)
+                        .build());
+    }
+
+    /**
      * Add count when the notification for P2P SMS over satellite avaibility is shown or removed.
      */
     public void reportP2PSmsEligibilityNotificationsCount(boolean isEligible) {
@@ -463,15 +507,6 @@ public class ControllerMetricsStats {
         SatelliteStats.SatelliteControllerParams controllerParam = builder.build();
         logd("reportP2PSmsEligibilityNotificationsCount:" + controllerParam);
         mSatelliteStats.onSatelliteControllerMetrics(controllerParam);
-    }
-
-    /** Capture the latest provisioned state for satellite service */
-    public void setIsNtnOnlyCarrier(boolean isNtnOnlyCarrier) {
-        logd("setIsNtnOnlyCarrier:" + isNtnOnlyCarrier);
-        mSatelliteStats.onSatelliteControllerMetrics(
-                new SatelliteStats.SatelliteControllerParams.Builder()
-                        .setIsNtnOnlyCarrier(isNtnOnlyCarrier)
-                        .build());
     }
 
     /** Receives the battery status whether it is in charging or not, update interval is 60 sec. */

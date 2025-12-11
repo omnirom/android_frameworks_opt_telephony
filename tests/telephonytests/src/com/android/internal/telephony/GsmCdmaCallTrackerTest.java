@@ -17,8 +17,6 @@ package com.android.internal.telephony;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.eq;
@@ -394,54 +392,6 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
         assertEquals(VOICE_CALL_ENDED_EVENT, mCaptorMessage.getValue().what);
     }
 
-    @Test @SmallTest
-    public void testUpdatePhoneType() {
-        // verify getCurrentCalls is called on init
-        verify(mSimulatedCommandsVerifier).getCurrentCalls(any(Message.class));
-
-        // update phone type (call the function on same thread as the call tracker)
-        mCTUT.updatePhoneType();
-        processAllMessages();
-
-        // verify getCurrentCalls is called on updating phone type
-        verify(mSimulatedCommandsVerifier, times(2)).getCurrentCalls(any(Message.class));
-
-        // we'd like to verify that if phone type is updated, calls and callTracker go to idle.
-        // However, as soon as phone type is updated, call tracker queries for calls from RIL and
-        // will go back to OFFHOOK
-
-        // call tracker goes to OFFHOOK
-        testMOCallPickUp();
-
-        // update phone type - call tracker goes to IDLE and then due to getCurrentCalls(),
-        // goes back to OFFHOOK
-        mCTUT.updatePhoneType();
-        processAllMessages();
-
-        // verify CT and calls go to idle
-        assertEquals(PhoneConstants.State.OFFHOOK, mCTUT.getState());
-        assertEquals(GsmCdmaCall.State.ACTIVE, mCTUT.mForegroundCall.getState());
-        assertEquals(GsmCdmaCall.State.IDLE, mCTUT.mBackgroundCall.getState());
-        assertEquals(GsmCdmaCall.State.IDLE, mCTUT.mRingingCall.getState());
-    }
-
-    @Test
-    @SmallTest
-    public void testUpdatePhoneTypeWithActiveCall() {
-        // verify getCurrentCalls is called on init
-        verify(mSimulatedCommandsVerifier).getCurrentCalls(any(Message.class));
-
-        // fake connection
-        mCTUT.mConnections[0] = mConnection;
-
-        // update phone type (call the function on same thread as the call tracker)
-        mCTUT.updatePhoneType();
-        processAllMessages();
-
-        // verify that the active call is disconnected
-        verify(mConnection).onDisconnect(DisconnectCause.ERROR_UNSPECIFIED);
-    }
-
     @Test
     @SmallTest
     public void testDispatchCsCallRadioTech() {
@@ -457,24 +407,6 @@ public class GsmCdmaCallTrackerTest extends TelephonyTest {
         mCTUT.dispatchCsCallRadioTech(ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
         // verify that call radio tech is set
         verify(mConnection).setCallRadioTech(ServiceState.RIL_RADIO_TECHNOLOGY_UNKNOWN);
-    }
-
-    @Test
-    @SmallTest
-    public void testCantCallOtaspInProgress() {
-        mDialString = "*22899";
-        testMOCallDial();
-        processAllMessages();
-        mSimulatedCommands.progressConnectingToActive();
-        processAllMessages();
-        // Try to place another call.
-        try {
-            mCTUT.dial("650-555-1212", new DialArgs.Builder().build());
-        } catch (CallStateException cse) {
-            assertEquals(CallStateException.ERROR_OTASP_PROVISIONING_IN_PROCESS, cse.getError());
-            return;
-        }
-        fail("Expected otasp call state exception");
     }
 }
 

@@ -19,14 +19,6 @@ flag {
     bug:"296437388"
 }
 
-# OWNER=xalle TARGET=24Q3
-flag {
-    name: "satellite_persistent_logging"
-    namespace: "telephony"
-    description: "This flag enables satellite persistent logging"
-    bug:"339877723"
-}
-
 # OWNER=hyosunkim TARGET=24Q3
 flag {
     name: "carrier_roaming_nb_iot_ntn"
@@ -102,4 +94,90 @@ flag {
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+# OWNER=amallampati TARGET=25Q3
+flag {
+    name: "satellite_improve_multi_thread_design"
+    is_exported: false
+    namespace: "telephony"
+    description: "Improve multi-thread design in satellite module"
+    bug:"398227332"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=nagendranb TARGET=25Q3
+flag {
+  name: "satellite_data_metrics"
+  namespace: "telephony"
+  description: "Support Satellite Data metrics at satellite session"
+  bug: "405107194"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=youngtaecha TARGET=26Q2
+flag {
+  name: "telephony_satellite_mainline_phase1"
+  namespace: "telephony"
+  description: "Support Telephony Satellite Mainline Phase1"
+  bug: "428107131"
+  metadata {
+    purpose: PURPOSE_FEATURE
+  }
+}
+
+# OWNER=karthickmj TARGET=26Q1
+flag {
+  name: "ast_skylo_fallback"
+  namespace: "telephony"
+  description: "Support AST Skylo fallback"
+  bug: "432475222"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=karthickmj TARGET=25Q4
+flag {
+  name: "vzw_ast_skylo_fallback"
+  namespace: "telephony"
+  description: "Support VZW AST Skylo fallback"
+  bug: "435130414"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=tnd TARGET=25Q4
+flag {
+  name: "support_carrier_ids_in_geofence"
+  namespace: "telephony"
+  description: "Support carrier ids in geofence"
+  bug: "434754838"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+# OWNER=tnd TARGET=26Q2
+flag {
+  name: "satellite_26q2_apis"
+  namespace: "telephony"
+  description: "This flag controls the changes for the new satellite APIs in 26Q2"
+  bug: "434764963"
+}
+
+# OWNER=arunvoddu TARGET=26Q2
+flag {
+  name: "telephony_satellite_apis"
+  namespace: "telephony"
+  description: "Support Telephony Satellite public api support"
+  bug: "371872603"
+  metadata {
+    purpose: PURPOSE_FEATURE
+  }
 }

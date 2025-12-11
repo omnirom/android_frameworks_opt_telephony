@@ -7,7 +7,7 @@ import android.provider.BlockedNumberContract;
 import com.android.telephony.Rlog;
 
 /**
- * {@hide} Checks for blocked phone numbers against {@link BlockedNumberContract}
+ * @hide Checks for blocked phone numbers against {@link BlockedNumberContract}
  */
 public class BlockChecker {
     private static final String TAG = "BlockChecker";

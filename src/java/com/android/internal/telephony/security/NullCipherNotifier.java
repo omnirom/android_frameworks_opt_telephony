@@ -251,7 +251,6 @@ public class NullCipherNotifier {
             case SecurityAlgorithmUpdate.SECURITY_ALGORITHM_IMS_NULL:
             case SecurityAlgorithmUpdate.SECURITY_ALGORITHM_SIP_NULL:
             case SecurityAlgorithmUpdate.SECURITY_ALGORITHM_SRTP_NULL:
-            case SecurityAlgorithmUpdate.SECURITY_ALGORITHM_OTHER:
                 return true;
             default:
                 return false;

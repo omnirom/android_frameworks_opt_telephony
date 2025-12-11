@@ -18,8 +18,6 @@ package com.android.internal.telephony;
 
 import static android.telephony.TelephonyManager.HAL_SERVICE_RADIO;
 
-import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA;
-import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_CDMA_LTE;
 import static com.android.internal.telephony.PhoneConstants.PHONE_TYPE_GSM;
 
 import static java.util.Arrays.copyOf;
@@ -43,7 +41,6 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.LocalLog;
 
-import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.data.CellularNetworkValidator;
 import com.android.internal.telephony.data.PhoneSwitcher;
 import com.android.internal.telephony.data.TelephonyNetworkProvider;
@@ -54,7 +51,6 @@ import com.android.internal.telephony.flags.FeatureFlagsImpl;
 import com.android.internal.telephony.imsphone.ImsPhone;
 import com.android.internal.telephony.imsphone.ImsPhoneFactory;
 import com.android.internal.telephony.metrics.MetricsCollector;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.internal.telephony.uicc.UiccController;
 import com.android.internal.telephony.util.NotificationChannelController;
@@ -68,7 +64,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * {@hide}
+ * @hide
  */
 public class PhoneFactory {
     static final String LOG_TAG = "PhoneFactory";
@@ -130,13 +126,6 @@ public class PhoneFactory {
         synchronized (sLockProxyPhones) {
             if (!sMadeDefaults) {
                 sContext = context;
-
-                // create the telephony device controller.
-                TelephonyDevController.create();
-
-                TelephonyMetrics metrics = TelephonyMetrics.getInstance();
-                metrics.setContext(context);
-
                 int retryCount = 0;
                 for(;;) {
                     boolean hasException = false;
@@ -167,9 +156,6 @@ public class PhoneFactory {
 
                 sPhoneNotifier = new DefaultPhoneNotifier(context, featureFlags);
 
-                int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
-                Rlog.i(LOG_TAG, "Cdma Subscription set to " + cdmaSubscription);
-
                 /* In case of multi SIM mode two instances of Phone, RIL are created,
                    where as in single SIM mode only instance. isMultiSimEnabled() function checks
                    whether it is single SIM or multi SIM mode */
@@ -186,8 +172,8 @@ public class PhoneFactory {
 
                     Rlog.i(LOG_TAG, "Network Mode set to " + Integer.toString(networkModes[i]));
                     sCommandsInterfaces[i] = new RIL(context,
-                            RadioAccessFamily.getRafFromNetworkType(networkModes[i]),
-                            cdmaSubscription, i, featureFlags);
+                            RadioAccessFamily.getRafFromNetworkType(networkModes[i]), i,
+                            featureFlags);
                 }
 
                 if (numPhones > 0) {
@@ -311,11 +297,9 @@ public class PhoneFactory {
             sPhones = copyOf(sPhones, activeModemCount);
             sCommandsInterfaces = copyOf(sCommandsInterfaces, activeModemCount);
 
-            int cdmaSubscription = CdmaSubscriptionSourceManager.getDefault(context);
             for (int i = prevActiveModemCount; i < activeModemCount; i++) {
                 sCommandsInterfaces[i] = new RIL(context, RadioAccessFamily.getRafFromNetworkType(
-                        RILConstants.PREFERRED_NETWORK_MODE),
-                        cdmaSubscription, i, sFeatureFlags);
+                        RILConstants.PREFERRED_NETWORK_MODE), i, sFeatureFlags);
                 sPhones[i] = createPhone(context, i);
                 if (context.getPackageManager().hasSystemFeature(
                         PackageManager.FEATURE_TELEPHONY_IMS)) {
@@ -326,22 +310,13 @@ public class PhoneFactory {
     }
 
     private static Phone createPhone(Context context, int phoneId) {
-        int phoneType;
-        if (sFeatureFlags.phoneTypeCleanup()) {
-            phoneType = PHONE_TYPE_GSM;
-        } else {
-            phoneType = TelephonyManager.getPhoneType(RILConstants.PREFERRED_NETWORK_MODE);
-            // We always use PHONE_TYPE_CDMA_LTE now.
-            if (phoneType == PHONE_TYPE_CDMA) phoneType = PHONE_TYPE_CDMA_LTE;
-        }
-
-        Rlog.i(LOG_TAG, "Creating Phone with type = " + phoneType + " phoneId = " + phoneId);
+        Rlog.i(LOG_TAG, "Creating Phone phoneId = " + phoneId);
 
         TelephonyComponentFactory injectedComponentFactory =
                 TelephonyComponentFactory.getInstance().inject(GsmCdmaPhone.class.getName());
 
         return injectedComponentFactory.makePhone(context,
-                sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId, phoneType,
+                sCommandsInterfaces[phoneId], sPhoneNotifier, phoneId, PHONE_TYPE_GSM,
                 TelephonyComponentFactory.getInstance(), sFeatureFlags);
     }
 
@@ -484,6 +459,20 @@ public class PhoneFactory {
                 throw new IllegalArgumentException("key " + key + " already present");
             }
             sLocalLogs.put(key, new LocalLog(size));
+        }
+    }
+
+    /**
+     * Removes a local log category associated with the given key.
+     *
+     * <p>This is for use in tests to clean up specific resources after a test case has run,
+     * ensuring test isolation.
+     *
+     * @param key the name of the category to remove.
+     */
+    public static void removeLocalLogForTest(String key) {
+        synchronized (sLocalLogs) {
+            sLocalLogs.remove(key);
         }
     }
 

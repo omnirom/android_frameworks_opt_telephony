@@ -10,14 +10,6 @@ flag {
   is_exported: true
 }
 
-# OWNER=yomna TARGET=24Q3
-flag {
-  name: "show_call_fail_notification_for_2g_toggle"
-  namespace: "telephony"
-  description: "Used in DisconnectCause and TelephonyConnection if a non-emergency call fails on a device with no 2G, to guard whether a user can see an updated error message reminding the 2G is disabled and potentially disrupting their call connectivity"
-  bug: "300142897"
-}
-
 # OWNER=stevestatia TARGET=24Q4
 flag {
     name: "national_country_code_formatting_for_local_calls"
@@ -94,4 +86,23 @@ flag {
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+# OWNER=tjstuart TARGET=25Q2
+flag {
+    name: "vvm_async_sim_state_handling"
+    namespace: "telephony"
+    description: "Prevent ANRs in the VvmSimStateTracker by moving tasks to the background"
+    bug:"433343546"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+# OWNER=pmadapurmath TARGET=26Q2
+flag {
+    name: "support_auto_unhold"
+    namespace: "telephony"
+    description: "Add support for auto-unholing the bg call for remotely disconnected calls (based on carrier config key)"
+    bug:"439893979"
 }

@@ -338,6 +338,9 @@ public class DataConfigManager extends Handler {
     @DataConfigNetworkType
     private final Map<String, int[]> mAutoDataSwitchNetworkTypeSignalMap =
             new ConcurrentHashMap<>();
+    /** Carrier overridden auto data switch policy between primary and opportunistic networks. */
+    private int mCarrierOverriddenAutoDataSwitchPolicyForOppt =
+            CarrierConfigManager.OPP_AUTO_DATA_SWITCH_POLICY_DISABLED;
 
     /**
      * Constructor
@@ -645,6 +648,7 @@ public class DataConfigManager extends Handler {
         // the future.
         meteredCapabilities.add(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH);
         meteredCapabilities.add(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY);
+        meteredCapabilities.add(DataUtils.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
 
         return Collections.unmodifiableSet(meteredCapabilities);
     }
@@ -1097,6 +1101,8 @@ public class DataConfigManager extends Handler {
                     }
                 }
             }
+            mCarrierOverriddenAutoDataSwitchPolicyForOppt = mCarrierConfig.getInt(
+                    CarrierConfigManager.KEY_OPP_AUTO_DATA_SWITCH_POLICY_INT);
         }
     }
 
@@ -1198,6 +1204,14 @@ public class DataConfigManager extends Handler {
     public long getImsDeregistrationDelay() {
         return mResources.getInteger(
                 com.android.internal.R.integer.config_delay_for_ims_dereg_millis);
+    }
+
+    /**
+     * @return Whether to bring up a default IMS APN when one is not configured for a carrier.
+     */
+    public boolean isDefaultImsApnEnabled() {
+        return mCarrierConfig.getBoolean(
+                CarrierConfigManager.KEY_USE_DEFAULT_IMS_APN_WHEN_ABSENT_BOOL);
     }
 
     /**
@@ -1532,6 +1546,15 @@ public class DataConfigManager extends Handler {
     }
 
     /**
+     * @return Auto data switch policy for opportunistic network from carrier config
+     */
+    public int getCarrierOverriddenAutoDataSwitchPolicyForOppt() {
+        synchronized (this) {
+            return mCarrierOverriddenAutoDataSwitchPolicyForOppt;
+        }
+    }
+
+    /**
      * Log debug messages.
      * @param s debug messages
      */
@@ -1642,6 +1665,11 @@ public class DataConfigManager extends Handler {
         pw.println("forcedCellularTransportCapabilities=" + getForcedCellularTransportCapabilities()
                 .stream().map(DataUtils::networkCapabilityToString)
                 .collect(Collectors.joining(",")));
+        if (!mFeatureFlags.monitorCarrierConfigChangeForAutoDataSwitch()) {
+            pw.println(
+                    "autoDataSwitchPolicyForOppt="
+                            + getCarrierOverriddenAutoDataSwitchPolicyForOppt());
+        }
         pw.decreaseIndent();
     }
 }

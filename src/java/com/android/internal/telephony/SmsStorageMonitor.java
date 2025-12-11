@@ -257,7 +257,6 @@ public class SmsStorageMonitor extends Handler {
                 if (smsIfcMngr.mDispatchersController.isIms() && isAvailable) {
                     smsIfcMngr.mDispatchersController.reportSmsMemoryStatus(
                             obtainMessage(EVENT_REPORT_MEMORY_STATUS_DONE));
-                    return;
                 }
             }
         }
@@ -285,12 +284,8 @@ public class SmsStorageMonitor extends Handler {
         intent.setComponent(componentName);
         mWakeLock.acquire(WAKE_LOCK_TIMEOUT);
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mPhone.getPhoneId());
-        if (mFeatureFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
-                    android.Manifest.permission.RECEIVE_SMS);
-        } else {
-            mContext.sendBroadcast(intent, android.Manifest.permission.RECEIVE_SMS);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
+                android.Manifest.permission.RECEIVE_SMS);
     }
 
     /** Returns whether or not there is storage available for an incoming SMS. */

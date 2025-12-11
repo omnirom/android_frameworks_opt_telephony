@@ -28,8 +28,6 @@ import android.telephony.RadioAccessSpecifier;
 import android.telephony.Rlog;
 import android.telephony.SignalThresholdInfo;
 
-import com.android.internal.telephony.flags.Flags;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -59,7 +57,8 @@ public class RadioNetworkProxy extends RadioServiceProxy {
                     | android.hardware.radio.network.IndicationFilter.LINK_CAPACITY_ESTIMATE
                     | android.hardware.radio.network.IndicationFilter.PHYSICAL_CHANNEL_CONFIG
                     | android.hardware.radio.network.IndicationFilter.REGISTRATION_FAILURE
-                    | android.hardware.radio.network.IndicationFilter.BARRING_INFO;
+                    | android.hardware.radio.network.IndicationFilter.BARRING_INFO
+                    | android.hardware.radio.network.IndicationFilter.DISPLAY_NETWORK_TYPE_CHANGED;
 
     /**
      * Set IRadioNetwork as the AIDL implementation for RadioServiceProxy
@@ -132,13 +131,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void getAvailableBandModes(int serial) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.getAvailableBandModes(serial);
-        } else {
-            mRadioProxy.getAvailableBandModes(serial);
-        }
     }
 
     /**
@@ -166,21 +158,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
             mNetworkProxy.getBarringInfo(serial);
         } else {
             ((android.hardware.radio.V1_5.IRadio) mRadioProxy).getBarringInfo(serial);
-        }
-    }
-
-    /**
-     * Call IRadioNetwork#getCdmaRoamingPreference
-     * @param serial Serial number of request
-     * @throws RemoteException
-     */
-    public void getCdmaRoamingPreference(int serial) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.getCdmaRoamingPreference(serial);
-        } else {
-            mRadioProxy.getCdmaRoamingPreference(serial);
         }
     }
 
@@ -402,13 +379,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setBandMode(int serial, int bandMode) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.setBandMode(serial, bandMode);
-        } else {
-            mRadioProxy.setBandMode(serial, bandMode);
-        }
     }
 
     /**
@@ -436,13 +406,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setCdmaRoamingPreference(int serial, int cdmaRoamingType) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.setCdmaRoamingPreference(serial, cdmaRoamingType);
-        } else {
-            mRadioProxy.setCdmaRoamingPreference(serial, cdmaRoamingType);
-        }
     }
 
     /**
@@ -527,13 +490,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setLocationUpdates(int serial, boolean enable) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.setLocationUpdates(serial, enable);
-        } else {
-            mRadioProxy.setLocationUpdates(serial, enable);
-        }
     }
 
     /**
@@ -632,13 +588,6 @@ public class RadioNetworkProxy extends RadioServiceProxy {
      * @throws RemoteException
      */
     public void setSuppServiceNotifications(int serial, boolean enable) throws RemoteException {
-        if (Flags.cleanupCdma()) return;
-        if (isEmpty()) return;
-        if (isAidl()) {
-            mNetworkProxy.setSuppServiceNotifications(serial, enable);
-        } else {
-            mRadioProxy.setSuppServiceNotifications(serial, enable);
-        }
     }
 
     /**

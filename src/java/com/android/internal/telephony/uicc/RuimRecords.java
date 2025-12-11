@@ -45,7 +45,7 @@ import java.util.Arrays;
 import java.util.Locale;
 
 /**
- * {@hide}
+ * @hide
  */
 public class RuimRecords extends IccRecords {
     static final String LOG_TAG = "RuimRecords";
@@ -92,7 +92,6 @@ public class RuimRecords extends IccRecords {
     // ***** Event Constants
     private static final int EVENT_GET_DEVICE_IDENTITY_DONE = 4;
     private static final int EVENT_GET_ICCID_DONE = 5;
-    private static final int EVENT_GET_CDMA_SUBSCRIPTION_DONE = 10;
     private static final int EVENT_UPDATE_DONE = 14;
     private static final int EVENT_GET_SST_DONE = 17;
     private static final int EVENT_GET_ALL_SMS_DONE = 18;
@@ -662,21 +661,6 @@ public class RuimRecords extends IccRecords {
                 log("Event EVENT_GET_DEVICE_IDENTITY_DONE Received");
             break;
 
-            case EVENT_GET_CDMA_SUBSCRIPTION_DONE:
-                ar = (AsyncResult)msg.obj;
-                String localTemp[] = (String[])ar.result;
-                if (ar.exception != null) {
-                    break;
-                }
-
-                mMyMobileNumber = localTemp[0];
-                mMin2Min1 = localTemp[3];
-                mPrlVersion = localTemp[4];
-
-                log("MDN: " + mMyMobileNumber + " MIN: " + mMin2Min1);
-
-            break;
-
             case EVENT_GET_ICCID_DONE:
                 isRecordLoadResponse = true;
 
@@ -831,8 +815,6 @@ public class RuimRecords extends IccRecords {
     @Override
     public void onReady() {
         fetchRuimRecords();
-
-        mCi.getCDMASubscription(obtainMessage(EVENT_GET_CDMA_SUBSCRIPTION_DONE));
     }
 
     @Override

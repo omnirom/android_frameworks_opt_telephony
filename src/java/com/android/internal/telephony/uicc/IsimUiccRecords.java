@@ -16,10 +16,9 @@
 
 package com.android.internal.telephony.uicc;
 
-import android.annotation.NonNull;
-
 import static com.android.internal.telephony.util.TelephonyUtils.FORCE_VERBOSE_STATE_LOGGING;
 
+import android.annotation.NonNull;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.content.Context;
 import android.content.Intent;
@@ -43,7 +42,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
- * {@hide}
+ * @hide
  */
 public class IsimUiccRecords extends IccRecords implements IsimRecords {
     protected static final String LOG_TAG = "IsimUiccRecords";
@@ -66,6 +65,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
     private String mIsimIst;                // IMS Service Table
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private String[] mIsimPcscf;            // IMS Proxy Call Session Control Function
+    private String[] mIsimIari;             // IMS Application Reference Identifier
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     private String auth_rsp;
 
@@ -83,6 +83,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
                 + " mIsimIst=" + mIsimIst
                 + " mIsimPcscf=" + Arrays.toString(mIsimPcscf)
                 + " mPsiSmsc=" + mPsiSmsc
+                + " mIsimIari=" + Arrays.toString(mIsimIari)
                 + " mSmss TPMR=" + getSmssTpmrValue()) : "");
     }
 
@@ -165,6 +166,10 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
                 IccRecords.EVENT_GET_ICC_RECORD_DONE, new EfIsimPsiSmscLoaded()));
         mRecordsToLoad++;
 
+        mFh.loadEFLinearFixedAll(EF_IARI, obtainMessage(
+                IccRecords.EVENT_GET_ICC_RECORD_DONE, new EfIsimIariLoaded()));
+        mRecordsToLoad++;
+
         if (DBG) log("fetchIsimRecords " + mRecordsToLoad + " requested: " + mRecordsRequested);
     }
 
@@ -178,6 +183,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         mIsimIst = null;
         mIsimPcscf = null;
         auth_rsp = null;
+        mIsimIari = null;
 
         mRecordsRequested = false;
         mLockedRecordsReqReason = LOCKED_RECORDS_REQ_REASON_NONE;
@@ -292,6 +298,30 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
     }
 
     @VisibleForTesting
+    public EfIsimIariLoaded getIsimIariObject() {
+        return new EfIsimIariLoaded();
+    }
+
+    private class EfIsimIariLoaded implements IccRecords.IccRecordLoaded {
+        public String getEfName() {
+            return "EF_ISIM_IARI";
+        }
+        public void onRecordLoaded(AsyncResult ar) {
+            ArrayList<byte[]> iariList = (ArrayList<byte[]>) ar.result;
+            if (iariList != null && iariList.size() > 0) {
+                if (DBG) log("EF_IARI record count: " + iariList.size());
+                mIsimIari = new String[iariList.size()];
+                int i = 0;
+                for (byte[] data : iariList) {
+                    String iari = isimTlvToString(data);
+                    if (DUMP_RECORDS) log("EF_IARI[" + i + "]=" + iari);
+                    mIsimIari[i++] = iari;
+                }
+            }
+        }
+    }
+
+    @VisibleForTesting
     public EfIsimPsiSmscLoaded getPsiSmscObject() {
         return new EfIsimPsiSmscLoaded();
     }
@@ -396,11 +426,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         Intent intent = new Intent(INTENT_ISIM_REFRESH);
         log("send ISim REFRESH: " + INTENT_ISIM_REFRESH);
         SubscriptionManager.putPhoneIdAndSubIdExtra(intent, mParentApp.getPhoneId());
-        if (mFeatureFlags.hsumBroadcast()) {
-            mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
-        } else {
-            mContext.sendBroadcast(intent);
-        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
     /**
@@ -478,6 +504,15 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
         // Not applicable to Isim
     }
 
+    /**
+     * Returns the IMS Application Reference Identifier(IARI) that was loaded from the ISIM.
+     * @return array of IARI or null if not loaded
+     */
+    @Override
+    public String[] getUiccIari() {
+        return (mIsimIari != null) ? mIsimIari.clone() : null;
+    }
+
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     @Override
     protected void log(String s) {
@@ -509,6 +544,7 @@ public class IsimUiccRecords extends IccRecords implements IsimRecords {
             pw.println(" mIsimImpu[]=" + Arrays.toString(mIsimImpu));
             pw.println(" mIsimPcscf" + Arrays.toString(mIsimPcscf));
             pw.println(" mPsismsc=" + mPsiSmsc);
+            pw.println(" mIsimIari" + Arrays.toString(mIsimIari));
             pw.println(" mSmss TPMR=" + getSmssTpmrValue());
         }
         pw.flush();

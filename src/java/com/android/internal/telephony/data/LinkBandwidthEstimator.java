@@ -60,7 +60,6 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.TelephonyFacade;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.telephony.nano.TelephonyProto.NrMode;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.telephony.Rlog;
@@ -880,9 +879,6 @@ public class LinkBandwidthEstimator extends Handler {
             int bwEstAvgErrPercent = calculateErrorPercent(mAvgUsedKbps, mBwSampleKbps);
             int bwEstIntErrPercent = calculateErrorPercent(mFilterKbps, mBwSampleKbps);
             int coldStartErrPercent = calculateErrorPercent(mStaticBwKbps, mBwSampleKbps);
-
-            TelephonyMetrics.getInstance().writeBandwidthStats(mLink, mDataRat, getNrMode(mDataRat),
-                    mSignalLevel, bwEstExtErrPercent, coldStartErrPercent, mBwSampleKbps);
 
             StringBuilder sb = new StringBuilder();
             logd(sb.append(mLink)

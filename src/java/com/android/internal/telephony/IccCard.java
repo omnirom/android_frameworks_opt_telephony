@@ -28,7 +28,7 @@ import com.android.internal.telephony.uicc.IccCardApplicationStatus.PersoSubStat
 import com.android.internal.telephony.uicc.IccRecords;
 
 /**
- * {@hide}
+ * @hide
  * @Deprecated use UiccController.getUiccCard instead.
  *
  * Integrated Circuit Card (ICC) interface

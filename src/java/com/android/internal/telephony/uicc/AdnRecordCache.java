@@ -31,7 +31,7 @@ import java.util.Iterator;
 import java.util.Locale;
 
 /**
- * {@hide}
+ * @hide
  */
 public class AdnRecordCache extends Handler implements IccConstants {
     //***** Instance Variables

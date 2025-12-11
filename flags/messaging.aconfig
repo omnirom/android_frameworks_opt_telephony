@@ -1,14 +1,6 @@
 package: "com.android.internal.telephony.flags"
 container: "system"
 
-# OWNER=hwangoo TARGET=24Q2
-flag {
-  name: "sms_domain_selection_enabled"
-  namespace: "telephony"
-  description: "This flag controls AP domain selection support for normal/emergency SMS."
-  bug: "262804071"
-}
-
 # OWNER=tnd TARGET=24Q3
 flag {
   name: "mms_disabled_error"
@@ -16,17 +8,6 @@ flag {
   namespace: "telephony"
   description: "This flag controls the support of the new MMS error code MMS_ERROR_MMS_DISABLED."
   bug: "305062594"
-}
-
-# OWNER=linggm TARGET=24Q4
-flag {
-  name: "mms_get_apn_from_pdsc"
-  namespace: "telephony"
-  description: "This flag controls get APN details from PDSC instead of telephony provider."
-  bug: "324280016"
-  metadata {
-    purpose: PURPOSE_BUGFIX
-  }
 }
 
 # OWNER=stevestatia TARGET=24Q3
@@ -38,6 +19,34 @@ flag {
     metadata {
         purpose: PURPOSE_BUGFIX
     }
+}
+
+# OWNER=ntmyren TARGET=25Q4
+flag {
+  name: "redact_otp_sms"
+  namespace: "telephony"
+  description: "Redact OTP SMS messages from untrusted listeners"
+  bug: "351976749"
+}
+
+# OWNER=ntmyren TARGET=25Q4
+flag {
+  name: "redact_otp_sms_api"
+  is_exported: true
+  namespace: "telephony"
+  description: "API flag for redacting OTP SMS messages from untrusted listeners"
+  bug: "351976749"
+}
+
+# OWNER=ntmyren TARGET=25Q4
+flag {
+  name: "limit_raw_table_visibility"
+  namespace: "telephony"
+  description: "limits the visibility of the raw SMS table"
+  bug: "430572311"
+  metadata {
+      purpose: PURPOSE_BUGFIX
+  }
 }
 
 # OWNER=nykkumar TARGET=25Q2

@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * {@hide}
+ * @hide
  */
 public abstract class Call {
     protected final String LOG_TAG = "Call";

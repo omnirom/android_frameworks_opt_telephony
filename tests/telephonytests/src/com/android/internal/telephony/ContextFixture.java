@@ -440,6 +440,8 @@ public class ContextFixture implements TestFixture<Context> {
 
         @Override
         public void unregisterReceiver(BroadcastReceiver receiver) {
+            mBroadcastReceiversByAction.entries().removeIf(entry
+                    -> receiver == entry.getValue());
         }
 
         @Override

@@ -22,7 +22,7 @@ import android.os.Build;
 import com.android.telephony.Rlog;
 
 /**
- * {@hide}
+ * @hide
  */
 public class CommandException extends RuntimeException {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)

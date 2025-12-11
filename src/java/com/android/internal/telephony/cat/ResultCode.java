@@ -25,7 +25,7 @@ import android.os.Build;
  * To get the actual return code for each enum value, call {@link #value}
  * method.
  *
- * {@hide}
+ * @hide
  */
 @UnsupportedAppUsage(implicitMember = "values()[Lcom/android/internal/telephony/cat/ResultCode;")
 public enum ResultCode {

@@ -65,6 +65,8 @@ import java.util.List;
  *      test_filename.xml
  * adb shell am broadcast -a com.android.internal.telephony.TestServiceState --ei data_rat 10 --ei
  *      data_roaming_type 3
+ * adb shell am broadcast -a com.android.internal.telephony.TestServiceState
+ *  --ei signal_strength_level 3
  * adb shell am broadcast -a com.android.internal.telephony.TestServiceState --es action reset
  *
  */
@@ -161,6 +163,7 @@ public class TelephonyTester {
     private static final String EXTRA_NR_STATE = "nr_state";
     private static final String EXTRA_OPERATOR = "operator";
     private static final String EXTRA_OPERATOR_RAW = "operator_raw";
+    private static final String EXTRA_SIGNAL_STRENGTH_LEVEL = "signal_strength_level";
 
     private static final String ACTION_RESET = "reset";
 
@@ -427,7 +430,8 @@ public class TelephonyTester {
 
     /** {@link android.telephony.SignalStrength} */
     public void setSignalStrength(int level) {
-        if (level > -1) {
+        if (level >= SignalStrength.SIGNAL_STRENGTH_NONE_OR_UNKNOWN
+                && level <= SignalStrength.SIGNAL_STRENGTH_GREAT) {
             log("setSignalStrength: level " + level);
             mSignalStrengthTest = new SignalStrengthTestable();
             mSignalStrengthTest.mockLevel(level);
@@ -467,6 +471,7 @@ public class TelephonyTester {
         if (mServiceStateTestIntent.hasExtra(EXTRA_ACTION)
                 && ACTION_RESET.equals(mServiceStateTestIntent.getStringExtra(EXTRA_ACTION))) {
             log("Service state override reset");
+            setSignalStrength(-1);
             return;
         }
 
@@ -593,6 +598,10 @@ public class TelephonyTester {
                     ServiceState.ROAMING_TYPE_UNKNOWN));
             ss.addNetworkRegistrationInfo(nri);
             log("Override data roaming type with " + ss.getDataRoamingType());
+        }
+        if(mServiceStateTestIntent.hasExtra(EXTRA_SIGNAL_STRENGTH_LEVEL)) {
+            int level = mServiceStateTestIntent.getIntExtra(EXTRA_SIGNAL_STRENGTH_LEVEL, -1);
+            setSignalStrength(level);
         }
     }
 

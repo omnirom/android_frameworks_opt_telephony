@@ -28,7 +28,6 @@ import android.os.SystemClock;
 import android.util.LocalLog;
 
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
 import com.android.internal.util.IndentingPrintWriter;
 
 import java.io.PrintWriter;
@@ -70,8 +69,6 @@ public final class TimeServiceHelperImpl implements TimeServiceHelper {
 
         if (timeSuggestion.getUnixEpochTime() != null) {
             UnixEpochTime unixEpochTime = timeSuggestion.getUnixEpochTime();
-            TelephonyMetrics.getInstance().writeNITZEvent(
-                    mSlotIndex, unixEpochTime.getUnixEpochTimeMillis());
         }
         mTimeDetector.suggestTelephonyTime(timeSuggestion);
     }

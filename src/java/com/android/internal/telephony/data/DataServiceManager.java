@@ -40,7 +40,9 @@ import android.os.RemoteException;
 import android.os.UserHandle;
 import android.permission.LegacyPermissionManager;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.AccessNetworkConstants.RadioAccessNetworkType;
 import android.telephony.AccessNetworkConstants.TransportType;
+import android.telephony.Annotation.DataState;
 import android.telephony.AnomalyReporter;
 import android.telephony.CarrierConfigManager;
 import android.telephony.SubscriptionManager;
@@ -57,6 +59,7 @@ import android.text.TextUtils;
 import com.android.internal.telephony.IIntegerConsumer;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConfigurationManager;
+import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.util.TelephonyUtils;
 import com.android.telephony.Rlog;
 
@@ -92,6 +95,8 @@ public class DataServiceManager extends Handler {
     private final LegacyPermissionManager mPermissionManager;
 
     private final int mTransportType;
+
+    private final FeatureFlags mFeatureFlags;
 
     private boolean mBound;
 
@@ -360,12 +365,14 @@ public class DataServiceManager extends Handler {
      * @param phone The phone instance
      * @param looper Looper for the handler
      * @param transportType The transport type
+     * @param featureFlags The feature flags
      */
     public DataServiceManager(@NonNull Phone phone, @NonNull Looper looper,
-            @TransportType int transportType) {
+            @TransportType int transportType, @NonNull FeatureFlags featureFlags) {
         super(looper);
         mPhone = phone;
         mTransportType = transportType;
+        mFeatureFlags = featureFlags;
         mTag = "DSM-" + (mTransportType == AccessNetworkConstants.TRANSPORT_TYPE_WWAN ? "C-"
                 : "I-") + mPhone.getPhoneId();
         mBound = false;
@@ -944,6 +951,135 @@ public class DataServiceManager extends Handler {
             if (mBound) {
                 r.notifyResult(true);
             }
+        }
+    }
+
+    /**
+     * Notify {@link DataService} the user data setting.
+     *
+     * @param enabled Whether the user mobile data is enabled.
+     * @param onCompleteMessage The result message for this request. Null if the client does not
+     * care about the result.
+     */
+    public void notifyUserDataEnabled(boolean enabled, Message onCompleteMessage) {
+        if (DBG) log("notifyUserDataEnabled");
+        if (!mFeatureFlags.dataServiceUserDataToggleNotify()) {
+            if (DBG) log("Data service user data toggle notification is not enabled.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_UNSUPPORTED);
+            return;
+        }
+        if (!mBound) {
+            loge("Data service not bound.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
+            return;
+        }
+
+        IIntegerConsumer callback = new IIntegerConsumer.Stub() {
+            @Override
+            public void accept(int result) {
+                if (DBG) log("notifyUserDataEnabledComplete. result = " + result);
+                mMessageMap.remove(asBinder());
+                sendCompleteMessage(onCompleteMessage, result);
+            }
+        };
+        if (onCompleteMessage != null) {
+            mMessageMap.put(callback.asBinder(), onCompleteMessage);
+        }
+        try {
+            mIDataService.notifyUserDataEnabled(mPhone.getPhoneId(), enabled, callback);
+        } catch (RemoteException e) {
+            loge("Cannot invoke notifyUserDataEnabled on data service.");
+            mMessageMap.remove(callback.asBinder());
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
+        }
+    }
+
+    /**
+     * Notify {@link DataService} the user data roaming setting.
+     *
+     * @param enabled Whether the user mobile data roaming is enabled.
+     * @param onCompleteMessage The result message for this request. Null if the client does not
+     * care about the result.
+     */
+    public void notifyUserDataRoamingEnabled(boolean enabled, Message onCompleteMessage) {
+        if (DBG) log("notifyUserDataRoamingEnabled");
+        if (!mFeatureFlags.dataServiceUserDataToggleNotify()) {
+            if (DBG) log("Data service user data toggle notification is not enabled.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_UNSUPPORTED);
+            return;
+        }
+        if (!mBound) {
+            loge("Data service not bound.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
+            return;
+        }
+
+        IIntegerConsumer callback = new IIntegerConsumer.Stub() {
+            @Override
+            public void accept(int result) {
+                if (DBG) log("notifyUserDataRoamingEnabledComplete. result = " + result);
+                mMessageMap.remove(asBinder());
+                sendCompleteMessage(onCompleteMessage, result);
+            }
+        };
+        if (onCompleteMessage != null) {
+            mMessageMap.put(callback.asBinder(), onCompleteMessage);
+        }
+        try {
+            mIDataService.notifyUserDataRoamingEnabled(mPhone.getPhoneId(), enabled, callback);
+        } catch (RemoteException e) {
+            loge("Cannot invoke notifyUserDataRoamingEnabled on data service.");
+            mMessageMap.remove(callback.asBinder());
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
+        }
+    }
+
+
+    /**
+     * Notify the underlying data service with the current IMS data network state.
+     *
+     * @param accessNetwork The access network type.
+     * @param dataNetworkState The data network connection state.
+     * @param physicalTransportType The physical transport type of the data network.
+     * @param physicalNetworkSlotIndex The slot index while the physical transport type is
+     *        {@link TRANSPORT_TYPE_WWAN}; otherwise, this slot index will be
+     *        {@link SubscriptionManager#INVALID_SIM_SLOT_INDEX}.
+     * @param onCompleteMessage The result message for this request. {@code null} if the client
+     *        does not care about the result.
+     */
+    public void notifyImsDataNetwork(@RadioAccessNetworkType int accessNetwork,
+            @DataState int dataNetworkState, @TransportType int physicalTransportType,
+            int physicalNetworkSlotIndex, @Nullable Message onCompleteMessage) {
+        if (DBG) log("notifyImsDataNetwork");
+        if (!mFeatureFlags.dataServiceNotifyImsDataNetwork()) {
+            if (DBG) log("Data service IMS data network notification is not enabled.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_UNSUPPORTED);
+            return;
+        }
+        if (!mBound) {
+            loge("Data service not bound.");
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
+            return;
+        }
+
+        IIntegerConsumer callback = new IIntegerConsumer.Stub() {
+            @Override
+            public void accept(int result) {
+                if (DBG) log("notifyImsDataNetworkComplete. result = " + result);
+                mMessageMap.remove(asBinder());
+                sendCompleteMessage(onCompleteMessage, result);
+            }
+        };
+        if (onCompleteMessage != null) {
+            mMessageMap.put(callback.asBinder(), onCompleteMessage);
+        }
+        try {
+            mIDataService.notifyImsDataNetwork(mPhone.getPhoneId(), accessNetwork,
+                    dataNetworkState, physicalTransportType, physicalNetworkSlotIndex, callback);
+        } catch (RemoteException e) {
+            loge("Cannot invoke notifyImsDataNetwork on data service.");
+            mMessageMap.remove(callback.asBinder());
+            sendCompleteMessage(onCompleteMessage, DataServiceCallback.RESULT_ERROR_ILLEGAL_STATE);
         }
     }
 

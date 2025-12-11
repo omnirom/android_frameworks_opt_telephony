@@ -42,8 +42,6 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConfigurationManager;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.flags.FeatureFlags;
-import com.android.internal.telephony.metrics.TelephonyMetrics;
-import com.android.internal.telephony.nano.TelephonyProto.TelephonyEvent;
 import com.android.internal.telephony.subscription.SubscriptionInfoInternal;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 
@@ -349,10 +347,6 @@ public class CellularNetworkValidator {
             } else {
                 stopValidation();
             }
-
-            TelephonyMetrics.getInstance().writeNetworkValidate(passed
-                    ? TelephonyEvent.NetworkValidationState.NETWORK_VALIDATION_STATE_PASSED
-                    : TelephonyEvent.NetworkValidationState.NETWORK_VALIDATION_STATE_FAILED);
         }
     }
 
@@ -375,8 +369,6 @@ public class CellularNetworkValidator {
         @Override
         public void onAvailable(@NonNull Network network) {
             logd("network onAvailable " + network);
-            TelephonyMetrics.getInstance().writeNetworkValidate(
-                    TelephonyEvent.NetworkValidationState.NETWORK_VALIDATION_STATE_AVAILABLE);
             // If it hits validation cache, we report as validation passed; otherwise we report
             // network is available.
             if (mValidatedNetworkCache.isRecentlyValidated(mSubId)) {

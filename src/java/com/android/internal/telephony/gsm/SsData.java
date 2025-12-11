@@ -26,7 +26,7 @@ import com.android.telephony.Rlog;
 /**
  * See also RIL_StkCcUnsolSsResponse in include/telephony/ril.h
  *
- * {@hide}
+ * @hide
  */
 public class SsData {
     public enum ServiceType {

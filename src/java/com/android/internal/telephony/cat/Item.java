@@ -23,7 +23,7 @@ import android.os.Parcelable;
 /**
  * Represents an Item COMPREHENSION-TLV object.
  *
- * {@hide}
+ * @hide
  */
 public class Item implements Parcelable {
     /** Identifier of the item. */

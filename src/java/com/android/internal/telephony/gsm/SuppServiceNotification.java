@@ -23,7 +23,7 @@ import java.util.Arrays;
 /**
  * Represents a Supplementary Service Notification received from the network.
  *
- * {@hide}
+ * @hide
  */
 public class SuppServiceNotification {
     /** Type of notification: 0 = code1; 1 = code2 */

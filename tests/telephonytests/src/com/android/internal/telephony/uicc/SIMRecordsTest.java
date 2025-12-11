@@ -16,6 +16,7 @@
 
 package com.android.internal.telephony.uicc;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -51,6 +52,9 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -723,6 +727,65 @@ public class SIMRecordsTest extends TelephonyTest {
         String mockSst = IccUtils.bytesToHexString(sst);
         String resultSst = mSIMRecordsUT.getSimServiceTable();
         assertEquals(mockSst, resultSst);
+    }
+
+    @Test
+    public void testGetImsApplicationReferenceIdentifier() {
+        String[] expectedIari = {"urn:3gpp-access:apn-id.ims.mnc001.mcc001.gprs"};
+        List<byte[]> iariBytes = encodeIariTlvObject(expectedIari);
+
+        Message message = mSIMRecordsUT.obtainMessage(SIMRecords.EVENT_GET_IARI_DONE);
+        AsyncResult.forMessage(message, iariBytes, null);
+        mSIMRecordsUT.handleMessage(message);
+
+        assertArrayEquals(expectedIari, mSIMRecordsUT.getUiccIari());
+    }
+
+    @Test
+    public void testGetImsApplicationReferenceIdentifierIsNull() {
+        Message message = mSIMRecordsUT.obtainMessage(SIMRecords.EVENT_GET_IARI_DONE);
+        AsyncResult.forMessage(message, null, null);
+        mSIMRecordsUT.handleMessage(message);
+
+        assertNull(mSIMRecordsUT.getUiccIari());
+    }
+
+    @Test
+    public void testGetImsApplicationReferenceIdentifierException() {
+        String[] expectedIari = {"urn:3gpp-access:apn-id.ims.mnc001.mcc001.gprs"};
+        List<byte[]> iariBytes = encodeIariTlvObject(expectedIari);
+
+        Message message = mSIMRecordsUT.obtainMessage(SIMRecords.EVENT_GET_IARI_DONE);
+        AsyncResult.forMessage(message, iariBytes, new CommandException(
+                CommandException.Error.OPERATION_NOT_ALLOWED));
+        mSIMRecordsUT.handleMessage(message);
+
+        assertNull(mSIMRecordsUT.getUiccIari());
+    }
+
+    private static List<byte[]> encodeIariTlvObject(String[] iariValues) {
+        List<byte[]> tlvList = new ArrayList<>();
+        if (iariValues == null || iariValues.length == 0) {
+            return tlvList;
+        }
+
+        for (String iariValue : iariValues) {
+            byte[] iari = iariValue.getBytes(StandardCharsets.UTF_8);
+            byte[] size = new byte[]{(byte) iari.length};
+            ByteArrayOutputStream tlvData = new ByteArrayOutputStream();
+
+            try {
+                tlvData.write(0x80); // IARI TLV TAG
+                tlvData.write(size);    // Length of IARI
+                tlvData.write(iari);    // IARI value
+            } catch (IOException e) {
+                fail("encodeIariTlvObject: IO exception:" + e);
+            }
+
+            tlvList.add(tlvData.toByteArray());
+        }
+
+        return tlvList;
     }
 
     @Test

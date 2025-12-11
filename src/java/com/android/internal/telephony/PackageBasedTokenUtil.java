@@ -66,7 +66,18 @@ public class PackageBasedTokenUtil {
         return token;
     }
 
-    private static String generatePackageBasedToken(
+    /**
+     * Generates a package-based token.
+     * <p>
+     * The token is a hash generated from the package name and its signing certificates.
+     * It can be used to uniquely identify an application.
+     *
+     * @param packageManager The PackageManager instance to retrieve package information.
+     * @param packageName    The name of the package for which to generate the token.
+     * @return The generated token as a String, or {@code null} if the package is not found or an
+     * error occurs during generation.
+     */
+    public static String generatePackageBasedToken(
             PackageManager packageManager, String packageName) {
         String token = null;
         Signature[] signatures;

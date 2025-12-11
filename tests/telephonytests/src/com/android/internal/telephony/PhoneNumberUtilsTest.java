@@ -21,6 +21,8 @@ import static junit.framework.Assert.assertFalse;
 import static junit.framework.Assert.assertNull;
 import static junit.framework.Assert.assertTrue;
 
+import static org.junit.Assume.assumeTrue;
+
 import android.net.Uri;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.telephony.PhoneNumberUtils;
@@ -29,6 +31,7 @@ import android.text.style.TtsSpan;
 
 import androidx.test.filters.FlakyTest;
 import androidx.test.filters.SmallTest;
+import androidx.test.runner.AndroidJUnit4;
 
 import com.android.internal.telephony.flags.Flags;
 
@@ -37,7 +40,9 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
+@RunWith(AndroidJUnit4.class)
 public class PhoneNumberUtilsTest {
 
     private static final int MIN_MATCH = 7;
@@ -540,11 +545,19 @@ public class PhoneNumberUtilsTest {
     @SmallTest
     @Test
     public void testWithNumberNotEqualToVoiceMail() throws Exception {
-        assertFalse(PhoneNumberUtils.isVoiceMailNumber("911"));
-        assertFalse(PhoneNumberUtils.isVoiceMailNumber("tel:911"));
-        assertFalse(PhoneNumberUtils.isVoiceMailNumber("+18001234567"));
-        assertFalse(PhoneNumberUtils.isVoiceMailNumber(""));
-        assertFalse(PhoneNumberUtils.isVoiceMailNumber(null));
+        try {
+            assertFalse(PhoneNumberUtils.isVoiceMailNumber("911"));
+            assertFalse(PhoneNumberUtils.isVoiceMailNumber("tel:911"));
+            assertFalse(PhoneNumberUtils.isVoiceMailNumber("+18001234567"));
+            assertFalse(PhoneNumberUtils.isVoiceMailNumber(""));
+            assertFalse(PhoneNumberUtils.isVoiceMailNumber(null));
+        } catch (UnsupportedOperationException e) {
+            // Telephony calling is not supported on this device so skip.
+            // Note: these tests run against static methods on PhoneNumberUtils, and there is no
+            // context available here to check package manager for FEATURE_TELEPHONY_CALLING, so we
+            // will catch the exception and do the assumption in this somewhat unorthodox manner.
+            assumeTrue("Telephony calling required", false);
+        }
         // This test fails on a device without a sim card
         /*TelephonyManager mTelephonyManager =
             (TelephonyManager)getContext().getSystemService(Context.TELEPHONY_SERVICE);

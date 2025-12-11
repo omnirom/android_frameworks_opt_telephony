@@ -40,7 +40,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * {@hide}
+ * @hide
  */
 public class IccProvider extends ContentProvider {
     private static final String TAG = "IccProvider";

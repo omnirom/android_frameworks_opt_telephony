@@ -20,15 +20,17 @@ import static android.app.timezonedetector.TelephonyTimeZoneSuggestion.createEmp
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.app.timezonedetector.TelephonySignal;
 import android.app.timezonedetector.TelephonyTimeZoneSuggestion;
 import android.text.TextUtils;
 import android.timezone.CountryTimeZones.OffsetResult;
+import android.timezone.MobileCountries;
+import android.timezone.flags.Flags;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.NitzData;
 import com.android.internal.telephony.NitzSignal;
 import com.android.internal.telephony.NitzStateMachine.DeviceState;
-import com.android.internal.telephony.nitz.NitzStateMachineImpl.TimeZoneSuggester;
 import com.android.internal.telephony.nitz.TimeZoneLookupHelper.CountryResult;
 import com.android.telephony.Rlog;
 
@@ -55,6 +57,84 @@ public class TimeZoneSuggesterImpl implements TimeZoneSuggester {
     @Override
     @NonNull
     public TelephonyTimeZoneSuggestion getTimeZoneSuggestion(int slotIndex,
+            @Nullable MobileCountries mobileCountries, @Nullable NitzSignal nitzSignal) {
+        try {
+            // Check for overriding NITZ-based signals from Android running in an emulator.
+            TelephonyTimeZoneSuggestion overridingSuggestion = null;
+            if (nitzSignal != null) {
+                NitzData nitzData = nitzSignal.getNitzData();
+                if (nitzData.getEmulatorHostTimeZone() != null) {
+                    TelephonyTimeZoneSuggestion.Builder builder =
+                            new TelephonyTimeZoneSuggestion.Builder(slotIndex)
+                                    .setZoneId(nitzData.getEmulatorHostTimeZone().getID())
+                                    .setMatchType(
+                                            TelephonyTimeZoneSuggestion.MATCH_TYPE_EMULATOR_ZONE_ID)
+                                    .setQuality(TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE)
+                                    .addDebugInfo("Emulator time zone override: " + nitzData);
+                    overridingSuggestion = builder.build();
+                }
+            }
+
+            TelephonyTimeZoneSuggestion suggestion;
+            if (overridingSuggestion != null) {
+                suggestion = overridingSuggestion;
+            } else if (mobileCountries == null) {
+                if (nitzSignal == null) {
+                    suggestion = createEmptySuggestion(slotIndex,
+                            "getTimeZoneSuggestion: nitzSignal=null, mobileCountries=null");
+                } else {
+                    // NITZ only - wait until we have a country.
+                    suggestion = createEmptySuggestion(slotIndex, "getTimeZoneSuggestion:"
+                            + " nitzSignal=" + nitzSignal + ", countryIsoCode=null");
+                }
+            } else { // countryIsoCode != null
+                if (nitzSignal == null) {
+                    if (mobileCountries.getDefaultCountryIsoCode().isEmpty()) {
+                        // This is assumed to be a test network with no NITZ data to go on.
+                        suggestion = createEmptySuggestion(slotIndex,
+                                "getTimeZoneSuggestion: nitzSignal=null, "
+                                        + "defaultCountryIsoCode=\"\"");
+                    } else {
+                        // MobileCountries only
+                        suggestion = findTimeZoneFromMobileCountries(
+                                slotIndex, mobileCountries, mDeviceState.currentTimeMillis());
+                    }
+                } else { // nitzSignal != null
+                    if (mobileCountries.getDefaultCountryIsoCode().isEmpty()) {
+                        // We have been told we have a country code but it's empty. This is most
+                        // likely because we're on a test network that's using a bogus MCC
+                        // (eg, "001"). Obtain a TimeZone based only on the NITZ parameters: without
+                        // a country it will be arbitrary, but it should at least have the correct
+                        // offset.
+                        suggestion = findTimeZoneForTestNetwork(slotIndex, nitzSignal);
+                    } else {
+                        // We have both NITZ and Country code.
+                        suggestion = findTimeZoneFromMobileCountriesAndNitz(
+                                slotIndex, mobileCountries, nitzSignal);
+                    }
+                }
+            }
+
+            // Ensure the return value is never null.
+            Objects.requireNonNull(suggestion);
+
+            return suggestion;
+        } catch (RuntimeException e) {
+            // This would suggest a coding error. Log at a high level and try to avoid leaving the
+            // device in a bad state by making an "empty" suggestion.
+            String message = "getTimeZoneSuggestion: Error during lookup: "
+                    + " mobileCountries=" + mobileCountries
+                    + ", nitzSignal=" + nitzSignal
+                    + ", e=" + e.getMessage();
+            TelephonyTimeZoneSuggestion errorSuggestion = createEmptySuggestion(slotIndex, message);
+            Rlog.w(LOG_TAG, message, e);
+            return errorSuggestion;
+        }
+    }
+
+    @Override
+    @NonNull
+    public TelephonyTimeZoneSuggestion getTimeZoneSuggestion(int slotIndex,
             @Nullable String countryIsoCode, @Nullable NitzSignal nitzSignal) {
         try {
             // Check for overriding NITZ-based signals from Android running in an emulator.
@@ -64,10 +144,11 @@ public class TimeZoneSuggesterImpl implements TimeZoneSuggester {
                 if (nitzData.getEmulatorHostTimeZone() != null) {
                     TelephonyTimeZoneSuggestion.Builder builder =
                             new TelephonyTimeZoneSuggestion.Builder(slotIndex)
-                            .setZoneId(nitzData.getEmulatorHostTimeZone().getID())
-                            .setMatchType(TelephonyTimeZoneSuggestion.MATCH_TYPE_EMULATOR_ZONE_ID)
-                            .setQuality(TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE)
-                            .addDebugInfo("Emulator time zone override: " + nitzData);
+                                    .setZoneId(nitzData.getEmulatorHostTimeZone().getID())
+                                    .setMatchType(
+                                            TelephonyTimeZoneSuggestion.MATCH_TYPE_EMULATOR_ZONE_ID)
+                                    .setQuality(TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE)
+                                    .addDebugInfo("Emulator time zone override: " + nitzData);
                     overridingSuggestion = builder.build();
                 }
             }
@@ -164,6 +245,101 @@ public class TimeZoneSuggesterImpl implements TimeZoneSuggester {
      * Creates a {@link TelephonyTimeZoneSuggestion} using network country code and NITZ.
      */
     @NonNull
+    private TelephonyTimeZoneSuggestion findTimeZoneFromMobileCountriesAndNitz(
+            int slotIndex, @NonNull MobileCountries mobileCountries,
+            @NonNull NitzSignal nitzSignal) {
+        Objects.requireNonNull(mobileCountries);
+        Objects.requireNonNull(nitzSignal);
+
+        TelephonyTimeZoneSuggestion.Builder suggestionBuilder =
+                new TelephonyTimeZoneSuggestion.Builder(slotIndex);
+        suggestionBuilder.addDebugInfo("findTimeZoneFromMobileCountriesAndNitz:"
+                + " mobileCountries=" + mobileCountries
+                + ", nitzSignal=" + nitzSignal);
+        NitzData nitzData = Objects.requireNonNull(nitzSignal.getNitzData());
+
+        TelephonySignal telephonySignal = null;
+        if (Flags.enableFusedTimeZoneDetector()) {
+            telephonySignal =
+                    new TelephonySignal(
+                            mobileCountries.getMcc(),
+                            mobileCountries.getMnc(),
+                            mobileCountries.getDefaultCountryIsoCode(),
+                            mobileCountries.getCountryIsoCodes(),
+                            new android.app.timezonedetector.NitzSignal(
+                                    nitzSignal.getReceiptElapsedRealtimeMillis(),
+                                    nitzSignal.getAgeMillis(),
+                                    nitzData.getLocalOffsetMillis(),
+                                    nitzData.getDstAdjustmentMillis(),
+                                    nitzData.getCurrentTimeInMillis(),
+                                    nitzData.getEmulatorHostTimeZone()));
+        }
+
+        if (isNitzSignalOffsetInfoBogus(mobileCountries, nitzData)) {
+            suggestionBuilder.addDebugInfo(
+                    "findTimeZoneFromMobileCountriesAndNitz: NITZ signal looks bogus");
+            return suggestionBuilder.build();
+        }
+
+        // Try to find a match using both MobileCountries + NITZ signal.
+        OffsetResult lookupResult =
+                mTimeZoneLookupHelper.lookupByNitzMobileCountries(nitzData, mobileCountries);
+        if (lookupResult != null) {
+            int quality = lookupResult.isOnlyMatch()
+                    ? TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE
+                    : TelephonyTimeZoneSuggestion.QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET;
+
+            return suggestionBuilder
+                    .setZoneId(lookupResult.getTimeZone().getID())
+                    .setCountryIsoCode(lookupResult.getCountryIsoCode())
+                    .setMatchType(TelephonyTimeZoneSuggestion.MATCH_TYPE_NETWORK_COUNTRY_AND_OFFSET)
+                    .setQuality(quality)
+                    .setTelephonySignal(telephonySignal)
+                    .addDebugInfo(
+                            "findTimeZoneFromMobileCountriesAndNitz: lookupResult=" + lookupResult)
+                    .build();
+        }
+
+        // The country + offset provided no match, so see if the country by itself would be enough.
+        CountryResult countryResult = mTimeZoneLookupHelper.lookupByMobileCountries(
+                mobileCountries, nitzData.getCurrentTimeInMillis());
+        if (countryResult == null) {
+            // Country not recognized.
+            suggestionBuilder.addDebugInfo(
+                    "findTimeZoneFromMobileCountriesAndNitz: lookupByCountry() country not"
+                            + " recognized");
+            return suggestionBuilder.build();
+        }
+
+        // If the country has a single zone, or it has multiple zones but the default zone is
+        // "boosted" (i.e. the country default is considered a good suggestion in most cases) then
+        // use it.
+        if (countryResult.quality == CountryResult.QUALITY_SINGLE_ZONE
+                || countryResult.quality == CountryResult.QUALITY_DEFAULT_BOOSTED) {
+            return suggestionBuilder
+                    .setZoneId(countryResult.zoneId)
+                    .setCountryIsoCode(countryResult.countryIsoCode)
+                    .setMatchType(TelephonyTimeZoneSuggestion.MATCH_TYPE_NETWORK_COUNTRY_ONLY)
+                    .setQuality(TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE)
+                    .setTelephonySignal(telephonySignal)
+                    .addDebugInfo(
+                            "findTimeZoneFromMobileCountriesAndNitz: high quality country-only"
+                                    + " suggestion: countryResult="
+                                    + countryResult)
+                    .build();
+        }
+
+        // Quality is not high enough to set the zone using country only.
+        suggestionBuilder.addDebugInfo(
+                "findTimeZoneFromMobileCountriesAndNitz: country-only suggestion"
+                        + " quality not high enough. countryResult=" + countryResult);
+        return suggestionBuilder.build();
+    }
+
+    /**
+     * Creates a {@link TelephonyTimeZoneSuggestion} using network country code and NITZ.
+     */
+    @NonNull
     private TelephonyTimeZoneSuggestion findTimeZoneFromCountryAndNitz(
             int slotIndex, @NonNull String countryIsoCode,
             @NonNull NitzSignal nitzSignal) {
@@ -233,8 +409,71 @@ public class TimeZoneSuggesterImpl implements TimeZoneSuggester {
      * Creates a {@link TelephonyTimeZoneSuggestion} using only network country code; works well on
      * countries which only have one time zone or multiple zones with the same offset.
      *
+     * @param mobileCountries mobile countries from network MCC
+     * @param whenMillis      the time to use when looking at time zone rules data
+     */
+    @NonNull
+    private TelephonyTimeZoneSuggestion findTimeZoneFromMobileCountries(
+            int slotIndex, @NonNull MobileCountries mobileCountries, long whenMillis) {
+        Objects.requireNonNull(mobileCountries);
+        if (TextUtils.isEmpty(mobileCountries.getDefaultCountryIsoCode())) {
+            throw new IllegalArgumentException("defaultCountryIsoCode must not be empty");
+        }
+
+        TelephonyTimeZoneSuggestion.Builder suggestionBuilder =
+                new TelephonyTimeZoneSuggestion.Builder(slotIndex);
+        suggestionBuilder.addDebugInfo("findTimeZoneFromMobileCountries:"
+                + " whenMillis=" + whenMillis + ", mobileCountries=" + mobileCountries);
+        CountryResult lookupResult = mTimeZoneLookupHelper.lookupByMobileCountries(
+                mobileCountries, whenMillis);
+        if (lookupResult != null) {
+            int quality;
+            if (lookupResult.quality == CountryResult.QUALITY_SINGLE_ZONE
+                    || lookupResult.quality == CountryResult.QUALITY_DEFAULT_BOOSTED) {
+                quality = TelephonyTimeZoneSuggestion.QUALITY_SINGLE_ZONE;
+            } else if (lookupResult.quality == CountryResult.QUALITY_MULTIPLE_ZONES_SAME_OFFSET) {
+                quality = TelephonyTimeZoneSuggestion.QUALITY_MULTIPLE_ZONES_WITH_SAME_OFFSET;
+            } else if (lookupResult.quality
+                    == CountryResult.QUALITY_MULTIPLE_ZONES_DIFFERENT_OFFSETS) {
+                quality = TelephonyTimeZoneSuggestion.QUALITY_MULTIPLE_ZONES_WITH_DIFFERENT_OFFSETS;
+            } else {
+                // This should never happen.
+                throw new IllegalArgumentException(
+                        "lookupResult.quality not recognized: mobileCountries=" + mobileCountries
+                                + ", whenMillis=" + whenMillis + ", lookupResult=" + lookupResult);
+            }
+
+            TelephonySignal telephonySignal = null;
+            if (Flags.enableFusedTimeZoneDetector()) {
+                telephonySignal =
+                        new TelephonySignal(
+                                mobileCountries.getMcc(),
+                                mobileCountries.getMnc(),
+                                mobileCountries.getDefaultCountryIsoCode(),
+                                mobileCountries.getCountryIsoCodes(),
+                                /* nitzSignal= */ null);
+            }
+
+            suggestionBuilder
+                    .setZoneId(lookupResult.zoneId)
+                    .setCountryIsoCode(lookupResult.countryIsoCode)
+                    .setMatchType(TelephonyTimeZoneSuggestion.MATCH_TYPE_NETWORK_COUNTRY_ONLY)
+                    .setQuality(quality)
+                    .setTelephonySignal(telephonySignal)
+                    .addDebugInfo("findTimeZoneFromMobileCountries: lookupResult=" + lookupResult);
+        } else {
+            suggestionBuilder.addDebugInfo(
+                    "findTimeZoneFromMobileCountries: Country not recognized?");
+        }
+        return suggestionBuilder.build();
+    }
+
+    /**
+     * Creates a {@link TelephonyTimeZoneSuggestion} using only network country code; works well on
+     * countries which only have one time zone or multiple zones with the same offset.
+     *
      * @param countryIsoCode country code from network MCC
-     * @param whenMillis the time to use when looking at time zone rules data
+     * @param whenMillis     the time to use when looking at time zone rules data
      */
     @NonNull
     private TelephonyTimeZoneSuggestion findTimeZoneFromNetworkCountryCode(
@@ -278,6 +517,15 @@ public class TimeZoneSuggesterImpl implements TimeZoneSuggester {
                     "findTimeZoneFromNetworkCountryCode: Country not recognized?");
         }
         return suggestionBuilder.build();
+    }
+
+    /**
+     * Returns true if the NITZ signal is definitely bogus, assuming that the country is correct.
+     */
+    private boolean isNitzSignalOffsetInfoBogus(MobileCountries mobileCountries,
+            NitzData nitzData) {
+        return mobileCountries.getCountryIsoCodes().stream()
+                .allMatch(countryIsoCode -> isNitzSignalOffsetInfoBogus(countryIsoCode, nitzData));
     }
 
     /**

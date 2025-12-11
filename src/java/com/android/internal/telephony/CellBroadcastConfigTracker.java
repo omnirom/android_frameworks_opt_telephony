@@ -31,7 +31,6 @@ import android.util.LocalLog;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.telephony.cdma.CdmaSmsBroadcastConfigInfo;
-import com.android.internal.telephony.flags.Flags;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -193,12 +192,6 @@ public final class CellBroadcastConfigTracker extends StateMachine {
                         // set gsm config if the config is changed
                         setGsmConfig(request.get3gppRanges(), request);
                         transitionTo(mGsmConfiguringState);
-                    } else if (!Flags.cleanupCdma()
-                            && !mCbRanges3gpp2.equals(request.get3gpp2Ranges())) {
-                        // set cdma config directly if no gsm config change but cdma config is
-                        // changed
-                        setCdmaConfig(request.get3gpp2Ranges(), request);
-                        transitionTo(mCdmaConfiguringState);
                     } else {
                         logd("Do nothing as the requested ranges are same as now");
                         request.getCallback().accept(
@@ -285,19 +278,11 @@ public final class CellBroadcastConfigTracker extends StateMachine {
                     }
                     if (ar.exception == null) {
                         mCbRanges3gpp = request.get3gppRanges();
-                        if (!Flags.cleanupCdma()
-                                && !mCbRanges3gpp2.equals(request.get3gpp2Ranges())) {
-                            // set cdma config and transit to cdma configuring state if the config
-                            // is changed.
-                            setCdmaConfig(request.get3gpp2Ranges(), request);
-                            transitionTo(mCdmaConfiguringState);
-                        } else {
-                            logd("Done as no need to update ranges for 3gpp2");
-                            request.getCallback().accept(
-                                    TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS);
-                            // transit to idle state if there is no cdma config change
-                            transitionTo(mIdleState);
-                        }
+                        logd("Done as no need to update ranges for 3gpp2");
+                        request.getCallback().accept(
+                                TelephonyManager.CELL_BROADCAST_RESULT_SUCCESS);
+                        // transit to idle state if there is no cdma config change
+                        transitionTo(mIdleState);
                     } else {
                         logd("Failed to set gsm activation");
                         request.getCallback().accept(

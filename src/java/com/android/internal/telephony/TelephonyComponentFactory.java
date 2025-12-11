@@ -21,17 +21,15 @@ import android.annotation.Nullable;
 import android.content.Context;
 import android.content.res.XmlResourceParser;
 import android.database.Cursor;
-import android.os.Handler;
 import android.os.Looper;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 import android.system.StructStatVfs;
 import android.text.TextUtils;
+import android.util.SparseArray;
 
 import com.android.ims.ImsManager;
-import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
-import com.android.internal.telephony.cdma.EriManager;
 import com.android.internal.telephony.data.AccessNetworksManager;
 import com.android.internal.telephony.data.DataNetworkController;
 import com.android.internal.telephony.data.DataProfileManager;
@@ -372,10 +370,6 @@ public class TelephonyComponentFactory {
         return new UiccProfile(context, ci, ics, phoneId, uiccCard, lock, flags);
     }
 
-    public EriManager makeEriManager(Phone phone, int eriFileSource) {
-        return new EriManager(phone, eriFileSource);
-    }
-
     public WspTypeDecoder makeWspTypeDecoder(byte[] pdu) {
         return new WspTypeDecoder(pdu);
     }
@@ -467,30 +461,12 @@ public class TelephonyComponentFactory {
      *
      * @param phone The phone instance
      * @param looper Looper for the handler.
-     * @return The access networks manager
-     * @deprecated {@link #makeAccessNetworksManager(Phone, Looper, FeatureFlags)} instead
-     */
-    public AccessNetworksManager makeAccessNetworksManager(Phone phone, Looper looper) {
-        return new AccessNetworksManager(phone, looper, new FeatureFlagsImpl());
-    }
-
-    /**
-     * Make access networks manager
-     *
-     * @param phone The phone instance
-     * @param looper Looper for the handler.
      * @param featureFlags feature flags.
      * @return The access networks manager
      */
     public AccessNetworksManager makeAccessNetworksManager(Phone phone, Looper looper,
             @NonNull FeatureFlags featureFlags) {
         return new AccessNetworksManager(phone, looper, featureFlags);
-    }
-
-    public CdmaSubscriptionSourceManager
-    getCdmaSubscriptionSourceManagerInstance(Context context, CommandsInterface ci, Handler h,
-                                             int what, Object obj) {
-        return CdmaSubscriptionSourceManager.getInstance(context, ci, h, what, obj);
     }
 
     public LocaleTracker makeLocaleTracker(Phone phone, NitzStateMachine nitzStateMachine,
@@ -583,6 +559,7 @@ public class TelephonyComponentFactory {
      *
      * @param phone The phone instance.
      * @param dataNetworkController Data network controller instance.
+     * @param dataServiceManagers Data service manager instances.
      * @param looper The looper to be used by the handler. Currently the handler thread is the phone
      * process's main thread.
      * @param callback Callback for passing events back to data network controller.
@@ -590,9 +567,11 @@ public class TelephonyComponentFactory {
      */
     public @NonNull DataSettingsManager makeDataSettingsManager(@NonNull Phone phone,
             @NonNull DataNetworkController dataNetworkController,
+            @NonNull SparseArray<DataServiceManager> dataServiceManagers,
             @NonNull FeatureFlags featureFlags, @NonNull Looper looper,
             @NonNull DataSettingsManager.DataSettingsManagerCallback callback) {
-        return new DataSettingsManager(phone, dataNetworkController, featureFlags, looper,
+        return new DataSettingsManager(phone, dataNetworkController, dataServiceManagers,
+                featureFlags, looper,
                 callback);
     }
 

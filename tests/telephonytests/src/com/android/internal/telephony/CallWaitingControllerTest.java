@@ -241,10 +241,10 @@ public class CallWaitingControllerTest extends TelephonyTest {
         assertTrue(mCWC.getTerminalBasedCallWaitingState(true) == TERMINAL_BASED_NOT_ACTIVATED);
         assertTrue(retrieveStatePreference(mPhone.getSubId()) == TERMINAL_BASED_NOT_ACTIVATED);
 
-        assertFalse(mCWC.setCallWaiting(true, SERVICE_CLASS_NONE, null));
-        assertTrue(mCWC.getTerminalBasedCallWaitingState(false) == TERMINAL_BASED_NOT_ACTIVATED);
-        assertTrue(mCWC.getTerminalBasedCallWaitingState(true) == TERMINAL_BASED_NOT_ACTIVATED);
-        assertTrue(retrieveStatePreference(mPhone.getSubId()) == TERMINAL_BASED_NOT_ACTIVATED);
+        assertTrue(mCWC.setCallWaiting(true, SERVICE_CLASS_NONE, null));
+        assertTrue(mCWC.getTerminalBasedCallWaitingState(false) == TERMINAL_BASED_ACTIVATED);
+        assertTrue(mCWC.getTerminalBasedCallWaitingState(true) == TERMINAL_BASED_ACTIVATED);
+        assertTrue(retrieveStatePreference(mPhone.getSubId()) == TERMINAL_BASED_ACTIVATED);
     }
 
     @Test

@@ -17,18 +17,11 @@
 package com.android.internal.telephony;
 
 import android.compat.annotation.UnsupportedAppUsage;
-import android.telephony.PhoneNumberUtils;
-
-import com.android.telephony.Rlog;
 
 /**
- * {@hide}
+ * @hide
  */
 public class DriverCall implements Comparable<DriverCall> {
-    static final String LOG_TAG = "DriverCall";
-
-    @UnsupportedAppUsage(implicitMember =
-            "values()[Lcom/android/internal/telephony/DriverCall$State;")
     public enum State {
         @UnsupportedAppUsage
         ACTIVE,
@@ -41,7 +34,7 @@ public class DriverCall implements Comparable<DriverCall> {
         @UnsupportedAppUsage
         INCOMING,   // MT call only
         @UnsupportedAppUsage
-        WAITING;    // MT call only
+        WAITING     // MT call only
         // If you add a state, make sure to look for the switch()
         // statements that use this enum
     }
@@ -92,52 +85,6 @@ public class DriverCall implements Comparable<DriverCall> {
     public int namePresentation;
     public UUSInfo uusInfo;
     public int audioQuality = AUDIO_QUALITY_UNSPECIFIED;
-
-    /** returns null on error */
-    static DriverCall
-    fromCLCCLine(String line) {
-        DriverCall ret = new DriverCall();
-
-        //+CLCC: 1,0,2,0,0,\"+18005551212\",145
-        //     index,isMT,state,mode,isMpty(,number,TOA)?
-        ATResponseParser p = new ATResponseParser(line);
-
-        try {
-            ret.index = p.nextInt();
-            ret.isMT = p.nextBoolean();
-            ret.state = stateFromCLCC(p.nextInt());
-
-            ret.isVoice = (0 == p.nextInt());
-            ret.isMpty = p.nextBoolean();
-
-            // use ALLOWED as default presentation while parsing CLCC
-            ret.numberPresentation = PhoneConstants.PRESENTATION_ALLOWED;
-
-            if (p.hasMore()) {
-                // Some lame implementations return strings
-                // like "NOT AVAILABLE" in the CLCC line
-                ret.number = PhoneNumberUtils.extractNetworkPortionAlt(p.nextString());
-
-                if (ret.number.length() == 0) {
-                    ret.number = null;
-                }
-
-                ret.TOA = p.nextInt();
-
-                // Make sure there's a leading + on addresses with a TOA
-                // of 145
-
-                ret.number = PhoneNumberUtils.stringFromStringAndTOA(
-                                ret.number, ret.TOA);
-
-            }
-        } catch (ATParseEx ex) {
-            Rlog.e(LOG_TAG,"Invalid CLCC line: '" + line + "'");
-            return null;
-        }
-
-        return ret;
-    }
 
     @UnsupportedAppUsage
     public

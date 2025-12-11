@@ -37,21 +37,34 @@ flag {
   bug: "355062720"
 }
 
-# OWNER=jackyu TARGET=25Q3
-flag {
-    name: "ignore_mcc_mnc_from_operator_for_locale"
-    namespace: "telephony"
-    description: "Ignoring mcc/mnc from RIL indication OPERATOR but only relying MCC/MNC from registered or nearby cells."
-    bug:"374589521"
-    metadata {
-        purpose: PURPOSE_BUGFIX
-    }
-}
-
+# OWNER=yomna TARGET=25Q4
 flag {
     name: "vendor_specific_cellular_identifier_disclosure_indications"
     is_exported: true
     namespace: "telephony"
     description: "Guard system API for vendor-specific classifications of cellular ID disclosures"
-    bug: "355062720"
+    bug: "385338654"
+}
+
+# OWNER=yongnamcha TARGET=26Q2
+flag {
+    name: "cell_identity_for_barring_info"
+    is_exported: true
+    namespace: "telephony"
+    description: "Allows access to the CellIdentity for BarringInfo."
+    bug: "431881770"
+    metadata {
+        purpose: PURPOSE_FEATURE
+    }
+}
+
+# OWNER=sangyun TARGET=26Q2
+flag {
+    name: "duplex_mode_for_ngran"
+    namespace: "telephony"
+    description: "NR Duplex Mode can be Calculated"
+    bug: "355284319"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
 }

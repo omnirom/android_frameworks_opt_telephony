@@ -34,8 +34,8 @@ import android.testing.TestableLooper;
 import androidx.test.filters.SmallTest;
 
 import com.android.internal.telephony.CommandException;
+import com.android.internal.telephony.SimulatedCommands;
 import com.android.internal.telephony.TelephonyTest;
-import com.android.internal.telephony.test.SimulatedCommands;
 
 import org.junit.After;
 import org.junit.Before;

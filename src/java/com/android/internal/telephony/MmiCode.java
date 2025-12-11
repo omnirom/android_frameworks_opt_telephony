@@ -22,12 +22,12 @@ import android.os.ResultReceiver;
 import java.util.regex.Pattern;
 
 /**
- * {@hide}
+ * @hide
  */
 public interface MmiCode
 {
     /**
-     * {@hide}
+     * @hide
      */
     public enum State {
         @UnsupportedAppUsage

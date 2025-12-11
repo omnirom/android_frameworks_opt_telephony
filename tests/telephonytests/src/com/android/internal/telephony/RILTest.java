@@ -24,9 +24,6 @@ import static android.telephony.TelephonyManager.HAL_SERVICE_SIM;
 
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_ACKNOWLEDGE_INCOMING_GSM_SMS_WITH_PDU;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_ALLOW_DATA;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CDMA_SEND_SMS;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CDMA_SEND_SMS_EXPECT_MORE;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CHANGE_SIM_PIN;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CHANGE_SIM_PIN2;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_CONFERENCE;
@@ -58,9 +55,7 @@ import static com.android.internal.telephony.RILConstants.RIL_REQUEST_HANGUP_FOR
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_HANGUP_WAITING_OR_BACKGROUND;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_IMS_SEND_SMS;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_LAST_CALL_FAIL_CAUSE;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_NV_READ_ITEM;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_NV_RESET_CONFIG;
-import static com.android.internal.telephony.RILConstants.RIL_REQUEST_NV_WRITE_ITEM;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_OPERATOR;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_RADIO_POWER;
 import static com.android.internal.telephony.RILConstants.RIL_REQUEST_REPORT_SMS_MEMORY_STATUS;
@@ -94,9 +89,9 @@ import static junit.framework.Assert.assertNull;
 import static junit.framework.Assert.assertTrue;
 import static junit.framework.Assert.fail;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doReturn;
@@ -111,10 +106,8 @@ import static org.mockito.Mockito.when;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.hardware.radio.V1_0.Carrier;
-import android.hardware.radio.V1_0.CdmaSmsMessage;
 import android.hardware.radio.V1_0.GsmSmsMessage;
 import android.hardware.radio.V1_0.ImsSmsMessage;
-import android.hardware.radio.V1_0.NvWriteItem;
 import android.hardware.radio.V1_0.RadioError;
 import android.hardware.radio.V1_0.RadioResponseInfo;
 import android.hardware.radio.V1_0.RadioResponseType;
@@ -186,9 +179,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -306,10 +296,6 @@ public class RILTest extends TelephonyTest {
         mNetworkProxy = mock(RadioNetworkProxy.class);
         mSimProxy = mock(RadioSimProxy.class);
         mRadioModemProxy = mock(RadioModemProxy.class);
-        try {
-            TelephonyDevController.create();
-        } catch (RuntimeException e) {
-        }
         Context context = new ContextFixture().getTestDouble();
         doReturn(Display.DEFAULT_DISPLAY).when(context).getDisplayId();
         doReturn(true).when(mConnectionManager).isNetworkSupported(ConnectivityManager.TYPE_MOBILE);
@@ -330,7 +316,7 @@ public class RILTest extends TelephonyTest {
         proxies.put(HAL_SERVICE_MODEM, mRadioModemProxy);
         mRILInstance = new RIL(context,
                 RadioAccessFamily.getRafFromNetworkType(RILConstants.PREFERRED_NETWORK_MODE),
-                Phone.PREFERRED_CDMA_SUBSCRIPTION, 0, proxies, mFeatureFlags);
+                0, proxies, mFeatureFlags);
         mRILUnderTest = spy(mRILInstance);
         doReturn(mRadioProxy).when(mRILUnderTest).getRadioProxy();
         doReturn(mDataProxy).when(mRILUnderTest).getRadioServiceProxy(eq(RadioDataProxy.class));
@@ -916,74 +902,6 @@ public class RILTest extends TelephonyTest {
 
     @FlakyTest
     @Test
-    public void testSendCdmaSMS_1_6() throws Exception {
-        // Use Radio HAL v1.6
-        try {
-            replaceInstance(RIL.class, "mHalVersion", mRILUnderTest, mHalVersionV16);
-        } catch (Exception e) {
-        }
-        byte[] pdu = "000010020000000000000000000000000000000000".getBytes();
-        CdmaSmsMessage msg = new CdmaSmsMessage();
-        constructCdmaSendSmsRilRequest(msg, pdu);
-        mRILUnderTest.sendCdmaSms(pdu, obtainMessage());
-        verify(mRadioProxy).sendCdmaSms_1_6(mSerialNumberCaptor.capture(), eq(msg));
-        verifyRILResponse(mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_CDMA_SEND_SMS);
-    }
-
-    @FlakyTest
-    @Test
-    public void testSendCdmaSMSExpectMore_1_6() throws Exception {
-        // Use Radio HAL v1.6
-        try {
-            replaceInstance(RIL.class, "mHalVersion", mRILUnderTest, mHalVersionV16);
-        } catch (Exception e) {
-        }
-        byte[] pdu = "000010020000000000000000000000000000000000".getBytes();
-        CdmaSmsMessage msg = new CdmaSmsMessage();
-        constructCdmaSendSmsRilRequest(msg, pdu);
-        mRILUnderTest.sendCdmaSMSExpectMore(pdu, obtainMessage());
-        verify(mRadioProxy).sendCdmaSmsExpectMore_1_6(mSerialNumberCaptor.capture(), eq(msg));
-        verifyRILResponse(mRILUnderTest, mSerialNumberCaptor.getValue(),
-                RIL_REQUEST_CDMA_SEND_SMS_EXPECT_MORE);
-    }
-
-    private void constructCdmaSendSmsRilRequest(CdmaSmsMessage msg, byte[] pdu) {
-        int addrNbrOfDigits;
-        int subaddrNbrOfDigits;
-        int bearerDataLength;
-        ByteArrayInputStream bais = new ByteArrayInputStream(pdu);
-        DataInputStream dis = new DataInputStream(bais);
-
-        try {
-            msg.teleserviceId = dis.readInt(); // teleServiceId
-            msg.isServicePresent = (byte) dis.readInt() == 1 ? true : false; // servicePresent
-            msg.serviceCategory = dis.readInt(); // serviceCategory
-            msg.address.digitMode = dis.read();  // address digit mode
-            msg.address.numberMode = dis.read(); // address number mode
-            msg.address.numberType = dis.read(); // address number type
-            msg.address.numberPlan = dis.read(); // address number plan
-            addrNbrOfDigits = (byte) dis.read();
-            for (int i = 0; i < addrNbrOfDigits; i++) {
-                msg.address.digits.add(dis.readByte()); // address_orig_bytes[i]
-            }
-            msg.subAddress.subaddressType = dis.read(); //subaddressType
-            msg.subAddress.odd = (byte) dis.read() == 1 ? true : false; //subaddr odd
-            subaddrNbrOfDigits = (byte) dis.read();
-            for (int i = 0; i < subaddrNbrOfDigits; i++) {
-                msg.subAddress.digits.add(dis.readByte()); //subaddr_orig_bytes[i]
-            }
-
-            bearerDataLength = dis.read();
-            for (int i = 0; i < bearerDataLength; i++) {
-                msg.bearerData.add(dis.readByte()); //bearerData[i]
-            }
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
-    }
-
-    @FlakyTest
-    @Test
     public void testWriteSmsToSim() throws Exception {
         String smscPdu = "smscPdu";
         String pdu = "pdu";
@@ -1059,17 +977,6 @@ public class RILTest extends TelephonyTest {
                 mRILUnderTest,
                 mSerialNumberCaptor.getValue(),
                 RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING);
-    }
-
-    @FlakyTest
-    @Test
-    public void testGetCdmaSubscriptionSource() throws Exception {
-        mRILUnderTest.getCdmaSubscriptionSource(obtainMessage());
-        verify(mRadioProxy).getCdmaSubscriptionSource(mSerialNumberCaptor.capture());
-        verifyRILResponse(
-                mRILUnderTest,
-                mSerialNumberCaptor.getValue(),
-                RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE);
     }
 
     @FlakyTest
@@ -1184,42 +1091,6 @@ public class RILTest extends TelephonyTest {
 
     @FlakyTest
     @Test
-    public void testSendRetryImsCdmaSms() throws Exception {
-        CdmaSmsMessage cdmaMsg = new CdmaSmsMessage();
-
-        ImsSmsMessage firstMsg = new ImsSmsMessage();
-        firstMsg.tech = RadioTechnologyFamily.THREE_GPP2;
-        firstMsg.retry = false;
-        firstMsg.messageRef = 0;
-        firstMsg.cdmaMessage.add(cdmaMsg);
-
-        ImsSmsMessage retryMsg = new ImsSmsMessage();
-        retryMsg.tech = RadioTechnologyFamily.THREE_GPP2;
-        retryMsg.retry = true;
-        retryMsg.messageRef = 0;
-        retryMsg.cdmaMessage.add(cdmaMsg);
-
-        int maxRetryCount = 3;
-        int firstTransmission = 0;
-        byte pdu[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-        for (int i = 0; i <= maxRetryCount; i++) {
-            mRILUnderTest.sendImsCdmaSms(pdu, i, 0, obtainMessage());
-            if (i == firstTransmission) {
-                verify(mRadioProxy, times(1)).sendImsSms(mSerialNumberCaptor.capture(),
-                        eq(firstMsg));
-                verifyRILResponse(mRILUnderTest, mSerialNumberCaptor.getValue(),
-                        RIL_REQUEST_IMS_SEND_SMS);
-            } else {
-                verify(mRadioProxy, times(i)).sendImsSms(mSerialNumberCaptor.capture(),
-                        eq(retryMsg));
-                verifyRILResponse(mRILUnderTest, mSerialNumberCaptor.getValue(),
-                        RIL_REQUEST_IMS_SEND_SMS);
-            }
-        }
-    }
-
-    @FlakyTest
-    @Test
     public void testIccOpenLogicalChannel() throws Exception {
         String aid = "aid";
         int p2 = 0;
@@ -1237,30 +1108,6 @@ public class RILTest extends TelephonyTest {
         verify(mRadioProxy).iccCloseLogicalChannel(mSerialNumberCaptor.capture(), eq(channel));
         verifyRILResponse(
                 mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_SIM_CLOSE_CHANNEL);
-    }
-
-    @FlakyTest
-    @Test
-    public void testNvWriteItem() throws Exception {
-        int itemId = 1;
-        String itemValue = "value";
-        mRILUnderTest.nvWriteItem(itemId, itemValue, obtainMessage(), new WorkSource());
-        NvWriteItem item = new NvWriteItem();
-        item.itemId = itemId;
-        item.value = itemValue;
-        verify(mRadioProxy).nvWriteItem(mSerialNumberCaptor.capture(), eq(item));
-        verifyRILResponse(
-                mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_NV_WRITE_ITEM);
-    }
-
-    @FlakyTest
-    @Test
-    public void testNvReadItem() throws Exception {
-        int itemId = 1;
-        mRILUnderTest.nvReadItem(itemId, obtainMessage(), new WorkSource());
-        verify(mRadioProxy).nvReadItem(mSerialNumberCaptor.capture(), eq(itemId));
-        verifyRILResponse(
-                mRILUnderTest, mSerialNumberCaptor.getValue(), RIL_REQUEST_NV_READ_ITEM);
     }
 
     @FlakyTest
